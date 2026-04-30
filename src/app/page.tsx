@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase, Task } from '@/lib/supabase'
+import { awardExp } from '@/lib/maple'
 
 const MEMBERS = ['조현석', '조정연', '이헌희', '이지은']
 const MEMBER_COLORS: Record<string, string> = {
@@ -95,8 +96,24 @@ export default function Home() {
     loadTasks()
   }
 
-  async function updateStatus(id: number, status: string) {
+  async function updateStatus(id: number, status: string, task: Task) {
+    const prev = task.status
     await supabase.from('tasks').update({ status }).eq('id', id)
+  
+    // 완료 처리 시 EXP 적립
+    if (status === '완료' && prev !== '완료') {
+      const type = task.priority === '긴급' ? 'URGENT' : 'COMPLETE'
+      const result = await awardExp(task.member, type)
+      if (result?.levelUp) {
+        alert(`🎊 ${task.member}님 레벨업! ${result.newLv.name}`)
+      }
+    }
+    // 완료 취소 시 EXP 차감
+    if (prev === '완료' && status !== '완료') {
+      const type = task.priority === '긴급' ? 'URGENT' : 'COMPLETE'
+      await awardExp(task.member, type, false)
+    }
+  
     loadTasks()
   }
 
@@ -230,7 +247,7 @@ export default function Home() {
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
                         <select
                           value={t.status}
-                          onChange={e => updateStatus(t.id, e.target.value)}
+                          onChange={e => updateStatus(t.id, e.target.value, t)}
                           className={`text-xs px-2 py-0.5 rounded-full font-medium border-0 cursor-pointer ${STATUS_COLORS[t.status] || 'bg-gray-100 text-gray-600'}`}
                         >
                           {['대기','시작 전','진행중','이슈 및 대기','완료'].map(s => (
