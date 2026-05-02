@@ -148,8 +148,11 @@ export default function ProfilePage() {
     const { data } = supabase.storage.from('avatars').getPublicUrl(fileName)
     const url = data.publicUrl + '?t=' + Date.now()
   
+    const { member, refreshAvatar } = useAuth()
+    
     await supabase.from('players').update({ avatar_url: url }).eq('name', member)
     showToastMsg('프로필 이미지 업데이트 완료!')
+    refreshAvatar() // 전역 아바타 갱신
     loadAll()
   }
 
