@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { calcLevel, getNextLevel, expBar, attendanceCheck, LEVELS } from '@/lib/maple'
 import { awardExp } from '@/lib/maple'
-
-const MEMBER = 'TEAM_MEMBER_4' // 추후 로그인으로 대체
+import { useAuth } from '@/components/AuthProvider'
 
 type Task = {
   id: number
@@ -49,21 +49,31 @@ const TYPE_COLORS: Record<string, string> = {
 const BAR_COLORS = ['#4CAF50','#2196F3','#9C27B0','#FF5722','#FF9800','#F44336','#FFD700','#FF69B4']
 
 export default function HomePage() {
+  const { member, loading: authLoading } = useAuth()
+  const router = useRouter()
+
   const [player, setPlayer]   = useState<Player | null>(null)
   const [tasks, setTasks]     = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [toast, setToast]     = useState('')
 
   useEffect(() => {
-    loadData()
-  }, [])
+    if (!authLoading && !member) {
+      router.push('/login')
+    }
+  }, [authLoading, member])
+
+  useEffect(() => {
+    if (member) loadData()
+  }, [member])
+
+  if (authLoading || !member) return null
 
   async function loadData() {
     setLoading(true)
-    const today = new Date().toISOString().slice(0, 10)
     const [{ data: players }, { data: taskData }] = await Promise.all([
-      supabase.from('players').select('*').eq('name', MEMBER).single(),
-      supabase.from('tasks').select('*').eq('member', MEMBER).neq('status', '완료'),
+      supabase.from('players').select('*').eq('name', member).single(),
+      supabase.from('tasks').select('*').eq('member', member).neq('status', '완료'),
     ])
     setPlayer(players)
     setTasks(taskData || [])
@@ -76,13 +86,13 @@ export default function HomePage() {
   }
 
   async function handleAttend() {
-    if (!player) return
+    if (!player || !member) return
     const today = new Date().toISOString().slice(0, 10)
     if (player.attend_last === today) {
       showToastMsg('오늘은 이미 출석했어요!')
       return
     }
-    const result = await attendanceCheck(MEMBER)
+    const result = await attendanceCheck(member)
     if (!result.success) { showToastMsg(result.message || '오류'); return }
     showToastMsg(
       result.levelUp
@@ -104,35 +114,26 @@ export default function HomePage() {
     loadData()
   }
 
-  const lv      = player ? calcLevel(player.exp) : LEVELS[0]
-  const next    = player ? getNextLevel(player.exp) : null
-  const pct     = player ? expBar(player.exp) : 0
-  const today   = new Date().toISOString().slice(0, 10)
+  const lv       = player ? calcLevel(player.exp) : LEVELS[0]
+  const next     = player ? getNextLevel(player.exp) : null
+  const pct      = player ? expBar(player.exp) : 0
+  const today    = new Date().toISOString().slice(0, 10)
   const attended = player?.attend_last === today
   const barColor = BAR_COLORS[Math.min((lv.level || 1) - 1, BAR_COLORS.length - 1)]
 
-  // 오늘의 할 일 (마감일 있는 것 우선)
   const todayTasks = tasks
-    .filter(t => {
-      const d = getDiff(t.end_date)
-      return d !== null && d <= 7
-    })
-    .sort((a, b) => {
-      const da = getDiff(a.end_date) ?? 99
-      const db = getDiff(b.end_date) ?? 99
-      return da - db
-    })
+    .filter(t => { const d = getDiff(t.end_date); return d !== null && d <= 7 })
+    .sort((a, b) => (getDiff(a.end_date) ?? 99) - (getDiff(b.end_date) ?? 99))
 
-  // 마감 임박
   const urgentTasks = tasks.filter(t => {
     const d = getDiff(t.end_date)
     return d !== null && d <= 3
   })
 
   const stats = {
-    doing : tasks.filter(t => t.status === '진행중').length,
-    done  : 0,
-    exp   : player?.month_exp || 0,
+    doing: tasks.filter(t => t.status === '진행중').length,
+    done : 0,
+    exp  : player?.month_exp || 0,
   }
 
   return (
@@ -144,7 +145,7 @@ export default function HomePage() {
           <div className="flex items-center gap-2">
             <button className="text-stone-400 text-xl">🔔</button>
             <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-sm font-bold text-amber-700">
-              {MEMBER.slice(1)}
+              {member.slice(1)}
             </div>
           </div>
         </div>
@@ -155,11 +156,11 @@ export default function HomePage() {
         <div className="bg-white rounded-2xl border border-stone-200 p-4 mb-3">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-sm font-bold text-amber-700 shrink-0">
-              {MEMBER.slice(1)}
+              {member.slice(1)}
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-stone-900">{MEMBER}</span>
+                <span className="text-sm font-bold text-stone-900">{member}</span>
                 <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
                   {lv.name}
                 </span>
@@ -168,11 +169,9 @@ export default function HomePage() {
                 onClick={handleAttend}
                 disabled={attended}
                 className={`text-xs mt-1 px-2 py-0.5 rounded-full font-medium transition-all
-                  ${attended
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-amber-500 text-white'}`}
+                  ${attended ? 'bg-green-100 text-green-700' : 'bg-amber-500 text-white'}`}
               >
-                {attended ? '✅ 첫 완료' : '☀️ 출석 체크'}
+                {attended ? '✅ 출석완료' : '☀️ 출석 체크'}
               </button>
             </div>
             <div className="text-right text-xs text-stone-400">
@@ -286,7 +285,9 @@ export default function HomePage() {
                       <p className="text-sm font-medium text-stone-800 truncate">{t.proj}</p>
                       {t.content && <p className="text-xs text-stone-400 truncate">{t.content}</p>}
                     </div>
-                    <span className="text-xs text-red-500 font-medium shrink-0">D-{diff}</span>
+                    <span className="text-xs text-red-500 font-medium shrink-0">
+                      {diff !== null && diff < 0 ? `D+${Math.abs(diff)}` : `D-${diff}`}
+                    </span>
                   </div>
                 )
               })}
