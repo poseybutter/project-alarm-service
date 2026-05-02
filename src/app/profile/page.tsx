@@ -32,6 +32,7 @@ type Player = {
   icons: string[]
   attend_last: string | null
   attend_streak: number
+  avatar_url: string | null
 }
 
 type Task = {
