@@ -127,6 +127,7 @@ export default function ProfilePage() {
   }
 
   async function handleAttend() {
+    if (!member) return
     const result = await attendanceCheck(member)
     if (!result.success) { showToastMsg(result.message || '오류'); return }
     showToastMsg(result.levelUp ? `🎊 레벨업! ${result.newLv?.name}` : `☀️ +${result.exp} EXP · ${result.streak}일 연속`)
