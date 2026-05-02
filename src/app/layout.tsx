@@ -15,7 +15,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko">
-      <body className="bg-[#f7f6f3] pb-20">
+      <body className="bg-[#f7f6f3]">
         <AuthProvider>
           {children}
           <Nav />

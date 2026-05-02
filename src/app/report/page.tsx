@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import UserMenu from '@/components/UserMenu'
+import Avatar from '@/components/Avatar'
 import { supabase } from '@/lib/supabase'
 import AuthGuard from '@/components/AuthGuard'
 
@@ -264,36 +265,28 @@ export default function ReportPage() {
 
                 {/* 팀원별 공수 바 */}
                 <div className="bg-white rounded-xl border border-stone-200 p-4 mb-3">
-                <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-3">팀원별 공수</p>
-                <div className="space-y-3">
+                    <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-3">팀원별 공수</p>
+                    <div className="space-y-3">
                     {MEMBERS.map(m => {
-                    const mWL   = curTasks.filter(t => t.member === m).reduce((s, t) => s + (t.workload || 0), 0)
-                    const mDone = curTasks.filter(t => t.member === m && t.status === '완료').reduce((s, t) => s + (t.workload || 0), 0)
-                    const c     = MEMBER_COLORS[m]
-                    return (
-                        <div key={m} className="flex items-center gap-3">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${c.bg} ${c.text}`}>
-                            {m.slice(1)}
-                        </div>
-                        <div className="flex-1 relative h-2 bg-stone-100 rounded-full overflow-hidden">
-                            {/* 전체 공수 (연한색) */}
-                            <div
-                            className="absolute inset-y-0 left-0 rounded-full"
-                            style={{ width: `${(mWL / maxWL) * 100}%`, background: c.bar, opacity: 0.25 }}
-                            />
-                            {/* 완료 공수 (진한색) */}
-                            <div
-                            className="absolute inset-y-0 left-0 rounded-full"
-                            style={{ width: `${(mDone / maxWL) * 100}%`, background: c.bar }}
-                            />
-                        </div>
-                        <span className="text-xs text-stone-500 w-10 text-right font-medium shrink-0">
-                            {fmtMin(mWL)}
-                        </span>
-                        </div>
-                    )
-                    })}
-                </div>
+                        const mWL   = curTasks.filter(t => t.member === m).reduce((s, t) => s + (t.workload || 0), 0)
+                        const mDone = curTasks.filter(t => t.member === m && t.status === '완료').reduce((s, t) => s + (t.workload || 0), 0)
+                        const c     = MEMBER_COLORS[m]
+                        return (
+                            <div key={m} className="flex items-center gap-3">
+                            <Avatar name={m} size={24} showName />
+                            <div className="flex-1 relative h-2 bg-stone-100 rounded-full overflow-hidden">
+                                <div className="absolute inset-y-0 left-0 rounded-full"
+                                style={{ width: `${(mWL / maxWL) * 100}%`, background: c.bar, opacity: 0.25 }} />
+                                <div className="absolute inset-y-0 left-0 rounded-full"
+                                style={{ width: `${(mDone / maxWL) * 100}%`, background: c.bar }} />
+                            </div>
+                            <span className="text-xs text-stone-500 w-10 text-right font-medium shrink-0">
+                                {fmtMin(mWL)}
+                            </span>
+                            </div>
+                        )
+                        })}
+                    </div>
                 </div>
 
                 {/* 주간 브리핑 */}

@@ -3,24 +3,12 @@
 import { useEffect, useState } from 'react'
 import { supabase, Task } from '@/lib/supabase'
 import { awardExp } from '@/lib/maple'
+import { useAuth } from '@/components/AuthProvider'
 import AuthGuard from '@/components/AuthGuard'
 import UserMenu from '@/components/UserMenu'
+import Avatar from '@/components/Avatar'
 
 const MEMBERS = ['TEAM_MEMBER_1', 'TEAM_MEMBER_2', 'TEAM_MEMBER_3', 'TEAM_MEMBER_4']
-
-const MEMBER_COLORS: Record<string, string> = {
-  'TEAM_MEMBER_1': 'bg-purple-100 text-purple-700',
-  'TEAM_MEMBER_2': 'bg-green-100 text-green-700',
-  'TEAM_MEMBER_3': 'bg-amber-100 text-amber-700',
-  'TEAM_MEMBER_4': 'bg-orange-100 text-orange-700',
-}
-
-const MEMBER_BORDER: Record<string, string> = {
-  'TEAM_MEMBER_1': 'border-purple-400 bg-purple-100 text-purple-700',
-  'TEAM_MEMBER_2': 'border-green-400 bg-green-100 text-green-700',
-  'TEAM_MEMBER_3': 'border-amber-400 bg-amber-100 text-amber-700',
-  'TEAM_MEMBER_4': 'border-orange-400 bg-orange-100 text-orange-700',
-}
 
 const TYPE_COLORS: Record<string, string> = {
   '프로젝트': 'bg-violet-100 text-violet-700',
@@ -31,10 +19,10 @@ const TYPE_COLORS: Record<string, string> = {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  '완료':       'bg-green-100 text-green-700',
-  '진행중':     'bg-blue-100 text-blue-700',
-  '대기':       'bg-gray-100 text-gray-600',
-  '시작 전':    'bg-gray-100 text-gray-600',
+  '완료':         'bg-green-100 text-green-700',
+  '진행중':       'bg-blue-100 text-blue-700',
+  '대기':         'bg-gray-100 text-gray-600',
+  '시작 전':      'bg-gray-100 text-gray-600',
   '이슈 및 대기': 'bg-red-100 text-red-700',
 }
 
@@ -46,6 +34,13 @@ const WORKLOAD_PRESETS = [
   { label: '1일',  value: 480 },
   { label: '2일',  value: 960 },
 ]
+
+const MEMBER_BORDER: Record<string, string> = {
+  'TEAM_MEMBER_1': 'border-purple-400 bg-purple-100 text-purple-700',
+  'TEAM_MEMBER_2': 'border-green-400 bg-green-100 text-green-700',
+  'TEAM_MEMBER_3': 'border-amber-400 bg-amber-100 text-amber-700',
+  'TEAM_MEMBER_4': 'border-orange-400 bg-orange-100 text-orange-700',
+}
 
 function getDiff(dateStr: string | null) {
   if (!dateStr) return null
@@ -68,8 +63,8 @@ function getWeekLabel() {
 
 function formatWorkload(min: number) {
   if (!min) return ''
-  if (min >= 480) return `${min / 480}일`
-  if (min >= 60)  return `${min / 60}h`
+  if (min >= 480) return `${(min/480).toFixed(1).replace('.0','')}일`
+  if (min >= 60)  return `${(min/60).toFixed(1).replace('.0','')}h`
   return `${min}분`
 }
 
@@ -78,12 +73,18 @@ type Project = { id: number; name: string; member: string }
 export default function TasksPage() {
   const [tasks, setTasks]       = useState<Task[]>([])
   const [projects, setProjects] = useState<Project[]>([])
-  const [filter, setFilter]     = useState('all')
   const [loading, setLoading]   = useState(true)
   const [showModal, setShowModal] = useState(false)
+
+  // 필터 (디자인 기준 드롭다운)
+  const [filterMember,   setFilterMember]   = useState('')
+  const [filterProject,  setFilterProject]  = useState('')
+  const [filterPriority, setFilterPriority] = useState('')
+
   const [form, setForm] = useState({
     member: '', type: '', proj: '', content: '',
-    priority: '', start_date: '', end_date: '', workload: 0
+    priority: '', start_date: '', end_date: '', workload: 0,
+    issue: ''
   })
 
   useEffect(() => {
@@ -94,8 +95,7 @@ export default function TasksPage() {
   async function loadTasks() {
     setLoading(true)
     const { data } = await supabase
-      .from('tasks')
-      .select('*')
+      .from('tasks').select('*')
       .order('created_at', { ascending: false })
     setTasks(data || [])
     setLoading(false)
@@ -119,10 +119,11 @@ export default function TasksPage() {
       start_date: form.start_date || null,
       end_date  : form.end_date || null,
       workload  : form.workload || 0,
+      issue     : form.issue || null,
       status    : '대기',
     }])
     setShowModal(false)
-    setForm({ member:'', type:'', proj:'', content:'', priority:'', start_date:'', end_date:'', workload: 0 })
+    setForm({ member:'', type:'', proj:'', content:'', priority:'', start_date:'', end_date:'', workload:0, issue:'' })
     loadTasks()
   }
 
@@ -135,8 +136,7 @@ export default function TasksPage() {
       if (result?.levelUp) alert(`🎊 ${task.member}님 레벨업! ${result.newLv?.name}`)
     }
     if (prev === '완료' && status !== '완료') {
-      const type = task.priority === '긴급' ? 'URGENT' : 'COMPLETE'
-      await awardExp(task.member, type, false)
+      await awardExp(task.member, task.priority === '긴급' ? 'URGENT' : 'COMPLETE', false)
     }
     loadTasks()
   }
@@ -147,14 +147,12 @@ export default function TasksPage() {
     loadTasks()
   }
 
+  // 필터 적용
   const filtered = tasks.filter(t => {
-    if (filter === 'all') return true
-    if (filter === 'urgent') {
-      const d = getDiff(t.end_date)
-      return d !== null && d <= 7 && t.status !== '완료'
-    }
-    if (MEMBERS.includes(filter)) return t.member === filter
-    return t.status === filter
+    if (filterMember   && t.member   !== filterMember)   return false
+    if (filterProject  && t.proj     !== filterProject)   return false
+    if (filterPriority && t.priority !== filterPriority)  return false
+    return true
   })
 
   const stats = {
@@ -164,14 +162,15 @@ export default function TasksPage() {
     urgent: tasks.filter(t => { const d = getDiff(t.end_date); return d !== null && d <= 7 && t.status !== '완료' }).length,
   }
 
-  const grouped = (filter === 'all' || MEMBERS.includes(filter))
-    ? MEMBERS.filter(m => filter === 'all' || m === filter)
-        .reduce((acc, m) => {
-          const mt = filtered.filter(t => t.member === m)
-          if (mt.length > 0) acc[m] = mt
-          return acc
-        }, {} as Record<string, Task[]>)
-    : { '_': filtered }
+  // 담당자별 그룹
+  const grouped = MEMBERS.reduce((acc, m) => {
+    const mt = filtered.filter(t => t.member === m)
+    if (mt.length > 0) acc[m] = mt
+    return acc
+  }, {} as Record<string, Task[]>)
+
+  // 프로젝트 목록 (필터용)
+  const allProjects = [...new Set(tasks.map(t => t.proj).filter(Boolean))]
 
   return (
     <AuthGuard>
@@ -184,42 +183,24 @@ export default function TasksPage() {
               <p className="text-xs text-stone-400 mt-0.5">{getWeekLabel()}</p>
             </div>
             <div className="flex items-center gap-2">
-              <button className="text-stone-400 text-xl relative">
-                  🔔
-                  {/* 알림 배지 (추후 실제 알림 수로 교체) */}
-                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
-                      1
-                  </span>
-              </button>
-              <UserMenu />
               <button
                 onClick={() => setShowModal(true)}
-                className="bg-amber-500 text-white text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-1"
+                className="bg-amber-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg"
               >
-                <span className="text-lg leading-none">+</span> 업무
+                + 업무
               </button>
+              <button className="text-stone-400 text-xl relative">
+                🔔
+                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+                  {stats.urgent || ''}
+                </span>
+              </button>
+              <UserMenu />
             </div>
-            
           </div>
         </div>
 
         <div className="max-w-2xl mx-auto">
-          {/* 필터 탭 */}
-          <div className="flex gap-2 px-4 py-3 overflow-x-auto scrollbar-hide bg-white border-b border-stone-200">
-            {['all','TEAM_MEMBER_1','TEAM_MEMBER_2','TEAM_MEMBER_3','TEAM_MEMBER_4','진행중','완료','urgent'].map(f => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap border transition-all
-                  ${filter === f
-                    ? 'bg-amber-500 text-white border-amber-500'
-                    : 'bg-stone-50 text-stone-500 border-stone-200'}`}
-              >
-                {f === 'all' ? '전체' : f === 'urgent' ? '마감임박' : f}
-              </button>
-            ))}
-          </div>
-
           {/* 통계 */}
           <div className="grid grid-cols-4 gap-2 px-4 py-3">
             {[
@@ -235,6 +216,34 @@ export default function TasksPage() {
             ))}
           </div>
 
+          {/* 필터 드롭다운 (디자인 기준) */}
+          <div className="flex gap-2 px-4 pb-3">
+            <select
+              className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
+              value={filterMember}
+              onChange={e => setFilterMember(e.target.value)}
+            >
+              <option value="">전체 담당자</option>
+              {MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+            <select
+              className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
+              value={filterProject}
+              onChange={e => setFilterProject(e.target.value)}
+            >
+              <option value="">전체 프로젝트</option>
+              {allProjects.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+            <select
+              className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
+              value={filterPriority}
+              onChange={e => setFilterPriority(e.target.value)}
+            >
+              <option value="">전체 우선순위</option>
+              {['긴급','높음','보통','낮음'].map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+
           {/* 업무 목록 */}
           {loading ? (
             <div className="text-center py-16 text-stone-400 text-sm">불러오는 중...</div>
@@ -243,26 +252,18 @@ export default function TasksPage() {
           ) : (
             Object.entries(grouped).map(([member, memberTasks]) => (
               <div key={member} className="px-4 mb-4">
-                {member !== '_' && (
-                  <div className="flex justify-between items-center py-2">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${MEMBER_COLORS[member]}`}>
-                        {member.slice(1)}
-                      </div>
-                      <span className="text-sm font-bold text-stone-800">{member}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-stone-400">{memberTasks.length}건</span>
-                      {/* 팀원별 총 공수 */}
-                      <span className="text-xs text-amber-600 font-medium">
-                        {formatWorkload(memberTasks.reduce((sum, t) => sum + (t.workload || 0), 0))}
-                      </span>
-                    </div>
+                <div className="flex justify-between items-center py-2">
+                  <Avatar name={member} size={26} showName />
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-stone-400">{memberTasks.length}건</span>
+                    <span className="text-xs text-amber-600 font-medium">
+                      {formatWorkload(memberTasks.reduce((s, t) => s + (t.workload || 0), 0))}
+                    </span>
                   </div>
-                )}
+                </div>
                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
                   {memberTasks.map((t, i) => {
-                    const diff    = getDiff(t.end_date)
+                    const diff     = getDiff(t.end_date)
                     const isUrgent = diff !== null && diff <= 7 && t.status !== '완료'
                     const isDone   = t.status === '완료'
                     return (
@@ -270,11 +271,13 @@ export default function TasksPage() {
                         key={t.id}
                         className={`px-4 py-3
                           ${i < memberTasks.length-1 ? 'border-b border-stone-100' : ''}
-                          ${isDone ? 'opacity-50' : ''}`}
+                          ${isDone ? 'opacity-50' : ''}
+                          ${t.priority === '긴급' || t.status === '이슈 및 대기' ? 'bg-amber-50' : ''}`}
                       >
                         <div className="flex items-start gap-3">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
+                              {t.priority === '긴급' && <span className="text-xs">⭐</span>}
                               {t.type && (
                                 <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${TYPE_COLORS[t.type] || 'bg-gray-100 text-gray-600'}`}>
                                   {t.type}
@@ -285,10 +288,9 @@ export default function TasksPage() {
                               </span>
                             </div>
                             {t.content && <p className="text-xs text-stone-400 truncate mb-1">{t.content}</p>}
-                            {/* 이슈 노트 */}
                             {t.issue && (
-                              <div className="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded-lg mb-1">
-                                {t.issue}
+                              <div className="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded-lg mb-1 border border-amber-100">
+                                이슈: {t.issue}
                               </div>
                             )}
                             <div className="flex items-center gap-2 text-xs text-stone-400">
@@ -324,6 +326,7 @@ export default function TasksPage() {
               </div>
             ))
           )}
+          <div className="h-24" />
         </div>
 
         {/* 추가 모달 */}
@@ -333,7 +336,8 @@ export default function TasksPage() {
             onClick={() => setShowModal(false)}
           >
             <div
-              className="bg-white rounded-t-2xl p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto pb-10"
+              className="bg-white rounded-t-2xl p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto"
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 20px)' }}
               onClick={e => e.stopPropagation()}
             >
               <div className="flex justify-between items-center mb-5">
@@ -341,8 +345,7 @@ export default function TasksPage() {
                 <button onClick={() => setShowModal(false)} className="text-2xl text-stone-400 leading-none">×</button>
               </div>
               <div className="space-y-4">
-
-                {/* 담당자 — 캐릭터 버튼 */}
+                {/* 담당자 */}
                 <div>
                   <label className="text-xs font-medium text-stone-500 block mb-2">담당자</label>
                   <div className="grid grid-cols-4 gap-2">
@@ -351,14 +354,9 @@ export default function TasksPage() {
                         key={m}
                         onClick={() => setForm({...form, member: m, proj: ''})}
                         className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border-2 transition-all
-                          ${form.member === m
-                            ? MEMBER_BORDER[m]
-                            : 'bg-stone-50 border-stone-200 text-stone-400'}`}
+                          ${form.member === m ? MEMBER_BORDER[m] : 'bg-stone-50 border-stone-200 text-stone-400'}`}
                       >
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold
-                          ${form.member === m ? '' : 'bg-stone-200 text-stone-500'}`}>
-                          {m.slice(1)}
-                        </div>
+                        <Avatar name={m} size={36} />
                         <span className="text-xs font-medium">{m.slice(1)}</span>
                       </button>
                     ))}
@@ -369,22 +367,16 @@ export default function TasksPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-medium text-stone-500 block mb-1.5">구분</label>
-                    <select
-                      className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white"
-                      value={form.type}
-                      onChange={e => setForm({...form, type: e.target.value})}
-                    >
+                    <select className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white"
+                      value={form.type} onChange={e => setForm({...form, type: e.target.value})}>
                       <option value="">선택</option>
                       {['프로젝트','유지보수','고도화','접근성','업무지원'].map(t => <option key={t}>{t}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="text-xs font-medium text-stone-500 block mb-1.5">우선순위</label>
-                    <select
-                      className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white"
-                      value={form.priority}
-                      onChange={e => setForm({...form, priority: e.target.value})}
-                    >
+                    <select className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white"
+                      value={form.priority} onChange={e => setForm({...form, priority: e.target.value})}>
                       <option value="">선택</option>
                       {['긴급','높음','보통','낮음'].map(p => <option key={p}>{p}</option>)}
                     </select>
@@ -394,12 +386,9 @@ export default function TasksPage() {
                 {/* 프로젝트 */}
                 <div>
                   <label className="text-xs font-medium text-stone-500 block mb-1.5">프로젝트</label>
-                  <select
-                    className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white"
-                    value={form.proj}
-                    onChange={e => setForm({...form, proj: e.target.value})}
-                    disabled={!form.member}
-                  >
+                  <select className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white"
+                    value={form.proj} onChange={e => setForm({...form, proj: e.target.value})}
+                    disabled={!form.member}>
                     <option value="">{form.member ? '선택' : '담당자를 먼저 선택해주세요'}</option>
                     {myProjects.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
                   </select>
@@ -408,12 +397,9 @@ export default function TasksPage() {
                 {/* 업무 내용 */}
                 <div>
                   <label className="text-xs font-medium text-stone-500 block mb-1.5">업무 내용</label>
-                  <textarea
-                    className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm h-20 resize-none"
+                  <textarea className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm h-20 resize-none"
                     placeholder="예) 메인 슬라이드 퍼블리싱"
-                    value={form.content}
-                    onChange={e => setForm({...form, content: e.target.value})}
-                  />
+                    value={form.content} onChange={e => setForm({...form, content: e.target.value})} />
                 </div>
 
                 {/* 공수 */}
@@ -421,28 +407,19 @@ export default function TasksPage() {
                   <div className="flex justify-between items-center mb-1.5">
                     <label className="text-xs font-medium text-stone-500">공수</label>
                     {form.workload > 0 && (
-                      <span className="text-xs text-amber-600 font-medium">
-                        {formatWorkload(form.workload)}
-                      </span>
+                      <span className="text-xs text-amber-600 font-medium">{formatWorkload(form.workload)}</span>
                     )}
                   </div>
-                  <input
-                    type="number"
-                    className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm mb-2"
+                  <input type="number" className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm mb-2"
                     placeholder="분 직접 입력"
                     value={form.workload || ''}
-                    onChange={e => setForm({...form, workload: parseInt(e.target.value) || 0})}
-                  />
+                    onChange={e => setForm({...form, workload: parseInt(e.target.value) || 0})} />
                   <div className="flex gap-1.5 flex-wrap">
                     {WORKLOAD_PRESETS.map(p => (
-                      <button
-                        key={p.label}
+                      <button key={p.label}
                         onClick={() => setForm({...form, workload: p.value})}
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
-                          ${form.workload === p.value
-                            ? 'bg-amber-500 text-white border-amber-500'
-                            : 'bg-stone-50 text-stone-600 border-stone-200'}`}
-                      >
+                          ${form.workload === p.value ? 'bg-amber-500 text-white border-amber-500' : 'bg-stone-50 text-stone-600 border-stone-200'}`}>
                         {p.label}
                       </button>
                     ))}
@@ -453,39 +430,26 @@ export default function TasksPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-medium text-stone-500 block mb-1.5">시작일</label>
-                    <input
-                      type="date"
-                      className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                      value={form.start_date}
-                      onChange={e => setForm({...form, start_date: e.target.value})}
-                    />
+                    <input type="date" className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
+                      value={form.start_date} onChange={e => setForm({...form, start_date: e.target.value})} />
                   </div>
                   <div>
                     <label className="text-xs font-medium text-stone-500 block mb-1.5">마감일</label>
-                    <input
-                      type="date"
-                      className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                      value={form.end_date}
-                      onChange={e => setForm({...form, end_date: e.target.value})}
-                    />
+                    <input type="date" className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
+                      value={form.end_date} onChange={e => setForm({...form, end_date: e.target.value})} />
                   </div>
                 </div>
 
                 {/* 이슈/비고 */}
                 <div>
                   <label className="text-xs font-medium text-stone-500 block mb-1.5">이슈 / 비고 (선택)</label>
-                  <input
-                    className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
+                  <input className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
                     placeholder="예) 클라이언트 피드백 대기..."
-                    value={form.content}
-                    onChange={e => setForm({...form, content: e.target.value})}
-                  />
+                    value={form.issue} onChange={e => setForm({...form, issue: e.target.value})} />
                 </div>
 
-                <button
-                  onClick={addTask}
-                  className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm"
-                >
+                <button onClick={addTask}
+                  className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm">
                   등록하기
                 </button>
               </div>
