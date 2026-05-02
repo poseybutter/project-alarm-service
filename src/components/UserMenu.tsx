@@ -52,7 +52,7 @@ export default function UserMenu() {
             </div>
             <div>
               <p className="text-sm font-bold text-stone-800">{member}</p>
-              <p className="text-xs text-stone-400">퍼블리셔</p>
+              <p className="text-xs text-stone-400">UD</p>
             </div>
           </div>
           <button

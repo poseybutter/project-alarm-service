@@ -333,11 +333,11 @@ export default function TasksPage() {
         {showModal && (
           <div
             className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
+            style={{ bottom: '67px' }}
             onClick={() => setShowModal(false)}
           >
             <div
               className="bg-white rounded-t-2xl p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto"
-              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 20px)' }}
               onClick={e => e.stopPropagation()}
             >
               <div className="flex justify-between items-center mb-5">
