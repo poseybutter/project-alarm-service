@@ -192,13 +192,14 @@ export default function TasksPage() {
                   </span>
               </button>
               <UserMenu />
+              <button
+                onClick={() => setShowModal(true)}
+                className="bg-amber-500 text-white text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-1"
+              >
+                <span className="text-lg leading-none">+</span> 업무
+              </button>
             </div>
-            <button
-              onClick={() => setShowModal(true)}
-              className="bg-amber-500 text-white text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-1"
-            >
-              <span className="text-lg leading-none">+</span> 업무
-            </button>
+            
           </div>
         </div>
 
@@ -332,7 +333,7 @@ export default function TasksPage() {
             onClick={() => setShowModal(false)}
           >
             <div
-              className="bg-white rounded-t-2xl p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+              className="bg-white rounded-t-2xl p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto pb-10"
               onClick={e => e.stopPropagation()}
             >
               <div className="flex justify-between items-center mb-5">

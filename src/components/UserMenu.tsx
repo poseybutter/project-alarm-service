@@ -6,12 +6,11 @@ import { useAuth } from './AuthProvider'
 import { signOut } from '@/lib/auth'
 
 export default function UserMenu() {
-  const { member } = useAuth()
+  const { member, avatarUrl } = useAuth()
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
-  // 외부 클릭 시 닫기
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) {
@@ -28,19 +27,34 @@ export default function UserMenu() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-sm font-bold text-amber-700"
+        className="w-8 h-8 rounded-full overflow-hidden border-2 border-amber-200"
       >
-        {member.slice(1)}
+        {avatarUrl ? (
+          <img src={avatarUrl} alt={member} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full bg-amber-100 flex items-center justify-center text-sm font-bold text-amber-700">
+            {member.slice(1)}
+          </div>
+        )}
       </button>
 
       {open && (
         <div className="absolute right-0 top-10 bg-white rounded-xl border border-stone-200 shadow-lg z-50 w-44 overflow-hidden">
-          {/* 유저 정보 */}
-          <div className="px-4 py-3 border-b border-stone-100">
-            <p className="text-sm font-bold text-stone-800">{member}</p>
-            <p className="text-xs text-stone-400 mt-0.5">퍼블리셔</p>
+          <div className="px-4 py-3 border-b border-stone-100 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full overflow-hidden shrink-0">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt={member} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-amber-100 flex items-center justify-center text-xs font-bold text-amber-700">
+                  {member.slice(1)}
+                </div>
+              )}
+            </div>
+            <div>
+              <p className="text-sm font-bold text-stone-800">{member}</p>
+              <p className="text-xs text-stone-400">퍼블리셔</p>
+            </div>
           </div>
-          {/* 메뉴 */}
           <button
             onClick={() => { router.push('/profile'); setOpen(false) }}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-stone-700 hover:bg-stone-50 transition-colors"
