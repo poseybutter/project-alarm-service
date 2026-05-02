@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import UserMenu from '@/components/UserMenu'
 import { supabase } from '@/lib/supabase'
 import AuthGuard from '@/components/AuthGuard'
 
@@ -185,11 +186,16 @@ export default function ReportPage() {
         {/* 헤더 */}
         <div className="bg-white border-b border-stone-200 px-4 py-3 sticky top-0 z-10">
             <div className="max-w-2xl mx-auto flex justify-between items-center">
-            <h1 className="text-base font-bold text-stone-900">리포트</h1>
-            <div className="flex items-center gap-2">
-                <button className="text-stone-400 text-xl">🔔</button>
-                <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-sm font-bold text-orange-700">지은</div>
-            </div>
+                <h1 className="text-base font-bold text-stone-900">리포트</h1>
+                <div className="flex items-center gap-2">
+                    <button className="text-stone-400 text-xl relative">
+                        🔔
+                        <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+                        1
+                        </span>
+                    </button>
+                    <UserMenu />
+                </div>
             </div>
         </div>
 
