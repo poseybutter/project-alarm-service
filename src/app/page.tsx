@@ -61,15 +61,12 @@ export default function HomePage() {
   async function loadData() {
     setLoading(true)
     const today = new Date().toISOString().slice(0, 10)
-    const [{ data: players }, { data: taskData }, { data: doneTasks }] = await Promise.all([
+    const [{ data: players }, { data: taskData }] = await Promise.all([
       supabase.from('players').select('*').eq('name', MEMBER).single(),
       supabase.from('tasks').select('*').eq('member', MEMBER).neq('status', '완료'),
-      supabase.from('tasks').select('id').eq('member', MEMBER).eq('status', '완료')
-        .gte('created_at', today),
     ])
     setPlayer(players)
     setTasks(taskData || [])
-    setStats(prev => ({ ...prev, done: doneTasks?.length || 0 }))
     setLoading(false)
   }
 
