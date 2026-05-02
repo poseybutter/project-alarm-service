@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { calcLevel, getNextLevel, expBar, attendanceCheck, LEVELS } from '@/lib/maple'
 
+const MEMBER = 'TEAM_MEMBER_4'
 const MEMBERS = ['TEAM_MEMBER_1', 'TEAM_MEMBER_2', 'TEAM_MEMBER_3', 'TEAM_MEMBER_4']
 const MEMBER_COLORS: Record<string, { bg: string; text: string }> = {
   'TEAM_MEMBER_1': { bg: 'bg-purple-100', text: 'text-purple-700' },
@@ -12,6 +13,13 @@ const MEMBER_COLORS: Record<string, { bg: string; text: string }> = {
   'TEAM_MEMBER_4': { bg: 'bg-orange-100', text: 'text-orange-700' },
 }
 const BAR_COLORS = ['#4CAF50','#2196F3','#9C27B0','#FF5722','#FF9800','#F44336','#FFD700','#FF69B4']
+
+const TITLES = [
+  { id: 'first',   icon: '🌱', name: '첫 완료',    desc: '첫 번째 업무 완료',   condition: (p: Player) => p.exp >= 50 },
+  { id: 'streak3', icon: '🔥', name: '꾸준러',      desc: '3일 연속 출석',       condition: (p: Player) => p.attend_streak >= 3 },
+  { id: 'streak7', icon: '⚡', name: '주간 챔피언', desc: '7일 연속 출석',       condition: (p: Player) => p.attend_streak >= 7 },
+  { id: 'due5',    icon: '⏰', name: '마감지킴이',  desc: 'D-day 전 완료 5건',  condition: () => false },
+]
 
 type Player = {
   id: number
@@ -24,41 +32,137 @@ type Player = {
   attend_streak: number
 }
 
+type Task = {
+  id: number
+  member: string
+  type: string
+  proj: string
+  content: string
+  status: string
+  end_date: string | null
+  start_date: string | null
+  workload: number
+  created_at: string
+}
+
+type Accessibility = {
+  id: number
+  proj: string
+  member: string
+  end_date: string | null
+  inspection_status: string
+  note: string | null
+}
+
+type Project = {
+  id: number
+  name: string
+  member: string
+  client: string | null
+}
+
+function getDiff(dateStr: string | null) {
+  if (!dateStr) return null
+  const d = new Date(dateStr)
+  const n = new Date()
+  d.setHours(0,0,0,0); n.setHours(0,0,0,0)
+  return Math.round((d.getTime() - n.getTime()) / (1000*60*60*24))
+}
+
+function formatWorkload(min: number) {
+  if (!min) return ''
+  if (min >= 480) return `${min / 480}일`
+  if (min >= 60)  return `${min / 60}h`
+  return `${min}분`
+}
+
 export default function ProfilePage() {
+  const [tab, setTab]           = useState<'info' | 'history' | 'titles'>('info')
   const [players, setPlayers]   = useState<Player[]>([])
-  const [selected, setSelected] = useState('TEAM_MEMBER_4')
+  const [tasks, setTasks]       = useState<Task[]>([])
+  const [accessibility, setAccessibility] = useState<Accessibility[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading]   = useState(true)
   const [toast, setToast]       = useState('')
+  const [historyFilter, setHistoryFilter] = useState<'week' | 'lastweek' | 'month'>('week')
+  const [showProjModal, setShowProjModal] = useState(false)
+  const [showAccModal, setShowAccModal]   = useState(false)
+  const [projForm, setProjForm] = useState({ name: '', client: '' })
+  const [accForm, setAccForm]   = useState({ proj: '', end_date: '', note: '' })
 
-  useEffect(() => { loadPlayers() }, [])
+  useEffect(() => { loadAll() }, [])
 
-  async function loadPlayers() {
+  async function loadAll() {
     setLoading(true)
-    const { data } = await supabase.from('players').select('*')
-    setPlayers(data || [])
+    const [
+      { data: playerData },
+      { data: taskData },
+      { data: accData },
+      { data: projData },
+    ] = await Promise.all([
+      supabase.from('players').select('*'),
+      supabase.from('tasks').select('*').eq('member', MEMBER).order('created_at', { ascending: false }),
+      supabase.from('accessibility').select('*').eq('member', MEMBER),
+      supabase.from('projects').select('*').eq('member', MEMBER).order('name'),
+    ])
+    setPlayers(playerData || [])
+    setTasks(taskData || [])
+    setAccessibility(accData || [])
+    setProjects(projData || [])
     setLoading(false)
   }
 
-  function showToast(msg: string) {
+  function showToastMsg(msg: string) {
     setToast(msg)
     setTimeout(() => setToast(''), 3000)
   }
 
   async function handleAttend() {
-    const result = await attendanceCheck(selected)
-    if (!result.success) {
-      showToast(result.message || '오류가 발생했어요')
-      return
-    }
-    showToast(
-      result.levelUp
-        ? `🎊 레벨업! ${result.newLv?.name} +${result.exp} EXP`
-        : `☀️ 출석 완료! +${result.exp} EXP · ${result.streak}일 연속`
-    )
-    loadPlayers()
+    const result = await attendanceCheck(MEMBER)
+    if (!result.success) { showToastMsg(result.message || '오류'); return }
+    showToastMsg(result.levelUp ? `🎊 레벨업! ${result.newLv?.name}` : `☀️ +${result.exp} EXP · ${result.streak}일 연속`)
+    loadAll()
   }
 
-  const player   = players.find(p => p.name === selected)
+  async function addProject() {
+    if (!projForm.name) return alert('프로젝트명은 필수예요')
+    await supabase.from('projects').insert([{ name: projForm.name, member: MEMBER, client: projForm.client || null }])
+    setShowProjModal(false)
+    setProjForm({ name: '', client: '' })
+    loadAll()
+  }
+
+  async function deleteProject(id: number) {
+    if (!confirm('삭제할까요?')) return
+    await supabase.from('projects').delete().eq('id', id)
+    loadAll()
+  }
+
+  async function addAccessibility() {
+    if (!accForm.proj) return alert('프로젝트명은 필수예요')
+    await supabase.from('accessibility').insert([{
+      proj: accForm.proj, member: MEMBER,
+      end_date: accForm.end_date || null,
+      note: accForm.note || null,
+      inspection_status: '미신청',
+    }])
+    setShowAccModal(false)
+    setAccForm({ proj: '', end_date: '', note: '' })
+    loadAll()
+  }
+
+  async function updateAccStatus(id: number, status: string) {
+    await supabase.from('accessibility').update({ inspection_status: status }).eq('id', id)
+    loadAll()
+  }
+
+  async function deleteAcc(id: number) {
+    if (!confirm('삭제할까요?')) return
+    await supabase.from('accessibility').delete().eq('id', id)
+    loadAll()
+  }
+
+  const player   = players.find(p => p.name === MEMBER)
   const lv       = player ? calcLevel(player.exp) : LEVELS[0]
   const next     = player ? getNextLevel(player.exp) : null
   const pct      = player ? expBar(player.exp) : 0
@@ -66,156 +170,354 @@ export default function ProfilePage() {
   const attended = player?.attend_last === today
   const barColor = BAR_COLORS[Math.min((lv.level || 1) - 1, BAR_COLORS.length - 1)]
 
+  // 지난 업무 필터
+  const now = new Date()
+  const getHistoryTasks = () => {
+    const start = new Date(now)
+    const end   = new Date(now)
+    if (historyFilter === 'week') {
+      start.setDate(now.getDate() - now.getDay() + 1)
+    } else if (historyFilter === 'lastweek') {
+      start.setDate(now.getDate() - now.getDay() - 6)
+      end.setDate(now.getDate() - now.getDay())
+    } else {
+      start.setDate(1)
+    }
+    return tasks.filter(t => {
+      const d = new Date(t.created_at)
+      return d >= start && d <= end
+    })
+  }
+
+  const historyTasks = getHistoryTasks()
+
   return (
-    <div className="min-h-screen bg-stone-50">
+    <div className="min-h-screen bg-[#f7f6f3]">
       {/* 헤더 */}
       <div className="bg-white border-b border-stone-200 px-4 py-3 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto flex justify-between items-center">
-          <div>
-            <h1 className="text-base font-bold text-stone-800">캐릭터 프로필</h1>
-            <p className="text-xs text-stone-400 mt-0.5">메이플 월드</p>
+          <h1 className="text-base font-bold text-stone-900">내 프로필</h1>
+          <div className="flex items-center gap-2">
+            <button className="text-stone-400 text-xl">🔔</button>
+            <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-sm font-bold text-amber-700">
+              {MEMBER.slice(1)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-2xl mx-auto px-4 pt-4 pb-24">
+        {/* 프로필 카드 */}
+        <div className="bg-white rounded-2xl border border-stone-200 p-5 mb-4 text-center">
+          <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center text-2xl font-bold text-amber-700 mx-auto mb-3">
+            {MEMBER.slice(1)}
+          </div>
+          <h2 className="text-lg font-bold text-stone-900 mb-1">{MEMBER}</h2>
+          <div className="inline-flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium mb-3">
+            {lv.name}
           </div>
           <button
             onClick={handleAttend}
             disabled={attended}
-            className={`text-sm font-medium px-4 py-2 rounded-lg transition-all
-              ${attended
-                ? 'bg-stone-100 text-stone-400 cursor-not-allowed'
-                : 'bg-amber-600 text-white'}`}
+            className={`block mx-auto text-xs px-4 py-1.5 rounded-full font-medium mb-4 transition-all
+              ${attended ? 'bg-green-100 text-green-700' : 'bg-amber-500 text-white'}`}
           >
-            {attended ? '✅ 출석완료' : '☀️ 출석 체크'}
+            {attended ? '✅ 첫 완료' : '☀️ 출석 체크'}
           </button>
+
+          {/* EXP 바 */}
+          <div className="mb-4">
+            <div className="flex justify-between text-xs text-stone-400 mb-1.5">
+              <span>{player?.exp.toLocaleString() || 0} EXP</span>
+              <span>{pct}%</span>
+            </div>
+            <div className="h-2.5 bg-stone-100 rounded-full overflow-hidden">
+              <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: barColor }} />
+            </div>
+            <p className="text-xs text-stone-400 text-right mt-1">
+              {next ? `수련 중인 검사까지 ${(next.exp - (player?.exp || 0)).toLocaleString()} EXP` : '🌟 최고 레벨!'}
+            </p>
+          </div>
+
+          {/* 스탯 */}
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { label: '누적 EXP',  value: player?.exp.toLocaleString() || '0' },
+              { label: '이번 달 EXP', value: player?.month_exp.toLocaleString() || '0' },
+              { label: '연속 출석',  value: `${player?.attend_streak || 0}일` },
+            ].map(s => (
+              <div key={s.label} className="bg-stone-50 rounded-xl p-3">
+                <div className="text-sm font-bold text-stone-800">{s.value}</div>
+                <div className="text-xs text-stone-400 mt-0.5">{s.label}</div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
 
-      <div className="max-w-2xl mx-auto px-4 pt-4">
-        {/* 팀원 선택 */}
-        <div className="flex gap-2 mb-4">
-          {MEMBERS.map(m => {
-            const c = MEMBER_COLORS[m]
-            return (
-              <button
-                key={m}
-                onClick={() => setSelected(m)}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all
-                  ${selected === m
-                    ? `${c.bg} ${c.text} border-transparent`
-                    : 'bg-white text-stone-400 border-stone-200'}`}
-              >
-                {m}
-              </button>
-            )
-          })}
+        {/* 탭 */}
+        <div className="flex bg-white rounded-xl border border-stone-200 p-1 mb-4">
+          {[
+            { key: 'info',    label: '내 정보' },
+            { key: 'history', label: '지난 업무' },
+            { key: 'titles',  label: '칭호' },
+          ].map(t => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key as 'info' | 'history' | 'titles')}
+              className={`flex-1 py-2 text-xs font-medium rounded-lg transition-all
+                ${tab === t.key ? 'bg-amber-500 text-white' : 'text-stone-500'}`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
-        {loading ? (
-          <div className="text-center py-16 text-stone-400 text-sm">불러오는 중...</div>
-        ) : !player ? (
-          <div className="text-center py-16 text-stone-400 text-sm">데이터가 없어요</div>
-        ) : (
-          <div className="bg-white rounded-2xl border border-stone-200 p-5 mb-4">
-            {/* 프로필 상단 */}
-            <div className="flex items-center gap-4 mb-5">
-              <div className={`w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold shrink-0
-                ${MEMBER_COLORS[selected].bg} ${MEMBER_COLORS[selected].text}`}>
-                {selected.slice(1)}
-              </div>
-              <div className="flex-1">
-                <h2 className="text-lg font-bold text-stone-800">{selected}</h2>
-                <p className="text-xs text-stone-500 mt-0.5">{lv.name} · Lv.{lv.level}</p>
-                <span className={`text-xs px-2 py-0.5 rounded-full mt-1 inline-block
-                  ${attended ? 'bg-green-100 text-green-700' : 'bg-stone-100 text-stone-500'}`}>
-                  {attended ? '☀️ 오늘 출석 완료' : '💤 오늘 미출석'}
-                </span>
-              </div>
-            </div>
-
-            {/* 스탯 */}
-            <div className="grid grid-cols-3 gap-2 mb-5">
-              {[
-                { label: '누적 EXP',  value: player.exp.toLocaleString() },
-                { label: '이번 달',   value: player.month_exp.toLocaleString() },
-                { label: '연속 출석', value: player.attend_streak + '일' },
-              ].map(s => (
-                <div key={s.label} className="bg-stone-50 rounded-xl p-3 text-center">
-                  <div className="text-sm font-bold text-stone-800">{s.value}</div>
-                  <div className="text-xs text-stone-400 mt-0.5">{s.label}</div>
-                </div>
-              ))}
-            </div>
-
-            {/* EXP 바 */}
-            <div className="mb-5">
-              <div className="flex justify-between text-xs text-stone-400 mb-1.5">
-                <span>다음 전직까지</span>
-                <span>{pct}%</span>
-              </div>
-              <div className="h-2.5 bg-stone-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{ width: `${pct}%`, background: barColor }}
-                />
-              </div>
-              <p className="text-xs text-stone-400 text-right mt-1">
-                {next
-                  ? `${next.exp.toLocaleString()} EXP에서 전직 (${(next.exp - player.exp).toLocaleString()} 남음)`
-                  : '🌟 최고 레벨 달성!'}
-              </p>
-            </div>
-
-            {/* 칭호 */}
+        {/* 내 정보 탭 */}
+        {tab === 'info' && (
+          <div className="space-y-3">
+            {/* 랭킹 */}
             <div>
-              <p className="text-xs font-medium text-stone-400 mb-2">🏅 보유 칭호</p>
-              {player.icons && player.icons.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {player.icons.map((icon, i) => (
-                    <span key={i} className="text-xs px-3 py-1.5 bg-amber-50 text-amber-700 rounded-full border border-amber-200 font-medium">
-                      {icon}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-stone-400">아직 칭호가 없어요!</p>
-              )}
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">이번 달 EXP 랭킹</span>
+                <span className="text-xs text-stone-400">참고용</span>
+              </div>
+              <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+                {[...players].sort((a,b) => b.month_exp - a.month_exp).map((p, i) => {
+                  const medals = ['🥇','🥈','🥉','🏅']
+                  const plv = calcLevel(p.exp)
+                  const c = MEMBER_COLORS[p.name]
+                  return (
+                    <div key={p.name} className={`flex items-center gap-3 px-4 py-3 ${i < players.length-1 ? 'border-b border-stone-100' : ''} ${p.name === MEMBER ? 'bg-amber-50' : ''}`}>
+                      <span className="text-base">{medals[i] || '🏅'}</span>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${c?.bg} ${c?.text}`}>
+                        {p.name.slice(1)}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-stone-800">{p.name}</p>
+                        <p className="text-xs text-stone-400">{plv.name}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-stone-800">{p.month_exp.toLocaleString()}</p>
+                        <p className="text-xs text-stone-400">EXP</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* 프로젝트 */}
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">프로젝트</span>
+                <button onClick={() => setShowProjModal(true)} className="text-xs text-amber-600 font-medium">+ 프로젝트 추가</button>
+              </div>
+              <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+                {projects.length === 0 ? (
+                  <p className="text-xs text-stone-400 text-center py-6">프로젝트가 없어요</p>
+                ) : projects.map((p, i) => (
+                  <div key={p.id} className={`flex items-center justify-between px-4 py-3 ${i < projects.length-1 ? 'border-b border-stone-100' : ''}`}>
+                    <div>
+                      <p className="text-sm font-medium text-stone-800">{p.name}</p>
+                      {p.client && <p className="text-xs text-stone-400">{p.client}</p>}
+                    </div>
+                    <button onClick={() => deleteProject(p.id)} className="text-xs text-stone-300 hover:text-red-400">삭제</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 접근성 */}
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">접근성</span>
+                <button onClick={() => setShowAccModal(true)} className="text-xs text-amber-600 font-medium">+ 등록</button>
+              </div>
+              <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+                {accessibility.length === 0 ? (
+                  <p className="text-xs text-stone-400 text-center py-6">등록된 항목이 없어요</p>
+                ) : accessibility.map((a, i) => {
+                  const diff = getDiff(a.end_date)
+                  const isUrgent = diff !== null && diff <= 45 && a.inspection_status === '미신청'
+                  return (
+                    <div key={a.id} className={`flex items-center justify-between px-4 py-3 ${i < accessibility.length-1 ? 'border-b border-stone-100' : ''}`}>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-stone-800">{a.proj}</p>
+                          {isUrgent && <span className="text-xs text-red-500 font-medium">D-{diff}</span>}
+                        </div>
+                        {a.end_date && <p className="text-xs text-stone-400">만료일: {a.end_date.slice(0,10)}</p>}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={a.inspection_status}
+                          onChange={e => updateAccStatus(a.id, e.target.value)}
+                          className={`text-xs px-2 py-1 rounded-lg font-medium border-0 cursor-pointer
+                            ${a.inspection_status === '신청완료' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}
+                        >
+                          {['미신청','신청완료','신청불필요'].map(s => <option key={s}>{s}</option>)}
+                        </select>
+                        <button onClick={() => deleteAcc(a.id)} className="text-xs text-stone-300 hover:text-red-400">삭제</button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </div>
         )}
 
-        {/* 랭킹 */}
-        <div className="mb-4">
-          <h3 className="text-sm font-bold text-stone-600 mb-2 px-1">🏆 이번 달 랭킹</h3>
-          <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-            {[...players]
-              .sort((a, b) => b.month_exp - a.month_exp)
-              .map((p, i) => {
-                const medals = ['🥇', '🥈', '🥉', '🏅']
-                const plv = calcLevel(p.exp)
-                return (
-                  <div
-                    key={p.name}
-                    className={`flex items-center gap-3 px-4 py-3
-                      ${i < players.length - 1 ? 'border-b border-stone-100' : ''}
-                      ${p.name === selected ? 'bg-amber-50' : ''}`}
-                  >
-                    <span className="text-lg">{medals[i] || '🏅'}</span>
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold
-                      ${MEMBER_COLORS[p.name]?.bg} ${MEMBER_COLORS[p.name]?.text}`}>
-                      {p.name.slice(1)}
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-stone-800">{p.name}</p>
-                      <p className="text-xs text-stone-400">{plv.name}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-stone-800">{p.month_exp.toLocaleString()}</p>
-                      <p className="text-xs text-stone-400">EXP</p>
+        {/* 지난 업무 탭 */}
+        {tab === 'history' && (
+          <div>
+            <div className="flex gap-2 mb-3">
+              {[
+                { key: 'week',     label: '이번 주' },
+                { key: 'lastweek', label: '지난 주' },
+                { key: 'month',    label: '이번 달' },
+              ].map(f => (
+                <button
+                  key={f.key}
+                  onClick={() => setHistoryFilter(f.key as 'week' | 'lastweek' | 'month')}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all
+                    ${historyFilter === f.key ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-stone-500 border-stone-200'}`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            {historyTasks.length === 0 ? (
+              <div className="text-center py-16 text-stone-400 text-sm">
+                <div className="text-4xl mb-3">📂</div>
+                <p>해당 기간에 업무가 없어요</p>
+                <p className="text-xs mt-1 text-stone-300">개인 데이터 조회 — 팀 전체 데이터는 리포트 탭에서 확인</p>
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+                {historyTasks.map((t, i) => (
+                  <div key={t.id} className={`px-4 py-3 ${i < historyTasks.length-1 ? 'border-b border-stone-100' : ''}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium ${t.status === '완료' ? 'line-through text-stone-400' : 'text-stone-800'}`}>
+                          {t.proj}
+                        </p>
+                        {t.content && <p className="text-xs text-stone-400 truncate">{t.content}</p>}
+                        <div className="flex gap-2 text-xs text-stone-400 mt-0.5">
+                          {t.workload > 0 && <span>{formatWorkload(t.workload)}</span>}
+                          {t.end_date && <span>{t.end_date.slice(5).replace('-','/')}</span>}
+                        </div>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-lg font-medium shrink-0
+                        ${t.status === '완료' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                        {t.status}
+                      </span>
                     </div>
                   </div>
-                )
-              })}
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 칭호 탭 */}
+        {tab === 'titles' && (
+          <div>
+            {/* 획득한 칭호 */}
+            <div className="mb-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">획득한 칭호</span>
+                <span className="text-xs text-stone-400">{TITLES.filter(t => player && t.condition(player)).length}/{TITLES.length}</span>
+              </div>
+              <div className="space-y-2">
+                {TITLES.filter(t => player && t.condition(player)).map(t => (
+                  <div key={t.id} className="bg-white rounded-xl border border-stone-200 px-4 py-3 flex items-center gap-3">
+                    <span className="text-2xl">{t.icon}</span>
+                    <div>
+                      <p className="text-sm font-bold text-stone-800">{t.name}</p>
+                      <p className="text-xs text-stone-400">{t.desc}</p>
+                    </div>
+                  </div>
+                ))}
+                {TITLES.filter(t => player && t.condition(player)).length === 0 && (
+                  <p className="text-xs text-stone-400 text-center py-4">아직 획득한 칭호가 없어요</p>
+                )}
+              </div>
+            </div>
+
+            {/* 미획득 칭호 */}
+            <div>
+              <span className="text-xs font-bold text-stone-500 uppercase tracking-wide block mb-2">미획득</span>
+              <div className="space-y-2">
+                {TITLES.filter(t => !player || !t.condition(player)).map(t => (
+                  <div key={t.id} className="bg-white rounded-xl border border-stone-200 px-4 py-3 flex items-center gap-3 opacity-50">
+                    <span className="text-2xl grayscale">{t.icon}</span>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-stone-500">{t.name}</p>
+                      <p className="text-xs text-stone-400">{t.desc}</p>
+                    </div>
+                    <span className="text-xs text-stone-300">잠금</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 프로젝트 추가 모달 */}
+      {showProjModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center" onClick={() => setShowProjModal(false)}>
+          <div className="bg-white rounded-t-2xl p-5 w-full max-w-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-5">
+              <h2 className="text-base font-bold">프로젝트 추가</h2>
+              <button onClick={() => setShowProjModal(false)} className="text-2xl text-stone-400">×</button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-stone-500 block mb-1.5">프로젝트명</label>
+                <input className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm" placeholder="예) 사이버견본주택"
+                  value={projForm.name} onChange={e => setProjForm({...projForm, name: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-stone-500 block mb-1.5">고객사 (선택)</label>
+                <input className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm" placeholder="예) GS건설"
+                  value={projForm.client} onChange={e => setProjForm({...projForm, client: e.target.value})} />
+              </div>
+              <button onClick={addProject} className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm">추가하기</button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* 접근성 추가 모달 */}
+      {showAccModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center" onClick={() => setShowAccModal(false)}>
+          <div className="bg-white rounded-t-2xl p-5 w-full max-w-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-5">
+              <h2 className="text-base font-bold">웹 접근성 등록</h2>
+              <button onClick={() => setShowAccModal(false)} className="text-2xl text-stone-400">×</button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-stone-500 block mb-1.5">프로젝트명</label>
+                <input className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm" placeholder="예) 한국한의학연구원"
+                  value={accForm.proj} onChange={e => setAccForm({...accForm, proj: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-stone-500 block mb-1.5">인증 만료일</label>
+                <input type="date" className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
+                  value={accForm.end_date} onChange={e => setAccForm({...accForm, end_date: e.target.value})} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-stone-500 block mb-1.5">비고 (선택)</label>
+                <input className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm" placeholder="예) 기관 일정 조율 중"
+                  value={accForm.note} onChange={e => setAccForm({...accForm, note: e.target.value})} />
+              </div>
+              <button onClick={addAccessibility} className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm">등록하기</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 토스트 */}
       {toast && (
