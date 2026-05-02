@@ -133,17 +133,21 @@ export default function ProfilePage() {
   async function uploadAvatar(file: File) {
     if (!member) return
     const ext      = file.name.split('.').pop()
-    const fileName = `${member}.${ext}`
-
+    // 한글 파일명 대신 영문으로 변환
+    const memberEn: Record<string, string> = {
+      'TEAM_MEMBER_1': 'hs', 'TEAM_MEMBER_2': 'jy', 'TEAM_MEMBER_3': 'hh', 'TEAM_MEMBER_4': 'je'
+    }
+    const fileName = `${memberEn[member] || member}.${ext}`
+  
     const { error: uploadError } = await supabase.storage
       .from('avatars')
       .upload(fileName, file, { upsert: true })
-
+  
     if (uploadError) { showToastMsg('업로드 실패: ' + uploadError.message); return }
-
+  
     const { data } = supabase.storage.from('avatars').getPublicUrl(fileName)
-    const url = data.publicUrl + '?t=' + Date.now() // 캐시 방지
-
+    const url = data.publicUrl + '?t=' + Date.now()
+  
     await supabase.from('players').update({ avatar_url: url }).eq('name', member)
     showToastMsg('프로필 이미지 업데이트 완료!')
     loadAll()
