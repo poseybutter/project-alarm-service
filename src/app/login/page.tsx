@@ -1,8 +1,20 @@
 'use client'
 
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { signInWithGoogle } from '@/lib/auth'
+import { useAuth } from '@/components/AuthProvider'
 
 export default function LoginPage() {
+  const { member, loading } = useAuth()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (!loading && member) {
+      router.push('/')
+    }
+  }, [loading, member])
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-amber-50 to-orange-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-sm text-center">
