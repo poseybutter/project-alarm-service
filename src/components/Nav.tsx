@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { signOut } from '@/lib/auth'
+import { useAuth } from './AuthProvider'
 
 const NAV_ITEMS = [
   { href: '/',        icon: '🏠', label: '홈'    },
@@ -12,6 +14,11 @@ const NAV_ITEMS = [
 
 export default function Nav() {
   const pathname = usePathname()
+  const { member } = useAuth()
+
+  // 로그인 페이지에서는 Nav 숨기기
+  if (pathname === '/login') return null
+
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-stone-200 z-50">
       <div className="max-w-2xl mx-auto flex">
@@ -20,7 +27,7 @@ export default function Nav() {
             key={item.href}
             href={item.href}
             className={`flex-1 flex flex-col items-center py-2.5 gap-0.5 transition-colors
-              ${pathname === item.href || (item.href === '/tasks' && pathname === '/')
+              ${pathname === item.href
                 ? 'text-amber-600'
                 : 'text-stone-400'}`}
           >
