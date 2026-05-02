@@ -1,29 +1,33 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase, Task } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
+import { calcLevel, getNextLevel, expBar, attendanceCheck, LEVELS } from '@/lib/maple'
 import { awardExp } from '@/lib/maple'
 
-const MEMBERS = ['TEAM_MEMBER_1', 'TEAM_MEMBER_2', 'TEAM_MEMBER_3', 'TEAM_MEMBER_4']
-const MEMBER_COLORS: Record<string, string> = {
-  'TEAM_MEMBER_1': 'bg-purple-100 text-purple-700',
-  'TEAM_MEMBER_2': 'bg-green-100 text-green-700',
-  'TEAM_MEMBER_3': 'bg-amber-100 text-amber-700',
-  'TEAM_MEMBER_4': 'bg-orange-100 text-orange-700',
+const MEMBER = 'TEAM_MEMBER_4' // 추후 로그인으로 대체
+
+type Task = {
+  id: number
+  member: string
+  type: string
+  proj: string
+  content: string
+  status: string
+  priority: string | null
+  end_date: string | null
+  workload: number
 }
-const TYPE_COLORS: Record<string, string> = {
-  '프로젝트': 'bg-indigo-100 text-indigo-700',
-  '유지보수': 'bg-red-100 text-red-700',
-  '고도화': 'bg-green-100 text-green-700',
-  '접근성': 'bg-amber-100 text-amber-700',
-  '업무지원': 'bg-blue-100 text-blue-700',
-}
-const STATUS_COLORS: Record<string, string> = {
-  '완료': 'bg-green-100 text-green-700',
-  '진행중': 'bg-blue-100 text-blue-700',
-  '대기': 'bg-gray-100 text-gray-600',
-  '시작 전': 'bg-gray-100 text-gray-600',
-  '이슈 및 대기': 'bg-red-100 text-red-700',
+
+type Player = {
+  id: number
+  name: string
+  exp: number
+  month_exp: number
+  level: number
+  icons: string[]
+  attend_last: string | null
+  attend_streak: number
 }
 
 function getDiff(dateStr: string | null) {
@@ -34,345 +38,273 @@ function getDiff(dateStr: string | null) {
   return Math.round((d.getTime() - n.getTime()) / (1000*60*60*24))
 }
 
-function getWeekLabel() {
-  const now = new Date()
-  const day = now.getDay()
-  const mon = new Date(now)
-  mon.setDate(now.getDate() - ((day+6)%7))
-  const fri = new Date(mon)
-  fri.setDate(mon.getDate()+4)
-  const fmt = (d: Date) => `${d.getMonth()+1}/${d.getDate()}`
-  return `${now.getFullYear()}년 ${now.getMonth()+1}월 · ${fmt(mon)}~${fmt(fri)}`
+const TYPE_COLORS: Record<string, string> = {
+  '프로젝트': 'bg-violet-100 text-violet-700',
+  '유지보수': 'bg-red-100 text-red-700',
+  '고도화':   'bg-green-100 text-green-700',
+  '접근성':   'bg-sky-100 text-sky-700',
+  '업무지원': 'bg-blue-100 text-blue-700',
 }
 
-type Project = { id: number; name: string; member: string }
+const BAR_COLORS = ['#4CAF50','#2196F3','#9C27B0','#FF5722','#FF9800','#F44336','#FFD700','#FF69B4']
 
-export default function Home() {
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [projects, setProjects] = useState<Project[]>([])
-  const [filter, setFilter] = useState('all')
+export default function HomePage() {
+  const [player, setPlayer]   = useState<Player | null>(null)
+  const [tasks, setTasks]     = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
-  const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState({
-    member: '', type: '', proj: '', content: '',
-    priority: '', start_date: '', end_date: ''
-  })
+  const [toast, setToast]     = useState('')
 
   useEffect(() => {
-    loadTasks()
-    loadProjects()
+    loadData()
   }, [])
 
-  async function loadTasks() {
+  async function loadData() {
     setLoading(true)
-    const { data } = await supabase
-      .from('tasks')
-      .select('*')
-      .order('created_at', { ascending: false })
-    setTasks(data || [])
+    const [{ data: players }, { data: taskData }] = await Promise.all([
+      supabase.from('players').select('*').eq('name', MEMBER).single(),
+      supabase.from('tasks').select('*').eq('member', MEMBER).neq('status', '완료'),
+    ])
+    setPlayer(players)
+    setTasks(taskData || [])
     setLoading(false)
   }
 
-  async function loadProjects() {
-    const { data } = await supabase
-      .from('projects')
-      .select('*')
-      .order('name')
-    setProjects(data || [])
+  function showToastMsg(msg: string) {
+    setToast(msg)
+    setTimeout(() => setToast(''), 3000)
   }
 
-  const myProjects = projects.filter(p => p.member === form.member)
-
-  async function addTask() {
-    if (!form.member || !form.proj) return alert('담당자와 프로젝트명은 필수예요')
-    await supabase.from('tasks').insert([{
-      ...form,
-      status: '대기',
-      start_date: form.start_date || null,
-      end_date: form.end_date || null,
-    }])
-    setShowModal(false)
-    setForm({ member:'', type:'', proj:'', content:'', priority:'', start_date:'', end_date:'' })
-    loadTasks()
-  }
-
-  async function updateStatus(id: number, status: string, task: Task) {
-    const prev = task.status
-    await supabase.from('tasks').update({ status }).eq('id', id)
-  
-    // 완료 처리 시 EXP 적립
-    if (status === '완료' && prev !== '완료') {
-      const type = task.priority === '긴급' ? 'URGENT' : 'COMPLETE'
-      const result = await awardExp(task.member, type)
-      if (result?.levelUp) {
-        alert(`🎊 ${task.member}님 레벨업! ${result.newLv.name}`)
-      }
+  async function handleAttend() {
+    if (!player) return
+    const today = new Date().toISOString().slice(0, 10)
+    if (player.attend_last === today) {
+      showToastMsg('오늘은 이미 출석했어요!')
+      return
     }
-    // 완료 취소 시 EXP 차감
-    if (prev === '완료' && status !== '완료') {
-      const type = task.priority === '긴급' ? 'URGENT' : 'COMPLETE'
-      await awardExp(task.member, type, false)
-    }
-  
-    loadTasks()
+    const result = await attendanceCheck(MEMBER)
+    if (!result.success) { showToastMsg(result.message || '오류'); return }
+    showToastMsg(
+      result.levelUp
+        ? `🎊 레벨업! ${result.newLv?.name}`
+        : `☀️ 출석 완료! +${result.exp} EXP · ${result.streak}일 연속`
+    )
+    loadData()
   }
 
-  async function deleteTask(id: number) {
-    if (!confirm('삭제할까요?')) return
-    await supabase.from('tasks').delete().eq('id', id)
-    loadTasks()
+  async function completeTask(task: Task) {
+    await supabase.from('tasks').update({ status: '완료' }).eq('id', task.id)
+    const type = task.priority === '긴급' ? 'URGENT' : 'COMPLETE'
+    const result = await awardExp(task.member, type)
+    showToastMsg(
+      result?.levelUp
+        ? `🎊 레벨업! ${result.newLv?.name}`
+        : `⚔️ 완료! +${result?.amount} EXP`
+    )
+    loadData()
   }
 
-  const filtered = tasks.filter(t => {
-    if (filter === 'all') return true
-    if (filter === 'urgent') {
+  const lv      = player ? calcLevel(player.exp) : LEVELS[0]
+  const next    = player ? getNextLevel(player.exp) : null
+  const pct     = player ? expBar(player.exp) : 0
+  const today   = new Date().toISOString().slice(0, 10)
+  const attended = player?.attend_last === today
+  const barColor = BAR_COLORS[Math.min((lv.level || 1) - 1, BAR_COLORS.length - 1)]
+
+  // 오늘의 할 일 (마감일 있는 것 우선)
+  const todayTasks = tasks
+    .filter(t => {
       const d = getDiff(t.end_date)
-      return d !== null && d <= 7 && t.status !== '완료'
-    }
-    if (MEMBERS.includes(filter)) return t.member === filter
-    return t.status === filter
+      return d !== null && d <= 7
+    })
+    .sort((a, b) => {
+      const da = getDiff(a.end_date) ?? 99
+      const db = getDiff(b.end_date) ?? 99
+      return da - db
+    })
+
+  // 마감 임박
+  const urgentTasks = tasks.filter(t => {
+    const d = getDiff(t.end_date)
+    return d !== null && d <= 3
   })
 
   const stats = {
-    total: tasks.length,
-    done: tasks.filter(t => t.status === '완료').length,
-    doing: tasks.filter(t => t.status === '진행중').length,
-    urgent: tasks.filter(t => {
-      const d = getDiff(t.end_date)
-      return d !== null && d <= 7 && t.status !== '완료'
-    }).length
+    doing : tasks.filter(t => t.status === '진행중').length,
+    done  : 0,
+    exp   : player?.month_exp || 0,
   }
 
-  const grouped = (filter === 'all' || MEMBERS.includes(filter))
-    ? MEMBERS.filter(m => filter === 'all' || m === filter)
-        .reduce((acc, m) => {
-          const mt = filtered.filter(t => t.member === m)
-          if (mt.length > 0) acc[m] = mt
-          return acc
-        }, {} as Record<string, Task[]>)
-    : { '_': filtered }
-
   return (
-    <div className="min-h-screen bg-stone-50">
+    <div className="min-h-screen bg-[#f7f6f3]">
+      {/* 헤더 */}
       <div className="bg-white border-b border-stone-200 px-4 py-3 sticky top-0 z-10">
         <div className="max-w-2xl mx-auto flex justify-between items-center">
-          <div>
-            <h1 className="text-base font-bold text-stone-800">퍼블팀 업무 현황</h1>
-            <p className="text-xs text-stone-400 mt-0.5">{getWeekLabel()}</p>
+          <h1 className="text-base font-bold text-stone-900">UD2팀 업무</h1>
+          <div className="flex items-center gap-2">
+            <button className="text-stone-400 text-xl">🔔</button>
+            <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-sm font-bold text-amber-700">
+              {MEMBER.slice(1)}
+            </div>
           </div>
-          <button
-            onClick={() => setShowModal(true)}
-            className="bg-amber-600 text-white text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-1"
-          >
-            <span className="text-lg leading-none">+</span> 업무 추가
-          </button>
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto">
-        <div className="flex gap-2 px-4 py-3 overflow-x-auto scrollbar-hide bg-white border-b border-stone-200">
-          {['all','TEAM_MEMBER_1','TEAM_MEMBER_2','TEAM_MEMBER_3','TEAM_MEMBER_4','진행중','완료','urgent'].map(f => (
+      <div className="max-w-2xl mx-auto px-4 pt-3 pb-24">
+        {/* 프로필 카드 */}
+        <div className="bg-white rounded-2xl border border-stone-200 p-4 mb-3">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-sm font-bold text-amber-700 shrink-0">
+              {MEMBER.slice(1)}
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-stone-900">{MEMBER}</span>
+                <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
+                  {lv.name}
+                </span>
+              </div>
+              <button
+                onClick={handleAttend}
+                disabled={attended}
+                className={`text-xs mt-1 px-2 py-0.5 rounded-full font-medium transition-all
+                  ${attended
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-amber-500 text-white'}`}
+              >
+                {attended ? '✅ 첫 완료' : '☀️ 출석 체크'}
+              </button>
+            </div>
+            <div className="text-right text-xs text-stone-400">
+              <div>🔥 {player?.attend_streak || 0}일 연속</div>
+              <div>이달 {stats.exp.toLocaleString()} EXP</div>
+            </div>
+          </div>
+
+          {/* EXP 바 */}
+          <div>
+            <div className="flex justify-between text-xs text-stone-400 mb-1">
+              <span>{player?.exp.toLocaleString() || 0} EXP</span>
+              <span>다음 레벨까지 {next ? (next.exp - (player?.exp || 0)).toLocaleString() : 0} EXP</span>
+            </div>
+            <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{ width: `${pct}%`, background: barColor }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* 스탯 */}
+        <div className="grid grid-cols-4 gap-2 mb-3">
+          {[
+            { icon: '☀️', label: '출석체크', value: attended ? '완료' : '미완료', onClick: handleAttend, highlight: !attended },
+            { icon: '⚡', label: '진행 중',  value: stats.doing, onClick: null, highlight: false },
+            { icon: '✅', label: '완료',     value: stats.done,  onClick: null, highlight: false },
+            { icon: '📊', label: '월 EXP',   value: stats.exp,   onClick: null, highlight: false },
+          ].map(s => (
             <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap border transition-all
-                ${filter === f
-                  ? 'bg-amber-600 text-white border-amber-600'
-                  : 'bg-stone-50 text-stone-500 border-stone-200'}`}
+              key={s.label}
+              onClick={s.onClick || undefined}
+              className={`rounded-xl border p-2.5 text-center transition-all
+                ${s.highlight
+                  ? 'bg-amber-500 border-amber-500 text-white'
+                  : 'bg-white border-stone-200 text-stone-800'}`}
             >
-              {f === 'all' ? '전체' : f === 'urgent' ? '마감임박' : f}
+              <div className="text-lg">{s.icon}</div>
+              <div className="text-sm font-bold mt-0.5">{s.value}</div>
+              <div className={`text-xs mt-0.5 ${s.highlight ? 'text-amber-100' : 'text-stone-400'}`}>{s.label}</div>
             </button>
           ))}
         </div>
 
-        <div className="grid grid-cols-4 gap-2 px-4 py-3">
-          {[
-            { n: stats.total,  l: '전체' },
-            { n: stats.done,   l: '완료' },
-            { n: stats.doing,  l: '진행중' },
-            { n: stats.urgent, l: '마감임박' },
-          ].map(s => (
-            <div key={s.l} className="bg-white rounded-xl border border-stone-200 p-3 text-center">
-              <div className="text-xl font-bold text-stone-800">{s.n}</div>
-              <div className="text-xs text-stone-400 mt-0.5">{s.l}</div>
+        {/* 오늘의 할일 */}
+        {todayTasks.length > 0 && (
+          <div className="mb-3">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">오늘의 할일</span>
+              <span className="text-xs text-amber-600">완료 시 EXP 지급</span>
             </div>
-          ))}
-        </div>
-
-        {loading ? (
-          <div className="text-center py-16 text-stone-400 text-sm">불러오는 중...</div>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-16 text-stone-400 text-sm">업무가 없어요</div>
-        ) : (
-          Object.entries(grouped).map(([member, memberTasks]) => (
-            <div key={member} className="px-4 mb-4">
-              {member !== '_' && (
-                <div className="flex justify-between items-center py-2">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${MEMBER_COLORS[member]}`}>
-                      {member.slice(1)}
-                    </div>
-                    <span className="text-sm font-bold text-stone-800">{member}</span>
-                  </div>
-                  <span className="text-xs text-stone-400">{memberTasks.length}건</span>
-                </div>
-              )}
-              <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                {memberTasks.map((t, i) => {
-                  const diff = getDiff(t.end_date)
-                  const isUrgent = diff !== null && diff <= 7 && t.status !== '완료'
-                  const isDone = t.status === '완료'
-                  return (
-                    <div
-                      key={t.id}
-                      className={`flex items-start gap-3 px-4 py-3
-                        ${i < memberTasks.length-1 ? 'border-b border-stone-100' : ''}
-                        ${isDone ? 'opacity-50' : ''}`}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          {t.type && (
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${TYPE_COLORS[t.type] || 'bg-gray-100 text-gray-600'}`}>
-                              {t.type}
-                            </span>
-                          )}
-                          <span className={`text-sm font-medium truncate ${isDone ? 'line-through text-stone-400' : 'text-stone-800'}`}>
-                            {t.proj}
+            <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+              {todayTasks.map((t, i) => {
+                const diff = getDiff(t.end_date)
+                return (
+                  <div
+                    key={t.id}
+                    className={`flex items-center gap-3 px-4 py-3
+                      ${i < todayTasks.length-1 ? 'border-b border-stone-100' : ''}`}
+                  >
+                    <button
+                      onClick={() => completeTask(t)}
+                      className="w-5 h-5 rounded-full border-2 border-stone-300 shrink-0 hover:border-amber-500 transition-colors"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        {t.type && (
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${TYPE_COLORS[t.type] || 'bg-gray-100 text-gray-600'}`}>
+                            {t.type}
                           </span>
+                        )}
+                        <span className="text-sm font-medium text-stone-800 truncate">{t.proj}</span>
+                      </div>
+                      {t.content && <p className="text-xs text-stone-400 truncate">{t.content}</p>}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-xs text-green-600 font-medium">+10 EXP</div>
+                      {t.end_date && (
+                        <div className={`text-xs ${diff !== null && diff <= 3 ? 'text-red-500 font-medium' : 'text-stone-400'}`}>
+                          {t.end_date.slice(5).replace('-','/')} D-{diff}
                         </div>
-                        {t.content && (
-                          <p className="text-xs text-stone-400 truncate">{t.content}</p>
-                        )}
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5 shrink-0">
-                        <select
-                          value={t.status}
-                          onChange={e => updateStatus(t.id, e.target.value, t)}
-                          className={`text-xs px-2 py-0.5 rounded-full font-medium border-0 cursor-pointer ${STATUS_COLORS[t.status] || 'bg-gray-100 text-gray-600'}`}
-                        >
-                          {['대기','시작 전','진행중','이슈 및 대기','완료'].map(s => (
-                            <option key={s} value={s}>{s}</option>
-                          ))}
-                        </select>
-                        {t.end_date && (
-                          <span className={`text-xs ${isUrgent ? 'text-red-500 font-medium' : 'text-stone-400'}`}>
-                            {t.end_date.slice(5).replace('-','/')}
-                            {isUrgent && diff !== null && diff >= 0 && ` D-${diff}`}
-                            {diff !== null && diff < 0 && ` D+${Math.abs(diff)}`}
-                          </span>
-                        )}
-                        <button
-                          onClick={() => deleteTask(t.id)}
-                          className="text-xs text-stone-300 hover:text-red-400 transition-colors"
-                        >삭제</button>
-                      </div>
+                      )}
                     </div>
-                  )
-                })}
-              </div>
+                  </div>
+                )
+              })}
             </div>
-          ))
+          </div>
+        )}
+
+        {/* 마감 임박 */}
+        {urgentTasks.length > 0 && (
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">마감 임박</span>
+              <span className="text-xs text-red-500 font-medium">{urgentTasks.length}건</span>
+            </div>
+            <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+              {urgentTasks.map((t, i) => {
+                const diff = getDiff(t.end_date)
+                return (
+                  <div
+                    key={t.id}
+                    className={`flex items-center gap-3 px-4 py-3
+                      ${i < urgentTasks.length-1 ? 'border-b border-stone-100' : ''}`}
+                  >
+                    <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-stone-800 truncate">{t.proj}</p>
+                      {t.content && <p className="text-xs text-stone-400 truncate">{t.content}</p>}
+                    </div>
+                    <span className="text-xs text-red-500 font-medium shrink-0">D-{diff}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 데이터 없을 때 */}
+        {!loading && todayTasks.length === 0 && urgentTasks.length === 0 && (
+          <div className="text-center py-16 text-stone-400 text-sm">
+            🎉 오늘 마감 업무가 없어요!
+          </div>
         )}
       </div>
 
-      {showModal && (
-        <div
-          className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
-          onClick={() => setShowModal(false)}
-        >
-          <div
-            className="bg-white rounded-t-2xl p-5 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-center mb-5">
-              <h2 className="text-base font-bold">업무 추가</h2>
-              <button onClick={() => setShowModal(false)} className="text-2xl text-stone-400 leading-none">×</button>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs font-medium text-stone-500 block mb-1.5">담당자</label>
-                <select
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white"
-                  value={form.member}
-                  onChange={e => setForm({...form, member: e.target.value, proj: ''})}
-                >
-                  <option value="">선택</option>
-                  {MEMBERS.map(m => <option key={m}>{m}</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-stone-500 block mb-1.5">구분</label>
-                  <select
-                    className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white"
-                    value={form.type}
-                    onChange={e => setForm({...form, type: e.target.value})}
-                  >
-                    <option value="">선택</option>
-                    {['프로젝트','유지보수','고도화','접근성','업무지원'].map(t => <option key={t}>{t}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-stone-500 block mb-1.5">우선순위</label>
-                  <select
-                    className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white"
-                    value={form.priority}
-                    onChange={e => setForm({...form, priority: e.target.value})}
-                  >
-                    <option value="">선택</option>
-                    {['긴급','높음','보통','낮음'].map(p => <option key={p}>{p}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-stone-500 block mb-1.5">프로젝트명</label>
-                <select
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white"
-                  value={form.proj}
-                  onChange={e => setForm({...form, proj: e.target.value})}
-                  disabled={!form.member}
-                >
-                  <option value="">{form.member ? '선택' : '담당자를 먼저 선택해주세요'}</option>
-                  {myProjects.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-stone-500 block mb-1.5">업무 내용</label>
-                <textarea
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm h-20 resize-none"
-                  placeholder="예) 메인 퍼블리싱 작업"
-                  value={form.content}
-                  onChange={e => setForm({...form, content: e.target.value})}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-stone-500 block mb-1.5">시작일</label>
-                  <input
-                    type="date"
-                    className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                    value={form.start_date}
-                    onChange={e => setForm({...form, start_date: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-stone-500 block mb-1.5">종료일</label>
-                  <input
-                    type="date"
-                    className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                    value={form.end_date}
-                    onChange={e => setForm({...form, end_date: e.target.value})}
-                  />
-                </div>
-              </div>
-              <button
-                onClick={addTask}
-                className="w-full bg-amber-600 text-white font-bold py-3.5 rounded-xl text-sm mt-2"
-              >
-                등록하기
-              </button>
-            </div>
-          </div>
+      {/* 토스트 */}
+      {toast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-stone-800 text-white text-sm px-5 py-2.5 rounded-full shadow-lg z-50 whitespace-nowrap">
+          {toast}
         </div>
       )}
     </div>
