@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { calcLevel, getNextLevel, expBar, attendanceCheck, LEVELS } from '@/lib/maple'
 import { useAuth } from '@/components/AuthProvider'
@@ -127,6 +127,27 @@ export default function ProfilePage() {
     setTimeout(() => setToast(''), 3000)
   }
 
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  async function uploadAvatar(file: File) {
+    if (!member) return
+    const ext      = file.name.split('.').pop()
+    const fileName = `${member}.${ext}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(fileName, file, { upsert: true })
+
+    if (uploadError) { showToastMsg('업로드 실패: ' + uploadError.message); return }
+
+    const { data } = supabase.storage.from('avatars').getPublicUrl(fileName)
+    const url = data.publicUrl + '?t=' + Date.now() // 캐시 방지
+
+    await supabase.from('players').update({ avatar_url: url }).eq('name', member)
+    showToastMsg('프로필 이미지 업데이트 완료!')
+    loadAll()
+  }
+
   async function handleAttend() {
     if (!member) return
     const result = await attendanceCheck(member)
@@ -224,8 +245,44 @@ export default function ProfilePage() {
         <div className="max-w-2xl mx-auto px-4 pt-4 pb-24">
           {/* 프로필 카드 */}
           <div className="bg-white rounded-2xl border border-stone-200 p-5 mb-4 text-center">
-            <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center text-2xl font-bold text-amber-700 mx-auto mb-3">
-              {member.slice(1)}
+            {/* 아바타 */}
+            <div className="relative w-16 h-16 mx-auto mb-3">
+              {player?.avatar_url ? (
+                <img
+                  src={player.avatar_url}
+                  alt={member}
+                  className="w-16 h-16 rounded-full object-cover border-2 border-amber-200 cursor-pointer"
+                  onClick={() => fileInputRef.current?.click()}
+                />
+              ) : (
+                <div
+                  className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center text-2xl font-bold text-amber-700 cursor-pointer border-2 border-amber-200"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {member.slice(1)}
+                </div>
+              )}
+              {/* 카메라 아이콘 */}
+              <div
+                className="absolute bottom-0 right-0 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center cursor-pointer"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="white">
+                  <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/>
+                  <path d="M9 3L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2h-3.17L15 3H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
+                </svg>
+              </div>
+              {/* 숨겨진 파일 input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={e => {
+                  const file = e.target.files?.[0]
+                  if (file) uploadAvatar(file)
+                }}
+              />
             </div>
             <h2 className="text-lg font-bold text-stone-900 mb-1">{member}</h2>
             <div className="inline-flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium mb-3">
