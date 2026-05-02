@@ -60,12 +60,16 @@ export default function HomePage() {
 
   async function loadData() {
     setLoading(true)
-    const [{ data: players }, { data: taskData }] = await Promise.all([
+    const today = new Date().toISOString().slice(0, 10)
+    const [{ data: players }, { data: taskData }, { data: doneTasks }] = await Promise.all([
       supabase.from('players').select('*').eq('name', MEMBER).single(),
       supabase.from('tasks').select('*').eq('member', MEMBER).neq('status', '완료'),
+      supabase.from('tasks').select('id').eq('member', MEMBER).eq('status', '완료')
+        .gte('created_at', today),
     ])
     setPlayer(players)
     setTasks(taskData || [])
+    setStats(prev => ({ ...prev, done: doneTasks?.length || 0 }))
     setLoading(false)
   }
 
@@ -253,7 +257,7 @@ export default function HomePage() {
                       <div className="text-xs text-green-600 font-medium">+10 EXP</div>
                       {t.end_date && (
                         <div className={`text-xs ${diff !== null && diff <= 3 ? 'text-red-500 font-medium' : 'text-stone-400'}`}>
-                          {t.end_date.slice(5).replace('-','/')} D-{diff}
+                          {t.end_date.slice(5).replace('-','/')} {diff !== null && diff < 0 ? `D+${Math.abs(diff)}` : `D-${diff}`}
                         </div>
                       )}
                     </div>
