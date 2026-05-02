@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase, Task } from '@/lib/supabase'
 import { awardExp } from '@/lib/maple'
 import AuthGuard from '@/components/AuthGuard'
+import UserMenu from '@/components/UserMenu'
 
 const MEMBERS = ['TEAM_MEMBER_1', 'TEAM_MEMBER_2', 'TEAM_MEMBER_3', 'TEAM_MEMBER_4']
 
@@ -181,6 +182,16 @@ export default function TasksPage() {
             <div>
               <h1 className="text-base font-bold text-stone-900">업무 관리</h1>
               <p className="text-xs text-stone-400 mt-0.5">{getWeekLabel()}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button className="text-stone-400 text-xl relative">
+                  🔔
+                  {/* 알림 배지 (추후 실제 알림 수로 교체) */}
+                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+                      1
+                  </span>
+              </button>
+              <UserMenu />
             </div>
             <button
               onClick={() => setShowModal(true)}
