@@ -130,6 +130,8 @@ export default function ProfilePage() {
   const [loading, setLoading]   = useState(true)
   const [toast, setToast]       = useState('')
   const [historyFilter, setHistoryFilter] = useState<'week' | 'lastweek' | 'month'>('week')
+  const [historyProjFilter, setHistoryProjFilter] = useState('')
+  const [historyStatusFilter, setHistoryStatusFilter] = useState('')
   const [showProjModal, setShowProjModal] = useState(false)
   const [showAccModal, setShowAccModal]   = useState(false)
   const [projForm, setProjForm] = useState({ name: '', client: '' })
@@ -251,17 +253,26 @@ export default function ProfilePage() {
   const getHistoryTasks = () => {
     const start = new Date(now)
     const end   = new Date(now)
+    end.setHours(23,59,59,999)
+  
     if (historyFilter === 'week') {
-      start.setDate(now.getDate() - now.getDay() + 1)
+      start.setDate(now.getDate() - ((now.getDay()+6)%7))
+      start.setHours(0,0,0,0)
     } else if (historyFilter === 'lastweek') {
-      start.setDate(now.getDate() - now.getDay() - 6)
-      end.setDate(now.getDate() - now.getDay())
+      start.setDate(now.getDate() - ((now.getDay()+6)%7) - 7)
+      start.setHours(0,0,0,0)
+      end.setDate(now.getDate() - ((now.getDay()+6)%7) - 1)
     } else {
       start.setDate(1)
+      start.setHours(0,0,0,0)
     }
+  
     return tasks.filter(t => {
       const d = new Date(t.created_at)
-      return d >= start && d <= end
+      if (d < start || d > end) return false
+      if (historyProjFilter   && t.proj   !== historyProjFilter)   return false
+      if (historyStatusFilter && t.status !== historyStatusFilter)  return false
+      return true
     })
   }
 
@@ -486,6 +497,7 @@ export default function ProfilePage() {
           {/* 지난 업무 탭 */}
           {tab === 'history' && (
             <div>
+              {/* 기간 필터 */}
               <div className="flex gap-2 mb-3">
                 {[
                   { key: 'week',     label: '이번 주' },
@@ -496,17 +508,60 @@ export default function ProfilePage() {
                     key={f.key}
                     onClick={() => setHistoryFilter(f.key as 'week' | 'lastweek' | 'month')}
                     className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all
-                      ${historyFilter === f.key ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-stone-500 border-stone-200'}`}
+                      ${historyFilter === f.key
+                        ? 'bg-amber-500 text-white border-amber-500'
+                        : 'bg-white text-stone-500 border-stone-200'}`}
                   >
                     {f.label}
                   </button>
                 ))}
               </div>
+
+              {/* 프로젝트/상태 필터 */}
+              <div className="flex gap-2 mb-3">
+                <select
+                  className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
+                  value={historyProjFilter}
+                  onChange={e => setHistoryProjFilter(e.target.value)}
+                >
+                  <option value="">전체 프로젝트</option>
+                  {[...new Set(tasks.map(t => t.proj).filter(Boolean))].map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+                <select
+                  className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
+                  value={historyStatusFilter}
+                  onChange={e => setHistoryStatusFilter(e.target.value)}
+                >
+                  <option value="">전체 상태</option>
+                  {['대기','시작 전','진행중','이슈 및 대기','완료'].map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 통계 */}
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                {[
+                  { n: historyTasks.length,                                    l: '전체' },
+                  { n: historyTasks.filter(t => t.status === '완료').length,   l: '완료', green: true },
+                  { n: historyTasks.reduce((s, t) => s + (t.workload||0), 0), l: '총 공수', amber: true, fmt: true },
+                ].map(s => (
+                  <div key={s.l} className="bg-white rounded-xl border border-stone-200 p-3 text-center">
+                    <div className={`text-lg font-bold ${s.green ? 'text-green-600' : s.amber ? 'text-amber-600' : 'text-stone-800'}`}>
+                      {s.fmt ? formatWorkload(s.n) || '-' : s.n}
+                    </div>
+                    <div className="text-xs text-stone-400 mt-0.5">{s.l}</div>
+                  </div>
+                ))}
+              </div>
+
               {historyTasks.length === 0 ? (
-                <div className="text-center py-16 text-stone-400 text-sm">
+                <div className="text-center py-12 text-stone-400 text-sm">
                   <div className="text-4xl mb-3">📂</div>
                   <p>해당 기간에 업무가 없어요</p>
-                  <p className="text-xs mt-1 text-stone-300">개인 데이터 조회 — 팀 전체 데이터는 리포트 탭에서 확인</p>
+                  <p className="text-xs mt-1 text-stone-300">개인 데이터 조회 — 팀 전체는 리포트에서 확인</p>
                 </div>
               ) : (
                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
@@ -514,17 +569,41 @@ export default function ProfilePage() {
                     <div key={t.id} className={`px-4 py-3 ${i < historyTasks.length-1 ? 'border-b border-stone-100' : ''}`}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-medium ${t.status === '완료' ? 'line-through text-stone-400' : 'text-stone-800'}`}>
-                            {t.proj}
-                          </p>
+                          <div className="flex items-center gap-2 mb-0.5">
+                            {t.type && (
+                              <span className={`text-xs px-1.5 py-0.5 rounded font-medium shrink-0
+                                ${{
+                                  '프로젝트': 'bg-violet-100 text-violet-700',
+                                  '유지보수': 'bg-red-100 text-red-700',
+                                  '고도화':   'bg-green-100 text-green-700',
+                                  '접근성':   'bg-sky-100 text-sky-700',
+                                  '업무지원': 'bg-blue-100 text-blue-700',
+                                }[t.type] || 'bg-gray-100 text-gray-600'}`}>
+                                {t.type}
+                              </span>
+                            )}
+                            <p className={`text-sm font-medium truncate
+                              ${t.status === '완료' ? 'line-through text-stone-400' : 'text-stone-800'}`}>
+                              {t.proj}
+                            </p>
+                          </div>
                           {t.content && <p className="text-xs text-stone-400 truncate">{t.content}</p>}
                           <div className="flex gap-2 text-xs text-stone-400 mt-0.5">
                             {t.workload > 0 && <span>{formatWorkload(t.workload)}</span>}
-                            {t.end_date && <span>{t.end_date.slice(5).replace('-','/')}</span>}
+                            {t.start_date && t.end_date && (
+                              <span>{t.start_date.slice(5).replace('-','/')} ~ {t.end_date.slice(5).replace('-','/')}</span>
+                            )}
+                            {!t.start_date && t.end_date && (
+                              <span>~{t.end_date.slice(5).replace('-','/')}</span>
+                            )}
                           </div>
                         </div>
                         <span className={`text-xs px-2 py-0.5 rounded-lg font-medium shrink-0
-                          ${t.status === '완료' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                          ${{
+                            '완료':         'bg-green-100 text-green-700',
+                            '진행중':       'bg-blue-100 text-blue-700',
+                            '이슈 및 대기': 'bg-red-100 text-red-700',
+                          }[t.status] || 'bg-gray-100 text-gray-600'}`}>
                           {t.status}
                         </span>
                       </div>
