@@ -539,20 +539,52 @@ export default function ProfilePage() {
 
               {/* 날짜 피커 */}
               {showDatePicker && (
-                <div className="bg-white rounded-xl border border-stone-200 p-3 mb-3 overflow-x-auto">
-                  <DayPicker
-                    mode="range"
-                    selected={dateRange}
-                    onSelect={(range) => {
-                      setDateRange(range)
-                      if (range?.from && range?.to) setShowDatePicker(false)
-                    }}
-                    locale={ko}
-                    styles={{
-                      root: { fontSize: '12px' },
-                      caption: { fontSize: '13px' },
-                    }}
-                  />
+                <div className="bg-white rounded-xl border border-stone-200 mb-3 overflow-hidden">
+                  <div className="px-4 pt-3 pb-1 border-b border-stone-100">
+                    <p className="text-xs font-medium text-stone-500">
+                      {!dateRange?.from
+                        ? '시작일을 선택해주세요'
+                        : !dateRange?.to
+                        ? '종료일을 선택해주세요'
+                        : `${dateRange.from.getMonth()+1}/${dateRange.from.getDate()} ~ ${dateRange.to.getMonth()+1}/${dateRange.to.getDate()}`}
+                    </p>
+                  </div>
+                  <div className="flex justify-center p-2">
+                    <DayPicker
+                      mode="range"
+                      selected={dateRange}
+                      onSelect={(range) => {
+                        setDateRange(range)
+                        // 시작일과 종료일 모두 선택됐을 때만 닫기
+                        if (range?.from && range?.to) {
+                          setTimeout(() => setShowDatePicker(false), 300)
+                        }
+                      }}
+                      locale={ko}
+                      toDate={new Date()}
+                      footer={
+                        dateRange?.from && !dateRange?.to ? (
+                          <p className="text-xs text-center text-stone-400 pb-2">종료일을 선택해주세요</p>
+                        ) : null
+                      }
+                    />
+                  </div>
+                  {dateRange?.from && (
+                    <div className="px-4 pb-3 flex gap-2">
+                      <button
+                        onClick={() => { setDateRange(undefined) }}
+                        className="flex-1 py-2 text-xs border border-stone-200 rounded-lg text-stone-500"
+                      >
+                        초기화
+                      </button>
+                      <button
+                        onClick={() => setShowDatePicker(false)}
+                        className="flex-1 py-2 text-xs bg-amber-500 text-white rounded-lg font-medium"
+                      >
+                        확인
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
