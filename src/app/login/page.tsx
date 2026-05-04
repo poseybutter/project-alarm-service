@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { signInWithGoogle } from '@/lib/auth'
 import { useAuth } from '@/components/AuthProvider'
@@ -8,10 +8,15 @@ import { useAuth } from '@/components/AuthProvider'
 export default function LoginPage() {
   const { member, loading } = useAuth()
   const router = useRouter()
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!loading && member) {
-      router.push('/')
+    if (!loading && member) router.push('/')
+
+    // URL 에러 파라미터 확인
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('error') === 'unauthorized') {
+      setError('허가된 UD2팀 계정만 접근 가능합니다.')
     }
   }, [loading, member])
 
@@ -24,6 +29,13 @@ export default function LoginPage() {
           업무 입력 → 자동 취합 → 주간 브리핑<br />
           UD2팀 전용 업무 툴
         </p>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-600 text-xs px-4 py-2.5 rounded-xl mb-4">
+            {error}
+          </div>
+        )}
+
         <button
           onClick={signInWithGoogle}
           className="w-full flex items-center justify-center gap-3 bg-white border border-stone-200 rounded-xl px-4 py-3 text-sm font-medium text-stone-700 hover:bg-stone-50 transition-all shadow-sm"
