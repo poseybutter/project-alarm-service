@@ -171,12 +171,17 @@ export default function TasksPage() {
     const prev = task.status
     await supabase.from('tasks').update({ status }).eq('id', id)
     if (status === '완료' && prev !== '완료') {
-      const type = task.priority === '긴급' ? 'URGENT' : 'COMPLETE'
-      const result = await awardExp(task.member, type)
+      const type     = task.priority === '긴급' ? 'URGENT' : 'COMPLETE'
+      const isUrgent = task.priority === '긴급'
+      // 마감일 전에 완료했으면 onTime
+      const diff     = getDiff(task.end_date)
+      const isOnTime = diff !== null && diff >= 0
+      const result   = await awardExp(task.member, type, true, isUrgent, isOnTime)
       if (result?.levelUp) alert(`🎊 ${task.member}님 레벨업! ${result.newLv?.name}`)
     }
     if (prev === '완료' && status !== '완료') {
-      await awardExp(task.member, task.priority === '긴급' ? 'URGENT' : 'COMPLETE', false)
+      const isUrgent = task.priority === '긴급'
+      await awardExp(task.member, task.priority === '긴급' ? 'URGENT' : 'COMPLETE', false, isUrgent)
     }
     loadTasks()
   }
