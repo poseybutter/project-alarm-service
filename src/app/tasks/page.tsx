@@ -75,6 +75,12 @@ export default function TasksPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading]   = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [editTask, setEditTask]   = useState<Task | null>(null)
+  const [showEdit, setShowEdit]   = useState(false)
+  const [editForm, setEditForm]   = useState({
+    type: '', proj: '', content: '', priority: '',
+    start_date: '', end_date: '', workload: 0, issue: '', status: ''
+  })
 
   // 필터 (디자인 기준 드롭다운)
   const [filterMember,   setFilterMember]   = useState('')
@@ -124,6 +130,40 @@ export default function TasksPage() {
     }])
     setShowModal(false)
     setForm({ member:'', type:'', proj:'', content:'', priority:'', start_date:'', end_date:'', workload:0, issue:'' })
+    loadTasks()
+  }
+
+  function openEdit(task: Task) {
+    setEditTask(task)
+    setEditForm({
+      type      : task.type || '',
+      proj      : task.proj || '',
+      content   : task.content || '',
+      priority  : task.priority || '',
+      start_date: task.start_date || '',
+      end_date  : task.end_date || '',
+      workload  : task.workload || 0,
+      issue     : task.issue || '',
+      status    : task.status || '대기',
+    })
+    setShowEdit(true)
+  }
+  
+  async function saveEdit() {
+    if (!editTask) return
+    await supabase.from('tasks').update({
+      type      : editForm.type,
+      proj      : editForm.proj,
+      content   : editForm.content,
+      priority  : editForm.priority || null,
+      start_date: editForm.start_date || null,
+      end_date  : editForm.end_date || null,
+      workload  : editForm.workload || 0,
+      issue     : editForm.issue || null,
+      status    : editForm.status,
+    }).eq('id', editTask.id)
+    setShowEdit(false)
+    setEditTask(null)
     loadTasks()
   }
 
@@ -317,6 +357,14 @@ export default function TasksPage() {
                               onClick={() => deleteTask(t.id)}
                               className="text-xs text-stone-300 hover:text-red-400 transition-colors"
                             >삭제</button>
+                            <button
+                              onClick={() => openEdit(t)}
+                              className="text-xs text-stone-300 hover:text-amber-500 transition-colors"
+                            >수정</button>
+                            <button
+                              onClick={() => deleteTask(t.id)}
+                              className="text-xs text-stone-300 hover:text-red-400 transition-colors"
+                            >삭제</button>
                           </div>
                         </div>
                       </div>
@@ -427,17 +475,21 @@ export default function TasksPage() {
                 </div>
 
                 {/* 날짜 */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-stone-500 block mb-1.5">시작일</label>
-                    <input type="date" className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                      value={form.start_date} onChange={e => setForm({...form, start_date: e.target.value})} />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-stone-500 block mb-1.5">마감일</label>
-                    <input type="date" className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                      value={form.end_date} onChange={e => setForm({...form, end_date: e.target.value})} />
-                  </div>
+                <div className="flex items-center gap-2 text-xs text-stone-400">
+                  {t.workload > 0 && <span>{formatWorkload(t.workload)}</span>}
+                  {/* 기간 표시 */}
+                  {t.start_date && t.end_date && (
+                    <span className={isUrgent ? 'text-red-500 font-medium' : ''}>
+                      {t.start_date.slice(5).replace('-','/')} ~ {t.end_date.slice(5).replace('-','/')}
+                      {diff !== null && ` D${diff < 0 ? '+'+Math.abs(diff) : '-'+diff}`}
+                    </span>
+                  )}
+                  {!t.start_date && t.end_date && (
+                    <span className={isUrgent ? 'text-red-500 font-medium' : ''}>
+                      ~{t.end_date.slice(5).replace('-','/')}
+                      {diff !== null && ` D${diff < 0 ? '+'+Math.abs(diff) : '-'+diff}`}
+                    </span>
+                  )}
                 </div>
 
                 {/* 이슈/비고 */}
@@ -451,6 +503,118 @@ export default function TasksPage() {
                 <button onClick={addTask}
                   className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm">
                   등록하기
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* 수정 모달 */}
+        {showEdit && editTask && (
+          <div
+            className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
+            onClick={() => setShowEdit(false)}
+          >
+            <div
+              className="bg-white rounded-t-2xl p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center mb-5">
+                <h2 className="text-base font-bold">업무 수정</h2>
+                <button onClick={() => setShowEdit(false)} className="text-2xl text-stone-400 leading-none">×</button>
+              </div>
+              <div className="space-y-4">
+                {/* 상태 */}
+                <div>
+                  <label className="text-xs font-medium text-stone-500 block mb-1.5">상태</label>
+                  <select className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white"
+                    value={editForm.status} onChange={e => setEditForm({...editForm, status: e.target.value})}>
+                    {['대기','시작 전','진행중','이슈 및 대기','완료'].map(s => <option key={s}>{s}</option>)}
+                  </select>
+                </div>
+
+                {/* 구분 + 우선순위 */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-stone-500 block mb-1.5">구분</label>
+                    <select className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white"
+                      value={editForm.type} onChange={e => setEditForm({...editForm, type: e.target.value})}>
+                      <option value="">선택</option>
+                      {['프로젝트','유지보수','고도화','접근성','업무지원'].map(t => <option key={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-stone-500 block mb-1.5">우선순위</label>
+                    <select className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white"
+                      value={editForm.priority} onChange={e => setEditForm({...editForm, priority: e.target.value})}>
+                      <option value="">선택</option>
+                      {['긴급','높음','보통','낮음'].map(p => <option key={p}>{p}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {/* 프로젝트 */}
+                <div>
+                  <label className="text-xs font-medium text-stone-500 block mb-1.5">프로젝트</label>
+                  <input className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
+                    value={editForm.proj} onChange={e => setEditForm({...editForm, proj: e.target.value})} />
+                </div>
+
+                {/* 업무 내용 */}
+                <div>
+                  <label className="text-xs font-medium text-stone-500 block mb-1.5">업무 내용</label>
+                  <textarea className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm h-20 resize-none"
+                    value={editForm.content} onChange={e => setEditForm({...editForm, content: e.target.value})} />
+                </div>
+
+                {/* 공수 */}
+                <div>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="text-xs font-medium text-stone-500">공수</label>
+                    {editForm.workload > 0 && (
+                      <span className="text-xs text-amber-600 font-medium">{formatWorkload(editForm.workload)}</span>
+                    )}
+                  </div>
+                  <input type="number" className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm mb-2"
+                    placeholder="분 직접 입력"
+                    value={editForm.workload || ''}
+                    onChange={e => setEditForm({...editForm, workload: parseInt(e.target.value) || 0})} />
+                  <div className="flex gap-1.5 flex-wrap">
+                    {WORKLOAD_PRESETS.map(p => (
+                      <button key={p.label}
+                        onClick={() => setEditForm({...editForm, workload: p.value})}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
+                          ${editForm.workload === p.value ? 'bg-amber-500 text-white border-amber-500' : 'bg-stone-50 text-stone-600 border-stone-200'}`}>
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 날짜 */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-stone-500 block mb-1.5">시작일</label>
+                    <input type="date" className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
+                      value={editForm.start_date} onChange={e => setEditForm({...editForm, start_date: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-stone-500 block mb-1.5">마감일</label>
+                    <input type="date" className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
+                      value={editForm.end_date} onChange={e => setEditForm({...editForm, end_date: e.target.value})} />
+                  </div>
+                </div>
+
+                {/* 이슈/비고 */}
+                <div>
+                  <label className="text-xs font-medium text-stone-500 block mb-1.5">이슈 / 비고 (선택)</label>
+                  <input className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
+                    placeholder="예) 클라이언트 피드백 대기..."
+                    value={editForm.issue} onChange={e => setEditForm({...editForm, issue: e.target.value})} />
+                </div>
+
+                <button onClick={saveEdit}
+                  className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm">
+                  저장하기
                 </button>
               </div>
             </div>
