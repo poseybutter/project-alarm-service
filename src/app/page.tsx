@@ -113,7 +113,9 @@ export default function HomePage() {
         )
         .subscribe()
   
-      return () => { supabase.removeChannel(channel) }
+        return () => {
+          supabase.removeChannel(channel).catch(console.error)
+        }
     }
   }, [member])
 
