@@ -41,7 +41,7 @@ export default function UserMenu() {
       {open && (
         <div className="absolute right-0 top-10 bg-white rounded-xl border border-stone-200 shadow-lg z-50 w-44 overflow-hidden">
           <div className="px-4 py-3 border-b border-stone-100 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full overflow-hidden shrink-0">
+            <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 relative">
               {avatarUrl ? (
                 <img src={avatarUrl} alt={member} className="w-full h-full object-cover" />
               ) : (
@@ -49,9 +49,19 @@ export default function UserMenu() {
                   {member.slice(1)}
                 </div>
               )}
+              {member === 'TEAM_MEMBER_1' && (
+                <div className="absolute -top-2 left-1/2 -translate-x-1/2 text-xs">👑</div>
+              )}
             </div>
             <div>
-              <p className="text-sm font-bold text-stone-800">{member}</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-sm font-bold text-stone-800">{member}</p>
+                {member === 'TEAM_MEMBER_1' && (
+                  <span className="text-xs px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded font-medium border border-yellow-200">
+                    리더
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-stone-400">UD</p>
             </div>
           </div>
