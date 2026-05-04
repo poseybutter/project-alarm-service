@@ -566,11 +566,6 @@ export default function ProfilePage() {
                       selected={dateRange}
                       onSelect={(range) => {
                         setDateRange(range)
-                        // from과 to가 다른 날짜일 때만 닫기
-                        if (range?.from && range?.to && 
-                            range.from.toDateString() !== range.to.toDateString()) {
-                          setTimeout(() => setShowDatePicker(false), 150)
-                        }
                       }}
                       locale={ko}
                       toDate={new Date()}
