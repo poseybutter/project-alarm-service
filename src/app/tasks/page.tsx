@@ -395,7 +395,7 @@ export default function TasksPage() {
 
         {/* 업무 추가 모달 */}
         {showModal && (
-          <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center" style={{ bottom: `var(--nav-height)` }}
             onClick={() => setShowModal(false)}>
             <div className="bg-white rounded-t-2xl p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto"
               onClick={e => e.stopPropagation()}>
