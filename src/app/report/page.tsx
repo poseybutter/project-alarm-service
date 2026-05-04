@@ -1,21 +1,92 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import UserMenu from '@/components/UserMenu'
 import Avatar from '@/components/Avatar'
 import { supabase } from '@/lib/supabase'
 import AuthGuard from '@/components/AuthGuard'
-import Header from '@/components/Header'
 import NotificationButton from '@/components/NotificationButton'
+import { useAuth } from '@/components/AuthProvider'
 import type { Task } from '@/lib/types'
 import { MEMBERS, LEADER, MEMBER_COLORS, STATUS_COLORS } from '@/lib/constants'
 
-const BRIEF_GROUPS: Record<string, string[]> = {
-  '프로젝트': ['프로젝트'],
-  '유지보수': ['유지보수'],
-  '고도화':   ['고도화'],
-  '접근성':   ['접근성'],
-  '기타':     ['업무지원', '기타'],
+type BriefSection = 'project' | 'maintenance' | 'etc'
+
+/** 주간 브리핑 자동문 (섹션별 textarea에 맞춤: [프로젝트]/[유지보수] 태그 생략, 업무 줄은 ⇒) */
+function formatBriefingSection(tasks: Task[], section: BriefSection): string {
+  if (!tasks.length) return ''
+
+  const groupKey = (t: Task) =>
+    section === 'etc' ? `${t.type || '기타'}::${t.proj}` : t.proj
+
+  const groups = new Map<string, Task[]>()
+  for (const t of tasks) {
+    const k = groupKey(t)
+    if (!groups.has(k)) groups.set(k, [])
+    groups.get(k)!.push(t)
+  }
+
+  const orderedKeys = [...groups.keys()].sort((a, b) => {
+    const ta = groups.get(a)![0]
+    const tb = groups.get(b)![0]
+    const pa = `${ta.type || ''} ${ta.proj}`
+    const pb = `${tb.type || ''} ${tb.proj}`
+    return pa.localeCompare(pb, 'ko')
+  })
+
+  const blocks: string[] = []
+
+  for (const key of orderedKeys) {
+    const groupTasks = [...groups.get(key)!].sort((a, b) => a.id - b.id)
+    const first = groupTasks[0]
+
+    const typePrefix =
+      section === 'etc' && first.type
+        ? `[${first.type}] `
+        : section === 'etc'
+          ? '[기타] '
+          : ''
+
+    const highlight = groupTasks.some(
+      t => t.priority === '긴급' || t.status === '이슈 및 대기'
+    )
+    const members = [...new Set(groupTasks.map(t => t.member))]
+      .map(m => `@${m}`)
+      .join(' ')
+    const statuses = [...new Set(groupTasks.map(t => t.status))].join(', ')
+    const titleInner = `${typePrefix}${first.proj} (${statuses}) ${members}`.trim()
+    const titleLine = `**${highlight ? '⭐ ' : ''}${titleInner}**`
+
+    const bodyLines: string[] = []
+    for (const t of groupTasks) {
+      const raw = (t.content || '').trim()
+      if (raw) {
+        for (const line of raw.split('\n')) {
+          const s = line.trim()
+          if (s) bodyLines.push(`⇒ ${s}`)
+        }
+      }
+      if (t.issue && String(t.issue).trim()) {
+        bodyLines.push(`이슈: ${String(t.issue).trim()}`)
+      }
+    }
+
+    const blockParts = [titleLine, '', ...bodyLines]
+    const block = blockParts.join('\n').replace(/\n+$/, '')
+    blocks.push(block)
+  }
+
+  return blocks.join('\n\n').trimEnd()
+}
+
+function canEdit(): boolean {
+  const now = new Date()
+  const day = now.getDay()
+  const hour = now.getHours()
+  if (day === 3 && hour >= 10) return true
+  if (day === 4 || day === 5 || day === 6) return true
+  if (day === 0 || day === 1 || day === 2) return true
+  return false
 }
 
 function getWeekWin(offset: number) {
@@ -57,31 +128,185 @@ function fmtMin(min: number) {
   return `${min}분`
 }
 
+type BriefingRow = {
+  project: string
+  maintenance: string
+  etc: string
+  edited_by: string | null
+  updated_at: string | null
+}
+
+type Assignment = {
+  id: number
+  type: string
+  name: string
+  members: string[]
+  url: string | null
+  period_note: string | null
+  status: string
+  sort_order: number
+}
+
+function formatAssignments(list: Assignment[]): string {
+  const active = list.filter(a => a.status === '진행중')
+  const waiting = list.filter(a => a.status === '배정대기')
+  const lines: string[] = []
+
+  if (active.length > 0) {
+    lines.push('[배정현황]')
+    active.forEach(a => {
+      const memberStr = (a.members || []).join(', ')
+      const urlStr = a.url ? ` (${a.url})` : ''
+      lines.push(`⇒ [${a.type}] ${a.name} : ${memberStr}${urlStr}`)
+    })
+  }
+
+  if (waiting.length > 0) {
+    if (lines.length > 0) lines.push('')
+    lines.push('[배정대기]')
+    waiting.forEach(a => {
+      lines.push(`⇒ [배정대기] ${a.name}`)
+      if (a.period_note) {
+        a.period_note.split('\n').forEach(l => {
+          if (l.trim()) lines.push(`  ${l.trim()}`)
+        })
+      }
+    })
+  }
+
+  return lines.join('\n')
+}
+
+const EMPTY_ASSIGN_FORM: {
+  type: string
+  name: string
+  members: string[]
+  url: string
+  period_note: string
+  status: '진행중' | '배정대기'
+} = {
+  type: '프로젝트',
+  name: '',
+  members: [],
+  url: '',
+  period_note: '',
+  status: '진행중',
+}
+
 export default function ReportPage() {
+  const { member: currentMember } = useAuth()
   const [mode, setMode]       = useState<'weekly' | 'monthly'>('weekly')
   const [wOff, setWOff]       = useState(0)
   const [mOff, setMOff]       = useState(0)
   const [tasks, setTasks]     = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
-  const [copied, setCopied]   = useState(false)
-  const [editing, setEditing] = useState(false)
-  const [editTxt, setEditTxt] = useState('')
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+
+  const [briefing, setBriefing] = useState<BriefingRow | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [editProject, setEditProject] = useState('')
+  const [editMaintenance, setEditMaintenance] = useState('')
+  const [editEtc, setEditEtc] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [copiedProject, setCopiedProject] = useState(false)
+  const [copiedMaintenance, setCopiedMaintenance] = useState(false)
+  const [copiedEtc, setCopiedEtc] = useState(false)
+
+  const [assignments, setAssignments] = useState<Assignment[]>([])
+  const [showAssignModal, setShowAssignModal] = useState(false)
+  const [editAssignment, setEditAssignment] = useState<Assignment | null>(null)
+  const [assignForm, setAssignForm] = useState(() => ({ ...EMPTY_ASSIGN_FORM, members: [] as string[] }))
+  const [copiedAssign, setCopiedAssign] = useState(false)
 
   const wk = getWeekWin(wOff)
   const mn = getMonthWin(mOff)
 
-  useEffect(() => { loadTasks() }, [])
-
-  async function loadTasks() {
-    setLoading(true)
+  const loadBriefing = useCallback(async () => {
+    const weekStart = getWeekWin(wOff).from
     const { data } = await supabase
-      .from('tasks')
+      .from('briefings')
+      .select('project, maintenance, etc, edited_by, updated_at')
+      .eq('week_start', weekStart)
+      .maybeSingle()
+    if (data) {
+      setBriefing({
+        project: data.project ?? '',
+        maintenance: data.maintenance ?? '',
+        etc: data.etc ?? '',
+        edited_by: data.edited_by ?? null,
+        updated_at: data.updated_at ?? null,
+      })
+    } else {
+      setBriefing(null)
+    }
+  }, [wOff])
+
+  const loadAssignments = useCallback(async () => {
+    const { data } = await supabase
+      .from('assignments')
       .select('*')
-      .order('created_at', { ascending: false })
-    setTasks(data || [])
-    setLoading(false)
-  }
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true })
+    setAssignments((data as Assignment[]) || [])
+  }, [])
+
+  useEffect(() => {
+    void loadAssignments()
+  }, [loadAssignments])
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('assignments-rt')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'assignments' },
+        () => {
+          void loadAssignments()
+        }
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel).catch(console.error)
+    }
+  }, [loadAssignments])
+
+  useEffect(() => {
+    async function loadTasks() {
+      setLoading(true)
+      const { data } = await supabase
+        .from('tasks')
+        .select('*')
+        .order('created_at', { ascending: false })
+      setTasks(data || [])
+      setLoading(false)
+    }
+    void loadTasks()
+  }, [])
+
+  useEffect(() => {
+    setEditing(false)
+  }, [wOff, mode])
+
+  useEffect(() => {
+    if (mode !== 'weekly') return
+    void loadBriefing()
+  }, [mode, wOff, loadBriefing])
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('briefings-rt')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'briefings' },
+        () => {
+          void loadBriefing()
+        }
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel).catch(console.error)
+    }
+  }, [loadBriefing])
 
   const wTasks = useMemo(() => tasks.filter(t => {
     const s = t.start_date || t.end_date
@@ -104,38 +329,75 @@ export default function ReportPage() {
     1
   )
 
-  const autoTxt = useMemo(() => {
-    const today = new Date()
-    const dateStr = `${today.getFullYear()}.${today.getMonth()+1}.${today.getDate()}`
-    const lines = [
-      'UD2팀 주간 업무 브리핑',
-      `기간: ${wk.label}   |   작성일: ${dateStr}`,
-      '─'.repeat(40), '',
-    ]
-    Object.entries(BRIEF_GROUPS).forEach(([g, types]) => {
-      const gt = wTasks.filter(t => types.includes(t.type || '기타'))
-      if (!gt.length) return
-      lines.push(`[ ${g} ]`, '')
-      const projs = [...new Set(gt.map(t => t.proj))]
-      projs.forEach(proj => {
-        const pt  = gt.filter(t => t.proj === proj)
-        const ms  = [...new Set(pt.map(t => t.member))].map(m => `@${m}`).join(', ')
-        const sts = [...new Set(pt.map(t => t.status))].join(', ')
-        const hl  = pt.some(t => t.priority === '긴급' || t.status === '이슈 및 대기')
-        lines.push(`${hl ? '⭐ ' : ''}${proj}   (${sts})   ${ms}`)
-        pt.forEach(t => {
-          if (t.content) lines.push(`  - ${t.content}`)
-          if (t.issue)   lines.push(`    * 이슈: ${t.issue}`)
-        })
-        lines.push('')
-      })
-    })
-    return lines.join('\n').trimEnd()
-  }, [wTasks, wOff])
+  const autoProject = useMemo(
+    () => formatBriefingSection(wTasks.filter(t => t.type === '프로젝트'), 'project'),
+    [wTasks]
+  )
+  const autoMaintenance = useMemo(
+    () => formatBriefingSection(wTasks.filter(t => t.type === '유지보수'), 'maintenance'),
+    [wTasks]
+  )
+  const autoEtc = useMemo(
+    () =>
+      formatBriefingSection(
+        wTasks.filter(t => ['접근성', '고도화', '업무지원', '기타'].includes(t.type || '')),
+        'etc'
+      ),
+    [wTasks]
+  )
 
-  function doCopy() {
-    const txt = editing ? editTxt : autoTxt
-    navigator.clipboard.writeText(txt).then(() => {
+  const displayProject = briefing !== null ? briefing.project : autoProject
+  const displayMaintenance = briefing !== null ? briefing.maintenance : autoMaintenance
+  const displayEtc = briefing !== null ? briefing.etc : autoEtc
+
+  const editAllowed = canEdit()
+
+  function startEditing() {
+    setEditProject(briefing !== null ? briefing.project : autoProject)
+    setEditMaintenance(briefing !== null ? briefing.maintenance : autoMaintenance)
+    setEditEtc(briefing !== null ? briefing.etc : autoEtc)
+    setEditing(true)
+  }
+
+  function cancelEditing() {
+    setEditing(false)
+  }
+
+  function restoreAutoToEdits() {
+    setEditProject(autoProject)
+    setEditMaintenance(autoMaintenance)
+    setEditEtc(autoEtc)
+  }
+
+  async function saveBriefing() {
+    setSaving(true)
+    const weekStart = wk.from
+    const { error } = await supabase.from('briefings').upsert(
+      {
+        week_start: weekStart,
+        project: editProject,
+        maintenance: editMaintenance,
+        etc: editEtc,
+        edited_by: currentMember ?? null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'week_start' }
+    )
+    setSaving(false)
+    if (error) {
+      console.error(error)
+      alert('저장에 실패했어요: ' + error.message)
+      return
+    }
+    setEditing(false)
+    await loadBriefing()
+  }
+
+  function copySection(
+    text: string,
+    setCopied: (v: boolean) => void
+  ) {
+    void navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
@@ -150,6 +412,103 @@ export default function ReportPage() {
   function toggleExpand(member: string) {
     setExpanded(e => ({ ...e, [member]: !e[member] }))
   }
+
+  const assignActive = useMemo(
+    () => assignments.filter(a => a.status === '진행중'),
+    [assignments]
+  )
+  const assignWaiting = useMemo(
+    () => assignments.filter(a => a.status === '배정대기'),
+    [assignments]
+  )
+  const assignCopyText = useMemo(() => formatAssignments(assignments), [assignments])
+
+  function openAddAssignment() {
+    setEditAssignment(null)
+    setAssignForm({ ...EMPTY_ASSIGN_FORM, members: [] })
+    setShowAssignModal(true)
+  }
+
+  function openEditAssignment(a: Assignment) {
+    setEditAssignment(a)
+    setAssignForm({
+      type: a.type || '프로젝트',
+      name: a.name || '',
+      members: Array.isArray(a.members) ? [...a.members] : [],
+      url: a.url || '',
+      period_note: a.period_note || '',
+      status: a.status === '배정대기' ? '배정대기' : '진행중',
+    })
+    setShowAssignModal(true)
+  }
+
+  function closeAssignModal() {
+    setShowAssignModal(false)
+    setEditAssignment(null)
+    setAssignForm({ ...EMPTY_ASSIGN_FORM, members: [] })
+  }
+
+  function toggleAssignMember(name: string) {
+    setAssignForm(f => ({
+      ...f,
+      members: f.members.includes(name)
+        ? f.members.filter(m => m !== name)
+        : [...f.members, name],
+    }))
+  }
+
+  async function saveAssignment() {
+    if (!assignForm.name.trim()) {
+      alert('프로젝트명을 입력해주세요')
+      return
+    }
+    const payload = {
+      type: assignForm.type,
+      name: assignForm.name.trim(),
+      members: assignForm.members,
+      url: assignForm.url.trim() || null,
+      period_note: assignForm.period_note.trim() || null,
+      status: assignForm.status,
+    }
+    if (editAssignment) {
+      const { error } = await supabase.from('assignments').update(payload).eq('id', editAssignment.id)
+      if (error) {
+        alert('수정 실패: ' + error.message)
+        return
+      }
+    } else {
+      const maxSort = assignments.reduce((m, a) => Math.max(m, a.sort_order ?? 0), 0)
+      const { error } = await supabase.from('assignments').insert({
+        ...payload,
+        sort_order: maxSort + 1,
+      })
+      if (error) {
+        alert('추가 실패: ' + error.message)
+        return
+      }
+    }
+    closeAssignModal()
+    await loadAssignments()
+  }
+
+  async function deleteAssignment(id: number) {
+    if (!confirm('삭제할까요?')) return
+    const { error } = await supabase.from('assignments').delete().eq('id', id)
+    if (error) {
+      alert('삭제 실패: ' + error.message)
+      return
+    }
+    await loadAssignments()
+  }
+
+  function copyAssignmentsBlock() {
+    void navigator.clipboard.writeText(assignCopyText).then(() => {
+      setCopiedAssign(true)
+      setTimeout(() => setCopiedAssign(false), 2000)
+    })
+  }
+
+  const isLeader = currentMember === LEADER
 
   return (
     <AuthGuard>
@@ -257,41 +616,269 @@ export default function ReportPage() {
                 {/* 주간 브리핑 */}
                 {mode === 'weekly' && (
                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-3">
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-stone-100">
-                    <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">주간 브리핑</p>
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs text-stone-300">Notion 복붙용</span>
-                        <button
-                        onClick={() => { if (!editing) setEditTxt(autoTxt); setEditing(e => !e) }}
-                        className={`text-xs px-2.5 py-1 rounded-lg font-medium border transition-all
-                            ${editing ? 'bg-amber-500 text-white border-amber-500' : 'bg-stone-100 text-stone-600 border-stone-200'}`}
-                        >
-                        {editing ? '복원' : '편집'}
-                        </button>
-                        <button
-                        onClick={doCopy}
-                        className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all
-                            ${copied ? 'bg-green-500 text-white' : 'bg-stone-800 text-white'}`}
-                        >
-                        {copied ? 'Copied!' : 'Copy'}
-                        </button>
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-stone-100">
+                      <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">주간 브리핑</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {!editAllowed && (
+                          <span className="text-xs text-stone-400">✏️ 수요일 오전 10시 이후 편집 가능해요</span>
+                        )}
+                        {editAllowed && !editing && (
+                          <button
+                            type="button"
+                            onClick={startEditing}
+                            className="text-xs px-2.5 py-1 rounded-lg font-medium border border-stone-200 bg-stone-100 text-stone-600 hover:bg-stone-50"
+                          >
+                            편집
+                          </button>
+                        )}
+                        {editAllowed && editing && (
+                          <button
+                            type="button"
+                            onClick={cancelEditing}
+                            className="text-xs px-2.5 py-1 rounded-lg font-medium border border-stone-200 text-stone-600 hover:bg-stone-50"
+                          >
+                            취소
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    </div>
-                    <div className="p-4">
-                    <p className="text-xs text-stone-300 mb-2">markdown</p>
-                    {editing ? (
-                        <textarea
-                        className="w-full text-xs text-stone-700 bg-stone-50 rounded-lg p-3 h-64 resize-none font-mono border border-stone-200"
-                        value={editTxt}
-                        onChange={e => setEditTxt(e.target.value)}
-                        spellCheck={false}
-                        />
-                    ) : (
-                        <pre className="text-xs text-stone-700 bg-stone-50 rounded-lg p-3 whitespace-pre-wrap font-mono overflow-x-auto">
-                        {autoTxt}
-                        </pre>
+                    {briefing !== null && (
+                      <div className="px-4 py-2 border-b border-stone-100 bg-stone-50/80">
+                        <p className="text-xs text-stone-500">
+                          마지막 저장: {briefing.edited_by ?? '—'} ·{' '}
+                          {briefing.updated_at
+                            ? new Date(briefing.updated_at).toLocaleString('ko-KR', {
+                                dateStyle: 'short',
+                                timeStyle: 'short',
+                              })
+                            : '—'}
+                        </p>
+                      </div>
                     )}
+                    <div className="p-4 space-y-5">
+                      {/* 프로젝트 */}
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <p className="text-xs font-bold text-stone-600">[ 프로젝트 ]</p>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              copySection(editing ? editProject : displayProject, setCopiedProject)
+                            }
+                            className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all shrink-0
+                              ${copiedProject ? 'bg-green-500 text-white' : 'bg-stone-800 text-white'}`}
+                          >
+                            {copiedProject ? 'Copied!' : 'Copy'}
+                          </button>
+                        </div>
+                        {editing ? (
+                          <textarea
+                            className="w-full text-xs text-stone-700 bg-stone-50 rounded-lg p-3 min-h-[120px] resize-y font-mono border border-stone-200"
+                            value={editProject}
+                            onChange={e => setEditProject(e.target.value)}
+                            spellCheck={false}
+                          />
+                        ) : (
+                          <pre className="text-xs text-stone-700 bg-stone-50 rounded-lg p-3 whitespace-pre-wrap font-mono overflow-x-auto min-h-[2.5rem]">
+                            {displayProject || ' '}
+                          </pre>
+                        )}
+                      </div>
+                      {/* 유지보수 */}
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <p className="text-xs font-bold text-stone-600">[ 유지보수 ]</p>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              copySection(
+                                editing ? editMaintenance : displayMaintenance,
+                                setCopiedMaintenance
+                              )
+                            }
+                            className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all shrink-0
+                              ${copiedMaintenance ? 'bg-green-500 text-white' : 'bg-stone-800 text-white'}`}
+                          >
+                            {copiedMaintenance ? 'Copied!' : 'Copy'}
+                          </button>
+                        </div>
+                        {editing ? (
+                          <textarea
+                            className="w-full text-xs text-stone-700 bg-stone-50 rounded-lg p-3 min-h-[120px] resize-y font-mono border border-stone-200"
+                            value={editMaintenance}
+                            onChange={e => setEditMaintenance(e.target.value)}
+                            spellCheck={false}
+                          />
+                        ) : (
+                          <pre className="text-xs text-stone-700 bg-stone-50 rounded-lg p-3 whitespace-pre-wrap font-mono overflow-x-auto min-h-[2.5rem]">
+                            {displayMaintenance || ' '}
+                          </pre>
+                        )}
+                      </div>
+                      {/* 기타 */}
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <p className="text-xs font-bold text-stone-600">[ 기타 ]</p>
+                          <button
+                            type="button"
+                            onClick={() => copySection(editing ? editEtc : displayEtc, setCopiedEtc)}
+                            className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all shrink-0
+                              ${copiedEtc ? 'bg-green-500 text-white' : 'bg-stone-800 text-white'}`}
+                          >
+                            {copiedEtc ? 'Copied!' : 'Copy'}
+                          </button>
+                        </div>
+                        {editing ? (
+                          <textarea
+                            className="w-full text-xs text-stone-700 bg-stone-50 rounded-lg p-3 min-h-[120px] resize-y font-mono border border-stone-200"
+                            value={editEtc}
+                            onChange={e => setEditEtc(e.target.value)}
+                            spellCheck={false}
+                          />
+                        ) : (
+                          <pre className="text-xs text-stone-700 bg-stone-50 rounded-lg p-3 whitespace-pre-wrap font-mono overflow-x-auto min-h-[2.5rem]">
+                            {displayEtc || ' '}
+                          </pre>
+                        )}
+                      </div>
+                      {editAllowed && editing && (
+                        <div className="flex flex-col gap-2 pt-1">
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() => void saveBriefing()}
+                            className="w-full rounded-xl bg-amber-500 py-3 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50"
+                          >
+                            {saving ? '저장 중…' : '저장하기'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={restoreAutoToEdits}
+                            className="w-full rounded-xl border border-stone-200 py-2.5 text-xs font-medium text-stone-600 hover:bg-stone-50"
+                          >
+                            자동 생성으로 복원
+                          </button>
+                        </div>
+                      )}
                     </div>
+                </div>
+                )}
+
+                {/* 배정현황 / 배정대기 */}
+                {mode === 'weekly' && (
+                <div className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-3">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-stone-100">
+                    <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">배정현황</p>
+                    <button
+                      type="button"
+                      onClick={copyAssignmentsBlock}
+                      className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all shrink-0
+                        ${copiedAssign ? 'bg-green-500 text-white' : 'bg-stone-800 text-white'}`}
+                    >
+                      {copiedAssign ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                  <div className="p-4 space-y-4">
+                    <div>
+                      <p className="text-xs font-bold text-stone-500 mb-2">[진행중 목록]</p>
+                      {assignActive.length === 0 ? (
+                        <p className="text-xs text-stone-400">등록된 항목이 없어요</p>
+                      ) : (
+                        <ul className="space-y-2">
+                          {assignActive.map(a => (
+                            <li key={a.id} className="flex items-start gap-2 text-xs text-stone-800">
+                              <span className="flex-1 min-w-0 leading-relaxed">
+                                ⇒ [{a.type}] {a.name} : {(a.members || []).join(', ')}
+                                {a.url ? (
+                                  <a
+                                    href={a.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="ml-1 inline-block text-amber-600 hover:underline"
+                                    aria-label="링크"
+                                  >
+                                    🔗
+                                  </a>
+                                ) : null}
+                              </span>
+                              {isLeader && (
+                                <span className="flex shrink-0 gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditAssignment(a)}
+                                    className="text-[11px] text-stone-400 hover:text-amber-600"
+                                  >
+                                    수정
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void deleteAssignment(a.id)}
+                                    className="text-[11px] text-stone-400 hover:text-red-500"
+                                  >
+                                    삭제
+                                  </button>
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-stone-500 mb-2">[배정대기 목록]</p>
+                      {assignWaiting.length === 0 ? (
+                        <p className="text-xs text-stone-400">등록된 항목이 없어요</p>
+                      ) : (
+                        <ul className="space-y-3">
+                          {assignWaiting.map(a => (
+                            <li key={a.id} className="text-xs text-stone-800">
+                              <div className="flex items-start gap-2">
+                                <span className="flex-1 min-w-0 leading-relaxed">
+                                  ⇒ [배정대기] {a.name}
+                                </span>
+                                {isLeader && (
+                                  <span className="flex shrink-0 gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditAssignment(a)}
+                                      className="text-[11px] text-stone-400 hover:text-amber-600"
+                                    >
+                                      수정
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => void deleteAssignment(a.id)}
+                                      className="text-[11px] text-stone-400 hover:text-red-500"
+                                    >
+                                      삭제
+                                    </button>
+                                  </span>
+                                )}
+                              </div>
+                              {a.period_note
+                                ? a.period_note.split('\n').map((line, i) =>
+                                    line.trim() ? (
+                                      <p key={i} className="mt-1 pl-3 text-[11px] text-stone-500">
+                                        * {line.trim()}
+                                      </p>
+                                    ) : null
+                                  )
+                                : null}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    {isLeader && (
+                      <button
+                        type="button"
+                        onClick={openAddAssignment}
+                        className="w-full rounded-lg border border-dashed border-stone-300 py-2.5 text-xs font-medium text-stone-500 hover:border-amber-400 hover:text-amber-700 hover:bg-amber-50/50"
+                      >
+                        + 항목 추가
+                      </button>
+                    )}
+                  </div>
                 </div>
                 )}
 
@@ -361,6 +948,121 @@ export default function ReportPage() {
             </>
             )}
         </div>
+
+        {showAssignModal && (
+          <div
+            className="fixed inset-0 z-[80] flex items-end justify-center bg-black/40"
+            onClick={closeAssignModal}
+            role="presentation"
+          >
+            <div
+              className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-base font-bold text-stone-900">
+                  {editAssignment ? '배정 항목 수정' : '배정 항목 추가'}
+                </h2>
+                <button
+                  type="button"
+                  onClick={closeAssignModal}
+                  className="text-2xl leading-none text-stone-400"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-stone-500">구분</label>
+                  <select
+                    className="w-full rounded-lg border border-stone-200 bg-white px-3 py-2.5 text-sm"
+                    value={assignForm.type}
+                    onChange={e => setAssignForm(f => ({ ...f, type: e.target.value }))}
+                  >
+                    {['프로젝트', '개편', '고도화', '유지보수', '기타'].map(t => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-stone-500">상태</label>
+                  <select
+                    className="w-full rounded-lg border border-stone-200 bg-white px-3 py-2.5 text-sm"
+                    value={assignForm.status}
+                    onChange={e =>
+                      setAssignForm(f => ({
+                        ...f,
+                        status: e.target.value as '진행중' | '배정대기',
+                      }))
+                    }
+                  >
+                    <option value="진행중">진행중</option>
+                    <option value="배정대기">배정대기</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-stone-500">프로젝트명</label>
+                  <input
+                    className="w-full rounded-lg border border-stone-200 px-3 py-2.5 text-sm"
+                    value={assignForm.name}
+                    onChange={e => setAssignForm(f => ({ ...f, name: e.target.value }))}
+                    placeholder="예) LH사이버견본주택"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-xs font-medium text-stone-500">담당자</label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {MEMBERS.map(name => {
+                      const on = assignForm.members.includes(name)
+                      return (
+                        <button
+                          key={name}
+                          type="button"
+                          onClick={() => toggleAssignMember(name)}
+                          className={`flex flex-col items-center gap-1 rounded-xl border-2 p-2 transition-all
+                            ${on ? 'border-amber-500 bg-amber-50' : 'border-stone-200 bg-stone-50'}`}
+                        >
+                          <Avatar name={name} size={32} />
+                          <span className="text-[10px] font-medium text-stone-600">{name.slice(1)}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-stone-500">URL (선택)</label>
+                  <input
+                    className="w-full rounded-lg border border-stone-200 px-3 py-2.5 text-sm"
+                    value={assignForm.url}
+                    onChange={e => setAssignForm(f => ({ ...f, url: e.target.value }))}
+                    placeholder="https://..."
+                  />
+                </div>
+                {assignForm.status === '배정대기' && (
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-stone-500">사업기간 메모 (선택)</label>
+                    <textarea
+                      className="min-h-[88px] w-full resize-y rounded-lg border border-stone-200 px-3 py-2.5 text-sm"
+                      value={assignForm.period_note}
+                      onChange={e => setAssignForm(f => ({ ...f, period_note: e.target.value }))}
+                      placeholder="예) 사업기간: 2026년 5월~12월"
+                      spellCheck={false}
+                    />
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void saveAssignment()}
+                  className="w-full rounded-xl bg-amber-500 py-3 text-sm font-bold text-white hover:bg-amber-600"
+                >
+                  {editAssignment ? '저장하기' : '추가하기'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         </div>
     </AuthGuard>
   )
