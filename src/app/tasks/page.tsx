@@ -1,7 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase, Task } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
+import type { Task, Project } from '@/lib/types'
+import { getDiff, formatWorkload } from '@/lib/utils'
+import {
+  MEMBERS,
+  TYPE_COLORS,
+  STATUS_COLORS,
+  WORKLOAD_PRESETS,
+} from '@/lib/constants'
 import { awardExp } from '@/lib/maple'
 import AuthGuard from '@/components/AuthGuard'
 import Header from '@/components/Header'
@@ -9,46 +17,11 @@ import UserMenu from '@/components/UserMenu'
 import Avatar from '@/components/Avatar'
 import NotificationButton from '@/components/NotificationButton'
 
-const MEMBERS = ['조현석', '조정연', '이헌희', '이지은']
-
-const TYPE_COLORS: Record<string, string> = {
-  '프로젝트': 'bg-violet-100 text-violet-700',
-  '유지보수': 'bg-red-100 text-red-700',
-  '고도화':   'bg-green-100 text-green-700',
-  '접근성':   'bg-sky-100 text-sky-700',
-  '업무지원': 'bg-blue-100 text-blue-700',
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  '완료':         'bg-green-100 text-green-700',
-  '진행중':       'bg-blue-100 text-blue-700',
-  '대기':         'bg-gray-100 text-gray-600',
-  '시작 전':      'bg-gray-100 text-gray-600',
-  '이슈 및 대기': 'bg-red-100 text-red-700',
-}
-
-const WORKLOAD_PRESETS = [
-  { label: '30분', value: 30 },
-  { label: '1h',   value: 60 },
-  { label: '2h',   value: 120 },
-  { label: '4h',   value: 240 },
-  { label: '1일',  value: 480 },
-  { label: '2일',  value: 960 },
-]
-
 const MEMBER_BORDER: Record<string, string> = {
   '조현석': 'border-purple-400 bg-purple-100 text-purple-700',
   '조정연': 'border-green-400 bg-green-100 text-green-700',
   '이헌희': 'border-amber-400 bg-amber-100 text-amber-700',
   '이지은': 'border-orange-400 bg-orange-100 text-orange-700',
-}
-
-function getDiff(dateStr: string | null) {
-  if (!dateStr) return null
-  const d = new Date(dateStr)
-  const n = new Date()
-  d.setHours(0,0,0,0); n.setHours(0,0,0,0)
-  return Math.round((d.getTime() - n.getTime()) / (1000*60*60*24))
 }
 
 function getWeekLabel() {
@@ -61,15 +34,6 @@ function getWeekLabel() {
   const fmt = (d: Date) => `${d.getMonth()+1}/${d.getDate()}`
   return `${now.getFullYear()}년 ${now.getMonth()+1}월 · ${fmt(mon)}~${fmt(fri)}`
 }
-
-function formatWorkload(min: number) {
-  if (!min) return ''
-  if (min >= 480) return `${(min/480).toFixed(1).replace('.0','')}일`
-  if (min >= 60)  return `${(min/60).toFixed(1).replace('.0','')}h`
-  return `${min}분`
-}
-
-type Project = { id: number; name: string; member: string }
 
 const EMPTY_FORM = {
   member: '', type: '', proj: '', content: '',

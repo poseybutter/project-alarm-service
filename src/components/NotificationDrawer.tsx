@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from './AuthProvider'
+import { getDiff } from '@/lib/utils'
 
 type Notification = {
   id: string
@@ -10,14 +11,6 @@ type Notification = {
   title: string
   body: string
   dday?: number
-}
-
-function getDiff(dateStr: string | null) {
-  if (!dateStr) return null
-  const d = new Date(dateStr)
-  const n = new Date()
-  d.setHours(0,0,0,0); n.setHours(0,0,0,0)
-  return Math.round((d.getTime() - n.getTime()) / (1000*60*60*24))
 }
 
 export default function NotificationDrawer({ onClose }: { onClose: () => void }) {

@@ -2,13 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-
-const MEMBER_COLORS: Record<string, { bg: string; text: string }> = {
-  '조현석': { bg: 'bg-purple-100', text: 'text-purple-700' },
-  '조정연': { bg: 'bg-green-100',  text: 'text-green-700'  },
-  '이헌희': { bg: 'bg-amber-100',  text: 'text-amber-700'  },
-  '이지은': { bg: 'bg-orange-100', text: 'text-orange-700' },
-}
+import { MEMBER_COLORS } from '@/lib/constants'
 
 // 전역 캐시
 const avatarCache: Record<string, string | null> = {}

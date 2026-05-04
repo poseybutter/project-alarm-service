@@ -12,15 +12,9 @@ import Avatar from '@/components/Avatar'
 import { DayPicker, DateRange } from 'react-day-picker'
 import 'react-day-picker/dist/style.css'
 import { ko } from 'date-fns/locale'
-
-const MEMBERS = ['조현석', '조정연', '이헌희', '이지은']
-const MEMBER_COLORS: Record<string, { bg: string; text: string }> = {
-  '조현석': { bg: 'bg-purple-100', text: 'text-purple-700' },
-  '조정연': { bg: 'bg-green-100',  text: 'text-green-700'  },
-  '이헌희': { bg: 'bg-amber-100',  text: 'text-amber-700'  },
-  '이지은': { bg: 'bg-orange-100', text: 'text-orange-700' },
-}
-const BAR_COLORS = ['#4CAF50','#2196F3','#9C27B0','#FF5722','#FF9800','#F44336','#FFD700','#FF69B4']
+import type { Player, Task, Accessibility, Project } from '@/lib/types'
+import { getDiff, formatWorkload } from '@/lib/utils'
+import { BAR_COLORS } from '@/lib/constants'
 
 const TITLES = [
   {
@@ -64,65 +58,6 @@ const TITLES = [
     condition: (p: Player) => (p.level || 1) >= 5
   },
 ]
-
-type Player = {
-  id: number
-  name: string
-  exp: number
-  month_exp: number
-  level: number
-  icons: string[]
-  attend_last: string | null
-  attend_streak: number
-  avatar_url: string | null
-  total_done: number
-  urgent_done: number
-  on_time_done: number
-}
-
-type Task = {
-  id: number
-  member: string
-  type: string
-  proj: string
-  content: string
-  status: string
-  end_date: string | null
-  start_date: string | null
-  workload: number
-  created_at: string
-}
-
-type Accessibility = {
-  id: number
-  proj: string
-  member: string
-  end_date: string | null
-  inspection_status: string
-  note: string | null
-}
-
-type Project = {
-  id: number
-  name: string
-  member: string
-  client: string | null
-}
-
-function getDiff(dateStr: string | null) {
-  if (!dateStr) return null
-  const d = new Date(dateStr)
-  const n = new Date()
-  d.setHours(0,0,0,0); n.setHours(0,0,0,0)
-  return Math.round((d.getTime() - n.getTime()) / (1000*60*60*24))
-}
-
-function formatWorkload(min: number) {
-  if (!min) return ''
-  if (min >= 480) return `${min / 480}일`
-  if (min >= 60)  return `${min / 60}h`
-  return `${min}분`
-}
 
 export default function ProfilePage() {
   const { member, refreshAvatar } = useAuth()
