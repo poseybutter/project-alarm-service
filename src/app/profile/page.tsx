@@ -422,27 +422,47 @@ export default function ProfilePage() {
                   <span className="text-xs text-stone-400">참고용</span>
                 </div>
                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                  {[...players].sort((a,b) => b.month_exp - a.month_exp).map((p, i) => {
-                    const medals = ['🥇','🥈','🥉','🏅']
-                    const plv = calcLevel(p.exp)
-                    const c = MEMBER_COLORS[p.name]
-                    return (
-                      <div key={p.name} className={`flex items-center gap-3 px-4 py-3 ${i < players.length-1 ? 'border-b border-stone-100' : ''} ${p.name === member ? 'bg-amber-50' : ''}`}>
-                        <span className="text-base">{medals[i] || '🏅'}</span>
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${c?.bg} ${c?.text}`}>
+                {[...players].sort((a,b) => b.month_exp - a.month_exp).map((p, i) => {
+                  const medals = ['🥇','🥈','🥉','🏅']
+                  const plv = calcLevel(p.exp)
+                  const c = MEMBER_COLORS[p.name]
+                  const isLeader = p.name === '조현석'
+                  return (
+                    <div key={p.name} className={`flex items-center gap-3 px-4 py-3
+                      ${i < players.length-1 ? 'border-b border-stone-100' : ''}
+                      ${p.name === member ? 'bg-amber-50' : ''}`}>
+                      <span className="text-base">{medals[i] || '🏅'}</span>
+                      {/* 아바타 + 완장 */}
+                      <div className="relative shrink-0">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold
+                          ${c?.bg} ${c?.text}
+                          ${isLeader ? 'ring-2 ring-yellow-400 ring-offset-1' : ''}`}>
                           {p.name.slice(1)}
                         </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-stone-800">{p.name}</p>
-                          <p className="text-xs text-stone-400">{plv.name}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-bold text-stone-800">{p.month_exp.toLocaleString()}</p>
-                          <p className="text-xs text-stone-400">EXP</p>
-                        </div>
+                        {isLeader && (
+                          <div className="absolute -top-2 left-1/2 -translate-x-1/2 text-xs">
+                            👑
+                          </div>
+                        )}
                       </div>
-                    )
-                  })}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-medium text-stone-800">{p.name}</p>
+                          {isLeader && (
+                            <span className="text-xs px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded font-medium border border-yellow-200">
+                              리더
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-stone-400">{plv.name}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-stone-800">{p.month_exp.toLocaleString()}</p>
+                        <p className="text-xs text-stone-400">EXP</p>
+                      </div>
+                    </div>
+                  )
+                })}
                 </div>
               </div>
 
