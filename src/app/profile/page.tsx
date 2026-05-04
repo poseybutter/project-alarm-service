@@ -6,6 +6,8 @@ import { calcLevel, getNextLevel, expBar, attendanceCheck, LEVELS } from '@/lib/
 import { useAuth } from '@/components/AuthProvider'
 import AuthGuard from '@/components/AuthGuard'
 import UserMenu from '@/components/UserMenu'
+import Header from '@/components/Header'
+import NotificationButton from '@/components/NotificationButton'
 import Avatar from '@/components/Avatar'
 import { DayPicker, DateRange } from 'react-day-picker'
 import 'react-day-picker/dist/style.css'
@@ -300,6 +302,7 @@ export default function ProfilePage() {
           <div className="max-w-2xl mx-auto flex justify-between items-center">
             <h1 className="text-base font-bold text-stone-900">내 프로필</h1>
             <div className="flex items-center gap-2">
+              <NotificationButton />
               <UserMenu />
             </div>
           </div>

@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react'
 import { supabase, Task } from '@/lib/supabase'
 import { awardExp } from '@/lib/maple'
 import AuthGuard from '@/components/AuthGuard'
+import Header from '@/components/Header'
 import UserMenu from '@/components/UserMenu'
 import Avatar from '@/components/Avatar'
+import NotificationButton from '@/components/NotificationButton'
 
 const MEMBERS = ['TEAM_MEMBER_1', 'TEAM_MEMBER_2', 'TEAM_MEMBER_3', 'TEAM_MEMBER_4']
 
@@ -257,6 +259,8 @@ export default function TasksPage() {
               >
                 + 업무
               </button>
+              {/* 알림 + 유저메뉴는 Header 컴포넌트 없이 직접 */}
+              <NotificationButton />
               <UserMenu />
             </div>
           </div>

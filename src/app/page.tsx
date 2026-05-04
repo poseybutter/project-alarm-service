@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { calcLevel, getNextLevel, expBar, attendanceCheck, LEVELS } from '@/lib/maple'
 import { awardExp } from '@/lib/maple'
 import { useAuth } from '@/components/AuthProvider'
-import NotificationDrawer from '@/components/NotificationDrawer'
+import Header from '@/components/Header'
 
 type Task = {
   id: number
@@ -58,7 +58,6 @@ export default function HomePage() {
   const [tasks, setTasks]     = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [toast, setToast]     = useState('')
-  const [showNotifications, setShowNotifications] = useState(false)
 
   useEffect(() => {
     if (!authLoading && !member) {
@@ -142,14 +141,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-[#f7f6f3]">
       {/* 헤더 */}
-      <div className="bg-white border-b border-stone-200 px-4 py-3 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto flex justify-between items-center">
-          <h1 className="text-base font-bold text-stone-900">UD2팀 업무</h1>
-          <div className="flex items-center gap-2">
-            <UserMenu />
-          </div>
-        </div>
-      </div>
+      <Header title="UD2팀 업무" />
 
       <div className="max-w-2xl mx-auto px-4 pt-3 pb-24">
         {/* 프로필 카드 */}
@@ -302,11 +294,6 @@ export default function HomePage() {
           </div>
         )}
       </div>
-
-      <NotificationDrawer
-        open={showNotifications}
-        onClose={() => setShowNotifications(false)}
-      />
 
       {/* 토스트 */}
       {toast && (
