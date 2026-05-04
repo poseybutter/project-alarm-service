@@ -537,54 +537,60 @@ export default function ProfilePage() {
                 ))}
               </div>
 
-              {/* 날짜 피커 */}
               {showDatePicker && (
-                <div className="bg-white rounded-xl border border-stone-200 mb-3 overflow-hidden">
-                  <div className="px-4 pt-3 pb-1 border-b border-stone-100">
-                    <p className="text-xs font-medium text-stone-500">
-                      {!dateRange?.from
-                        ? '시작일을 선택해주세요'
-                        : !dateRange?.to
-                        ? '종료일을 선택해주세요'
-                        : `${dateRange.from.getMonth()+1}/${dateRange.from.getDate()} ~ ${dateRange.to.getMonth()+1}/${dateRange.to.getDate()}`}
-                    </p>
+                <div className="bg-white rounded-2xl border border-stone-200 mb-3 overflow-hidden shadow-lg">
+                  {/* 상단 선택 현황 */}
+                  <div className="grid grid-cols-2 divide-x divide-stone-100 border-b border-stone-100">
+                    <div className={`px-4 py-3 ${!dateRange?.from ? 'bg-amber-50' : ''}`}>
+                      <p className="text-xs text-stone-400 mb-0.5">시작일</p>
+                      <p className={`text-sm font-bold ${dateRange?.from ? 'text-stone-800' : 'text-stone-300'}`}>
+                        {dateRange?.from
+                          ? `${dateRange.from.getFullYear()}.${dateRange.from.getMonth()+1}.${dateRange.from.getDate()}`
+                          : '날짜 선택'}
+                      </p>
+                    </div>
+                    <div className={`px-4 py-3 ${dateRange?.from && !dateRange?.to ? 'bg-amber-50' : ''}`}>
+                      <p className="text-xs text-stone-400 mb-0.5">종료일</p>
+                      <p className={`text-sm font-bold ${dateRange?.to ? 'text-stone-800' : 'text-stone-300'}`}>
+                        {dateRange?.to
+                          ? `${dateRange.to.getFullYear()}.${dateRange.to.getMonth()+1}.${dateRange.to.getDate()}`
+                          : '날짜 선택'}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex justify-center p-2">
+
+                  {/* 달력 */}
+                  <div className="flex justify-center px-2 py-2">
                     <DayPicker
                       mode="range"
                       selected={dateRange}
                       onSelect={(range) => {
                         setDateRange(range)
-                        // 시작일과 종료일 모두 선택됐을 때만 닫기
+                        // 종료일 선택 완료 시 자동 닫힘
                         if (range?.from && range?.to) {
-                          setTimeout(() => setShowDatePicker(false), 300)
+                          setTimeout(() => setShowDatePicker(false), 150)
                         }
                       }}
                       locale={ko}
                       toDate={new Date()}
-                      footer={
-                        dateRange?.from && !dateRange?.to ? (
-                          <p className="text-xs text-center text-stone-400 pb-2">종료일을 선택해주세요</p>
-                        ) : null
-                      }
                     />
                   </div>
-                  {dateRange?.from && (
-                    <div className="px-4 pb-3 flex gap-2">
-                      <button
-                        onClick={() => { setDateRange(undefined) }}
-                        className="flex-1 py-2 text-xs border border-stone-200 rounded-lg text-stone-500"
-                      >
-                        초기화
-                      </button>
-                      <button
-                        onClick={() => setShowDatePicker(false)}
-                        className="flex-1 py-2 text-xs bg-amber-500 text-white rounded-lg font-medium"
-                      >
-                        확인
-                      </button>
-                    </div>
-                  )}
+
+                  {/* 하단 */}
+                  <div className="px-4 pb-4 flex gap-2">
+                    <button
+                      onClick={() => { setDateRange(undefined) }}
+                      className="flex-1 py-2.5 text-xs border border-stone-200 rounded-xl text-stone-500 font-medium"
+                    >
+                      초기화
+                    </button>
+                    <button
+                      onClick={() => setShowDatePicker(false)}
+                      className="flex-1 py-2.5 text-xs bg-amber-500 text-white rounded-xl font-medium"
+                    >
+                      {dateRange?.from && dateRange?.to ? '적용' : '닫기'}
+                    </button>
+                  </div>
                 </div>
               )}
 

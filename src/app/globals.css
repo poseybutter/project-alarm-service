@@ -25,38 +25,34 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* DayPicker 커스텀 */
+/* DayPicker 에어비앤비 스타일 */
 .rdp {
-  --rdp-cell-size: 36px;
+  --rdp-cell-size: 40px;
   --rdp-accent-color: #f59e0b;
   --rdp-background-color: #fef3c7;
   margin: 0 !important;
 }
-.rdp-day_selected,
-.rdp-day_selected:hover {
+.rdp-months { justify-content: center; }
+.rdp-caption { padding: 0 8px 8px; }
+.rdp-caption_label { font-size: 14px !important; font-weight: 700 !important; color: #1c1917; }
+.rdp-nav_button { color: #a8a29e !important; }
+.rdp-head_cell { font-size: 11px !important; color: #a8a29e !important; font-weight: 600 !important; }
+.rdp-day { font-size: 13px !important; font-weight: 500; border-radius: 50% !important; }
+.rdp-day_today { font-weight: 700 !important; color: #f59e0b !important; }
+.rdp-day_range_start .rdp-day_button,
+.rdp-day_range_end .rdp-day_button {
   background-color: #f59e0b !important;
   color: white !important;
+  border-radius: 50% !important;
 }
 .rdp-day_range_middle {
   background-color: #fef3c7 !important;
+  border-radius: 0 !important;
+}
+.rdp-day_range_middle .rdp-day_button {
   color: #92400e !important;
 }
-.rdp-day_range_start,
-.rdp-day_range_end {
-  background-color: #f59e0b !important;
-  color: white !important;
-}
-.rdp-button:hover:not([disabled]):not(.rdp-day_selected) {
-  background-color: #fef3c7 !important;
-}
-.rdp-caption_label {
-  font-size: 13px !important;
-  font-weight: 700 !important;
-}
-.rdp-head_cell {
-  font-size: 11px !important;
-  color: #a8a29e !important;
-}
-.rdp-day {
-  font-size: 12px !important;
-}
+.rdp-day_range_start { border-radius: 50% 0 0 50% !important; }
+.rdp-day_range_end { border-radius: 0 50% 50% 0 !important; }
+.rdp-day_range_start.rdp-day_range_end { border-radius: 50% !important; }
+.rdp-button_reset:hover { background-color: #f5f5f4 !important; border-radius: 50% !important; }
