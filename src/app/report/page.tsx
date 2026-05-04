@@ -5,6 +5,8 @@ import UserMenu from '@/components/UserMenu'
 import Avatar from '@/components/Avatar'
 import { supabase } from '@/lib/supabase'
 import AuthGuard from '@/components/AuthGuard'
+import Header from '@/components/Header'
+import NotificationButton from '@/components/NotificationButton'
 
 
 const MEMBERS = ['조현석', '조정연', '이헌희', '이지은']
@@ -189,7 +191,8 @@ export default function ReportPage() {
             <div className="max-w-2xl mx-auto flex justify-between items-center">
                 <h1 className="text-base font-bold text-stone-900">리포트</h1>
                 <div className="flex items-center gap-2">
-                    <UserMenu />
+                  <NotificationButton />
+                  <UserMenu />
                 </div>
             </div>
         </div>
