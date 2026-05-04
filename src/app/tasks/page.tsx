@@ -64,11 +64,17 @@ export default function TasksPage() {
     loadProjects()
   
     const channel = supabase
-      .channel('tasks-realtime')
+      .channel('tasks-changes-' + Math.random())
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'tasks' },
-        () => { loadTasks() }
+        async () => {
+          const { data } = await supabase
+            .from('tasks')
+            .select('*')
+            .order('created_at', { ascending: false })
+          setTasks(data || [])
+        }
       )
       .subscribe()
   
