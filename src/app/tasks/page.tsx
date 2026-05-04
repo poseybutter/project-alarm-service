@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '@/lib/supabase'
 import type { Task, Project } from '@/lib/types'
 import { getDiff, formatWorkload } from '@/lib/utils'
@@ -9,19 +10,33 @@ import {
   TYPE_COLORS,
   STATUS_COLORS,
   WORKLOAD_PRESETS,
+  LEADER,
 } from '@/lib/constants'
 import { awardExp } from '@/lib/maple'
 import AuthGuard from '@/components/AuthGuard'
+import { useAuth } from '@/components/AuthProvider'
 import Header from '@/components/Header'
 import UserMenu from '@/components/UserMenu'
 import Avatar from '@/components/Avatar'
 import NotificationButton from '@/components/NotificationButton'
+import { DayPicker, DateRange } from 'react-day-picker'
+import { ko } from 'date-fns/locale'
+import 'react-day-picker/dist/style.css'
 
 const MEMBER_BORDER: Record<string, string> = {
   '조현석': 'border-purple-400 bg-purple-100 text-purple-700',
   '조정연': 'border-green-400 bg-green-100 text-green-700',
   '이헌희': 'border-amber-400 bg-amber-100 text-amber-700',
   '이지은': 'border-orange-400 bg-orange-100 text-orange-700',
+}
+
+/** 추가/수정 모달 기간 버튼 라벨 */
+function periodButtonLabel(range: DateRange | undefined): { text: string; placeholder: boolean } {
+  if (!range?.from) return { text: '기간 선택', placeholder: true }
+  const f = `${range.from.getMonth() + 1}/${range.from.getDate()}`
+  if (!range.to) return { text: `${f} ~`, placeholder: false }
+  const t = `${range.to.getMonth() + 1}/${range.to.getDate()}`
+  return { text: `${f} ~ ${t}`, placeholder: false }
 }
 
 function getWeekLabel() {
@@ -42,18 +57,32 @@ const EMPTY_FORM = {
 
 const EMPTY_EDIT = {
   type: '', proj: '', content: '', priority: '',
-  start_date: '', end_date: '', workload: 0, issue: '', status: ''
+  workload: 0, issue: '', status: '',
 }
 
 export default function TasksPage() {
+  const { member: currentMember } = useAuth()
+  const assignableMembers = currentMember === LEADER ? MEMBERS : [currentMember || '']
+  const canEditOrDelete = (taskMember: string) =>
+    currentMember === LEADER || taskMember === currentMember
+
   const [tasks, setTasks]       = useState<Task[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading]   = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editTask, setEditTask]   = useState<Task | null>(null)
   const [showEdit, setShowEdit]   = useState(false)
-  const [form, setForm]           = useState(EMPTY_FORM)
-  const [editForm, setEditForm]   = useState(EMPTY_EDIT)
+  const [form, setForm] = useState({
+    member: '', type: '', proj: '', content: '',
+    priority: '', workload: 0, issue: ''
+  })
+  const [formDateRange, setFormDateRange] = useState<DateRange | undefined>()
+  const [showFormDatePicker, setShowFormDatePicker] = useState(false)
+
+  // 수정 모달용
+  const [editForm, setEditForm] = useState(EMPTY_EDIT)
+  const [editDateRange, setEditDateRange] = useState<DateRange | undefined>()
+  const [showEditDatePicker, setShowEditDatePicker] = useState(false)
 
   const [filterMember,   setFilterMember]   = useState('')
   const [filterProject,  setFilterProject]  = useState('')
@@ -107,30 +136,40 @@ export default function TasksPage() {
       proj      : form.proj,
       content   : form.content,
       priority  : form.priority || null,
-      start_date: form.start_date || null,
-      end_date  : form.end_date || null,
+      start_date: formDateRange?.from ? formDateRange.from.toISOString().slice(0,10) : null,
+      end_date  : formDateRange?.to   ? formDateRange.to.toISOString().slice(0,10)   : null,
       workload  : form.workload || 0,
       issue     : form.issue || null,
       status    : '대기',
     }])
     setShowModal(false)
-    setForm(EMPTY_FORM)
+    setForm({ member:'', type:'', proj:'', content:'', priority:'', workload:0, issue:'' })
+    setFormDateRange(undefined)
+    setShowFormDatePicker(false)
     loadTasks()
   }
 
   function openEdit(task: Task) {
     setEditTask(task)
     setEditForm({
-      type      : task.type || '',
-      proj      : task.proj || '',
-      content   : task.content || '',
-      priority  : task.priority || '',
-      start_date: task.start_date || '',
-      end_date  : task.end_date || '',
-      workload  : task.workload || 0,
-      issue     : task.issue || '',
-      status    : task.status || '대기',
+      type    : task.type || '',
+      proj    : task.proj || '',
+      content : task.content || '',
+      priority: task.priority || '',
+      workload: task.workload || 0,
+      issue   : task.issue || '',
+      status  : task.status || '대기',
     })
+    // 날짜 range 설정
+    if (task.start_date || task.end_date) {
+      setEditDateRange({
+        from: task.start_date ? new Date(task.start_date) : undefined,
+        to  : task.end_date   ? new Date(task.end_date)   : undefined,
+      })
+    } else {
+      setEditDateRange(undefined)
+    }
+    setShowEditDatePicker(false)
     setShowEdit(true)
   }
 
@@ -141,14 +180,17 @@ export default function TasksPage() {
       proj      : editForm.proj,
       content   : editForm.content,
       priority  : editForm.priority || null,
-      start_date: editForm.start_date || null,
-      end_date  : editForm.end_date || null,
+      start_date: editDateRange?.from ? editDateRange.from.toISOString().slice(0,10) : null,
+      end_date  : editDateRange?.to   ? editDateRange.to.toISOString().slice(0,10)   : null,
       workload  : editForm.workload || 0,
       issue     : editForm.issue || null,
       status    : editForm.status,
     }).eq('id', editTask.id)
     setShowEdit(false)
     setEditTask(null)
+    setEditForm(EMPTY_EDIT)
+    setEditDateRange(undefined)
+    setShowEditDatePicker(false)
     loadTasks()
   }
 
@@ -224,6 +266,9 @@ export default function TasksPage() {
       </div>
     )
   }
+
+  const formPeriodLabel = periodButtonLabel(formDateRange)
+  const editPeriodLabel = periodButtonLabel(editDateRange)
 
   return (
     <AuthGuard>
@@ -360,10 +405,14 @@ export default function TasksPage() {
                                 <option key={s} value={s}>{s}</option>
                               ))}
                             </select>
-                            <button onClick={() => openEdit(t)}
-                              className="text-xs text-stone-300 hover:text-amber-500 transition-colors">수정</button>
-                            <button onClick={() => deleteTask(t.id)}
-                              className="text-xs text-stone-300 hover:text-red-400 transition-colors">삭제</button>
+                            {canEditOrDelete(t.member) && (
+                              <>
+                                <button onClick={() => openEdit(t)}
+                                  className="text-xs text-stone-300 hover:text-amber-500 transition-colors">수정</button>
+                                <button onClick={() => deleteTask(t.id)}
+                                  className="text-xs text-stone-300 hover:text-red-400 transition-colors">삭제</button>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -379,19 +428,19 @@ export default function TasksPage() {
         {/* 업무 추가 모달 */}
         {showModal && (
           <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center" style={{ bottom: `var(--nav-height)` }}
-            onClick={() => setShowModal(false)}>
+            onClick={() => { setShowModal(false); setShowFormDatePicker(false) }}>
             <div className="bg-white rounded-t-2xl p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto"
               onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-center mb-5">
                 <h2 className="text-base font-bold">업무 추가</h2>
-                <button onClick={() => setShowModal(false)} className="text-2xl text-stone-400 leading-none">×</button>
+                <button onClick={() => { setShowModal(false); setShowFormDatePicker(false) }} className="text-2xl text-stone-400 leading-none">×</button>
               </div>
               <div className="space-y-4">
                 {/* 담당자 */}
                 <div>
                   <label className="text-xs font-medium text-stone-500 block mb-2">담당자</label>
                   <div className="grid grid-cols-4 gap-2">
-                    {MEMBERS.map(m => (
+                    {assignableMembers.map(m => (
                       <button key={m}
                         onClick={() => setForm({...form, member: m, proj: ''})}
                         className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border-2 transition-all
@@ -440,18 +489,60 @@ export default function TasksPage() {
                 </div>
                 {/* 공수 */}
                 <WorkloadInput value={form.workload} onChange={v => setForm({...form, workload: v})} />
-                {/* 날짜 */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-stone-500 block mb-1.5">시작일</label>
-                    <input type="date" className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                      value={form.start_date} onChange={e => setForm({...form, start_date: e.target.value})} />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-stone-500 block mb-1.5">마감일</label>
-                    <input type="date" className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                      value={form.end_date} onChange={e => setForm({...form, end_date: e.target.value})} />
-                  </div>
+                {/* 기간 — 추가 모달 (오버레이 + absolute 패널) */}
+                <div className="relative z-20">
+                  <label className="text-xs font-medium text-stone-500 block mb-1.5">기간</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowFormDatePicker(o => !o)}
+                    className={`w-full text-left border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white shadow-sm transition-colors
+                      ${showFormDatePicker ? 'ring-2 ring-amber-200 border-amber-300' : 'hover:border-stone-300'}`}
+                  >
+                    <span className={formPeriodLabel.placeholder ? 'text-stone-400' : 'text-stone-800'}>
+                      {formPeriodLabel.text}
+                    </span>
+                  </button>
+                  {showFormDatePicker &&
+                    typeof document !== 'undefined' &&
+                    createPortal(
+                      <div
+                        className="fixed inset-0 z-[200] bg-black/30"
+                        onClick={() => setShowFormDatePicker(false)}
+                        role="presentation"
+                      >
+                        <div
+                          className="absolute left-1/2 w-[min(calc(100vw-2rem),36rem)] -translate-x-1/2 rounded-xl border border-stone-200 bg-white p-3 shadow-2xl"
+                          style={{ bottom: 'max(5.5rem, calc(var(--nav-height, 0px) + 3.5rem))' }}
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <div className="flex justify-center overflow-x-auto">
+                            <DayPicker
+                              mode="range"
+                              selected={formDateRange}
+                              onSelect={setFormDateRange}
+                              locale={ko}
+                            />
+                          </div>
+                          <div className="mt-3 flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setFormDateRange(undefined)}
+                              className="flex-1 rounded-lg border border-stone-200 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
+                            >
+                              초기화
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setShowFormDatePicker(false)}
+                              className="flex-1 rounded-lg bg-amber-500 py-2 text-xs font-bold text-white hover:bg-amber-600"
+                            >
+                              적용
+                            </button>
+                          </div>
+                        </div>
+                      </div>,
+                      document.body
+                    )}
                 </div>
                 {/* 이슈/비고 */}
                 <div>
@@ -472,12 +563,12 @@ export default function TasksPage() {
         {/* 업무 수정 모달 */}
         {showEdit && editTask && (
           <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
-            onClick={() => setShowEdit(false)}>
+            onClick={() => { setShowEdit(false); setEditTask(null); setEditForm(EMPTY_EDIT); setEditDateRange(undefined); setShowEditDatePicker(false) }}>
             <div className="bg-white rounded-t-2xl p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto"
               onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-center mb-5">
                 <h2 className="text-base font-bold">업무 수정</h2>
-                <button onClick={() => setShowEdit(false)} className="text-2xl text-stone-400 leading-none">×</button>
+                <button onClick={() => { setShowEdit(false); setEditTask(null); setEditForm(EMPTY_EDIT); setEditDateRange(undefined); setShowEditDatePicker(false) }} className="text-2xl text-stone-400 leading-none">×</button>
               </div>
               <div className="space-y-4">
                 {/* 상태 */}
@@ -521,18 +612,60 @@ export default function TasksPage() {
                 </div>
                 {/* 공수 */}
                 <WorkloadInput value={editForm.workload} onChange={v => setEditForm({...editForm, workload: v})} />
-                {/* 날짜 */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-medium text-stone-500 block mb-1.5">시작일</label>
-                    <input type="date" className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                      value={editForm.start_date} onChange={e => setEditForm({...editForm, start_date: e.target.value})} />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-stone-500 block mb-1.5">마감일</label>
-                    <input type="date" className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                      value={editForm.end_date} onChange={e => setEditForm({...editForm, end_date: e.target.value})} />
-                  </div>
+                {/* 기간 — 수정 모달 (오버레이 + absolute 패널) */}
+                <div className="relative z-20">
+                  <label className="text-xs font-medium text-stone-500 block mb-1.5">기간</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowEditDatePicker(o => !o)}
+                    className={`w-full text-left border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white shadow-sm transition-colors
+                      ${showEditDatePicker ? 'ring-2 ring-amber-200 border-amber-300' : 'hover:border-stone-300'}`}
+                  >
+                    <span className={editPeriodLabel.placeholder ? 'text-stone-400' : 'text-stone-800'}>
+                      {editPeriodLabel.text}
+                    </span>
+                  </button>
+                  {showEditDatePicker &&
+                    typeof document !== 'undefined' &&
+                    createPortal(
+                      <div
+                        className="fixed inset-0 z-[200] bg-black/30"
+                        onClick={() => setShowEditDatePicker(false)}
+                        role="presentation"
+                      >
+                        <div
+                          className="absolute left-1/2 w-[min(calc(100vw-2rem),36rem)] -translate-x-1/2 rounded-xl border border-stone-200 bg-white p-3 shadow-2xl"
+                          style={{ bottom: 'max(5.5rem, calc(var(--nav-height, 0px) + 3.5rem))' }}
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <div className="flex justify-center overflow-x-auto">
+                            <DayPicker
+                              mode="range"
+                              selected={editDateRange}
+                              onSelect={setEditDateRange}
+                              locale={ko}
+                            />
+                          </div>
+                          <div className="mt-3 flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setEditDateRange(undefined)}
+                              className="flex-1 rounded-lg border border-stone-200 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
+                            >
+                              초기화
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setShowEditDatePicker(false)}
+                              className="flex-1 rounded-lg bg-amber-500 py-2 text-xs font-bold text-white hover:bg-amber-600"
+                            >
+                              적용
+                            </button>
+                          </div>
+                        </div>
+                      </div>,
+                      document.body
+                    )}
                 </div>
                 {/* 이슈/비고 */}
                 <div>
