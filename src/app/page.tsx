@@ -10,6 +10,7 @@ import Header from '@/components/Header'
 import type { Quest, Player } from '@/lib/types'
 import { getDiff } from '@/lib/utils'
 import { BAR_COLORS } from '@/lib/constants'
+import Avatar from '@/components/Avatar'
 
 type QuestFormType = { content: string; proj: string; end_date: string }
 
@@ -223,9 +224,7 @@ export default function HomePage() {
           {/* 프로필 카드 */}
           <div className="bg-white rounded-2xl border border-stone-200 p-4 mb-3">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-sm font-bold text-amber-700 shrink-0">
-                {member.slice(1)}
-              </div>
+              <Avatar name={member} size={40} />
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-bold text-stone-900">{member}</span>
