@@ -194,7 +194,7 @@ const EMPTY_ASSIGN_FORM: {
 }
 
 export default function ReportPage() {
-  const { member: currentMember } = useAuth()
+  const { member: currentMember, role } = useAuth()
   const [mode, setMode]       = useState<'weekly' | 'monthly'>('weekly')
   const [wOff, setWOff]       = useState(0)
   const [mOff, setMOff]       = useState(0)
@@ -508,7 +508,6 @@ export default function ReportPage() {
     })
   }
 
-  const { member: currentMember, role } = useAuth()
   const isLeader = role === 'admin'
 
   return (
