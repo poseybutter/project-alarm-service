@@ -399,7 +399,7 @@ export default function ProfilePage() {
             {[
               { key: 'info',    label: '내 정보' },
               { key: 'history', label: '지난 업무' },
-              { key: 'titles',  label: '칭호' },
+              { key: 'titles',  label: '성장' },
             ].map(t => (
               <button
                 key={t.key}
@@ -689,12 +689,58 @@ export default function ProfilePage() {
 
           {/* 칭호 탭 */}
           {tab === 'titles' && (
-            <div>
+            <div className="space-y-4">
+              {/* 레벨 가이드 */}
+              <div>
+                <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-2">레벨 가이드</p>
+                <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+                  {LEVELS.map((lv, i) => {
+                    const isCurrentLv = player ? calcLevel(player.exp).level === lv.level : false
+                    const isUnlocked  = player ? player.exp >= lv.exp : false
+                    return (
+                      <div
+                        key={lv.level}
+                        className={`flex items-center gap-3 px-4 py-3
+                          ${i < LEVELS.length-1 ? 'border-b border-stone-100' : ''}
+                          ${isCurrentLv ? 'bg-amber-50' : ''}`}
+                      >
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0
+                          ${isUnlocked ? 'bg-amber-100 text-amber-700' : 'bg-stone-100 text-stone-400'}`}>
+                          {lv.level}
+                        </div>
+                        <div className="flex-1">
+                          <p className={`text-sm font-medium ${isUnlocked ? 'text-stone-800' : 'text-stone-400'}`}>
+                            {lv.name}
+                          </p>
+                          <p className="text-xs text-stone-400">
+                            {lv.exp.toLocaleString()} EXP
+                            {i < LEVELS.length-1 && ` ~ ${(LEVELS[i+1].exp-1).toLocaleString()} EXP`}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          {isCurrentLv && (
+                            <span className="text-xs bg-amber-500 text-white px-2 py-0.5 rounded-full font-medium">현재</span>
+                          )}
+                          {!isCurrentLv && isUnlocked && (
+                            <span className="text-xs text-green-500">✓</span>
+                          )}
+                          {!isUnlocked && (
+                            <span className="text-xs text-stone-300">🔒</span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
               {/* 획득한 칭호 */}
-              <div className="mb-4">
+              <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">획득한 칭호</span>
-                  <span className="text-xs text-stone-400">{TITLES.filter(t => player && t.condition(player)).length}/{TITLES.length}</span>
+                  <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">획득한 칭호</p>
+                  <span className="text-xs text-stone-400">
+                    {TITLES.filter(t => player && t.condition(player)).length}/{TITLES.length}
+                  </span>
                 </div>
                 <div className="space-y-2">
                   {TITLES.filter(t => player && t.condition(player)).map(t => (
@@ -714,16 +760,16 @@ export default function ProfilePage() {
 
               {/* 미획득 칭호 */}
               <div>
-                <span className="text-xs font-bold text-stone-500 uppercase tracking-wide block mb-2">미획득</span>
+                <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-2">미획득</p>
                 <div className="space-y-2">
                   {TITLES.filter(t => !player || !t.condition(player)).map(t => (
                     <div key={t.id} className="bg-white rounded-xl border border-stone-200 px-4 py-3 flex items-center gap-3 opacity-50">
-                      <span className="text-2xl grayscale">{t.icon}</span>
+                      <span className="text-2xl">{t.icon}</span>
                       <div className="flex-1">
                         <p className="text-sm font-medium text-stone-500">{t.name}</p>
                         <p className="text-xs text-stone-400">{t.desc}</p>
                       </div>
-                      <span className="text-xs text-stone-300">잠금</span>
+                      <span className="text-xs text-stone-300">🔒</span>
                     </div>
                   ))}
                 </div>
