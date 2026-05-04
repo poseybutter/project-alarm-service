@@ -6,6 +6,9 @@ import { calcLevel, getNextLevel, expBar, attendanceCheck, LEVELS } from '@/lib/
 import { useAuth } from '@/components/AuthProvider'
 import AuthGuard from '@/components/AuthGuard'
 import UserMenu from '@/components/UserMenu'
+import { DayPicker, DateRange } from 'react-day-picker'
+import 'react-day-picker/dist/style.css'
+import { ko } from 'date-fns/locale'
 
 const MEMBERS = ['TEAM_MEMBER_1', 'TEAM_MEMBER_2', 'TEAM_MEMBER_3', 'TEAM_MEMBER_4']
 const MEMBER_COLORS: Record<string, { bg: string; text: string }> = {
@@ -130,8 +133,8 @@ export default function ProfilePage() {
   const [loading, setLoading]   = useState(true)
   const [toast, setToast]       = useState('')
   const [historyFilter, setHistoryFilter] = useState<'week' | 'lastweek' | 'month'>('week')
-  const [historyProjFilter, setHistoryProjFilter] = useState('')
-  const [historyStatusFilter, setHistoryStatusFilter] = useState('')
+  const [dateRange, setDateRange]             = useState<DateRange | undefined>()
+  const [showDatePicker, setShowDatePicker]   = useState(false)
   const [showProjModal, setShowProjModal] = useState(false)
   const [showAccModal, setShowAccModal]   = useState(false)
   const [projForm, setProjForm] = useState({ name: '', client: '' })
@@ -251,27 +254,35 @@ export default function ProfilePage() {
   // 지난 업무 필터
   const now = new Date()
   const getHistoryTasks = () => {
-    const start = new Date(now)
-    const end   = new Date(now)
-    end.setHours(23,59,59,999)
+    let start: Date
+    let end: Date
+    const today = new Date()
   
-    if (historyFilter === 'week') {
-      start.setDate(now.getDate() - ((now.getDay()+6)%7))
-      start.setHours(0,0,0,0)
+    if (historyFilter === 'custom' && dateRange?.from) {
+      start = new Date(dateRange.from)
+      end   = dateRange.to ? new Date(dateRange.to) : new Date(dateRange.from)
+    } else if (historyFilter === 'week') {
+      start = new Date(today)
+      start.setDate(today.getDate() - ((today.getDay()+6)%7))
+      end   = new Date(today)
     } else if (historyFilter === 'lastweek') {
-      start.setDate(now.getDate() - ((now.getDay()+6)%7) - 7)
-      start.setHours(0,0,0,0)
-      end.setDate(now.getDate() - ((now.getDay()+6)%7) - 1)
+      start = new Date(today)
+      start.setDate(today.getDate() - ((today.getDay()+6)%7) - 7)
+      end   = new Date(today)
+      end.setDate(today.getDate() - ((today.getDay()+6)%7) - 1)
     } else {
-      start.setDate(1)
-      start.setHours(0,0,0,0)
+      start = new Date(today.getFullYear(), today.getMonth(), 1)
+      end   = new Date(today)
     }
+  
+    start.setHours(0,0,0,0)
+    end.setHours(23,59,59,999)
   
     return tasks.filter(t => {
       const d = new Date(t.created_at)
       if (d < start || d > end) return false
-      if (historyProjFilter   && t.proj   !== historyProjFilter)   return false
-      if (historyStatusFilter && t.status !== historyStatusFilter)  return false
+      if (historyProjFilter   && t.proj   !== historyProjFilter)  return false
+      if (historyStatusFilter && t.status !== historyStatusFilter) return false
       return true
     })
   }
@@ -498,24 +509,50 @@ export default function ProfilePage() {
           {tab === 'history' && (
             <div>
               {/* 기간 필터 */}
-              <div className="flex gap-2 mb-3">
+              <div className="flex gap-2 mb-3 flex-wrap">
                 {[
                   { key: 'week',     label: '이번 주' },
                   { key: 'lastweek', label: '지난 주' },
                   { key: 'month',    label: '이번 달' },
+                  { key: 'custom',   label: '직접 설정' },
                 ].map(f => (
                   <button
                     key={f.key}
-                    onClick={() => setHistoryFilter(f.key as 'week' | 'lastweek' | 'month')}
+                    onClick={() => {
+                      setHistoryFilter(f.key as 'week' | 'lastweek' | 'month' | 'custom')
+                      if (f.key === 'custom') setShowDatePicker(p => !p)
+                      else setShowDatePicker(false)
+                    }}
                     className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all
                       ${historyFilter === f.key
                         ? 'bg-amber-500 text-white border-amber-500'
                         : 'bg-white text-stone-500 border-stone-200'}`}
                   >
-                    {f.label}
+                    {f.key === 'custom' && dateRange?.from
+                      ? `${dateRange.from.getMonth()+1}/${dateRange.from.getDate()}${dateRange.to ? ` ~ ${dateRange.to.getMonth()+1}/${dateRange.to.getDate()}` : ''}`
+                      : f.label}
                   </button>
                 ))}
               </div>
+
+              {/* 날짜 피커 */}
+              {showDatePicker && (
+                <div className="bg-white rounded-xl border border-stone-200 p-3 mb-3 overflow-x-auto">
+                  <DayPicker
+                    mode="range"
+                    selected={dateRange}
+                    onSelect={(range) => {
+                      setDateRange(range)
+                      if (range?.from && range?.to) setShowDatePicker(false)
+                    }}
+                    locale={ko}
+                    styles={{
+                      root: { fontSize: '12px' },
+                      caption: { fontSize: '13px' },
+                    }}
+                  />
+                </div>
+              )}
 
               {/* 프로젝트/상태 필터 */}
               <div className="flex gap-2 mb-3">
