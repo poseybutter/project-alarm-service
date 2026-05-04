@@ -7,17 +7,8 @@ import { supabase } from '@/lib/supabase'
 import AuthGuard from '@/components/AuthGuard'
 import Header from '@/components/Header'
 import NotificationButton from '@/components/NotificationButton'
-
-
-const MEMBERS = ['TEAM_MEMBER_1', 'TEAM_MEMBER_2', 'TEAM_MEMBER_3', 'TEAM_MEMBER_4']
-const LEADER  = 'TEAM_MEMBER_1'
-
-const MEMBER_COLORS: Record<string, { bar: string; bg: string; text: string }> = {
-  'TEAM_MEMBER_1': { bar: '#7C3AED', bg: 'bg-purple-100', text: 'text-purple-700' },
-  'TEAM_MEMBER_2': { bar: '#059669', bg: 'bg-green-100',  text: 'text-green-700'  },
-  'TEAM_MEMBER_3': { bar: '#D97706', bg: 'bg-amber-100',  text: 'text-amber-700'  },
-  'TEAM_MEMBER_4': { bar: '#EA580C', bg: 'bg-orange-100', text: 'text-orange-700' },
-}
+import type { Task } from '@/lib/types'
+import { MEMBERS, LEADER, MEMBER_COLORS, STATUS_COLORS } from '@/lib/constants'
 
 const BRIEF_GROUPS: Record<string, string[]> = {
   '프로젝트': ['프로젝트'],
@@ -25,29 +16,6 @@ const BRIEF_GROUPS: Record<string, string[]> = {
   '고도화':   ['고도화'],
   '접근성':   ['접근성'],
   '기타':     ['업무지원', '기타'],
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  '완료':         'bg-green-100 text-green-700',
-  '진행중':       'bg-blue-100 text-blue-700',
-  '대기':         'bg-gray-100 text-gray-600',
-  '시작 전':      'bg-gray-100 text-gray-600',
-  '이슈 및 대기': 'bg-red-100 text-red-700',
-}
-
-type Task = {
-  id: number
-  member: string
-  type: string
-  proj: string
-  content: string
-  status: string
-  priority: string | null
-  end_date: string | null
-  start_date: string | null
-  workload: number
-  issue: string | null
-  created_at: string
 }
 
 function getWeekWin(offset: number) {
@@ -334,7 +302,6 @@ export default function ReportPage() {
                     const mt = curTasks.filter(t => t.member === m)
                     if (!mt.length) return null
                     const isExp = expanded[m]
-                    const c     = MEMBER_COLORS[m]
                     return (
                     <div key={m} className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-2">
                         {/* 헤더 */}

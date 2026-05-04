@@ -7,38 +7,11 @@ import { calcLevel, getNextLevel, expBar, attendanceCheck, LEVELS, awardExp } fr
 import { useAuth } from '@/components/AuthProvider'
 import AuthGuard from '@/components/AuthGuard'
 import Header from '@/components/Header'
-
-type Quest = {
-  id: number
-  member: string
-  proj: string | null
-  content: string
-  status: string
-  end_date: string | null
-  created_at: string
-}
-
-type Player = {
-  id: number
-  name: string
-  exp: number
-  month_exp: number
-  level: number
-  attend_last: string | null
-  attend_streak: number
-}
+import type { Quest, Player } from '@/lib/types'
+import { getDiff } from '@/lib/utils'
+import { BAR_COLORS } from '@/lib/constants'
 
 type QuestFormType = { content: string; proj: string; end_date: string }
-
-function getDiff(dateStr: string | null) {
-  if (!dateStr) return null
-  const d = new Date(dateStr)
-  const n = new Date()
-  d.setHours(0,0,0,0); n.setHours(0,0,0,0)
-  return Math.round((d.getTime() - n.getTime()) / (1000*60*60*24))
-}
-
-const BAR_COLORS = ['#4CAF50','#2196F3','#9C27B0','#FF5722','#FF9800','#F44336','#FFD700','#FF69B4']
 
 function QuestFormModal({
   title,

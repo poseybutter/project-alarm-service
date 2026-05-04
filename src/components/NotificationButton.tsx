@@ -4,14 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from './AuthProvider'
 import NotificationDrawer from './NotificationDrawer'
 import { supabase } from '@/lib/supabase'
-
-function getDiff(dateStr: string | null) {
-  if (!dateStr) return null
-  const d = new Date(dateStr)
-  const n = new Date()
-  d.setHours(0,0,0,0); n.setHours(0,0,0,0)
-  return Math.round((d.getTime() - n.getTime()) / (1000*60*60*24))
-}
+import { getDiff } from '@/lib/utils'
 
 export default function NotificationButton() {
   const { member } = useAuth()
