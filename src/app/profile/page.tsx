@@ -566,8 +566,9 @@ export default function ProfilePage() {
                       selected={dateRange}
                       onSelect={(range) => {
                         setDateRange(range)
-                        // 종료일 선택 완료 시 자동 닫힘
-                        if (range?.from && range?.to) {
+                        // from과 to가 다른 날짜일 때만 닫기
+                        if (range?.from && range?.to && 
+                            range.from.toDateString() !== range.to.toDateString()) {
                           setTimeout(() => setShowDatePicker(false), 150)
                         }
                       }}
