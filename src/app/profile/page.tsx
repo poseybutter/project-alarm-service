@@ -132,7 +132,7 @@ export default function ProfilePage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading]   = useState(true)
   const [toast, setToast]       = useState('')
-  const [historyFilter, setHistoryFilter] = useState<'week' | 'lastweek' | 'month'>('week')
+  const [historyFilter, setHistoryFilter] = useState<'week' | 'lastweek' | 'month' | 'custom'>('week')
   const [dateRange, setDateRange]             = useState<DateRange | undefined>()
   const [showDatePicker, setShowDatePicker]   = useState(false)
   const [showProjModal, setShowProjModal] = useState(false)
