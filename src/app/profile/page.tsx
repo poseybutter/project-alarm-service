@@ -169,8 +169,6 @@ export default function ProfilePage() {
     setAccessibility(accData || [])
     setProjects(projData || [])
     setLoading(false)
-
-    console.log('players:', playerData)
   }
 
   function showToastMsg(msg: string) {
@@ -741,22 +739,22 @@ export default function ProfilePage() {
                 <div className="flex justify-between items-center mb-2">
                   <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">획득한 칭호</p>
                   <span className="text-xs text-stone-400">
-                    {TITLES.filter(t => player && t.condition(player)).length}/{TITLES.length}
+                    {player ? TITLES.filter(t => t.condition(player)).length : 0}/{TITLES.length}
                   </span>
                 </div>
                 <div className="space-y-2">
-                  {TITLES.filter(t => player && t.condition(player)).map(t => (
-                    <div key={t.id} className="bg-white rounded-xl border border-stone-200 px-4 py-3 flex items-center gap-3">
-                      <span className="text-2xl">{t.icon}</span>
-                      <div>
-                        <p className="text-sm font-bold text-stone-800">{t.name}</p>
-                        <p className="text-xs text-stone-400">{t.desc}</p>
-                      </div>
-                    </div>
-                  ))}
-                  {TITLES.filter(t => player && t.condition(player)).length === 0 && (
-                    <p className="text-xs text-stone-400 text-center py-4">아직 획득한 칭호가 없어요</p>
-                  )}
+                  {player && TITLES.filter(t => t.condition(player)).length > 0
+                    ? TITLES.filter(t => t.condition(player)).map(t => (
+                        <div key={t.id} className="bg-white rounded-xl border border-stone-200 px-4 py-3 flex items-center gap-3">
+                          <span className="text-2xl">{t.icon}</span>
+                          <div>
+                            <p className="text-sm font-bold text-stone-800">{t.name}</p>
+                            <p className="text-xs text-stone-400">{t.desc}</p>
+                          </div>
+                        </div>
+                      ))
+                    : <p className="text-xs text-stone-400 text-center py-4">아직 획득한 칭호가 없어요</p>
+                  }
                 </div>
               </div>
 
