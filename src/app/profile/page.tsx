@@ -124,6 +124,8 @@ function formatWorkload(min: number) {
 export default function ProfilePage() {
   const { member, refreshAvatar } = useAuth()
 
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   // useState 선언
   const [tab, setTab]           = useState<'info' | 'history' | 'titles'>('info')
   const [players, setPlayers]   = useState<Player[]>([])
@@ -167,14 +169,14 @@ export default function ProfilePage() {
     setAccessibility(accData || [])
     setProjects(projData || [])
     setLoading(false)
+
+    console.log('players:', playerData)
   }
 
   function showToastMsg(msg: string) {
     setToast(msg)
     setTimeout(() => setToast(''), 3000)
   }
-
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   async function uploadAvatar(file: File) {
     if (!member) return
