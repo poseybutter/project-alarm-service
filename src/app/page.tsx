@@ -95,7 +95,26 @@ export default function HomePage() {
   }, [authLoading, member])
 
   useEffect(() => {
-    if (member) loadData()
+    if (member) {
+      loadData()
+  
+      // Realtime 구독
+      const channel = supabase
+        .channel('home-realtime')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'quests' },
+          () => { loadData() }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'players' },
+          () => { loadData() }
+        )
+        .subscribe()
+  
+      return () => { supabase.removeChannel(channel) }
+    }
   }, [member])
 
   if (authLoading || !member) return null
