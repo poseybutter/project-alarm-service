@@ -154,6 +154,7 @@ export default function HomePage() {
   }
 
   async function completeQuest(quest: Quest) {
+    if (!member) return
     await supabase.from('quests').update({ status: '완료' }).eq('id', quest.id)
     const result = await awardExp(member, 'QUEST')
     showToastMsg(result?.levelUp ? `🎊 레벨업! ${result.newLv?.name}` : `⚔️ 완료! +${result?.amount} EXP`)
