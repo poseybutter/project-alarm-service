@@ -28,6 +28,8 @@ type Player = {
   attend_streak: number
 }
 
+type QuestFormType = { content: string; proj: string; end_date: string }
+
 function getDiff(dateStr: string | null) {
   if (!dateStr) return null
   const d = new Date(dateStr)
@@ -38,18 +40,82 @@ function getDiff(dateStr: string | null) {
 
 const BAR_COLORS = ['#4CAF50','#2196F3','#9C27B0','#FF5722','#FF9800','#F44336','#FFD700','#FF69B4']
 
+function QuestFormModal({
+  title,
+  questForm,
+  setQuestForm,
+  onSubmit,
+  onClose,
+}: {
+  title: string
+  questForm: QuestFormType
+  setQuestForm: React.Dispatch<React.SetStateAction<QuestFormType>>
+  onSubmit: () => void
+  onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center" onClick={onClose}>
+      <div
+        className="bg-white rounded-t-2xl p-5 w-full max-w-2xl"
+        style={{ marginBottom: '67px' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex justify-between items-center mb-5">
+          <h2 className="text-base font-bold">{title}</h2>
+          <button onClick={onClose} className="text-2xl text-stone-400 leading-none">×</button>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="text-xs font-medium text-stone-500 block mb-1.5">퀘스트 내용</label>
+            <textarea
+              className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm h-20 resize-none"
+              placeholder="예) 메인 슬라이드 퍼블리싱"
+              value={questForm.content}
+              onChange={e => setQuestForm({...questForm, content: e.target.value})}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-stone-500 block mb-1.5">프로젝트 (선택)</label>
+            <input
+              className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
+              placeholder="예) 모바일앱 웹뷰"
+              value={questForm.proj}
+              onChange={e => setQuestForm({...questForm, proj: e.target.value})}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-stone-500 block mb-1.5">마감일 (선택)</label>
+            <input
+              type="date"
+              className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
+              value={questForm.end_date}
+              onChange={e => setQuestForm({...questForm, end_date: e.target.value})}
+            />
+          </div>
+          <button
+            onClick={onSubmit}
+            className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm"
+          >
+            {title === '퀘스트 추가' ? '추가하기' : '저장하기'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function HomePage() {
   const { member, loading: authLoading } = useAuth()
   const router = useRouter()
 
-  const [player, setPlayer]     = useState<Player | null>(null)
-  const [quests, setQuests]     = useState<Quest[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [toast, setToast]       = useState('')
-  const [showAddQuest, setShowAddQuest] = useState(false)
+  const [player, setPlayer]         = useState<Player | null>(null)
+  const [quests, setQuests]         = useState<Quest[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [toast, setToast]           = useState('')
+  const [showAddQuest, setShowAddQuest]   = useState(false)
   const [showEditQuest, setShowEditQuest] = useState(false)
-  const [editTarget, setEditTarget] = useState<Quest | null>(null)
-  const [questForm, setQuestForm] = useState({ content: '', proj: '', end_date: '' })
+  const [editTarget, setEditTarget]       = useState<Quest | null>(null)
+  const [questForm, setQuestForm]         = useState<QuestFormType>({ content: '', proj: '', end_date: '' })
 
   useEffect(() => {
     if (!authLoading && !member) router.push('/login')
@@ -63,7 +129,6 @@ export default function HomePage() {
 
   async function loadData() {
     setLoading(true)
-    const today = new Date().toISOString().slice(0, 10)
     const [{ data: playerData }, { data: questData }] = await Promise.all([
       supabase.from('players').select('*').eq('name', member).single(),
       supabase.from('quests').select('*').eq('member', member).neq('status', '완료').order('end_date', { ascending: true }),
@@ -79,7 +144,7 @@ export default function HomePage() {
   }
 
   async function handleAttend() {
-    if (!player) return
+    if (!player || !member) return
     const today = new Date().toISOString().slice(0, 10)
     if (player.attend_last === today) { showToastMsg('오늘은 이미 출석했어요!'); return }
     const result = await attendanceCheck(member)
@@ -151,61 +216,7 @@ export default function HomePage() {
   })
 
   const stats = {
-    doing: quests.filter(q => q.status === '진행중').length,
-    exp  : player?.month_exp || 0,
-  }
-
-  // 퀘스트 폼 모달 공통 컴포넌트
-  function QuestFormModal({ title, onSubmit, onClose }: { title: string; onSubmit: () => void; onClose: () => void }) {
-    return (
-      <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center" onClick={onClose}>
-        <div
-          className="bg-white rounded-t-2xl p-5 w-full max-w-2xl"
-          style={{ marginBottom: '67px' }}
-          onClick={e => e.stopPropagation()}
-        >
-          <div className="flex justify-between items-center mb-5">
-            <h2 className="text-base font-bold">{title}</h2>
-            <button onClick={onClose} className="text-2xl text-stone-400 leading-none">×</button>
-          </div>
-          <div className="space-y-4">
-            <div>
-              <label className="text-xs font-medium text-stone-500 block mb-1.5">퀘스트 내용</label>
-              <textarea
-                className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm h-20 resize-none"
-                placeholder="예) 메인 슬라이드 퍼블리싱"
-                value={questForm.content}
-                onChange={e => setQuestForm({...questForm, content: e.target.value})}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-stone-500 block mb-1.5">프로젝트 (선택)</label>
-              <input
-                className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                placeholder="예) 모바일앱 웹뷰"
-                value={questForm.proj}
-                onChange={e => setQuestForm({...questForm, proj: e.target.value})}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-stone-500 block mb-1.5">마감일 (선택)</label>
-              <input
-                type="date"
-                className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                value={questForm.end_date}
-                onChange={e => setQuestForm({...questForm, end_date: e.target.value})}
-              />
-            </div>
-            <button
-              onClick={onSubmit}
-              className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm"
-            >
-              {title === '퀘스트 추가' ? '추가하기' : '저장하기'}
-            </button>
-          </div>
-        </div>
-      </div>
-    )
+    exp: player?.month_exp || 0,
   }
 
   return (
@@ -256,8 +267,8 @@ export default function HomePage() {
           <div className="grid grid-cols-3 gap-2 mb-3">
             {[
               { icon: '☀️', label: '출석체크', value: attended ? '완료' : '미완료', onClick: handleAttend, highlight: !attended },
-              { icon: '📋', label: '퀘스트',   value: quests.length,               onClick: null,          highlight: false },
-              { icon: '📊', label: '월 EXP',   value: stats.exp,                   onClick: null,          highlight: false },
+              { icon: '📋', label: '퀘스트',   value: quests.length,               onClick: null,         highlight: false },
+              { icon: '📊', label: '월 EXP',   value: stats.exp,                   onClick: null,         highlight: false },
             ].map(s => (
               <button
                 key={s.label}
@@ -302,7 +313,6 @@ export default function HomePage() {
                       className={`flex items-center gap-3 px-4 py-3
                         ${i < quests.length-1 ? 'border-b border-stone-100' : ''}`}
                     >
-                      {/* 완료 버튼 */}
                       <button
                         onClick={() => completeQuest(q)}
                         className="w-5 h-5 rounded-full border-2 border-stone-300 shrink-0 hover:border-amber-500 transition-colors"
@@ -364,7 +374,7 @@ export default function HomePage() {
             </div>
           )}
 
-          {!loading && quests.length === 0 && urgentQuests.length === 0 && (
+          {!loading && quests.length === 0 && (
             <div className="text-center py-8 text-stone-400 text-sm">
               🎉 오늘 마감 퀘스트가 없어요!
             </div>
@@ -375,6 +385,8 @@ export default function HomePage() {
         {showAddQuest && (
           <QuestFormModal
             title="퀘스트 추가"
+            questForm={questForm}
+            setQuestForm={setQuestForm}
             onSubmit={addQuest}
             onClose={() => { setShowAddQuest(false); setQuestForm({ content: '', proj: '', end_date: '' }) }}
           />
@@ -384,6 +396,8 @@ export default function HomePage() {
         {showEditQuest && (
           <QuestFormModal
             title="퀘스트 수정"
+            questForm={questForm}
+            setQuestForm={setQuestForm}
             onSubmit={saveEditQuest}
             onClose={() => { setShowEditQuest(false); setEditTarget(null); setQuestForm({ content: '', proj: '', end_date: '' }) }}
           />
