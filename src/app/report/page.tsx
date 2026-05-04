@@ -165,7 +165,8 @@ function formatAssignments(list: Assignment[]): string {
     if (lines.length > 0) lines.push('')
     lines.push('[배정대기]')
     waiting.forEach(a => {
-      lines.push(`⇒ [배정대기] ${a.name}`)
+      const urlStr = a.url ? ` (${a.url})` : ''
+      lines.push(`⇒ [배정대기] ${a.name}${urlStr}`)
       if (a.period_note) {
         a.period_note.split('\n').forEach(l => {
           if (l.trim()) lines.push(`  ${l.trim()}`)
@@ -768,7 +769,7 @@ export default function ReportPage() {
                 {mode === 'weekly' && (
                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-3">
                   <div className="flex items-center justify-between px-4 py-3 border-b border-stone-100">
-                    <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">배정현황</p>
+                    <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">담당 배정</p>
                     <button
                       type="button"
                       onClick={copyAssignmentsBlock}
@@ -780,29 +781,32 @@ export default function ReportPage() {
                   </div>
                   <div className="p-4 space-y-4">
                     <div>
-                      <p className="text-xs font-bold text-stone-500 mb-2">[진행중 목록]</p>
+                      <p className="text-xs font-bold text-stone-500 mb-2">배정현황</p>
                       {assignActive.length === 0 ? (
                         <p className="text-xs text-stone-400">등록된 항목이 없어요</p>
                       ) : (
                         <ul className="space-y-2">
                           {assignActive.map(a => (
-                            <li key={a.id} className="flex items-start gap-2 text-xs text-stone-800">
-                              <span className="flex-1 min-w-0 leading-relaxed">
+                            <li key={a.id} className="flex items-start gap-3 text-xs text-stone-800">
+                              <span className="flex-1 min-w-0 leading-relaxed break-words">
                                 ⇒ [{a.type}] {a.name} : {(a.members || []).join(', ')}
                                 {a.url ? (
-                                  <a
-                                    href={a.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="ml-1 inline-block text-amber-600 hover:underline"
-                                    aria-label="링크"
-                                  >
-                                    🔗
-                                  </a>
+                                  <>
+                                    {' '}
+                                    <a
+                                      href={a.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-block text-amber-600 hover:underline"
+                                      aria-label="링크"
+                                    >
+                                      🔗
+                                    </a>
+                                  </>
                                 ) : null}
                               </span>
                               {isLeader && (
-                                <span className="flex shrink-0 gap-1">
+                                <span className="flex shrink-0 gap-2">
                                   <button
                                     type="button"
                                     onClick={() => openEditAssignment(a)}
@@ -825,19 +829,33 @@ export default function ReportPage() {
                       )}
                     </div>
                     <div>
-                      <p className="text-xs font-bold text-stone-500 mb-2">[배정대기 목록]</p>
+                      <p className="text-xs font-bold text-stone-500 mb-2">배정대기</p>
                       {assignWaiting.length === 0 ? (
                         <p className="text-xs text-stone-400">등록된 항목이 없어요</p>
                       ) : (
                         <ul className="space-y-3">
                           {assignWaiting.map(a => (
                             <li key={a.id} className="text-xs text-stone-800">
-                              <div className="flex items-start gap-2">
-                                <span className="flex-1 min-w-0 leading-relaxed">
+                              <div className="flex items-start gap-3">
+                                <span className="flex-1 min-w-0 leading-relaxed break-words">
                                   ⇒ [배정대기] {a.name}
+                                  {a.url ? (
+                                    <>
+                                      {' '}
+                                      <a
+                                        href={a.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-block text-amber-600 hover:underline"
+                                        aria-label="링크"
+                                      >
+                                        🔗
+                                      </a>
+                                    </>
+                                  ) : null}
                                 </span>
                                 {isLeader && (
-                                  <span className="flex shrink-0 gap-1">
+                                  <span className="flex shrink-0 gap-2">
                                     <button
                                       type="button"
                                       onClick={() => openEditAssignment(a)}
@@ -987,7 +1005,7 @@ export default function ReportPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-stone-500">상태</label>
+                  <label className="mb-1.5 block text-xs font-medium text-stone-500">표시할 목록</label>
                   <select
                     className="w-full rounded-lg border border-stone-200 bg-white px-3 py-2.5 text-sm"
                     value={assignForm.status}
@@ -998,7 +1016,7 @@ export default function ReportPage() {
                       }))
                     }
                   >
-                    <option value="진행중">진행중</option>
+                    <option value="진행중">배정현황 (진행 중 배정)</option>
                     <option value="배정대기">배정대기</option>
                   </select>
                 </div>
