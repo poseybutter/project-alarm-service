@@ -508,7 +508,8 @@ export default function ReportPage() {
     })
   }
 
-  const isLeader = currentMember === LEADER
+  const { member: currentMember, role } = useAuth()
+  const isLeader = role === 'admin'
 
   return (
     <AuthGuard>

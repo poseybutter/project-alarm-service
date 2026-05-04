@@ -6,18 +6,20 @@ import { supabase } from '@/lib/supabase'
 import { getMemberName } from '@/lib/auth'
 
 type AuthContextType = {
-  user      : User | null
-  member    : string | null
-  avatarUrl : string | null
-  loading   : boolean
+  user         : User | null
+  member       : string | null
+  avatarUrl    : string | null
+  loading      : boolean
+  role         : string
   refreshAvatar: () => void
 }
 
 const AuthContext = createContext<AuthContextType>({
-  user      : null,
-  member    : null,
-  avatarUrl : null,
-  loading   : true,
+  user         : null,
+  member       : null,
+  avatarUrl    : null,
+  loading      : true,
+  role         : 'member',
   refreshAvatar: () => {},
 })
 
@@ -25,6 +27,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser]           = useState<User | null>(null)
   const [loading, setLoading]     = useState(true)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const [role, setRole]           = useState<string>('member')
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -42,14 +45,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const member = getMemberName(user?.email || '')
 
-  // 아바타 URL 로드
   async function loadAvatar(memberName: string) {
     const { data } = await supabase
       .from('players')
-      .select('avatar_url')
+      .select('avatar_url, role')
       .eq('name', memberName)
       .single()
     setAvatarUrl(data?.avatar_url || null)
+    setRole(data?.role || 'member')
   }
 
   useEffect(() => {
@@ -61,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, member, avatarUrl, loading, refreshAvatar }}>
+    <AuthContext.Provider value={{ user, member, avatarUrl, loading, role, refreshAvatar }}>
       {children}
     </AuthContext.Provider>
   )

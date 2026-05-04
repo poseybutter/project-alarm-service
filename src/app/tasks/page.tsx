@@ -61,10 +61,10 @@ const EMPTY_EDIT = {
 }
 
 export default function TasksPage() {
-  const { member: currentMember } = useAuth()
-  const assignableMembers = currentMember === LEADER ? MEMBERS : [currentMember || '']
+  const { member: currentMember, role } = useAuth()
   const canEditOrDelete = (taskMember: string) =>
-    currentMember === LEADER || taskMember === currentMember
+    role === 'admin' || taskMember === currentMember
+  const assignableMembers = role === 'admin' ? MEMBERS : [currentMember || '']
 
   const [tasks, setTasks]       = useState<Task[]>([])
   const [projects, setProjects] = useState<Project[]>([])
