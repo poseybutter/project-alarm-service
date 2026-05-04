@@ -342,20 +342,27 @@ export default function ReportPage() {
                     <div key={m} className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-2">
                         {/* 헤더 */}
                         <button
-                        onClick={() => toggleExpand(m)}
-                        className="w-full flex items-center gap-3 px-4 py-3 text-left"
+                          onClick={() => toggleExpand(m)}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-left"
                         >
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${c.bg} ${c.text}`}>
-                            {m.slice(1)}
-                        </div>
-                        <div className="flex-1">
+                          <div className="relative shrink-0">
+                            <Avatar name={m} size={28} />
+                            {m === LEADER && (
+                              <div className="absolute -top-2 left-1/2 -translate-x-1/2 text-xs">👑</div>
+                            )}
+                          </div>
+                          <div className="flex-1">
                             <div className="flex items-center gap-1.5">
-                            <span className="text-sm font-bold text-stone-800">{m}</span>
-                            {m === LEADER && <span className="text-xs">👑</span>}
+                              <span className="text-sm font-bold text-stone-800">{m}</span>
+                              {m === LEADER && (
+                                <span className="text-xs px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded font-medium border border-yellow-200">
+                                  리더
+                                </span>
+                              )}
                             </div>
                             <p className="text-xs text-stone-400">{mt.length}건 · {mt.filter(t => t.status === '완료').length}건 완료</p>
-                        </div>
-                        <span className="text-stone-400 text-xs">{isExp ? '▲' : '▽'}</span>
+                          </div>
+                          <span className="text-stone-400 text-xs">{isExp ? '▲' : '▽'}</span>
                         </button>
 
                         {/* 상세 */}

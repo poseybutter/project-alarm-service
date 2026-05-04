@@ -6,6 +6,7 @@ import { calcLevel, getNextLevel, expBar, attendanceCheck, LEVELS } from '@/lib/
 import { useAuth } from '@/components/AuthProvider'
 import AuthGuard from '@/components/AuthGuard'
 import UserMenu from '@/components/UserMenu'
+import Avatar from '@/components/Avatar'
 import { DayPicker, DateRange } from 'react-day-picker'
 import 'react-day-picker/dist/style.css'
 import { ko } from 'date-fns/locale'
@@ -423,9 +424,8 @@ export default function ProfilePage() {
                 </div>
                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
                 {[...players].sort((a,b) => b.month_exp - a.month_exp).map((p, i) => {
-                  const medals = ['🥇','🥈','🥉','🏅']
-                  const plv = calcLevel(p.exp)
-                  const c = MEMBER_COLORS[p.name]
+                  const medals  = ['🥇','🥈','🥉','🏅']
+                  const plv     = calcLevel(p.exp)
                   const isLeader = p.name === 'TEAM_MEMBER_1'
                   return (
                     <div key={p.name} className={`flex items-center gap-3 px-4 py-3
@@ -434,15 +434,9 @@ export default function ProfilePage() {
                       <span className="text-base">{medals[i] || '🏅'}</span>
                       {/* 아바타 + 완장 */}
                       <div className="relative shrink-0">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold
-                          ${c?.bg} ${c?.text}
-                          ${isLeader ? 'ring-2 ring-yellow-400 ring-offset-1' : ''}`}>
-                          {p.name.slice(1)}
-                        </div>
+                        <Avatar name={p.name} size={32} />
                         {isLeader && (
-                          <div className="absolute -top-2 left-1/2 -translate-x-1/2 text-xs">
-                            👑
-                          </div>
+                          <div className="absolute -top-2 left-1/2 -translate-x-1/2 text-xs">👑</div>
                         )}
                       </div>
                       <div className="flex-1">
