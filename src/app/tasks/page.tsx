@@ -282,7 +282,11 @@ export default function TasksPage() {
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setShowModal(true)}
+                onClick={() => {
+                  setForm({ member: currentMember || '', type: '', proj: '', content: '', priority: '', workload: 0, issue: '' })
+                  setFormDateRange(undefined)
+                  setShowModal(true)
+                }}
                 className="bg-amber-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg"
               >
                 + 업무
