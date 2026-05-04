@@ -79,6 +79,7 @@ export default function ProfilePage() {
   const [showDatePicker, setShowDatePicker]   = useState(false)
   const [showProjModal, setShowProjModal] = useState(false)
   const [showAccModal, setShowAccModal]   = useState(false)
+  const [showAvatarMenu, setShowAvatarMenu] = useState(false)
   const [projForm, setProjForm] = useState({ name: '', client: '' })
   const [accForm, setAccForm]   = useState({ proj: '', end_date: '', note: '' })
 
@@ -133,6 +134,26 @@ export default function ProfilePage() {
   
     await supabase.from('players').update({ avatar_url: url }).eq('name', member)
     showToastMsg('프로필 이미지 업데이트 완료!')
+    refreshAvatar()
+    loadAll()
+  }
+
+  async function deleteAvatar() {
+    if (!member) return
+    const memberEn: Record<string, string> = {
+      'TEAM_MEMBER_1': 'hs', 'TEAM_MEMBER_2': 'jy', 'TEAM_MEMBER_3': 'hh', 'TEAM_MEMBER_4': 'je'
+    }
+  
+    // Storage에서 파일 삭제 (확장자 모름 → 여러 형식 시도)
+    const exts = ['jpg', 'jpeg', 'png', 'webp', 'gif']
+    const fileName = memberEn[member] || member
+    for (const ext of exts) {
+      await supabase.storage.from('avatars').remove([`${fileName}.${ext}`])
+    }
+  
+    // players 테이블 avatar_url 초기화
+    await supabase.from('players').update({ avatar_url: null }).eq('name', member)
+    showToastMsg('프로필 이미지 삭제 완료!')
     refreshAvatar()
     loadAll()
   }
@@ -248,26 +269,31 @@ export default function ProfilePage() {
           <div className="bg-white rounded-2xl border border-stone-200 p-5 mb-4 text-center">
             {/* 아바타 */}
             <div className="relative w-16 h-16 mx-auto mb-3">
-              {player?.avatar_url ? (
-                <img
-                  src={player.avatar_url}
-                  alt={member}
-                  className="w-16 h-16 rounded-full object-cover border-2 border-amber-200 cursor-pointer"
-                  onClick={() => fileInputRef.current?.click()}
-                />
-              ) : (
-                <div
-                  className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center text-2xl font-bold text-amber-700 cursor-pointer border-2 border-amber-200"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  {member.slice(1)}
-                </div>
-              )}
-              {/* 카메라 아이콘 */}
-              <div
-                className="absolute bottom-0 right-0 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center cursor-pointer"
-                onClick={() => fileInputRef.current?.click()}
+              <button
+                onClick={() => setShowAvatarMenu(true)}
+                className="w-16 h-16 rounded-full overflow-hidden border-2 border-amber-200 relative"
               >
+                {player?.avatar_url ? (
+                  <img
+                    src={player.avatar_url}
+                    alt={member}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-amber-100 flex items-center justify-center text-2xl font-bold text-amber-700">
+                    {member.slice(1)}
+                  </div>
+                )}
+                {/* 어두운 오버레이 */}
+                <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity rounded-full">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
+                    <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/>
+                    <path d="M9 3L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2h-3.17L15 3H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
+                  </svg>
+                </div>
+              </button>
+              {/* 카메라 뱃지 */}
+              <div className="absolute bottom-0 right-0 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center pointer-events-none">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="white">
                   <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z"/>
                   <path d="M9 3L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2h-3.17L15 3H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z"/>
@@ -282,9 +308,47 @@ export default function ProfilePage() {
                 onChange={e => {
                   const file = e.target.files?.[0]
                   if (file) uploadAvatar(file)
+                  setShowAvatarMenu(false)
                 }}
               />
             </div>
+
+            {/* 아바타 액션 시트 */}
+            {showAvatarMenu && (
+              <div
+                className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
+                onClick={() => setShowAvatarMenu(false)}
+              >
+                <div
+                  className="bg-white rounded-t-2xl w-full max-w-2xl overflow-hidden mb-[67px]"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full px-4 py-4 text-sm font-medium text-amber-600 hover:bg-stone-50 transition-colors border-b border-stone-100"
+                  >
+                    사진 선택
+                  </button>
+                  {player?.avatar_url && (
+                    <button
+                      onClick={() => {
+                        setShowAvatarMenu(false)
+                        if (confirm('프로필 이미지를 삭제할까요?')) deleteAvatar()
+                      }}
+                      className="w-full px-4 py-4 text-sm font-medium text-red-500 hover:bg-stone-50 transition-colors border-b border-stone-100"
+                    >
+                      이미지 삭제
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowAvatarMenu(false)}
+                    className="w-full px-4 py-4 text-sm font-medium text-stone-500 hover:bg-stone-50 transition-colors"
+                  >
+                    취소
+                  </button>
+                </div>
+              </div>
+            )}
             <h2 className="text-lg font-bold text-stone-900 mb-1">{member}</h2>
             <div className="inline-flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium mb-3">
               {lv.name}
