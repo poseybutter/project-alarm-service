@@ -257,14 +257,6 @@ export default function TasksPage() {
               >
                 + 업무
               </button>
-              <button className="text-stone-400 text-xl relative">
-                🔔
-                {stats.urgent > 0 && (
-                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
-                    {stats.urgent}
-                  </span>
-                )}
-              </button>
               <UserMenu />
             </div>
           </div>
