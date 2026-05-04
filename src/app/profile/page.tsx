@@ -300,12 +300,6 @@ export default function ProfilePage() {
           <div className="max-w-2xl mx-auto flex justify-between items-center">
             <h1 className="text-base font-bold text-stone-900">내 프로필</h1>
             <div className="flex items-center gap-2">
-              <button className="text-stone-400 text-xl relative">
-                🔔
-                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
-                  1
-                </span>
-              </button>
               <UserMenu />
             </div>
           </div>
