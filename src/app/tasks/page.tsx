@@ -62,6 +62,18 @@ export default function TasksPage() {
   useEffect(() => {
     loadTasks()
     loadProjects()
+
+    // Realtime 구독
+    const channel = supabase
+    .channel('tasks-realtime')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'tasks' },
+      () => { loadTasks() }
+    )
+    .subscribe()
+
+    return () => supabase.removeChannel(channel)
   }, [])
 
   async function loadTasks() {
