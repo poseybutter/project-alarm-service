@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { sendLevelUpMessage } from './googleChat'
 
 export const LEVELS = [
   { level:1, name:'🌱 풋내기 모험가',     exp:0     },
@@ -76,6 +77,11 @@ export async function awardExp(
   }
 
   await supabase.from('players').update(updates).eq('name', member)
+
+  // 레벨업 시 구글챗 알림
+  if (levelUp) {
+    sendLevelUpMessage(member, newLv.name).catch(console.error)
+  }
 
   return { amount, newExp, levelUp, prevLv, newLv }
 }
