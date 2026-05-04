@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { supabase, Task } from '@/lib/supabase'
 import { awardExp } from '@/lib/maple'
-import { useAuth } from '@/components/AuthProvider'
 import AuthGuard from '@/components/AuthGuard'
 import UserMenu from '@/components/UserMenu'
 import Avatar from '@/components/Avatar'
@@ -70,6 +69,16 @@ function formatWorkload(min: number) {
 
 type Project = { id: number; name: string; member: string }
 
+const EMPTY_FORM = {
+  member: '', type: '', proj: '', content: '',
+  priority: '', start_date: '', end_date: '', workload: 0, issue: ''
+}
+
+const EMPTY_EDIT = {
+  type: '', proj: '', content: '', priority: '',
+  start_date: '', end_date: '', workload: 0, issue: '', status: ''
+}
+
 export default function TasksPage() {
   const [tasks, setTasks]       = useState<Task[]>([])
   const [projects, setProjects] = useState<Project[]>([])
@@ -77,21 +86,12 @@ export default function TasksPage() {
   const [showModal, setShowModal] = useState(false)
   const [editTask, setEditTask]   = useState<Task | null>(null)
   const [showEdit, setShowEdit]   = useState(false)
-  const [editForm, setEditForm]   = useState({
-    type: '', proj: '', content: '', priority: '',
-    start_date: '', end_date: '', workload: 0, issue: '', status: ''
-  })
+  const [form, setForm]           = useState(EMPTY_FORM)
+  const [editForm, setEditForm]   = useState(EMPTY_EDIT)
 
-  // 필터 (디자인 기준 드롭다운)
   const [filterMember,   setFilterMember]   = useState('')
   const [filterProject,  setFilterProject]  = useState('')
   const [filterPriority, setFilterPriority] = useState('')
-
-  const [form, setForm] = useState({
-    member: '', type: '', proj: '', content: '',
-    priority: '', start_date: '', end_date: '', workload: 0,
-    issue: ''
-  })
 
   useEffect(() => {
     loadTasks()
@@ -129,7 +129,7 @@ export default function TasksPage() {
       status    : '대기',
     }])
     setShowModal(false)
-    setForm({ member:'', type:'', proj:'', content:'', priority:'', start_date:'', end_date:'', workload:0, issue:'' })
+    setForm(EMPTY_FORM)
     loadTasks()
   }
 
@@ -148,7 +148,7 @@ export default function TasksPage() {
     })
     setShowEdit(true)
   }
-  
+
   async function saveEdit() {
     if (!editTask) return
     await supabase.from('tasks').update({
@@ -187,11 +187,10 @@ export default function TasksPage() {
     loadTasks()
   }
 
-  // 필터 적용
   const filtered = tasks.filter(t => {
-    if (filterMember   && t.member   !== filterMember)   return false
-    if (filterProject  && t.proj     !== filterProject)   return false
-    if (filterPriority && t.priority !== filterPriority)  return false
+    if (filterMember   && t.member   !== filterMember)  return false
+    if (filterProject  && t.proj     !== filterProject)  return false
+    if (filterPriority && t.priority !== filterPriority) return false
     return true
   })
 
@@ -202,15 +201,39 @@ export default function TasksPage() {
     urgent: tasks.filter(t => { const d = getDiff(t.end_date); return d !== null && d <= 7 && t.status !== '완료' }).length,
   }
 
-  // 담당자별 그룹
   const grouped = MEMBERS.reduce((acc, m) => {
     const mt = filtered.filter(t => t.member === m)
     if (mt.length > 0) acc[m] = mt
     return acc
   }, {} as Record<string, Task[]>)
 
-  // 프로젝트 목록 (필터용)
   const allProjects = [...new Set(tasks.map(t => t.proj).filter(Boolean))]
+
+  // 공통 모달 폼 컴포넌트
+  function WorkloadInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+    return (
+      <div>
+        <div className="flex justify-between items-center mb-1.5">
+          <label className="text-xs font-medium text-stone-500">공수</label>
+          {value > 0 && <span className="text-xs text-amber-600 font-medium">{formatWorkload(value)}</span>}
+        </div>
+        <input type="number" className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm mb-2"
+          placeholder="분 직접 입력"
+          value={value || ''}
+          onChange={e => onChange(parseInt(e.target.value) || 0)} />
+        <div className="flex gap-1.5 flex-wrap">
+          {WORKLOAD_PRESETS.map(p => (
+            <button key={p.label}
+              onClick={() => onChange(p.value)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
+                ${value === p.value ? 'bg-amber-500 text-white border-amber-500' : 'bg-stone-50 text-stone-600 border-stone-200'}`}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <AuthGuard>
@@ -231,9 +254,11 @@ export default function TasksPage() {
               </button>
               <button className="text-stone-400 text-xl relative">
                 🔔
-                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
-                  {stats.urgent || ''}
-                </span>
+                {stats.urgent > 0 && (
+                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center font-bold">
+                    {stats.urgent}
+                  </span>
+                )}
               </button>
               <UserMenu />
             </div>
@@ -256,29 +281,20 @@ export default function TasksPage() {
             ))}
           </div>
 
-          {/* 필터 드롭다운 (디자인 기준) */}
+          {/* 필터 */}
           <div className="flex gap-2 px-4 pb-3">
-            <select
-              className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
-              value={filterMember}
-              onChange={e => setFilterMember(e.target.value)}
-            >
+            <select className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
+              value={filterMember} onChange={e => setFilterMember(e.target.value)}>
               <option value="">전체 담당자</option>
               {MEMBERS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
-            <select
-              className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
-              value={filterProject}
-              onChange={e => setFilterProject(e.target.value)}
-            >
+            <select className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
+              value={filterProject} onChange={e => setFilterProject(e.target.value)}>
               <option value="">전체 프로젝트</option>
               {allProjects.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
-            <select
-              className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
-              value={filterPriority}
-              onChange={e => setFilterPriority(e.target.value)}
-            >
+            <select className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
+              value={filterPriority} onChange={e => setFilterPriority(e.target.value)}>
               <option value="">전체 우선순위</option>
               {['긴급','높음','보통','낮음'].map(p => <option key={p} value={p}>{p}</option>)}
             </select>
@@ -333,11 +349,18 @@ export default function TasksPage() {
                                 이슈: {t.issue}
                               </div>
                             )}
+                            {/* 기간 + 공수 */}
                             <div className="flex items-center gap-2 text-xs text-stone-400">
                               {t.workload > 0 && <span>{formatWorkload(t.workload)}</span>}
-                              {t.end_date && (
+                              {t.start_date && t.end_date && (
                                 <span className={isUrgent ? 'text-red-500 font-medium' : ''}>
-                                  {t.end_date.slice(5).replace('-','/')}
+                                  {t.start_date.slice(5).replace('-','/')} ~ {t.end_date.slice(5).replace('-','/')}
+                                  {diff !== null && ` D${diff < 0 ? '+'+Math.abs(diff) : '-'+diff}`}
+                                </span>
+                              )}
+                              {!t.start_date && t.end_date && (
+                                <span className={isUrgent ? 'text-red-500 font-medium' : ''}>
+                                  ~{t.end_date.slice(5).replace('-','/')}
                                   {diff !== null && ` D${diff < 0 ? '+'+Math.abs(diff) : '-'+diff}`}
                                 </span>
                               )}
@@ -353,18 +376,10 @@ export default function TasksPage() {
                                 <option key={s} value={s}>{s}</option>
                               ))}
                             </select>
-                            <button
-                              onClick={() => deleteTask(t.id)}
-                              className="text-xs text-stone-300 hover:text-red-400 transition-colors"
-                            >삭제</button>
-                            <button
-                              onClick={() => openEdit(t)}
-                              className="text-xs text-stone-300 hover:text-amber-500 transition-colors"
-                            >수정</button>
-                            <button
-                              onClick={() => deleteTask(t.id)}
-                              className="text-xs text-stone-300 hover:text-red-400 transition-colors"
-                            >삭제</button>
+                            <button onClick={() => openEdit(t)}
+                              className="text-xs text-stone-300 hover:text-amber-500 transition-colors">수정</button>
+                            <button onClick={() => deleteTask(t.id)}
+                              className="text-xs text-stone-300 hover:text-red-400 transition-colors">삭제</button>
                           </div>
                         </div>
                       </div>
@@ -377,17 +392,12 @@ export default function TasksPage() {
           <div className="h-24" />
         </div>
 
-        {/* 추가 모달 */}
+        {/* 업무 추가 모달 */}
         {showModal && (
-          <div
-            className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
-            style={{ bottom: '67px' }}
-            onClick={() => setShowModal(false)}
-          >
-            <div
-              className="bg-white rounded-t-2xl p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto"
-              onClick={e => e.stopPropagation()}
-            >
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
+            onClick={() => setShowModal(false)}>
+            <div className="bg-white rounded-t-2xl p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-center mb-5">
                 <h2 className="text-base font-bold">업무 추가</h2>
                 <button onClick={() => setShowModal(false)} className="text-2xl text-stone-400 leading-none">×</button>
@@ -398,19 +408,16 @@ export default function TasksPage() {
                   <label className="text-xs font-medium text-stone-500 block mb-2">담당자</label>
                   <div className="grid grid-cols-4 gap-2">
                     {MEMBERS.map(m => (
-                      <button
-                        key={m}
+                      <button key={m}
                         onClick={() => setForm({...form, member: m, proj: ''})}
                         className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border-2 transition-all
-                          ${form.member === m ? MEMBER_BORDER[m] : 'bg-stone-50 border-stone-200 text-stone-400'}`}
-                      >
+                          ${form.member === m ? MEMBER_BORDER[m] : 'bg-stone-50 border-stone-200 text-stone-400'}`}>
                         <Avatar name={m} size={36} />
                         <span className="text-xs font-medium">{m.slice(1)}</span>
                       </button>
                     ))}
                   </div>
                 </div>
-
                 {/* 구분 + 우선순위 */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -430,7 +437,6 @@ export default function TasksPage() {
                     </select>
                   </div>
                 </div>
-
                 {/* 프로젝트 */}
                 <div>
                   <label className="text-xs font-medium text-stone-500 block mb-1.5">프로젝트</label>
@@ -441,7 +447,6 @@ export default function TasksPage() {
                     {myProjects.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
                   </select>
                 </div>
-
                 {/* 업무 내용 */}
                 <div>
                   <label className="text-xs font-medium text-stone-500 block mb-1.5">업무 내용</label>
@@ -449,49 +454,21 @@ export default function TasksPage() {
                     placeholder="예) 메인 슬라이드 퍼블리싱"
                     value={form.content} onChange={e => setForm({...form, content: e.target.value})} />
                 </div>
-
                 {/* 공수 */}
-                <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <label className="text-xs font-medium text-stone-500">공수</label>
-                    {form.workload > 0 && (
-                      <span className="text-xs text-amber-600 font-medium">{formatWorkload(form.workload)}</span>
-                    )}
-                  </div>
-                  <input type="number" className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm mb-2"
-                    placeholder="분 직접 입력"
-                    value={form.workload || ''}
-                    onChange={e => setForm({...form, workload: parseInt(e.target.value) || 0})} />
-                  <div className="flex gap-1.5 flex-wrap">
-                    {WORKLOAD_PRESETS.map(p => (
-                      <button key={p.label}
-                        onClick={() => setForm({...form, workload: p.value})}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
-                          ${form.workload === p.value ? 'bg-amber-500 text-white border-amber-500' : 'bg-stone-50 text-stone-600 border-stone-200'}`}>
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
+                <WorkloadInput value={form.workload} onChange={v => setForm({...form, workload: v})} />
                 {/* 날짜 */}
-                <div className="flex items-center gap-2 text-xs text-stone-400">
-                  {t.workload > 0 && <span>{formatWorkload(t.workload)}</span>}
-                  {/* 기간 표시 */}
-                  {t.start_date && t.end_date && (
-                    <span className={isUrgent ? 'text-red-500 font-medium' : ''}>
-                      {t.start_date.slice(5).replace('-','/')} ~ {t.end_date.slice(5).replace('-','/')}
-                      {diff !== null && ` D${diff < 0 ? '+'+Math.abs(diff) : '-'+diff}`}
-                    </span>
-                  )}
-                  {!t.start_date && t.end_date && (
-                    <span className={isUrgent ? 'text-red-500 font-medium' : ''}>
-                      ~{t.end_date.slice(5).replace('-','/')}
-                      {diff !== null && ` D${diff < 0 ? '+'+Math.abs(diff) : '-'+diff}`}
-                    </span>
-                  )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-stone-500 block mb-1.5">시작일</label>
+                    <input type="date" className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
+                      value={form.start_date} onChange={e => setForm({...form, start_date: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-stone-500 block mb-1.5">마감일</label>
+                    <input type="date" className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
+                      value={form.end_date} onChange={e => setForm({...form, end_date: e.target.value})} />
+                  </div>
                 </div>
-
                 {/* 이슈/비고 */}
                 <div>
                   <label className="text-xs font-medium text-stone-500 block mb-1.5">이슈 / 비고 (선택)</label>
@@ -499,7 +476,6 @@ export default function TasksPage() {
                     placeholder="예) 클라이언트 피드백 대기..."
                     value={form.issue} onChange={e => setForm({...form, issue: e.target.value})} />
                 </div>
-
                 <button onClick={addTask}
                   className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm">
                   등록하기
@@ -508,16 +484,13 @@ export default function TasksPage() {
             </div>
           </div>
         )}
-        {/* 수정 모달 */}
+
+        {/* 업무 수정 모달 */}
         {showEdit && editTask && (
-          <div
-            className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
-            onClick={() => setShowEdit(false)}
-          >
-            <div
-              className="bg-white rounded-t-2xl p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto"
-              onClick={e => e.stopPropagation()}
-            >
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
+            onClick={() => setShowEdit(false)}>
+            <div className="bg-white rounded-t-2xl p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto"
+              onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-center mb-5">
                 <h2 className="text-base font-bold">업무 수정</h2>
                 <button onClick={() => setShowEdit(false)} className="text-2xl text-stone-400 leading-none">×</button>
@@ -531,7 +504,6 @@ export default function TasksPage() {
                     {['대기','시작 전','진행중','이슈 및 대기','완료'].map(s => <option key={s}>{s}</option>)}
                   </select>
                 </div>
-
                 {/* 구분 + 우선순위 */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -551,45 +523,20 @@ export default function TasksPage() {
                     </select>
                   </div>
                 </div>
-
                 {/* 프로젝트 */}
                 <div>
                   <label className="text-xs font-medium text-stone-500 block mb-1.5">프로젝트</label>
                   <input className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
                     value={editForm.proj} onChange={e => setEditForm({...editForm, proj: e.target.value})} />
                 </div>
-
                 {/* 업무 내용 */}
                 <div>
                   <label className="text-xs font-medium text-stone-500 block mb-1.5">업무 내용</label>
                   <textarea className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm h-20 resize-none"
                     value={editForm.content} onChange={e => setEditForm({...editForm, content: e.target.value})} />
                 </div>
-
                 {/* 공수 */}
-                <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <label className="text-xs font-medium text-stone-500">공수</label>
-                    {editForm.workload > 0 && (
-                      <span className="text-xs text-amber-600 font-medium">{formatWorkload(editForm.workload)}</span>
-                    )}
-                  </div>
-                  <input type="number" className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm mb-2"
-                    placeholder="분 직접 입력"
-                    value={editForm.workload || ''}
-                    onChange={e => setEditForm({...editForm, workload: parseInt(e.target.value) || 0})} />
-                  <div className="flex gap-1.5 flex-wrap">
-                    {WORKLOAD_PRESETS.map(p => (
-                      <button key={p.label}
-                        onClick={() => setEditForm({...editForm, workload: p.value})}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
-                          ${editForm.workload === p.value ? 'bg-amber-500 text-white border-amber-500' : 'bg-stone-50 text-stone-600 border-stone-200'}`}>
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
+                <WorkloadInput value={editForm.workload} onChange={v => setEditForm({...editForm, workload: v})} />
                 {/* 날짜 */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -603,7 +550,6 @@ export default function TasksPage() {
                       value={editForm.end_date} onChange={e => setEditForm({...editForm, end_date: e.target.value})} />
                   </div>
                 </div>
-
                 {/* 이슈/비고 */}
                 <div>
                   <label className="text-xs font-medium text-stone-500 block mb-1.5">이슈 / 비고 (선택)</label>
@@ -611,7 +557,6 @@ export default function TasksPage() {
                     placeholder="예) 클라이언트 피드백 대기..."
                     value={editForm.issue} onChange={e => setEditForm({...editForm, issue: e.target.value})} />
                 </div>
-
                 <button onClick={saveEdit}
                   className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm">
                   저장하기
