@@ -17,10 +17,46 @@ const MEMBER_COLORS: Record<string, { bg: string; text: string }> = {
 const BAR_COLORS = ['#4CAF50','#2196F3','#9C27B0','#FF5722','#FF9800','#F44336','#FFD700','#FF69B4']
 
 const TITLES = [
-  { id: 'first',   icon: '🌱', name: '첫 완료',    desc: '첫 번째 업무 완료',   condition: (p: Player) => p.exp >= 50 },
-  { id: 'streak3', icon: '🔥', name: '꾸준러',      desc: '3일 연속 출석',       condition: (p: Player) => p.attend_streak >= 3 },
-  { id: 'streak7', icon: '⚡', name: '주간 챔피언', desc: '7일 연속 출석',       condition: (p: Player) => p.attend_streak >= 7 },
-  { id: 'due5',    icon: '⏰', name: '마감지킴이',  desc: 'D-day 전 완료 5건',  condition: () => false },
+  {
+    id: 'first', icon: '🌱', name: '첫 완료',
+    desc: '첫 번째 업무 완료',
+    condition: (p: Player) => (p.total_done || 0) >= 1
+  },
+  {
+    id: 'streak3', icon: '🔥', name: '꾸준러',
+    desc: '3일 연속 출석',
+    condition: (p: Player) => (p.attend_streak || 0) >= 3
+  },
+  {
+    id: 'streak7', icon: '⚡', name: '주간 챔피언',
+    desc: '7일 연속 출석',
+    condition: (p: Player) => (p.attend_streak || 0) >= 7
+  },
+  {
+    id: 'ontime', icon: '⏰', name: '마감지킴이',
+    desc: 'D-day 전 완료 5건',
+    condition: (p: Player) => (p.on_time_done || 0) >= 5
+  },
+  {
+    id: 'd10', icon: '💪', name: '업무 달인',
+    desc: '완료 10건',
+    condition: (p: Player) => (p.total_done || 0) >= 10
+  },
+  {
+    id: 'd30', icon: '🏆', name: '베테랑',
+    desc: '완료 30건',
+    condition: (p: Player) => (p.total_done || 0) >= 30
+  },
+  {
+    id: 'urgent', icon: '🚨', name: '긴급 해결사',
+    desc: '긴급 업무 5건 완료',
+    condition: (p: Player) => (p.urgent_done || 0) >= 5
+  },
+  {
+    id: 'lv5', icon: '⭐', name: '중급 탐험가',
+    desc: '레벨 5 달성',
+    condition: (p: Player) => (p.level || 1) >= 5
+  },
 ]
 
 type Player = {
@@ -33,6 +69,9 @@ type Player = {
   attend_last: string | null
   attend_streak: number
   avatar_url: string | null
+  total_done: number
+  urgent_done: number
+  on_time_done: number
 }
 
 type Task = {
