@@ -42,6 +42,19 @@ function periodButtonLabel(range: DateRange | undefined): {
     return { text: `${f} ~ ${t}`, placeholder: false };
 }
 
+function parseYmdToLocalDate(value: string | null): Date | undefined {
+    if (!value) return undefined;
+    return new Date(`${value}T00:00:00`);
+}
+
+function toLocalYmd(date: Date | undefined): string | null {
+    if (!date) return null;
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+}
+
 function getWeekLabel() {
     const now = new Date();
     const day = now.getDay();
@@ -203,8 +216,8 @@ export default function TasksPage() {
         // 날짜 range 설정
         if (task.start_date || task.end_date) {
             setEditDateRange({
-                from: task.start_date ? new Date(task.start_date) : undefined,
-                to: task.end_date ? new Date(task.end_date) : undefined,
+                from: parseYmdToLocalDate(task.start_date),
+                to: parseYmdToLocalDate(task.end_date),
             });
         } else {
             setEditDateRange(undefined);
@@ -222,12 +235,8 @@ export default function TasksPage() {
                 proj: editForm.proj,
                 content: editForm.content,
                 priority: editForm.priority || null,
-                start_date: editDateRange?.from
-                    ? editDateRange.from.toISOString().slice(0, 10)
-                    : null,
-                end_date: editDateRange?.to
-                    ? editDateRange.to.toISOString().slice(0, 10)
-                    : null,
+                start_date: toLocalYmd(editDateRange?.from),
+                end_date: toLocalYmd(editDateRange?.to),
                 workload: editForm.workload || 0,
                 issue: editForm.issue || null,
                 status: editForm.status,
