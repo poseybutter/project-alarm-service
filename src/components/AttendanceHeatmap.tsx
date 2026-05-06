@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type AttendanceHeatmapProps = {
@@ -118,6 +118,36 @@ export default function AttendanceHeatmap({ member }: AttendanceHeatmapProps) {
     const [counts, setCounts] = useState<Record<string, number>>({});
     const [loading, setLoading] = useState(true);
 
+    const loadData = useCallback(async () => {
+        if (!member) {
+            setCounts({});
+            setLoading(false);
+            return;
+        }
+
+        setLoading(true);
+        const min = grid[0][0];
+        const max = grid[4][15];
+        const { data, error } = await supabase
+            .from("attendance")
+            .select("date, activity_count")
+            .eq("member", member)
+            .gte("date", min)
+            .lte("date", max);
+
+        if (error) {
+            setCounts({});
+        } else {
+            const next: Record<string, number> = {};
+            for (const row of data ?? []) {
+                const iso = row.date as string;
+                next[iso] = Number(row.activity_count ?? 0);
+            }
+            setCounts(next);
+        }
+        setLoading(false);
+    }, [member, grid]);
+
     useEffect(() => {
         if (!member) {
             setCounts({});
@@ -125,37 +155,28 @@ export default function AttendanceHeatmap({ member }: AttendanceHeatmapProps) {
             return;
         }
 
-        let cancelled = false;
-        (async () => {
-            setLoading(true);
-            const min = grid[0][0];
-            const max = grid[4][15];
-            const { data, error } = await supabase
-                .from("attendance")
-                .select("date, activity_count")
-                .eq("member", member)
-                .gte("date", min)
-                .lte("date", max);
+        void loadData();
 
-            if (cancelled) return;
-
-            if (error) {
-                setCounts({});
-            } else {
-                const next: Record<string, number> = {};
-                for (const row of data ?? []) {
-                    const iso = row.date as string;
-                    next[iso] = Number(row.activity_count ?? 0);
-                }
-                setCounts(next);
-            }
-            setLoading(false);
-        })();
+        const channel = supabase
+            .channel(`attendance-heatmap-${member}`)
+            .on(
+                "postgres_changes",
+                {
+                    event: "*",
+                    schema: "public",
+                    table: "attendance",
+                    filter: `member=eq.${member}`,
+                },
+                () => {
+                    void loadData();
+                },
+            )
+            .subscribe();
 
         return () => {
-            cancelled = true;
+            supabase.removeChannel(channel).catch(console.error);
         };
-    }, [member, grid]);
+    }, [member, loadData]);
 
     if (!member) return null;
 
