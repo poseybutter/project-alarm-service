@@ -36,6 +36,26 @@ export function expBar(exp: number) {
   return Math.round((exp - lv.exp) / (next.exp - lv.exp) * 100)
 }
 
+/** 출석·업무·퀘스트 합산용 attendance.activity_count +1 (UTC YYYY-MM-DD) */
+async function bumpAttendanceActivity(member: string) {
+  const today = new Date().toISOString().slice(0, 10)
+  const { data: existing } = await supabase
+    .from('attendance')
+    .select('activity_count')
+    .eq('member', member)
+    .eq('date', today)
+    .maybeSingle()
+
+  await supabase.from('attendance').upsert(
+    {
+      member,
+      date: today,
+      activity_count: (existing?.activity_count ?? 0) + 1,
+    },
+    { onConflict: 'member,date' },
+  )
+}
+
 export async function awardExp(
   member: string,
   type: 'COMPLETE' | 'URGENT' | 'ATTEND' | 'QUEST',
@@ -78,6 +98,10 @@ export async function awardExp(
 
   await supabase.from('players').update(updates).eq('name', member)
 
+  if (isAdding && (type === 'COMPLETE' || type === 'URGENT' || type === 'QUEST')) {
+    await bumpAttendanceActivity(member)
+  }
+
   // 레벨업 시 구글챗 알림
   if (levelUp) {
     sendLevelUpMessage(member, newLv.name).catch(console.error)
@@ -113,6 +137,8 @@ export async function attendanceCheck(member: string) {
     attend_last   : today,
     attend_streak : streak,
   }).eq('name', member)
+
+  await bumpAttendanceActivity(member)
 
   const result = await awardExp(member, 'ATTEND')
 
