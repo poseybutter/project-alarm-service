@@ -265,15 +265,13 @@ export default function ProfilePage() {
 
     async function addProject() {
         if (!projForm.name) return alert("프로젝트명은 필수예요");
-        await supabase
-            .from("projects")
-            .insert([
-                {
-                    name: projForm.name,
-                    member: member,
-                    client: projForm.client || null,
-                },
-            ]);
+        await supabase.from("projects").insert([
+            {
+                name: projForm.name,
+                member: member,
+                client: projForm.client || null,
+            },
+        ]);
         setShowProjModal(false);
         setProjForm({ name: "", client: "" });
         loadAll();
@@ -1292,6 +1290,7 @@ export default function ProfilePage() {
                 {showProjModal && (
                     <div
                         className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
+                        style={{ marginBottom: "var(--nav-height)" }}
                         onClick={() => setShowProjModal(false)}
                     >
                         <div
