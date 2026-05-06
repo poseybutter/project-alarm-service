@@ -36,8 +36,8 @@ export function expBar(exp: number) {
   return Math.round((exp - lv.exp) / (next.exp - lv.exp) * 100)
 }
 
-/** 출석·업무·퀘스트 합산용 attendance.activity_count +1 (UTC YYYY-MM-DD) */
-async function bumpAttendanceActivity(member: string) {
+/** 출석·업무·퀘스트 합산용 attendance.activity_count 조정 (UTC YYYY-MM-DD) */
+async function bumpAttendanceActivity(member: string, delta: number = 1) {
   const today = new Date().toISOString().slice(0, 10)
   const { data: existing } = await supabase
     .from('attendance')
@@ -46,11 +46,12 @@ async function bumpAttendanceActivity(member: string) {
     .eq('date', today)
     .maybeSingle()
 
+  const newCount = Math.max(0, (existing?.activity_count ?? 0) + delta)
   await supabase.from('attendance').upsert(
     {
       member,
       date: today,
-      activity_count: (existing?.activity_count ?? 0) + 1,
+      activity_count: newCount,
     },
     { onConflict: 'member,date' },
   )
@@ -98,8 +99,9 @@ export async function awardExp(
 
   await supabase.from('players').update(updates).eq('name', member)
 
-  if (isAdding && (type === 'COMPLETE' || type === 'URGENT' || type === 'QUEST')) {
-    await bumpAttendanceActivity(member)
+  if (type === 'COMPLETE' || type === 'URGENT' || type === 'QUEST') {
+    if (isAdding) await bumpAttendanceActivity(member, 1)
+    else await bumpAttendanceActivity(member, -1)
   }
 
   // 레벨업 시 구글챗 알림
@@ -138,7 +140,7 @@ export async function attendanceCheck(member: string) {
     attend_streak : streak,
   }).eq('name', member)
 
-  await bumpAttendanceActivity(member)
+  await bumpAttendanceActivity(member, 1)
 
   const result = await awardExp(member, 'ATTEND')
 
