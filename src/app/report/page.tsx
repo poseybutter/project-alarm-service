@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEditor, EditorContent } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import Placeholder from "@tiptap/extension-placeholder";
+import Typography from "@tiptap/extension-typography";
 import UserMenu from "@/components/UserMenu";
 import Avatar from "@/components/Avatar";
 import { supabase } from "@/lib/supabase";
@@ -9,6 +13,161 @@ import NotificationButton from "@/components/NotificationButton";
 import { useAuth } from "@/components/AuthProvider";
 import type { Task } from "@/lib/types";
 import { MEMBERS, LEADER, MEMBER_COLORS, STATUS_COLORS } from "@/lib/constants";
+
+/** 전달사항 HTML이 사용자에게 보일 내용이 있는지 (빈 에디터·공백 태그 제외) */
+function noticeHtmlHasText(html: string | null | undefined): boolean {
+    if (!html?.trim()) return false;
+    const text = html
+        .replace(/<[^>]+>/g, "")
+        .replace(/\u00a0/g, " ")
+        .trim();
+    return text.length > 0;
+}
+
+type TiptapNoticeEditorProps = {
+    content: string;
+    onChange: (html: string) => void;
+    editable: boolean;
+    showToolbar: boolean;
+};
+
+/** 주간 전달사항 Tiptap (HTML 저장) */
+function TiptapNoticeEditor({
+    content,
+    onChange,
+    editable,
+    showToolbar,
+}: TiptapNoticeEditorProps) {
+    const [, setUiTick] = useState(0);
+
+    const editor = useEditor({
+        immediatelyRender: false,
+        extensions: [
+            StarterKit.configure({
+                heading: { levels: [1, 2] },
+            }),
+            Placeholder.configure({
+                placeholder: "전달사항을 입력하세요...",
+            }),
+            Typography,
+        ],
+        content: content || "",
+        editable,
+        editorProps: {
+            attributes: {
+                class: "tiptap notice-editor-prose min-h-[120px] px-2 py-2 focus:outline-none",
+            },
+        },
+        onUpdate: ({ editor: ed }) => {
+            onChange(ed.getHTML());
+        },
+    });
+
+    useEffect(() => {
+        if (!editor || editor.isDestroyed) return;
+        editor.setEditable(editable);
+    }, [editable, editor]);
+
+    useEffect(() => {
+        if (!editor || editor.isDestroyed) return;
+        const bump = () => setUiTick((t) => t + 1);
+        editor.on("selectionUpdate", bump);
+        editor.on("transaction", bump);
+        return () => {
+            editor.off("selectionUpdate", bump);
+            editor.off("transaction", bump);
+        };
+    }, [editor]);
+
+    const btn = (active: boolean) =>
+        `rounded px-2 py-1 text-xs font-medium border transition-colors ${
+            active
+                ? "bg-amber-100 border-amber-200 text-amber-900"
+                : "bg-white border-stone-200 text-stone-600 hover:bg-stone-50"
+        }`;
+
+    if (!editor) {
+        return (
+            <div className="notice-editor min-h-[120px] rounded-lg border border-stone-200 bg-stone-50 animate-pulse" />
+        );
+    }
+
+    return (
+        <div className="notice-editor rounded-lg border border-stone-200 bg-stone-50 overflow-hidden">
+            {showToolbar && (
+                <div className="flex flex-wrap gap-1 border-b border-stone-200 bg-white px-2 py-1.5">
+                    <button
+                        type="button"
+                        className={btn(editor.isActive("bold"))}
+                        onClick={() =>
+                            editor.chain().focus().toggleBold().run()
+                        }
+                    >
+                        B
+                    </button>
+                    <button
+                        type="button"
+                        className={btn(editor.isActive("italic"))}
+                        onClick={() =>
+                            editor.chain().focus().toggleItalic().run()
+                        }
+                    >
+                        I
+                    </button>
+                    <button
+                        type="button"
+                        className={btn(
+                            editor.isActive("heading", { level: 1 }),
+                        )}
+                        onClick={() =>
+                            editor
+                                .chain()
+                                .focus()
+                                .toggleHeading({ level: 1 })
+                                .run()
+                        }
+                    >
+                        H1
+                    </button>
+                    <button
+                        type="button"
+                        className={btn(
+                            editor.isActive("heading", { level: 2 }),
+                        )}
+                        onClick={() =>
+                            editor
+                                .chain()
+                                .focus()
+                                .toggleHeading({ level: 2 })
+                                .run()
+                        }
+                    >
+                        H2
+                    </button>
+                    <button
+                        type="button"
+                        className={btn(editor.isActive("bulletList"))}
+                        onClick={() =>
+                            editor.chain().focus().toggleBulletList().run()
+                        }
+                    >
+                        • 목록
+                    </button>
+                    <button
+                        type="button"
+                        className={btn(editor.isActive("orderedList"))}
+                        onClick={() =>
+                            editor.chain().focus().toggleOrderedList().run()
+                        }
+                    >
+                        1. 순서목록
+                    </button>
+                </div>
+            )}
+            <EditorContent editor={editor} />
+        </div>
+    );
+}
 
 type BriefSection = "project" | "maintenance" | "etc";
 
@@ -136,6 +295,8 @@ type BriefingRow = {
     project: string;
     maintenance: string;
     etc: string;
+    /** Tiptap 저장 HTML */
+    notice: string | null;
     edited_by: string | null;
     updated_at: string | null;
 };
@@ -214,6 +375,10 @@ export default function ReportPage() {
     const [editMaintenance, setEditMaintenance] = useState("");
     const [editEtc, setEditEtc] = useState("");
     const [saving, setSaving] = useState(false);
+    const [editNotice, setEditNotice] = useState("");
+    const [editingNotice, setEditingNotice] = useState(false);
+    const [savingNotice, setSavingNotice] = useState(false);
+    const [noticeEditorNonce, setNoticeEditorNonce] = useState(0);
     const [copiedProject, setCopiedProject] = useState(false);
     const [copiedMaintenance, setCopiedMaintenance] = useState(false);
     const [copiedEtc, setCopiedEtc] = useState(false);
@@ -238,7 +403,7 @@ export default function ReportPage() {
         const weekStart = getWeekWin(wOff).from;
         const { data } = await supabase
             .from("briefings")
-            .select("project, maintenance, etc, edited_by, updated_at")
+            .select("project, maintenance, etc, notice, edited_by, updated_at")
             .eq("week_start", weekStart)
             .maybeSingle();
         if (data) {
@@ -246,6 +411,7 @@ export default function ReportPage() {
                 project: data.project ?? "",
                 maintenance: data.maintenance ?? "",
                 etc: data.etc ?? "",
+                notice: data.notice ?? null,
                 edited_by: data.edited_by ?? null,
                 updated_at: data.updated_at ?? null,
             });
@@ -298,6 +464,8 @@ export default function ReportPage() {
 
     useEffect(() => {
         setEditing(false);
+        setEditingNotice(false);
+        setNoticeEditorNonce((n) => n + 1);
     }, [wOff, mode]);
 
     useEffect(() => {
@@ -418,6 +586,7 @@ export default function ReportPage() {
                 project: editProject,
                 maintenance: editMaintenance,
                 etc: editEtc,
+                notice: briefing?.notice ?? null,
                 edited_by: currentMember ?? null,
                 updated_at: new Date().toISOString(),
             },
@@ -430,6 +599,34 @@ export default function ReportPage() {
             return;
         }
         setEditing(false);
+        await loadBriefing();
+    }
+
+    async function saveNotice() {
+        setSavingNotice(true);
+        const weekStart = wk.from;
+        const { error } = await supabase.from("briefings").upsert(
+            {
+                week_start: weekStart,
+                project: briefing?.project ?? "",
+                maintenance: briefing?.maintenance ?? "",
+                etc: briefing?.etc ?? "",
+                notice: noticeHtmlHasText(editNotice)
+                    ? editNotice.trim()
+                    : null,
+                edited_by: currentMember ?? null,
+                updated_at: new Date().toISOString(),
+            },
+            { onConflict: "week_start" },
+        );
+        setSavingNotice(false);
+        if (error) {
+            console.error(error);
+            alert("저장에 실패했어요: " + error.message);
+            return;
+        }
+        setEditingNotice(false);
+        setNoticeEditorNonce((n) => n + 1);
         await loadBriefing();
     }
 
@@ -773,6 +970,90 @@ export default function ReportPage() {
                                     })}
                                 </div>
                             </div>
+
+                            {/* 주간 전달사항 */}
+                            {mode === "weekly" && (
+                                <div className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-3">
+                                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-stone-100">
+                                        <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">
+                                            주간 전달사항
+                                        </p>
+                                        {isLeader && !editingNotice && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setEditNotice(
+                                                        briefing?.notice ?? "",
+                                                    );
+                                                    setEditingNotice(true);
+                                                    setNoticeEditorNonce(
+                                                        (n) => n + 1,
+                                                    );
+                                                }}
+                                                className="text-xs px-2.5 py-1 rounded-lg font-medium border border-stone-200 bg-stone-100 text-stone-600 hover:bg-stone-50"
+                                            >
+                                                편집
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="p-4 space-y-3">
+                                        {!editingNotice &&
+                                        !noticeHtmlHasText(briefing?.notice) ? (
+                                            <p className="text-xs text-stone-400">
+                                                이번 주 전달사항이 없어요
+                                            </p>
+                                        ) : (
+                                            <TiptapNoticeEditor
+                                                key={`notice-${wOff}-${noticeEditorNonce}`}
+                                                content={
+                                                    editingNotice
+                                                        ? editNotice
+                                                        : briefing?.notice ?? ""
+                                                }
+                                                onChange={setEditNotice}
+                                                editable={
+                                                    editingNotice && isLeader
+                                                }
+                                                showToolbar={
+                                                    editingNotice && isLeader
+                                                }
+                                            />
+                                        )}
+                                        {editingNotice && isLeader && (
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        void saveNotice()
+                                                    }
+                                                    disabled={savingNotice}
+                                                    className="flex-1 rounded-xl bg-amber-500 py-2.5 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50"
+                                                >
+                                                    {savingNotice
+                                                        ? "저장 중…"
+                                                        : "저장하기"}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setEditingNotice(false);
+                                                        setEditNotice(
+                                                            briefing?.notice ??
+                                                                "",
+                                                        );
+                                                        setNoticeEditorNonce(
+                                                            (n) => n + 1,
+                                                        );
+                                                    }}
+                                                    className="flex-1 rounded-xl border border-stone-200 py-2.5 text-sm font-medium text-stone-600 hover:bg-stone-50"
+                                                >
+                                                    취소
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
 
                             {/* 주간 브리핑 */}
                             {mode === "weekly" && (
