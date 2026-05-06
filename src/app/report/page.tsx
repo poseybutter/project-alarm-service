@@ -157,21 +157,21 @@ function formatAssignments(list: Assignment[]): string {
     const lines: string[] = [];
 
     if (active.length > 0) {
-        lines.push("[배정현황]");
+        lines.push("**[배정현황]**");
         active.forEach((a) => {
             const memberStr = (a.members || []).join(", ");
             // Notion 등에 붙일 때 프로젝트명이 하이퍼링크로 인식되도록 Markdown 링크 사용
             const namePart = a.url ? `[${a.name}](${a.url})` : a.name;
-            lines.push(`⇒ [${a.type}] ${namePart} : ${memberStr}`);
+            lines.push(`⇒ **[${a.type}]** ${namePart} : ${memberStr}`);
         });
     }
 
     if (waiting.length > 0) {
         if (lines.length > 0) lines.push("");
-        lines.push("[배정대기]");
+        lines.push("**[배정대기]**");
         waiting.forEach((a) => {
             const namePart = a.url ? `[${a.name}](${a.url})` : a.name;
-            lines.push(`⇒ [배정대기] ${namePart}`);
+            lines.push(`⇒ **[배정대기]** ${namePart}`);
             if (a.period_note) {
                 a.period_note.split("\n").forEach((l) => {
                     if (l.trim()) lines.push(`  • ${l.trim()}`);
@@ -998,8 +998,8 @@ export default function ReportPage() {
                                     </div>
                                     <div className="p-4 space-y-4">
                                         <div>
-                                            <p className="text-xs font-bold text-stone-500 mb-2">
-                                                배정현황
+                                            <p className="text-xs font-extrabold text-stone-600 mb-2">
+                                                [배정현황]
                                             </p>
                                             {assignActive.length === 0 ? (
                                                 <p className="text-xs text-stone-400">
@@ -1013,7 +1013,9 @@ export default function ReportPage() {
                                                             className="flex items-start gap-3 text-xs text-stone-800"
                                                         >
                                                             <span className="flex-1 min-w-0 leading-relaxed break-words">
-                                                                ⇒ [{a.type}]{" "}
+                                                                <span className="font-extrabold text-stone-700">
+                                                                    ⇒ [{a.type}]
+                                                                </span>{" "}
                                                                 {a.url ? (
                                                                     <a
                                                                         href={
@@ -1067,8 +1069,8 @@ export default function ReportPage() {
                                             )}
                                         </div>
                                         <div>
-                                            <p className="text-xs font-bold text-stone-500 mb-2">
-                                                배정대기
+                                            <p className="text-xs font-extrabold text-stone-600 mb-2">
+                                                [배정대기]
                                             </p>
                                             {assignWaiting.length === 0 ? (
                                                 <p className="text-xs text-stone-400">
@@ -1083,7 +1085,10 @@ export default function ReportPage() {
                                                         >
                                                             <div className="flex items-start gap-3">
                                                                 <span className="flex-1 min-w-0 leading-relaxed break-words">
-                                                                    ⇒ [배정대기]{" "}
+                                                                    <span className="font-extrabold text-stone-700">
+                                                                        ⇒
+                                                                        [배정대기]
+                                                                    </span>{" "}
                                                                     {a.url ? (
                                                                         <a
                                                                             href={
