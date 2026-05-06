@@ -336,6 +336,10 @@ export default function ProfilePage() {
     }
 
     const player = players.find((p) => p.name === member);
+    const myPlayer = player;
+    const myTitles = TITLES.filter(
+        (t) => myPlayer && t.condition(myPlayer),
+    );
     const lv = player ? calcLevel(player.exp) : LEVELS[0];
     const next = player ? getNextLevel(player.exp) : null;
     const pct = player ? expBar(player.exp) : 0;
@@ -523,13 +527,30 @@ export default function ProfilePage() {
                                 <div className="inline-flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium mb-3">
                                     {lv.name}
                                 </div>
+                                {myTitles.length > 0 && (
+                                    <div className="mb-4 flex flex-wrap justify-center gap-2">
+                                        {myTitles.map((t) => (
+                                            <div
+                                                key={t.id}
+                                                className="flex flex-col items-center gap-0.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5"
+                                            >
+                                                <span className="text-base">
+                                                    {t.icon}
+                                                </span>
+                                                <span className="text-[10px] font-medium text-amber-700">
+                                                    {t.name}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                                 <button
                                     onClick={handleAttend}
                                     disabled={attended}
                                     className={`block mx-auto text-xs px-4 py-1.5 rounded-full font-medium mb-4 transition-all
                 ${attended ? "bg-green-100 text-green-700" : "bg-amber-500 text-white"}`}
                                 >
-                                    {attended ? "✅ 첫 완료" : "☀️ 출석 체크"}
+                                    {attended ? "✅ 출석완료" : "☀️ 출석 체크"}
                                 </button>
                             </>
                         )}
