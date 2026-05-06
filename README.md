@@ -1,36 +1,238 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🧩 UD2팀 업무 관리 앱
 
-## Getting Started
+> UD2 퍼블리싱팀 전용 업무 관리 웹앱  
+> 업무 등록 → 자동 취합 → 주간 브리핑까지 한 곳에서
 
-First, run the development server:
+**🔗 배포 URL:** https://project-alarm-service.vercel.app  
+**🔒 접근:** 허가된 UD2팀 구글 계정만 로그인 가능
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+---
+
+## 📌 주요 기능
+
+### 🏠 홈
+
+-   본인 EXP / 레벨 / 출석 체크 현황
+-   오늘의 퀘스트 CRUD (추가 / 수정 / 삭제 / 완료)
+-   내 미완료 업무 목록 (상태 변경 가능)
+-   마감 임박 퀘스트 알림
+
+### 📋 업무 관리
+
+-   업무 추가 / 수정 / 삭제
+-   담당자 / 구분 / 우선순위 / 기간 / 공수 설정
+-   DayPicker range로 기간 선택
+-   상태 변경 (대기 → 시작 전 → 진행중 → 완료)
+-   완료 시 EXP 자동 지급
+-   Realtime 동기화 (다른 팀원 변경사항 즉시 반영)
+-   **권한:** 본인 업무만 수정/삭제 가능 (관리자는 전체)
+
+### 📊 리포트
+
+-   주간 / 월간 탭 전환
+-   팀원별 공수 바 차트
+-   **주간 전달사항** — 관리자가 Tiptap 에디터로 작성 (B/I/H1/H2/목록 지원)
+-   **주간 브리핑** — 등록된 업무 기반 자동 생성 (프로젝트 / 유지보수 / 기타 섹션)
+    -   수요일 오전 10시 이후 편집 가능
+    -   섹션별 Copy 버튼으로 노션에 바로 붙여넣기
+    -   자동 생성으로 복원 버튼
+-   **담당 배정** — 배정현황 / 배정대기 관리 (관리자만 수정)
+    -   URL 하이퍼링크 지원
+    -   배정대기 사업기간 메모
+    -   Copy 버튼으로 전체 복사
+-   팀원별 상세 아코디언
+
+### 👤 프로필
+
+-   레벨 / EXP / 출석 체크
+-   EXP 랭킹 (이번 달 기준)
+-   프로젝트 관리 (추가 / 삭제)
+-   웹 접근성 관리 (추가 / 수정 / 삭제 / 상태 변경)
+-   지난 업무 조회 (기간 필터 / 프로젝트 필터 / 상태 필터)
+-   칭호 / 성장 탭
+-   프로필 이미지 업로드 (인스타그램 스타일 액션 시트)
+
+---
+
+## 🎮 게이미피케이션
+
+업무를 재미있게! 메이플스토리에서 영감받은 레벨 시스템이에요.
+
+### ⚔️ 레벨 시스템
+
+| 레벨 | 이름                  | 필요 EXP |
+| ---- | --------------------- | -------- |
+| Lv.1 | 🌱 풋내기 모험가      | 0        |
+| Lv.2 | 🗡️ 수련 중인 검사     | 500      |
+| Lv.3 | 🛡️ 던전 탐험가        | 1,500    |
+| Lv.4 | ✨ 이름난 용병        | 3,000    |
+| Lv.5 | 🔥 보스 사냥꾼        | 7,000    |
+| Lv.6 | 💎 아케인 리버 개척자 | 15,000   |
+| Lv.7 | 🌟 메이플 월드의 전설 | 35,000   |
+| Lv.8 | 👑 검은 마법사의 숙적 | 70,000   |
+
+### 💰 EXP 획득 방법
+
+| 행동           | 획득 EXP |
+| -------------- | -------- |
+| 업무 완료      | +50 EXP  |
+| 긴급 업무 완료 | +100 EXP |
+| 출석 체크      | +20 EXP  |
+| 퀘스트 완료    | +10 EXP  |
+
+> 레벨업 시 구글챗 팀 전체에 축하 알림이 발송돼요! 🎊
+
+### 🏆 칭호 시스템
+
+8가지 칭호를 획득할 수 있어요.
+
+| 칭호           | 조건               |
+| -------------- | ------------------ |
+| 🌱 첫 완료     | 첫 번째 업무 완료  |
+| 🔥 꾸준러      | 3일 연속 출석      |
+| ⚡ 주간 챔피언 | 7일 연속 출석      |
+| ⏰ 마감지킴이  | D-day 전 완료 5건  |
+| 💪 업무 달인   | 완료 10건          |
+| 🏆 베테랑      | 완료 30건          |
+| 🚨 긴급 해결사 | 긴급 업무 5건 완료 |
+| ⭐ 중급 탐험가 | 레벨 5 달성        |
+
+---
+
+## 🤖 자동화 (GAS)
+
+Google Apps Script로 구글챗 자동 알림을 운영해요.
+
+### 📨 아침 알림 (평일 오전 8-9시)
+
+-   **개인 DM**으로 발송
+-   오늘의 퀘스트 목록 (마감일 포함)
+-   진행중인 업무 목록
+-   마감 임박 업무 (D-3 이내)
+-   주말 / 한국 공휴일 자동 제외
+
+### 🌐 접근성 만료 알림
+
+-   **개인 DM**으로 발송
+-   만료 45일 이내 미신청 접근성 인증 알림
+-   D-14 이내는 🚨, 그 외 ⚠️ 이모지 구분
+
+### 🎊 레벨업 알림
+
+-   레벨업 시 **팀 전체 채팅**으로 자동 발송
+
+---
+
+## 🛠 기술 스택
+
+| 분야         | 기술                         |
+| ------------ | ---------------------------- |
+| 프레임워크   | Next.js 14 (App Router)      |
+| 언어         | TypeScript                   |
+| 스타일링     | Tailwind CSS                 |
+| 데이터베이스 | Supabase (PostgreSQL)        |
+| 인증         | Supabase Auth (Google OAuth) |
+| 실시간       | Supabase Realtime            |
+| 배포         | Vercel                       |
+| 자동화       | Google Apps Script           |
+| 에디터       | Tiptap                       |
+| 날짜 선택    | React DayPicker              |
+
+---
+
+## 📁 프로젝트 구조
+
+```
+pubteam/src/
+├── app/
+│   ├── page.tsx              # 홈 (퀘스트, 내 업무, EXP)
+│   ├── tasks/page.tsx        # 업무 관리
+│   ├── report/page.tsx       # 리포트 (브리핑, 배정현황)
+│   ├── profile/page.tsx      # 프로필 (내정보, 지난업무, 성장)
+│   ├── login/page.tsx        # 구글 로그인
+│   └── auth/callback/page.tsx
+├── components/
+│   ├── Nav.tsx               # 하단 네비게이션
+│   ├── Header.tsx            # 공통 헤더
+│   ├── AuthProvider.tsx      # 인증 컨텍스트
+│   ├── AuthGuard.tsx         # 로그인 보호
+│   ├── UserMenu.tsx          # 헤더 드롭다운
+│   ├── Avatar.tsx            # 팀원 아바타 (전역 캐시)
+│   ├── NotificationButton.tsx
+│   └── NotificationDrawer.tsx
+├── lib/
+│   ├── supabase.ts           # Supabase 클라이언트
+│   ├── auth.ts               # 인증 유틸
+│   ├── maple.ts              # EXP/레벨 로직
+│   ├── types.ts              # 공통 타입
+│   ├── constants.ts          # 공통 상수
+│   ├── utils.ts              # 유틸 함수
+│   └── googleChat.ts         # 구글챗 웹훅
+└── app/api/notify/route.ts   # 구글챗 API Route
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🗄 Supabase 테이블
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| 테이블          | 설명                   |
+| --------------- | ---------------------- |
+| `tasks`         | 업무 목록              |
+| `players`       | 팀원 EXP / 레벨 / 칭호 |
+| `projects`      | 프로젝트 목록          |
+| `accessibility` | 웹 접근성 인증 관리    |
+| `quests`        | 오늘의 퀘스트          |
+| `briefings`     | 주간 브리핑 저장본     |
+| `assignments`   | 배정현황 / 배정대기    |
 
-## Learn More
+모든 테이블 RLS 활성화. GAS는 `service_role key`로 RLS 우회.
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## ⚙️ 환경 변수
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```env
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_MEMBER_EMAILS=이메일:이름,이메일:이름,...
+GOOGLE_CHAT_WEBHOOK=
+```
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 🚀 로컬 실행
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+git clone https://github.com/poseybutter/project-alarm-service.git
+cd project-alarm-service/pubteam
+npm install
+
+# .env.local 파일 생성 후 환경변수 입력
+npm run dev
+```
+
+---
+
+## 🐛 버그 신고 / 기능 제안
+
+[Issues 탭](https://github.com/poseybutter/project-alarm-service/issues)에서 제보해주세요!
+
+### 라벨 가이드
+
+| 라벨         | 설명           | 예시                                                     |
+| ------------ | -------------- | -------------------------------------------------------- |
+| 🐛 `bug`     | 버그, 오류     | Safari에서 select 색상 안 보임 / 날짜 수정 후 저장 안 됨 |
+| ✨ `feature` | 새 기능 요청   | 홈에서 업무 완료 처리 / 다크모드 지원                    |
+| 💄 `design`  | UI/디자인 개선 | 모바일 레이아웃 깨짐 / 폰트 크기 조정                    |
+| 📚 `docs`    | 문서, 설명     | 사용 방법 안내 필요 / 기능 텍스트 수정                   |
+
+---
+
+## 👥 팀원
+
+| 이름   | 역할          |
+| ------ | ------------- |
+| 조현석 | 리더 / 관리자 |
+| 이지은 | 개발 / 관리자 |
+| 조정연 | 팀원          |
+| 이헌희 | 팀원          |
