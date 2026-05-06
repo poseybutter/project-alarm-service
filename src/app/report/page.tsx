@@ -227,6 +227,8 @@ export default function ReportPage() {
         ...EMPTY_ASSIGN_FORM,
         members: [] as string[],
     }));
+    const [otherMember, setOtherMember] = useState("");
+    const [showOtherInput, setShowOtherInput] = useState(false);
     const [copiedAssign, setCopiedAssign] = useState(false);
 
     const wk = getWeekWin(wOff);
@@ -464,19 +466,26 @@ export default function ReportPage() {
     function openAddAssignment() {
         setEditAssignment(null);
         setAssignForm({ ...EMPTY_ASSIGN_FORM, members: [] });
+        setOtherMember("");
+        setShowOtherInput(false);
         setShowAssignModal(true);
     }
 
     function openEditAssignment(a: Assignment) {
         setEditAssignment(a);
+        const raw = Array.isArray(a.members) ? [...a.members] : [];
+        const core = raw.filter((x) => MEMBERS.includes(x));
+        const extra = raw.filter((x) => !MEMBERS.includes(x));
         setAssignForm({
             type: a.type || "프로젝트",
             name: a.name || "",
-            members: Array.isArray(a.members) ? [...a.members] : [],
+            members: core,
             url: a.url || "",
             period_note: a.period_note || "",
             status: a.status === "배정대기" ? "배정대기" : "진행중",
         });
+        setOtherMember(extra.join(", "));
+        setShowOtherInput(extra.length > 0);
         setShowAssignModal(true);
     }
 
@@ -484,6 +493,24 @@ export default function ReportPage() {
         setShowAssignModal(false);
         setEditAssignment(null);
         setAssignForm({ ...EMPTY_ASSIGN_FORM, members: [] });
+        setOtherMember("");
+        setShowOtherInput(false);
+    }
+
+    function toggleOtherMember() {
+        if (showOtherInput) {
+            setOtherMember("");
+            setShowOtherInput(false);
+        } else {
+            setShowOtherInput(true);
+        }
+    }
+
+    function parseOtherMemberNames(text: string): string[] {
+        return text
+            .split(/[,，]/)
+            .map((s) => s.trim())
+            .filter(Boolean);
     }
 
     function toggleAssignMember(name: string) {
@@ -500,10 +527,20 @@ export default function ReportPage() {
             alert("프로젝트명을 입력해주세요");
             return;
         }
+        const extraNames = showOtherInput
+            ? parseOtherMemberNames(otherMember)
+            : [];
+        const mergedRaw = [...assignForm.members, ...extraNames];
+        const seen = new Set<string>();
+        const mergedMembers = mergedRaw.filter((m) => {
+            if (seen.has(m)) return false;
+            seen.add(m);
+            return true;
+        });
         const payload = {
             type: assignForm.type,
             name: assignForm.name.trim(),
-            members: assignForm.members,
+            members: mergedMembers,
             url: assignForm.url.trim() || null,
             period_note: assignForm.period_note.trim() || null,
             status: assignForm.status,
@@ -1339,7 +1376,7 @@ export default function ReportPage() {
                                     <label className="mb-2 block text-xs font-medium text-stone-500">
                                         담당자
                                     </label>
-                                    <div className="grid grid-cols-4 gap-2">
+                                    <div className="grid grid-cols-5 gap-2">
                                         {MEMBERS.map((name) => {
                                             const on =
                                                 assignForm.members.includes(
@@ -1365,7 +1402,28 @@ export default function ReportPage() {
                                                 </button>
                                             );
                                         })}
+                                        <button
+                                            type="button"
+                                            onClick={toggleOtherMember}
+                                            className={`flex flex-col items-center justify-center gap-1 rounded-xl border-2 p-2 transition-all min-h-[72px]
+                            ${showOtherInput ? "border-amber-500 bg-amber-50" : "border-stone-200 bg-stone-50"}`}
+                                        >
+                                            <span className="text-xs font-semibold text-stone-700">
+                                                기타
+                                            </span>
+                                        </button>
                                     </div>
+                                    {showOtherInput && (
+                                        <input
+                                            type="text"
+                                            className="mt-2 w-full rounded-lg border border-stone-200 px-3 py-2.5 text-sm"
+                                            value={otherMember}
+                                            onChange={(e) =>
+                                                setOtherMember(e.target.value)
+                                            }
+                                            placeholder="예) 김철수, 김영희"
+                                        />
+                                    )}
                                 </div>
                                 <div>
                                     <label className="mb-1.5 block text-xs font-medium text-stone-500">
