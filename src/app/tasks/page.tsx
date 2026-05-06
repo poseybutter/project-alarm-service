@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
 import type { Task, Project } from "@/lib/types";
@@ -18,6 +18,8 @@ import { useAuth } from "@/components/AuthProvider";
 import Header from "@/components/Header";
 import UserMenu from "@/components/UserMenu";
 import Avatar from "@/components/Avatar";
+import LevelUpOverlay from "@/components/LevelUpOverlay";
+import ExpPopup, { type ExpPopupType } from "@/components/ExpPopup";
 import NotificationButton from "@/components/NotificationButton";
 import { DayPicker, DateRange } from "react-day-picker";
 import { ko } from "date-fns/locale";
@@ -122,6 +124,39 @@ export default function TasksPage() {
     const [filterMember, setFilterMember] = useState("");
     const [filterProject, setFilterProject] = useState("");
     const [filterPriority, setFilterPriority] = useState("");
+
+    const [levelUpInfo, setLevelUpInfo] = useState({
+        show: false,
+        level: 0,
+        levelName: "",
+    });
+    const [expPopups, setExpPopups] = useState<
+        {
+            id: string;
+            amount: number;
+            x: number;
+            y: number;
+            type: ExpPopupType;
+        }[]
+    >([]);
+    const expPopupSeq = useRef(0);
+
+    const closeLevelUp = useCallback(() => {
+        setLevelUpInfo((prev) => ({ ...prev, show: false }));
+    }, []);
+
+    const pushExpPopup = useCallback(
+        (amount: number, x: number, y: number, type: ExpPopupType) => {
+            expPopupSeq.current += 1;
+            const id = `exp-${Date.now()}-${expPopupSeq.current}`;
+            setExpPopups((prev) => [...prev, { id, amount, x, y, type }]);
+        },
+        [],
+    );
+
+    const removeExpPopup = useCallback((id: string) => {
+        setExpPopups((prev) => prev.filter((p) => p.id !== id));
+    }, []);
 
     useEffect(() => {
         loadTasks();
@@ -251,7 +286,12 @@ export default function TasksPage() {
         loadTasks();
     }
 
-    async function updateStatus(id: number, status: string, task: Task) {
+    async function updateStatus(
+        id: number,
+        status: string,
+        task: Task,
+        anchor?: { x: number; y: number },
+    ) {
         const prev = task.status;
         await supabase.from("tasks").update({ status }).eq("id", id);
         if (status === "완료" && prev !== "완료") {
@@ -267,8 +307,21 @@ export default function TasksPage() {
                 isUrgent,
                 isOnTime,
             );
-            if (result?.levelUp)
-                alert(`🎊 ${task.member}님 레벨업! ${result.newLv?.name}`);
+            if (result?.amount != null && anchor) {
+                pushExpPopup(
+                    result.amount,
+                    anchor.x,
+                    anchor.y,
+                    task.priority === "긴급" ? "urgent" : "complete",
+                );
+            }
+            if (result?.levelUp && result.newLv) {
+                setLevelUpInfo({
+                    show: true,
+                    level: result.newLv.level,
+                    levelName: result.newLv.name,
+                });
+            }
         }
         if (prev === "완료" && status !== "완료") {
             const isUrgent = task.priority === "긴급";
@@ -614,14 +667,27 @@ export default function TasksPage() {
                                                     <div className="flex flex-col items-end gap-1.5 shrink-0">
                                                         <select
                                                             value={t.status}
-                                                            onChange={(e) =>
-                                                                updateStatus(
+                                                            onChange={(e) => {
+                                                                const el =
+                                                                    e.target;
+                                                                const r =
+                                                                    el.getBoundingClientRect();
+                                                                void updateStatus(
                                                                     t.id,
-                                                                    e.target
-                                                                        .value,
+                                                                    el.value,
                                                                     t,
-                                                                )
-                                                            }
+                                                                    {
+                                                                        x:
+                                                                            r.left +
+                                                                            r.width /
+                                                                                2,
+                                                                        y:
+                                                                            r.top +
+                                                                            r.height /
+                                                                                2,
+                                                                    },
+                                                                );
+                                                            }}
                                                             className={`text-xs px-2 py-1 rounded-lg font-medium border-0 cursor-pointer ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}
                                                             disabled={isGuest}
                                                         >
@@ -1218,6 +1284,22 @@ export default function TasksPage() {
                         </div>
                     </div>
                 )}
+                <LevelUpOverlay
+                    show={levelUpInfo.show}
+                    level={levelUpInfo.level}
+                    levelName={levelUpInfo.levelName}
+                    onClose={closeLevelUp}
+                />
+                {expPopups.map((p) => (
+                    <ExpPopup
+                        key={p.id}
+                        amount={p.amount}
+                        x={p.x}
+                        y={p.y}
+                        type={p.type}
+                        onDone={() => removeExpPopup(p.id)}
+                    />
+                ))}
             </div>
         </AuthGuard>
     );
