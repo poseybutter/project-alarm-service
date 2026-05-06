@@ -19,6 +19,7 @@ export type Task = {
     name: string
     exp: number
     month_exp: number
+    week_exp?: number
     level: number
     icons: string[]
     attend_last: string | null
