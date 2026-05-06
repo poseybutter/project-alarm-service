@@ -1113,7 +1113,7 @@ export default function ReportPage() {
                                             {!editAllowed && (
                                                 <span className="text-xs text-stone-400">
                                                     {isBriefingLocked
-                                                        ? "🔒 리더가 브리핑을 잠금했어요"
+                                                        ? "🔒 관리자가 브리핑을 잠금했어요"
                                                         : "✏️ 수요일 오전 10시 이후 편집 가능해요"}
                                                 </span>
                                             )}
