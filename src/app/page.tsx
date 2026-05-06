@@ -32,8 +32,25 @@ import AttendanceHeatmap from "@/components/AttendanceHeatmap";
 import { DayPicker } from "react-day-picker";
 import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
+import {
+    DndContext,
+    DragOverlay,
+    PointerSensor,
+    TouchSensor,
+    useSensor,
+    useSensors,
+    useDraggable,
+    useDroppable,
+    type DragEndEvent,
+    type DragStartEvent,
+} from "@dnd-kit/core";
+import DragQuestModal from "@/components/DragQuestModal";
 
-type QuestFormType = { content: string; proj: string; end_date: string };
+type QuestFormType = {
+    content: string;
+    proj: string;
+    end_date: string;
+};
 
 function QuestFormModal({
     title,
@@ -200,6 +217,143 @@ function QuestFormModal({
     );
 }
 
+function HomeMyTaskRow({
+    task: t,
+    showBorderBottom,
+    onStatusChange,
+}: {
+    task: Task;
+    showBorderBottom: boolean;
+    onStatusChange: (
+        id: number,
+        status: string,
+        task: Task,
+        anchor?: { x: number; y: number },
+    ) => void;
+}) {
+    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+        id: `task-${t.id}`,
+        data: { task: t },
+    });
+    const diff = getDiff(t.end_date);
+    const ddayRed = diff !== null && diff <= 7;
+    const ddayLabel =
+        diff === null ? "" : diff < 0 ? `D+${Math.abs(diff)}` : `D-${diff}`;
+    return (
+        <div
+            ref={setNodeRef}
+            className={`px-4 py-3 ${showBorderBottom ? "border-b border-stone-100" : ""} ${t.priority === "긴급" ? "bg-amber-50" : ""} ${isDragging ? "opacity-60" : ""}`}
+        >
+            <div className="mb-1.5 flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                        {t.priority === "긴급" && (
+                            <span className="shrink-0 text-xs" title="긴급">
+                                ⭐
+                            </span>
+                        )}
+                        {t.type && (
+                            <span
+                                className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[t.type] || "bg-gray-100 text-gray-600"}`}
+                            >
+                                {t.type}
+                            </span>
+                        )}
+                        <span className="truncate text-sm font-medium text-stone-800">
+                            {t.proj}
+                        </span>
+                    </div>
+                    {t.content && (
+                        <p className="mt-1 break-words text-xs text-stone-600">
+                            {t.content}
+                        </p>
+                    )}
+                    {t.issue && (
+                        <p className="mt-1.5 rounded-lg border border-amber-200 bg-amber-100/80 px-2 py-1 text-xs text-amber-800">
+                            이슈: {t.issue}
+                        </p>
+                    )}
+                </div>
+                <button
+                    type="button"
+                    {...listeners}
+                    {...attributes}
+                    className="touch-none cursor-grab px-1 text-stone-300 hover:text-stone-500 active:cursor-grabbing"
+                >
+                    ⠿
+                </button>
+            </div>
+            <div className="mt-1 flex items-end justify-between gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-stone-400">
+                    {t.workload > 0 && (
+                        <span>{formatWorkload(t.workload)}</span>
+                    )}
+                    {t.start_date && t.end_date && (
+                        <span
+                            className={
+                                ddayRed ? "font-medium text-red-500" : ""
+                            }
+                        >
+                            {t.start_date.slice(5).replace("-", "/")} ~{" "}
+                            {t.end_date.slice(5).replace("-", "/")}
+                            {ddayLabel && ` · ${ddayLabel}`}
+                        </span>
+                    )}
+                    {!t.start_date && t.end_date && (
+                        <span
+                            className={
+                                ddayRed ? "font-medium text-red-500" : ""
+                            }
+                        >
+                            ~{t.end_date.slice(5).replace("-", "/")}
+                            {ddayLabel && ` · ${ddayLabel}`}
+                        </span>
+                    )}
+                    {t.workload === 0 && !t.start_date && !t.end_date && (
+                        <span>기간 미정</span>
+                    )}
+                </div>
+                <select
+                    value={t.status}
+                    onChange={(e) => {
+                        const el = e.target;
+                        const r = el.getBoundingClientRect();
+                        void onStatusChange(t.id, el.value, t, {
+                            x: r.left + r.width / 2,
+                            y: r.top + r.height / 2,
+                        });
+                    }}
+                    className={`shrink-0 cursor-pointer rounded-lg border-0 px-2 py-1 text-xs font-medium ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}
+                >
+                    {[
+                        "대기",
+                        "시작 전",
+                        "진행중",
+                        "이슈 및 대기",
+                        "완료",
+                    ].map((s) => (
+                        <option key={s} value={s}>
+                            {s}
+                        </option>
+                    ))}
+                </select>
+            </div>
+        </div>
+    );
+}
+
+function DroppableQuestZone({ children }: { children: React.ReactNode }) {
+    const { setNodeRef, isOver } = useDroppable({ id: "quest-zone" });
+    return (
+        <div
+            ref={setNodeRef}
+            className={`min-h-[80px] rounded-xl transition-all ${isOver ? "ring-2 ring-amber-400 ring-offset-2" : ""}`}
+        >
+            {children}
+        </div>
+    );
+}
+
 export default function HomePage() {
     const { member, loading: authLoading } = useAuth();
     const router = useRouter();
@@ -219,6 +373,30 @@ export default function HomePage() {
         proj: "",
         end_date: "",
     });
+    const [activeTask, setActiveTask] = useState<Task | null>(null);
+    const [dragQuestTask, setDragQuestTask] = useState<Task | null>(null);
+
+    const sensors = useSensors(
+        useSensor(PointerSensor, {
+            activationConstraint: { distance: 8 },
+        }),
+        useSensor(TouchSensor, {
+            activationConstraint: { delay: 50, tolerance: 5 },
+        }),
+    );
+
+    const onDragStart = useCallback((event: DragStartEvent) => {
+        const t = event.active.data.current?.task as Task | undefined;
+        setActiveTask(t ?? null);
+    }, []);
+
+    const onDragEnd = useCallback((event: DragEndEvent) => {
+        const t = event.active.data.current?.task as Task | undefined;
+        if (event.over?.id === "quest-zone" && t) {
+            setDragQuestTask(t);
+        }
+        setActiveTask(null);
+    }, []);
 
     const [levelUpInfo, setLevelUpInfo] = useState({
         show: false,
@@ -425,7 +603,6 @@ export default function HomePage() {
                 .from("tasks")
                 .select("*")
                 .eq("member", member)
-                .neq("status", "완료")
                 .order("end_date", { ascending: true }),
             isGuest
                 ? supabase
@@ -508,11 +685,16 @@ export default function HomePage() {
                 content: questForm.content,
                 proj: questForm.proj || null,
                 end_date: questForm.end_date || null,
+                task_id: null,
                 status: "대기",
             },
         ]);
         setShowAddQuest(false);
-        setQuestForm({ content: "", proj: "", end_date: "" });
+        setQuestForm({
+            content: "",
+            proj: "",
+            end_date: "",
+        });
         loadData();
     }
 
@@ -540,11 +722,31 @@ export default function HomePage() {
                 content: questForm.content,
                 proj: questForm.proj || null,
                 end_date: questForm.end_date || null,
+                task_id: editTarget.task_id ?? null,
             })
             .eq("id", editTarget.id);
         setShowEditQuest(false);
         setEditTarget(null);
-        setQuestForm({ content: "", proj: "", end_date: "" });
+        setQuestForm({
+            content: "",
+            proj: "",
+            end_date: "",
+        });
+        loadData();
+    }
+
+    async function submitDragQuest(content: string, endDate: string, task: Task) {
+        if (!member) return;
+        await supabase.from("quests").insert([
+            {
+                member,
+                content,
+                proj: task.proj || null,
+                end_date: endDate || null,
+                task_id: task.id,
+                status: "대기",
+            },
+        ]);
         loadData();
     }
 
@@ -635,8 +837,15 @@ export default function HomePage() {
             (a, b) => (getDiff(a.end_date) ?? 99) - (getDiff(b.end_date) ?? 99),
         );
 
+    const activeMyTasks = myTasks.filter((t) => t.status !== "완료");
+
     return (
         <AuthGuard>
+            <DndContext
+                sensors={sensors}
+                onDragStart={onDragStart}
+                onDragEnd={onDragEnd}
+            >
             <div className="min-h-screen bg-[#f7f6f3]">
                 <Header title="UD2팀 업무" />
 
@@ -874,8 +1083,8 @@ export default function HomePage() {
 
                             {/* 오늘의 퀘스트 */}
                             <div className="mb-3">
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
+                                <div className="mb-2 flex items-center justify-between">
+                                    <span className="text-xs font-bold uppercase tracking-wide text-stone-500">
                                         오늘의 퀘스트
                                     </span>
                                     <div className="flex items-center gap-2">
@@ -886,109 +1095,120 @@ export default function HomePage() {
                                             onClick={() =>
                                                 setShowAddQuest(true)
                                             }
-                                            className="text-xs bg-amber-500 text-white px-2.5 py-1 rounded-lg font-medium"
+                                            className="rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-medium text-white"
                                         >
                                             + 추가
                                         </button>
                                     </div>
                                 </div>
 
-                                {quests.length === 0 ? (
-                                    <div className="bg-white rounded-xl border border-stone-200 py-10 text-center">
-                                        <p className="text-stone-400 text-sm">
-                                            오늘 퀘스트가 없어요
-                                        </p>
-                                        <p className="text-xs text-stone-300 mt-1">
-                                            + 추가 버튼으로 퀘스트를
-                                            만들어보세요!
-                                        </p>
-                                    </div>
-                                ) : (
-                                    <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                                        {quests.map((q, i) => {
-                                            const diff = getDiff(q.end_date);
-                                            return (
-                                                <div
-                                                    key={q.id}
-                                                    className={`flex items-center gap-3 px-4 py-3
+                                <DroppableQuestZone>
+                                    {quests.length === 0 ? (
+                                        <div className="rounded-xl border border-stone-200 bg-white py-10 text-center">
+                                            <p className="text-sm text-stone-400">
+                                                오늘 퀘스트가 없어요
+                                            </p>
+                                            <p className="mt-1 text-xs text-stone-300">
+                                                + 추가 버튼으로 퀘스트를
+                                                만들어보세요!
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+                                            {quests.map((q, i) => {
+                                                const diff = getDiff(
+                                                    q.end_date,
+                                                );
+                                                const linkedProj =
+                                                    q.task_id != null
+                                                        ? myTasks.find(
+                                                              (t) =>
+                                                                  Number(
+                                                                      t.id,
+                                                                  ) ===
+                                                                  Number(
+                                                                      q.task_id,
+                                                                  ),
+                                                          )?.proj
+                                                        : undefined;
+                                                return (
+                                                    <div
+                                                        key={q.id}
+                                                        className={`flex items-center gap-3 px-4 py-3
                         ${i < quests.length - 1 ? "border-b border-stone-100" : ""}`}
-                                                >
-                                                    <button
-                                                        onClick={(ev) =>
-                                                            void completeQuest(
-                                                                q,
-                                                                ev,
-                                                            )
-                                                        }
-                                                        className="w-5 h-5 rounded-full border-2 border-stone-300 shrink-0 hover:border-amber-500 transition-colors"
-                                                    />
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-sm font-medium text-stone-800 truncate">
-                                                            {q.content}
-                                                        </p>
-                                                        <div className="flex items-center gap-2 mt-0.5">
-                                                            {q.proj && (
-                                                                <span className="text-xs text-stone-400 truncate">
-                                                                    {q.proj}
-                                                                </span>
-                                                            )}
-                                                            {q.end_date && (
-                                                                <span
-                                                                    className={`text-xs font-medium ${diff !== null && diff <= 3 ? "text-red-500" : "text-stone-400"}`}
-                                                                >
-                                                                    {q.end_date
-                                                                        .slice(
-                                                                            5,
-                                                                        )
-                                                                        .replace(
-                                                                            "-",
-                                                                            "/",
-                                                                        )}
-                                                                    {diff !==
-                                                                        null &&
-                                                                        ` D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex items-center gap-1.5 shrink-0">
-                                                        <span className="text-xs text-green-600 font-medium">
-                                                            +10 EXP
-                                                        </span>
+                                                    >
                                                         <button
-                                                            onClick={() =>
-                                                                openEditQuest(q)
-                                                            }
-                                                            className="text-xs text-stone-300 hover:text-amber-500 transition-colors"
-                                                        >
-                                                            수정
-                                                        </button>
-                                                        <button
-                                                            onClick={() =>
-                                                                deleteQuest(
-                                                                    q.id,
+                                                            onClick={(ev) =>
+                                                                void completeQuest(
+                                                                    q,
+                                                                    ev,
                                                                 )
                                                             }
-                                                            className="text-xs text-stone-300 hover:text-red-400 transition-colors"
-                                                        >
-                                                            삭제
-                                                        </button>
+                                                            className="h-5 w-5 shrink-0 rounded-full border-2 border-stone-300 transition-colors hover:border-amber-500"
+                                                        />
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="truncate text-sm font-medium text-stone-800">
+                                                                {q.content}
+                                                            </p>
+                                                            <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                                                                {(q.proj ||
+                                                                    linkedProj) && (
+                                                                    <span className="truncate text-xs text-stone-400">
+                                                                        {q.proj ||
+                                                                            linkedProj}
+                                                                    </span>
+                                                                )}
+                                                                {q.end_date && (
+                                                                    <span
+                                                                        className={`text-xs font-medium ${diff !== null && diff <= 3 ? "text-red-500" : "text-stone-400"}`}
+                                                                    >
+                                                                        {q.end_date
+                                                                            .slice(
+                                                                                5,
+                                                                            )
+                                                                            .replace(
+                                                                                "-",
+                                                                                "/",
+                                                                            )}
+                                                                        {diff !==
+                                                                            null &&
+                                                                            ` D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex shrink-0 items-center gap-1.5">
+                                                            <span className="text-xs font-medium text-green-600">
+                                                                +10 EXP
+                                                            </span>
+                                                            <button
+                                                                onClick={() =>
+                                                                    openEditQuest(
+                                                                        q,
+                                                                    )
+                                                                }
+                                                                className="text-xs text-stone-300 transition-colors hover:text-amber-500"
+                                                            >
+                                                                수정
+                                                            </button>
+                                                            <button
+                                                                onClick={() =>
+                                                                    deleteQuest(
+                                                                        q.id,
+                                                                    )
+                                                                }
+                                                                className="text-xs text-stone-300 transition-colors hover:text-red-400"
+                                                            >
+                                                                삭제
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </DroppableQuestZone>
                             </div>
-
-                            {!isGuest &&
-                                !loading &&
-                                quests.length > 0 &&
-                                urgentQuests.length === 0 && (
-                                    <div className="text-center py-6 text-stone-400 text-sm mb-3">
-                                        🎉 오늘 마감 퀘스트가 없어요!
-                                    </div>
-                                )}
 
                             {/* 내 업무 */}
                             <div className="mb-3">
@@ -997,182 +1217,27 @@ export default function HomePage() {
                                         내 업무
                                     </span>
                                     <span className="text-xs text-stone-400">
-                                        {myTasks.length}건
+                                        {activeMyTasks.length}건
                                     </span>
                                 </div>
-                                {myTasks.length === 0 ? (
+                                {activeMyTasks.length === 0 ? (
                                     <div className="bg-white rounded-xl border border-stone-200 py-10 text-center">
                                         <p className="text-stone-400 text-sm">
                                             진행 중인 업무가 없어요
                                         </p>
                                     </div>
                                 ) : (
-                                    <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                                        {myTasks.map((t, i) => {
-                                            const diff = getDiff(t.end_date);
-                                            const ddayRed =
-                                                diff !== null && diff <= 7;
-                                            const ddayLabel =
-                                                diff === null
-                                                    ? ""
-                                                    : diff < 0
-                                                      ? `D+${Math.abs(diff)}`
-                                                      : `D-${diff}`;
-                                            return (
-                                                <div
-                                                    key={t.id}
-                                                    className={`px-4 py-3 ${i < myTasks.length - 1 ? "border-b border-stone-100" : ""} ${t.priority === "긴급" ? "bg-amber-50" : ""}`}
-                                                >
-                                                    <div className="flex items-start gap-2 mb-1.5">
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="flex items-center gap-2 flex-wrap">
-                                                                {t.priority ===
-                                                                    "긴급" && (
-                                                                    <span
-                                                                        className="text-xs shrink-0"
-                                                                        title="긴급"
-                                                                    >
-                                                                        ⭐
-                                                                    </span>
-                                                                )}
-                                                                {t.type && (
-                                                                    <span
-                                                                        className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${TYPE_COLORS[t.type] || "bg-gray-100 text-gray-600"}`}
-                                                                    >
-                                                                        {t.type}
-                                                                    </span>
-                                                                )}
-                                                                <span className="text-sm font-medium text-stone-800 truncate">
-                                                                    {t.proj}
-                                                                </span>
-                                                            </div>
-                                                            {t.content && (
-                                                                <p className="text-xs text-stone-600 mt-1 break-words">
-                                                                    {t.content}
-                                                                </p>
-                                                            )}
-                                                            {t.issue && (
-                                                                <p className="text-xs text-amber-800 bg-amber-100/80 border border-amber-200 rounded-lg px-2 py-1 mt-1.5">
-                                                                    이슈:{" "}
-                                                                    {t.issue}
-                                                                </p>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex items-end justify-between gap-2 mt-1">
-                                                        <div className="text-xs text-stone-400 flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
-                                                            {t.workload > 0 && (
-                                                                <span>
-                                                                    {formatWorkload(
-                                                                        t.workload,
-                                                                    )}
-                                                                </span>
-                                                            )}
-                                                            {t.start_date &&
-                                                                t.end_date && (
-                                                                    <span
-                                                                        className={
-                                                                            ddayRed
-                                                                                ? "text-red-500 font-medium"
-                                                                                : ""
-                                                                        }
-                                                                    >
-                                                                        {t.start_date
-                                                                            .slice(
-                                                                                5,
-                                                                            )
-                                                                            .replace(
-                                                                                "-",
-                                                                                "/",
-                                                                            )}{" "}
-                                                                        ~{" "}
-                                                                        {t.end_date
-                                                                            .slice(
-                                                                                5,
-                                                                            )
-                                                                            .replace(
-                                                                                "-",
-                                                                                "/",
-                                                                            )}
-                                                                        {ddayLabel &&
-                                                                            ` · ${ddayLabel}`}
-                                                                    </span>
-                                                                )}
-                                                            {!t.start_date &&
-                                                                t.end_date && (
-                                                                    <span
-                                                                        className={
-                                                                            ddayRed
-                                                                                ? "text-red-500 font-medium"
-                                                                                : ""
-                                                                        }
-                                                                    >
-                                                                        ~
-                                                                        {t.end_date
-                                                                            .slice(
-                                                                                5,
-                                                                            )
-                                                                            .replace(
-                                                                                "-",
-                                                                                "/",
-                                                                            )}
-                                                                        {ddayLabel &&
-                                                                            ` · ${ddayLabel}`}
-                                                                    </span>
-                                                                )}
-                                                            {t.workload === 0 &&
-                                                                !t.start_date &&
-                                                                !t.end_date && (
-                                                                    <span>
-                                                                        기간
-                                                                        미정
-                                                                    </span>
-                                                                )}
-                                                        </div>
-                                                        <select
-                                                            value={t.status}
-                                                            onChange={(e) => {
-                                                                const el =
-                                                                    e.target;
-                                                                const r =
-                                                                    el.getBoundingClientRect();
-                                                                void updateTaskStatus(
-                                                                    t.id,
-                                                                    el.value,
-                                                                    t,
-                                                                    {
-                                                                        x:
-                                                                            r.left +
-                                                                            r.width /
-                                                                                2,
-                                                                        y:
-                                                                            r.top +
-                                                                            r.height /
-                                                                                2,
-                                                                    },
-                                                                );
-                                                            }}
-                                                            className={`text-xs px-2 py-1 rounded-lg font-medium border-0 cursor-pointer shrink-0 ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}
-                                                        >
-                                                            {[
-                                                                "대기",
-                                                                "시작 전",
-                                                                "진행중",
-                                                                "이슈 및 대기",
-                                                                "완료",
-                                                            ].map((s) => (
-                                                                <option
-                                                                    key={s}
-                                                                    value={s}
-                                                                >
-                                                                    {s}
-                                                                </option>
-                                                            ))}
-                                                        </select>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
+                                    <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+                                        {activeMyTasks.map((t, i) => (
+                                            <HomeMyTaskRow
+                                                key={t.id}
+                                                task={t}
+                                                showBorderBottom={
+                                                    i < activeMyTasks.length - 1
+                                                }
+                                                onStatusChange={updateTaskStatus}
+                                            />
+                                        ))}
                                     </div>
                                 )}
                             </div>
@@ -1222,6 +1287,16 @@ export default function HomePage() {
                         </div>
                     )}
                 </div>
+
+                {!isGuest && (
+                    <DragOverlay className="pointer-events-none">
+                        {activeTask && (
+                            <div className="box-border w-[min(calc(100vw-2rem),42rem)] max-w-2xl rounded-xl border-2 border-amber-400 bg-white px-4 py-3 text-sm font-medium text-stone-800 opacity-90 shadow-xl">
+                                {activeTask.proj}
+                            </div>
+                        )}
+                    </DragOverlay>
+                )}
 
                 {/* 퀘스트 추가 모달 */}
                 {showAddQuest && (
@@ -1292,7 +1367,22 @@ export default function HomePage() {
                         {toast}
                     </div>
                 )}
+
+                {dragQuestTask && (
+                    <DragQuestModal
+                        task={dragQuestTask}
+                        onClose={() => setDragQuestTask(null)}
+                        onSubmit={(content, endDate) =>
+                            submitDragQuest(
+                                content,
+                                endDate,
+                                dragQuestTask,
+                            )
+                        }
+                    />
+                )}
             </div>
+            </DndContext>
         </AuthGuard>
     );
 }
