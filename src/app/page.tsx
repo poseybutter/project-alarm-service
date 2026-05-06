@@ -27,6 +27,7 @@ import {
 import Avatar from "@/components/Avatar";
 import LevelUpOverlay from "@/components/LevelUpOverlay";
 import ExpPopup, { type ExpPopupType } from "@/components/ExpPopup";
+import AttendanceHeatmap from "@/components/AttendanceHeatmap";
 import { DayPicker } from "react-day-picker";
 import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
@@ -609,6 +610,15 @@ export default function HomePage() {
                             </div>
                         )}
                     </div>
+
+                    {!isGuest && (
+                        <div className="mb-3 w-full min-w-0 bg-white rounded-xl border border-stone-200 p-4">
+                            <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-3">
+                                활동 기록
+                            </p>
+                            <AttendanceHeatmap member={member ?? ""} />
+                        </div>
+                    )}
 
                     {isGuest ? (
                         <>
