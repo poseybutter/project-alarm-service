@@ -160,7 +160,8 @@ function formatAssignments(list: Assignment[]): string {
         lines.push("[배정현황]");
         active.forEach((a) => {
             const memberStr = (a.members || []).join(", ");
-            const namePart = a.url ? `${a.name}(${a.url})` : a.name;
+            // Notion 등에 붙일 때 프로젝트명이 하이퍼링크로 인식되도록 Markdown 링크 사용
+            const namePart = a.url ? `[${a.name}](${a.url})` : a.name;
             lines.push(`⇒ [${a.type}] ${namePart} : ${memberStr}`);
         });
     }
@@ -169,7 +170,7 @@ function formatAssignments(list: Assignment[]): string {
         if (lines.length > 0) lines.push("");
         lines.push("[배정대기]");
         waiting.forEach((a) => {
-            const namePart = a.url ? `${a.name}(${a.url})` : a.name;
+            const namePart = a.url ? `[${a.name}](${a.url})` : a.name;
             lines.push(`⇒ [배정대기] ${namePart}`);
             if (a.period_note) {
                 a.period_note.split("\n").forEach((l) => {
