@@ -26,6 +26,7 @@ import {
 } from "@/lib/constants";
 import Avatar from "@/components/Avatar";
 import LevelUpOverlay from "@/components/LevelUpOverlay";
+import MvpOverlay from "@/components/MvpOverlay";
 import ExpPopup, { type ExpPopupType } from "@/components/ExpPopup";
 import AttendanceHeatmap from "@/components/AttendanceHeatmap";
 import { DayPicker } from "react-day-picker";
@@ -224,6 +225,12 @@ export default function HomePage() {
         level: 0,
         levelName: "",
     });
+    const [mvpInfo, setMvpInfo] = useState<{
+        show: boolean;
+        name: string;
+        weekExp: number;
+        taskCount: number;
+    } | null>(null);
     const [expPopups, setExpPopups] = useState<
         {
             id: string;
@@ -291,6 +298,107 @@ export default function HomePage() {
             };
         }
     }, [member]);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        if (!member || member === "GUEST" || authLoading) return;
+
+        const today = new Date();
+        if (today.getDay() !== 1) return;
+
+        const shownKey = `mvp_shown_${today.toISOString().slice(0, 10)}`;
+        if (localStorage.getItem(shownKey)) return;
+
+        const lockKey = `mvp_lock_${shownKey}`;
+        if (sessionStorage.getItem(lockKey)) return;
+        sessionStorage.setItem(lockKey, "1");
+
+        const toYmd = (d: Date) =>
+            `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+        const lastMonday = new Date(today);
+        lastMonday.setDate(today.getDate() - 7);
+        const lastSunday = new Date(today);
+        lastSunday.setDate(today.getDate() - 1);
+        const startYmd = toYmd(lastMonday);
+        const endYmd = toYmd(lastSunday);
+
+        const markShown = () => {
+            try {
+                localStorage.setItem(shownKey, "1");
+            } catch {
+                /* ignore */
+            }
+        };
+
+        void (async () => {
+            try {
+                const { data: players, error: pErr } = await supabase
+                    .from("players")
+                    .select("*");
+                if (pErr || !players?.length) {
+                    sessionStorage.removeItem(lockKey);
+                    return;
+                }
+
+                const { data: tasks, error: tErr } = await supabase
+                    .from("tasks")
+                    .select("member, end_date")
+                    .eq("status", "완료")
+                    .not("end_date", "is", null)
+                    .gte("end_date", startYmd)
+                    .lte("end_date", endYmd);
+
+                if (tErr) {
+                    sessionStorage.removeItem(lockKey);
+                    return;
+                }
+
+                const countByMember: Record<string, number> = {};
+                for (const t of tasks ?? []) {
+                    const m = (t as Task).member;
+                    if (!m) continue;
+                    countByMember[m] = (countByMember[m] || 0) + 1;
+                }
+
+                let best: {
+                    name: string;
+                    score: number;
+                    weekExp: number;
+                    taskCount: number;
+                } | null = null;
+
+                for (const pl of players) {
+                    const name = pl.name as string;
+                    const weekExp = Number(pl.week_exp ?? 0);
+                    const taskCount = countByMember[name] ?? 0;
+                    const score = weekExp + taskCount * 50;
+                    if (
+                        !best ||
+                        score > best.score ||
+                        (score === best.score && weekExp > best.weekExp)
+                    ) {
+                        best = { name, score, weekExp, taskCount };
+                    }
+                }
+
+                if (!best) {
+                    sessionStorage.removeItem(lockKey);
+                    return;
+                }
+
+                setMvpInfo({
+                    show: true,
+                    name: best.name,
+                    weekExp: best.weekExp,
+                    taskCount: best.taskCount,
+                });
+                markShown();
+            } catch {
+                sessionStorage.removeItem(lockKey);
+            }
+        })();
+    }, [member, authLoading]);
 
     if (authLoading || !member) return null;
 
@@ -1158,6 +1266,15 @@ export default function HomePage() {
                     levelName={levelUpInfo.levelName}
                     onClose={closeLevelUp}
                 />
+                {mvpInfo?.show && (
+                    <MvpOverlay
+                        show={mvpInfo.show}
+                        mvpName={mvpInfo.name}
+                        weekExp={mvpInfo.weekExp}
+                        taskCount={mvpInfo.taskCount}
+                        onClose={() => setMvpInfo(null)}
+                    />
+                )}
                 {expPopups.map((p) => (
                     <ExpPopup
                         key={p.id}
