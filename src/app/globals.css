@@ -26,6 +26,44 @@ body {
     font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Safari/iOS 호환성 */
+input,
+select,
+textarea,
+button {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+}
+
+select {
+    background-image: none;
+}
+
+/* iOS에서 input 폰트 색상 강제 */
+input,
+select,
+textarea {
+    color: inherit;
+    font-size: inherit;
+    font-family: inherit;
+}
+
+/* placeholder 색상 */
+::placeholder {
+    color: #a8a29e; /* stone-400 */
+    opacity: 1;
+}
+
+/* iOS Safari input zoom 방지 */
+@supports (-webkit-touch-callout: none) {
+    input,
+    select,
+    textarea {
+        font-size: 16px;
+    }
+}
+
 /* 리포트 주간 전달사항 Tiptap (ProseMirror) */
 .notice-editor .ProseMirror {
     outline: none;
