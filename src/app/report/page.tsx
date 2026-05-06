@@ -241,14 +241,13 @@ function formatBriefingSection(tasks: Task[], section: BriefSection): string {
     return blocks.join("\n\n").trimEnd();
 }
 
-function canEdit(): boolean {
+function canEdit(isLocked: boolean): boolean {
+    if (isLocked) return false;
     const now = new Date();
     const day = now.getDay();
     const hour = now.getHours();
-    if (day === 3 && hour >= 10) return true;
-    if (day === 4 || day === 5 || day === 6) return true;
-    if (day === 0 || day === 1 || day === 2) return true;
-    return false;
+    if (day === 3 && hour < 10) return false;
+    return true;
 }
 
 function getWeekWin(offset: number) {
@@ -297,6 +296,7 @@ type BriefingRow = {
     etc: string;
     /** Tiptap 저장 HTML */
     notice: string | null;
+    is_locked: boolean;
     edited_by: string | null;
     updated_at: string | null;
 };
@@ -403,7 +403,9 @@ export default function ReportPage() {
         const weekStart = getWeekWin(wOff).from;
         const { data } = await supabase
             .from("briefings")
-            .select("project, maintenance, etc, notice, edited_by, updated_at")
+            .select(
+                "project, maintenance, etc, notice, is_locked, edited_by, updated_at",
+            )
             .eq("week_start", weekStart)
             .maybeSingle();
         if (data) {
@@ -412,6 +414,7 @@ export default function ReportPage() {
                 maintenance: data.maintenance ?? "",
                 etc: data.etc ?? "",
                 notice: data.notice ?? null,
+                is_locked: data.is_locked ?? false,
                 edited_by: data.edited_by ?? null,
                 updated_at: data.updated_at ?? null,
             });
@@ -555,8 +558,9 @@ export default function ReportPage() {
     const displayMaintenance =
         briefing !== null ? briefing.maintenance : autoMaintenance;
     const displayEtc = briefing !== null ? briefing.etc : autoEtc;
+    const isBriefingLocked = briefing?.is_locked === true;
 
-    const editAllowed = canEdit();
+    const editAllowed = canEdit(isBriefingLocked);
 
     function startEditing() {
         setEditProject(briefing !== null ? briefing.project : autoProject);
@@ -587,6 +591,7 @@ export default function ReportPage() {
                 maintenance: editMaintenance,
                 etc: editEtc,
                 notice: briefing?.notice ?? null,
+                is_locked: briefing?.is_locked ?? false,
                 edited_by: currentMember ?? null,
                 updated_at: new Date().toISOString(),
             },
@@ -614,6 +619,7 @@ export default function ReportPage() {
                 notice: noticeHtmlHasText(editNotice)
                     ? editNotice.trim()
                     : null,
+                is_locked: briefing?.is_locked ?? false,
                 edited_by: currentMember ?? null,
                 updated_at: new Date().toISOString(),
             },
@@ -627,6 +633,30 @@ export default function ReportPage() {
         }
         setEditingNotice(false);
         setNoticeEditorNonce((n) => n + 1);
+        await loadBriefing();
+    }
+
+    async function toggleLock() {
+        const newLocked = !briefing?.is_locked;
+        const weekStart = wk.from;
+        const { error } = await supabase.from("briefings").upsert(
+            {
+                week_start: weekStart,
+                project: briefing?.project ?? "",
+                maintenance: briefing?.maintenance ?? "",
+                etc: briefing?.etc ?? "",
+                notice: briefing?.notice ?? null,
+                is_locked: newLocked,
+                edited_by: currentMember ?? null,
+                updated_at: new Date().toISOString(),
+            },
+            { onConflict: "week_start" },
+        );
+        if (error) {
+            alert("잠금 상태 변경 실패: " + error.message);
+            return;
+        }
+        setEditing(false);
         await loadBriefing();
     }
 
@@ -1063,10 +1093,28 @@ export default function ReportPage() {
                                             주간 브리핑
                                         </p>
                                         <div className="flex flex-wrap items-center gap-2">
+                                            {isLeader && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        void toggleLock()
+                                                    }
+                                                    className={`text-xs px-2.5 py-1 rounded-lg font-medium border transition-all ${
+                                                        isBriefingLocked
+                                                            ? "border-stone-300 bg-stone-100 text-stone-600"
+                                                            : "border-amber-200 bg-amber-50 text-amber-700"
+                                                    }`}
+                                                >
+                                                    {isBriefingLocked
+                                                        ? "🔒 잠금됨"
+                                                        : "🔓 잠금"}
+                                                </button>
+                                            )}
                                             {!editAllowed && (
                                                 <span className="text-xs text-stone-400">
-                                                    ✏️ 수요일 오전 10시 이후
-                                                    편집 가능해요
+                                                    {isBriefingLocked
+                                                        ? "🔒 리더가 브리핑을 잠금했어요"
+                                                        : "✏️ 수요일 오전 10시 이후 편집 가능해요"}
                                                 </span>
                                             )}
                                             {editAllowed && !editing && (

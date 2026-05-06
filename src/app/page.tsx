@@ -17,7 +17,12 @@ import AuthGuard from "@/components/AuthGuard";
 import Header from "@/components/Header";
 import type { Quest, Player, Task } from "@/lib/types";
 import { getDiff, formatWorkload } from "@/lib/utils";
-import { BAR_COLORS, TYPE_COLORS, STATUS_COLORS } from "@/lib/constants";
+import {
+    BAR_COLORS,
+    TYPE_COLORS,
+    STATUS_COLORS,
+    MEMBERS,
+} from "@/lib/constants";
 import Avatar from "@/components/Avatar";
 import { DayPicker } from "react-day-picker";
 import { ko } from "date-fns/locale";
@@ -193,10 +198,12 @@ function QuestFormModal({
 export default function HomePage() {
     const { member, loading: authLoading } = useAuth();
     const router = useRouter();
+    const isGuest = member === "GUEST";
 
     const [player, setPlayer] = useState<Player | null>(null);
     const [quests, setQuests] = useState<Quest[]>([]);
     const [myTasks, setMyTasks] = useState<Task[]>([]);
+    const [guestTeamTasks, setGuestTeamTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
     const [toast, setToast] = useState("");
     const [showAddQuest, setShowAddQuest] = useState(false);
@@ -256,8 +263,13 @@ export default function HomePage() {
             { data: playerData },
             { data: questData },
             { data: myTaskData },
+            { data: guestTaskData },
         ] = await Promise.all([
-            supabase.from("players").select("*").eq("name", member).single(),
+            supabase
+                .from("players")
+                .select("*")
+                .eq("name", member)
+                .maybeSingle(),
             supabase
                 .from("quests")
                 .select("*")
@@ -270,10 +282,17 @@ export default function HomePage() {
                 .eq("member", member)
                 .neq("status", "완료")
                 .order("end_date", { ascending: true }),
+            isGuest
+                ? supabase
+                      .from("tasks")
+                      .select("*")
+                      .order("end_date", { ascending: true })
+                : Promise.resolve({ data: [] as Task[] }),
         ]);
         setPlayer(playerData);
         setQuests(questData || []);
         setMyTasks(myTaskData || []);
+        setGuestTeamTasks(guestTaskData || []);
         setLoading(false);
     }
 
@@ -412,6 +431,28 @@ export default function HomePage() {
         exp: player?.month_exp || 0,
     };
 
+    const guestTeamSummary = MEMBERS.map((name) => {
+        const memberTasks = guestTeamTasks.filter((t) => t.member === name);
+        const doingCount = memberTasks.filter(
+            (t) => t.status !== "완료",
+        ).length;
+        const doneCount = memberTasks.filter((t) => t.status === "완료").length;
+        const hasUrgent = memberTasks.some(
+            (t) => t.status !== "완료" && t.priority === "긴급",
+        );
+        return { name, doingCount, doneCount, hasUrgent };
+    });
+
+    const guestUrgentTasks = guestTeamTasks
+        .filter((t) => {
+            if (t.status === "완료") return false;
+            const d = getDiff(t.end_date);
+            return d !== null && d <= 7;
+        })
+        .sort(
+            (a, b) => (getDiff(a.end_date) ?? 99) - (getDiff(b.end_date) ?? 99),
+        );
+
     return (
         <AuthGuard>
             <div className="min-h-screen bg-[#f7f6f3]">
@@ -421,373 +462,517 @@ export default function HomePage() {
                     {/* 프로필 카드 */}
                     <div className="bg-white rounded-2xl border border-stone-200 p-4 mb-3">
                         <div className="flex items-center gap-3 mb-3">
-                            <Avatar name={member} size={40} />
+                            {isGuest ? (
+                                <div className="w-10 h-10 rounded-full bg-stone-100 flex items-center justify-center text-xl">
+                                    👤
+                                </div>
+                            ) : (
+                                <Avatar name={member} size={40} />
+                            )}
                             <div className="flex-1">
                                 <div className="flex items-center gap-2">
                                     <span className="text-sm font-bold text-stone-900">
                                         {member}
                                     </span>
-                                    <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
-                                        {lv.name}
+                                    {isGuest ? (
+                                        <span className="text-xs px-2 py-0.5 bg-stone-200 text-stone-600 rounded-full font-medium">
+                                            게스트
+                                        </span>
+                                    ) : (
+                                        <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
+                                            {lv.name}
+                                        </span>
+                                    )}
+                                </div>
+                                {!isGuest && (
+                                    <button
+                                        onClick={handleAttend}
+                                        disabled={attended}
+                                        className={`text-xs mt-1 px-2 py-0.5 rounded-full font-medium transition-all
+                    ${attended ? "bg-green-100 text-green-700" : "bg-amber-500 text-white"}`}
+                                    >
+                                        {attended
+                                            ? "✅ 출석완료"
+                                            : "☀️ 출석 체크"}
+                                    </button>
+                                )}
+                            </div>
+                            {!isGuest && (
+                                <div className="text-right text-xs text-stone-400">
+                                    <div>
+                                        🔥 {player?.attend_streak || 0}일 연속
+                                    </div>
+                                    <div>
+                                        이달 {stats.exp.toLocaleString()} EXP
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        {!isGuest && (
+                            <div>
+                                <div className="flex justify-between text-xs text-stone-400 mb-1">
+                                    <span>
+                                        {player?.exp.toLocaleString() || 0} EXP
+                                    </span>
+                                    <span>
+                                        다음 레벨까지{" "}
+                                        {next
+                                            ? (
+                                                  next.exp - (player?.exp || 0)
+                                              ).toLocaleString()
+                                            : 0}{" "}
+                                        EXP
                                     </span>
                                 </div>
-                                <button
-                                    onClick={handleAttend}
-                                    disabled={attended}
-                                    className={`text-xs mt-1 px-2 py-0.5 rounded-full font-medium transition-all
-                    ${attended ? "bg-green-100 text-green-700" : "bg-amber-500 text-white"}`}
-                                >
-                                    {attended ? "✅ 출석완료" : "☀️ 출석 체크"}
-                                </button>
-                            </div>
-                            <div className="text-right text-xs text-stone-400">
-                                <div>
-                                    🔥 {player?.attend_streak || 0}일 연속
+                                <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full rounded-full transition-all duration-500"
+                                        style={{
+                                            width: `${pct}%`,
+                                            background: barColor,
+                                        }}
+                                    />
                                 </div>
-                                <div>이달 {stats.exp.toLocaleString()} EXP</div>
                             </div>
-                        </div>
-                        <div>
-                            <div className="flex justify-between text-xs text-stone-400 mb-1">
-                                <span>
-                                    {player?.exp.toLocaleString() || 0} EXP
-                                </span>
-                                <span>
-                                    다음 레벨까지{" "}
-                                    {next
-                                        ? (
-                                              next.exp - (player?.exp || 0)
-                                          ).toLocaleString()
-                                        : 0}{" "}
-                                    EXP
-                                </span>
-                            </div>
-                            <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
-                                <div
-                                    className="h-full rounded-full transition-all duration-500"
-                                    style={{
-                                        width: `${pct}%`,
-                                        background: barColor,
-                                    }}
-                                />
-                            </div>
-                        </div>
+                        )}
                     </div>
 
-                    {/* 스탯 */}
-                    <div className="grid grid-cols-3 gap-2 mb-3">
-                        {[
-                            {
-                                icon: "☀️",
-                                label: "출석체크",
-                                value: attended ? "완료" : "미완료",
-                                onClick: handleAttend,
-                                highlight: !attended,
-                            },
-                            {
-                                icon: "📋",
-                                label: "퀘스트",
-                                value: quests.length,
-                                onClick: null,
-                                highlight: false,
-                            },
-                            {
-                                icon: "📊",
-                                label: "월 EXP",
-                                value: stats.exp,
-                                onClick: null,
-                                highlight: false,
-                            },
-                        ].map((s) => (
-                            <button
-                                key={s.label}
-                                onClick={s.onClick || undefined}
-                                className={`rounded-xl border p-2.5 text-center transition-all
-                  ${s.highlight ? "bg-amber-500 border-amber-500 text-white" : "bg-white border-stone-200 text-stone-800"}`}
-                            >
-                                <div className="text-lg">{s.icon}</div>
-                                <div className="text-sm font-bold mt-0.5">
-                                    {s.value}
-                                </div>
-                                <div
-                                    className={`text-xs mt-0.5 ${s.highlight ? "text-amber-100" : "text-stone-400"}`}
-                                >
-                                    {s.label}
-                                </div>
-                            </button>
-                        ))}
-                    </div>
-
-                    {/* 오늘의 퀘스트 */}
-                    <div className="mb-3">
-                        <div className="flex justify-between items-center mb-2">
-                            <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
-                                오늘의 퀘스트
-                            </span>
-                            <div className="flex items-center gap-2">
-                                <span className="text-xs text-amber-600">
-                                    완료 시 EXP 지급
-                                </span>
-                                <button
-                                    onClick={() => setShowAddQuest(true)}
-                                    className="text-xs bg-amber-500 text-white px-2.5 py-1 rounded-lg font-medium"
-                                >
-                                    + 추가
-                                </button>
-                            </div>
-                        </div>
-
-                        {quests.length === 0 ? (
-                            <div className="bg-white rounded-xl border border-stone-200 py-10 text-center">
-                                <p className="text-stone-400 text-sm">
-                                    오늘 퀘스트가 없어요
-                                </p>
-                                <p className="text-xs text-stone-300 mt-1">
-                                    + 추가 버튼으로 퀘스트를 만들어보세요!
+                    {isGuest ? (
+                        <>
+                            <div className="bg-white rounded-xl border border-stone-200 px-4 py-3 mb-3">
+                                <p className="text-sm text-stone-500">
+                                    게스트 계정으로 로그인되었어요. 업무 현황을
+                                    확인할 수 있어요.
                                 </p>
                             </div>
-                        ) : (
-                            <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                                {quests.map((q, i) => {
-                                    const diff = getDiff(q.end_date);
-                                    return (
+                            <div className="mb-3">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
+                                        팀원별 업무 현황
+                                    </span>
+                                </div>
+                                <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+                                    {guestTeamSummary.map((row, i) => (
                                         <div
-                                            key={q.id}
-                                            className={`flex items-center gap-3 px-4 py-3
-                        ${i < quests.length - 1 ? "border-b border-stone-100" : ""}`}
+                                            key={row.name}
+                                            className={`px-4 py-3 ${i < guestTeamSummary.length - 1 ? "border-b border-stone-100" : ""}`}
                                         >
-                                            <button
-                                                onClick={() => completeQuest(q)}
-                                                className="w-5 h-5 rounded-full border-2 border-stone-300 shrink-0 hover:border-amber-500 transition-colors"
-                                            />
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium text-stone-800 truncate">
-                                                    {q.content}
-                                                </p>
-                                                <div className="flex items-center gap-2 mt-0.5">
-                                                    {q.proj && (
-                                                        <span className="text-xs text-stone-400 truncate">
-                                                            {q.proj}
-                                                        </span>
-                                                    )}
-                                                    {q.end_date && (
+                                            <div className="flex items-center justify-between gap-2">
+                                                <div className="flex items-center gap-2">
+                                                    <Avatar
+                                                        name={row.name}
+                                                        size={28}
+                                                    />
+                                                    <span className="text-sm font-medium text-stone-800">
+                                                        {row.name}
+                                                    </span>
+                                                    {row.hasUrgent && (
                                                         <span
-                                                            className={`text-xs font-medium ${diff !== null && diff <= 3 ? "text-red-500" : "text-stone-400"}`}
+                                                            className="text-xs"
+                                                            title="긴급 업무 있음"
                                                         >
-                                                            {q.end_date
-                                                                .slice(5)
-                                                                .replace(
-                                                                    "-",
-                                                                    "/",
-                                                                )}
-                                                            {diff !== null &&
-                                                                ` D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
+                                                            ⭐
                                                         </span>
                                                     )}
                                                 </div>
-                                            </div>
-                                            <div className="flex items-center gap-1.5 shrink-0">
-                                                <span className="text-xs text-green-600 font-medium">
-                                                    +10 EXP
-                                                </span>
-                                                <button
-                                                    onClick={() =>
-                                                        openEditQuest(q)
-                                                    }
-                                                    className="text-xs text-stone-300 hover:text-amber-500 transition-colors"
-                                                >
-                                                    수정
-                                                </button>
-                                                <button
-                                                    onClick={() =>
-                                                        deleteQuest(q.id)
-                                                    }
-                                                    className="text-xs text-stone-300 hover:text-red-400 transition-colors"
-                                                >
-                                                    삭제
-                                                </button>
+                                                <div className="text-xs text-stone-500">
+                                                    진행중 {row.doingCount}건 /
+                                                    완료 {row.doneCount}건
+                                                </div>
                                             </div>
                                         </div>
-                                    );
-                                })}
+                                    ))}
+                                </div>
                             </div>
-                        )}
-                    </div>
-
-                    {!loading &&
-                        quests.length > 0 &&
-                        urgentQuests.length === 0 && (
-                            <div className="text-center py-6 text-stone-400 text-sm mb-3">
-                                🎉 오늘 마감 퀘스트가 없어요!
-                            </div>
-                        )}
-
-                    {/* 내 업무 */}
-                    <div className="mb-3">
-                        <div className="flex justify-between items-center mb-2">
-                            <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
-                                내 업무
-                            </span>
-                            <span className="text-xs text-stone-400">
-                                {myTasks.length}건
-                            </span>
-                        </div>
-                        {myTasks.length === 0 ? (
-                            <div className="bg-white rounded-xl border border-stone-200 py-10 text-center">
-                                <p className="text-stone-400 text-sm">
-                                    진행 중인 업무가 없어요
-                                </p>
-                            </div>
-                        ) : (
-                            <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                                {myTasks.map((t, i) => {
-                                    const diff = getDiff(t.end_date);
-                                    const ddayRed = diff !== null && diff <= 7;
-                                    const ddayLabel =
-                                        diff === null
-                                            ? ""
-                                            : diff < 0
-                                              ? `D+${Math.abs(diff)}`
-                                              : `D-${diff}`;
-                                    return (
-                                        <div
-                                            key={t.id}
-                                            className={`px-4 py-3 ${i < myTasks.length - 1 ? "border-b border-stone-100" : ""} ${t.priority === "긴급" ? "bg-amber-50" : ""}`}
-                                        >
-                                            <div className="flex items-start gap-2 mb-1.5">
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2 flex-wrap">
-                                                        {t.priority ===
-                                                            "긴급" && (
-                                                            <span
-                                                                className="text-xs shrink-0"
-                                                                title="긴급"
-                                                            >
-                                                                ⭐
-                                                            </span>
-                                                        )}
-                                                        {t.type && (
-                                                            <span
-                                                                className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${TYPE_COLORS[t.type] || "bg-gray-100 text-gray-600"}`}
-                                                            >
-                                                                {t.type}
-                                                            </span>
-                                                        )}
-                                                        <span className="text-sm font-medium text-stone-800 truncate">
+                            <div className="mb-3">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
+                                        마감 임박 업무
+                                    </span>
+                                    <span className="text-xs text-red-500 font-medium">
+                                        {guestUrgentTasks.length}건
+                                    </span>
+                                </div>
+                                {guestUrgentTasks.length === 0 ? (
+                                    <div className="bg-white rounded-xl border border-stone-200 py-10 text-center">
+                                        <p className="text-stone-400 text-sm">
+                                            마감 임박 업무가 없어요
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+                                        {guestUrgentTasks.map((t, i) => {
+                                            const diff = getDiff(t.end_date);
+                                            return (
+                                                <div
+                                                    key={t.id}
+                                                    className={`flex items-center gap-3 px-4 py-3 ${i < guestUrgentTasks.length - 1 ? "border-b border-stone-100" : ""}`}
+                                                >
+                                                    <Avatar
+                                                        name={t.member}
+                                                        size={24}
+                                                    />
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-medium text-stone-800 truncate">
                                                             {t.proj}
-                                                        </span>
+                                                        </p>
+                                                        <p className="text-xs text-stone-400">
+                                                            {t.member}
+                                                        </p>
                                                     </div>
-                                                    {t.content && (
-                                                        <p className="text-xs text-stone-600 mt-1 break-words">
-                                                            {t.content}
-                                                        </p>
-                                                    )}
-                                                    {t.issue && (
-                                                        <p className="text-xs text-amber-800 bg-amber-100/80 border border-amber-200 rounded-lg px-2 py-1 mt-1.5">
-                                                            이슈: {t.issue}
-                                                        </p>
-                                                    )}
+                                                    <span className="text-xs text-red-500 font-medium shrink-0">
+                                                        D
+                                                        {diff !== null &&
+                                                        diff < 0
+                                                            ? `+${Math.abs(diff)}`
+                                                            : `-${diff}`}
+                                                    </span>
                                                 </div>
-                                            </div>
-                                            <div className="flex items-end justify-between gap-2 mt-1">
-                                                <div className="text-xs text-stone-400 flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
-                                                    {t.workload > 0 && (
-                                                        <span>
-                                                            {formatWorkload(
-                                                                t.workload,
-                                                            )}
-                                                        </span>
-                                                    )}
-                                                    {t.start_date &&
-                                                        t.end_date && (
-                                                            <span
-                                                                className={
-                                                                    ddayRed
-                                                                        ? "text-red-500 font-medium"
-                                                                        : ""
-                                                                }
-                                                            >
-                                                                {t.start_date
-                                                                    .slice(5)
-                                                                    .replace(
-                                                                        "-",
-                                                                        "/",
-                                                                    )}{" "}
-                                                                ~{" "}
-                                                                {t.end_date
-                                                                    .slice(5)
-                                                                    .replace(
-                                                                        "-",
-                                                                        "/",
-                                                                    )}
-                                                                {ddayLabel &&
-                                                                    ` · ${ddayLabel}`}
-                                                            </span>
-                                                        )}
-                                                    {!t.start_date &&
-                                                        t.end_date && (
-                                                            <span
-                                                                className={
-                                                                    ddayRed
-                                                                        ? "text-red-500 font-medium"
-                                                                        : ""
-                                                                }
-                                                            >
-                                                                ~
-                                                                {t.end_date
-                                                                    .slice(5)
-                                                                    .replace(
-                                                                        "-",
-                                                                        "/",
-                                                                    )}
-                                                                {ddayLabel &&
-                                                                    ` · ${ddayLabel}`}
-                                                            </span>
-                                                        )}
-                                                    {t.workload === 0 &&
-                                                        !t.start_date &&
-                                                        !t.end_date && (
-                                                            <span>
-                                                                기간 미정
-                                                            </span>
-                                                        )}
-                                                </div>
-                                                <select
-                                                    value={t.status}
-                                                    onChange={(e) =>
-                                                        updateTaskStatus(
-                                                            t.id,
-                                                            e.target.value,
-                                                            t,
-                                                        )
-                                                    }
-                                                    className={`text-xs px-2 py-1 rounded-lg font-medium border-0 cursor-pointer shrink-0 ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}
-                                                >
-                                                    {[
-                                                        "대기",
-                                                        "시작 전",
-                                                        "진행중",
-                                                        "이슈 및 대기",
-                                                        "완료",
-                                                    ].map((s) => (
-                                                        <option
-                                                            key={s}
-                                                            value={s}
-                                                        >
-                                                            {s}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </div>
-                        )}
-                    </div>
+                        </>
+                    ) : (
+                        <>
+                            {/* 스탯 */}
+                            <div className="grid grid-cols-3 gap-2 mb-3">
+                                {[
+                                    {
+                                        icon: "☀️",
+                                        label: "출석체크",
+                                        value: attended ? "완료" : "미완료",
+                                        onClick: handleAttend,
+                                        highlight: !attended,
+                                    },
+                                    {
+                                        icon: "📋",
+                                        label: "퀘스트",
+                                        value: quests.length,
+                                        onClick: null,
+                                        highlight: false,
+                                    },
+                                    {
+                                        icon: "📊",
+                                        label: "월 EXP",
+                                        value: stats.exp,
+                                        onClick: null,
+                                        highlight: false,
+                                    },
+                                ].map((s) => (
+                                    <button
+                                        key={s.label}
+                                        onClick={s.onClick || undefined}
+                                        className={`rounded-xl border p-2.5 text-center transition-all
+                  ${s.highlight ? "bg-amber-500 border-amber-500 text-white" : "bg-white border-stone-200 text-stone-800"}`}
+                                    >
+                                        <div className="text-lg">{s.icon}</div>
+                                        <div className="text-sm font-bold mt-0.5">
+                                            {s.value}
+                                        </div>
+                                        <div
+                                            className={`text-xs mt-0.5 ${s.highlight ? "text-amber-100" : "text-stone-400"}`}
+                                        >
+                                            {s.label}
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* 오늘의 퀘스트 */}
+                            <div className="mb-3">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
+                                        오늘의 퀘스트
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs text-amber-600">
+                                            완료 시 EXP 지급
+                                        </span>
+                                        <button
+                                            onClick={() =>
+                                                setShowAddQuest(true)
+                                            }
+                                            className="text-xs bg-amber-500 text-white px-2.5 py-1 rounded-lg font-medium"
+                                        >
+                                            + 추가
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {quests.length === 0 ? (
+                                    <div className="bg-white rounded-xl border border-stone-200 py-10 text-center">
+                                        <p className="text-stone-400 text-sm">
+                                            오늘 퀘스트가 없어요
+                                        </p>
+                                        <p className="text-xs text-stone-300 mt-1">
+                                            + 추가 버튼으로 퀘스트를
+                                            만들어보세요!
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+                                        {quests.map((q, i) => {
+                                            const diff = getDiff(q.end_date);
+                                            return (
+                                                <div
+                                                    key={q.id}
+                                                    className={`flex items-center gap-3 px-4 py-3
+                        ${i < quests.length - 1 ? "border-b border-stone-100" : ""}`}
+                                                >
+                                                    <button
+                                                        onClick={() =>
+                                                            completeQuest(q)
+                                                        }
+                                                        className="w-5 h-5 rounded-full border-2 border-stone-300 shrink-0 hover:border-amber-500 transition-colors"
+                                                    />
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-medium text-stone-800 truncate">
+                                                            {q.content}
+                                                        </p>
+                                                        <div className="flex items-center gap-2 mt-0.5">
+                                                            {q.proj && (
+                                                                <span className="text-xs text-stone-400 truncate">
+                                                                    {q.proj}
+                                                                </span>
+                                                            )}
+                                                            {q.end_date && (
+                                                                <span
+                                                                    className={`text-xs font-medium ${diff !== null && diff <= 3 ? "text-red-500" : "text-stone-400"}`}
+                                                                >
+                                                                    {q.end_date
+                                                                        .slice(
+                                                                            5,
+                                                                        )
+                                                                        .replace(
+                                                                            "-",
+                                                                            "/",
+                                                                        )}
+                                                                    {diff !==
+                                                                        null &&
+                                                                        ` D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        <span className="text-xs text-green-600 font-medium">
+                                                            +10 EXP
+                                                        </span>
+                                                        <button
+                                                            onClick={() =>
+                                                                openEditQuest(q)
+                                                            }
+                                                            className="text-xs text-stone-300 hover:text-amber-500 transition-colors"
+                                                        >
+                                                            수정
+                                                        </button>
+                                                        <button
+                                                            onClick={() =>
+                                                                deleteQuest(
+                                                                    q.id,
+                                                                )
+                                                            }
+                                                            className="text-xs text-stone-300 hover:text-red-400 transition-colors"
+                                                        >
+                                                            삭제
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
+                            {!isGuest &&
+                                !loading &&
+                                quests.length > 0 &&
+                                urgentQuests.length === 0 && (
+                                    <div className="text-center py-6 text-stone-400 text-sm mb-3">
+                                        🎉 오늘 마감 퀘스트가 없어요!
+                                    </div>
+                                )}
+
+                            {/* 내 업무 */}
+                            <div className="mb-3">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
+                                        내 업무
+                                    </span>
+                                    <span className="text-xs text-stone-400">
+                                        {myTasks.length}건
+                                    </span>
+                                </div>
+                                {myTasks.length === 0 ? (
+                                    <div className="bg-white rounded-xl border border-stone-200 py-10 text-center">
+                                        <p className="text-stone-400 text-sm">
+                                            진행 중인 업무가 없어요
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+                                        {myTasks.map((t, i) => {
+                                            const diff = getDiff(t.end_date);
+                                            const ddayRed =
+                                                diff !== null && diff <= 7;
+                                            const ddayLabel =
+                                                diff === null
+                                                    ? ""
+                                                    : diff < 0
+                                                      ? `D+${Math.abs(diff)}`
+                                                      : `D-${diff}`;
+                                            return (
+                                                <div
+                                                    key={t.id}
+                                                    className={`px-4 py-3 ${i < myTasks.length - 1 ? "border-b border-stone-100" : ""} ${t.priority === "긴급" ? "bg-amber-50" : ""}`}
+                                                >
+                                                    <div className="flex items-start gap-2 mb-1.5">
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                {t.priority ===
+                                                                    "긴급" && (
+                                                                    <span
+                                                                        className="text-xs shrink-0"
+                                                                        title="긴급"
+                                                                    >
+                                                                        ⭐
+                                                                    </span>
+                                                                )}
+                                                                {t.type && (
+                                                                    <span
+                                                                        className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${TYPE_COLORS[t.type] || "bg-gray-100 text-gray-600"}`}
+                                                                    >
+                                                                        {t.type}
+                                                                    </span>
+                                                                )}
+                                                                <span className="text-sm font-medium text-stone-800 truncate">
+                                                                    {t.proj}
+                                                                </span>
+                                                            </div>
+                                                            {t.content && (
+                                                                <p className="text-xs text-stone-600 mt-1 break-words">
+                                                                    {t.content}
+                                                                </p>
+                                                            )}
+                                                            {t.issue && (
+                                                                <p className="text-xs text-amber-800 bg-amber-100/80 border border-amber-200 rounded-lg px-2 py-1 mt-1.5">
+                                                                    이슈:{" "}
+                                                                    {t.issue}
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-end justify-between gap-2 mt-1">
+                                                        <div className="text-xs text-stone-400 flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
+                                                            {t.workload > 0 && (
+                                                                <span>
+                                                                    {formatWorkload(
+                                                                        t.workload,
+                                                                    )}
+                                                                </span>
+                                                            )}
+                                                            {t.start_date &&
+                                                                t.end_date && (
+                                                                    <span
+                                                                        className={
+                                                                            ddayRed
+                                                                                ? "text-red-500 font-medium"
+                                                                                : ""
+                                                                        }
+                                                                    >
+                                                                        {t.start_date
+                                                                            .slice(
+                                                                                5,
+                                                                            )
+                                                                            .replace(
+                                                                                "-",
+                                                                                "/",
+                                                                            )}{" "}
+                                                                        ~{" "}
+                                                                        {t.end_date
+                                                                            .slice(
+                                                                                5,
+                                                                            )
+                                                                            .replace(
+                                                                                "-",
+                                                                                "/",
+                                                                            )}
+                                                                        {ddayLabel &&
+                                                                            ` · ${ddayLabel}`}
+                                                                    </span>
+                                                                )}
+                                                            {!t.start_date &&
+                                                                t.end_date && (
+                                                                    <span
+                                                                        className={
+                                                                            ddayRed
+                                                                                ? "text-red-500 font-medium"
+                                                                                : ""
+                                                                        }
+                                                                    >
+                                                                        ~
+                                                                        {t.end_date
+                                                                            .slice(
+                                                                                5,
+                                                                            )
+                                                                            .replace(
+                                                                                "-",
+                                                                                "/",
+                                                                            )}
+                                                                        {ddayLabel &&
+                                                                            ` · ${ddayLabel}`}
+                                                                    </span>
+                                                                )}
+                                                            {t.workload === 0 &&
+                                                                !t.start_date &&
+                                                                !t.end_date && (
+                                                                    <span>
+                                                                        기간
+                                                                        미정
+                                                                    </span>
+                                                                )}
+                                                        </div>
+                                                        <select
+                                                            value={t.status}
+                                                            onChange={(e) =>
+                                                                updateTaskStatus(
+                                                                    t.id,
+                                                                    e.target
+                                                                        .value,
+                                                                    t,
+                                                                )
+                                                            }
+                                                            className={`text-xs px-2 py-1 rounded-lg font-medium border-0 cursor-pointer shrink-0 ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}
+                                                        >
+                                                            {[
+                                                                "대기",
+                                                                "시작 전",
+                                                                "진행중",
+                                                                "이슈 및 대기",
+                                                                "완료",
+                                                            ].map((s) => (
+                                                                <option
+                                                                    key={s}
+                                                                    value={s}
+                                                                >
+                                                                    {s}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    )}
 
                     {/* 마감 임박 */}
-                    {urgentQuests.length > 0 && (
+                    {!isGuest && urgentQuests.length > 0 && (
                         <div>
                             <div className="flex justify-between items-center mb-2">
                                 <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
