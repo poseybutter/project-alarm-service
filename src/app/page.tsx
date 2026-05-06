@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -11,6 +11,7 @@ import {
     attendanceCheck,
     LEVELS,
     awardExp,
+    EXP_REWARDS,
 } from "@/lib/maple";
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
@@ -24,6 +25,8 @@ import {
     MEMBERS,
 } from "@/lib/constants";
 import Avatar from "@/components/Avatar";
+import LevelUpOverlay from "@/components/LevelUpOverlay";
+import ExpPopup, { type ExpPopupType } from "@/components/ExpPopup";
 import { DayPicker } from "react-day-picker";
 import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
@@ -215,6 +218,39 @@ export default function HomePage() {
         end_date: "",
     });
 
+    const [levelUpInfo, setLevelUpInfo] = useState({
+        show: false,
+        level: 0,
+        levelName: "",
+    });
+    const [expPopups, setExpPopups] = useState<
+        {
+            id: string;
+            amount: number;
+            x: number;
+            y: number;
+            type: ExpPopupType;
+        }[]
+    >([]);
+    const expPopupSeq = useRef(0);
+
+    const closeLevelUp = useCallback(() => {
+        setLevelUpInfo((prev) => ({ ...prev, show: false }));
+    }, []);
+
+    const pushExpPopup = useCallback(
+        (amount: number, x: number, y: number, type: ExpPopupType) => {
+            expPopupSeq.current += 1;
+            const id = `exp-${Date.now()}-${expPopupSeq.current}`;
+            setExpPopups((prev) => [...prev, { id, amount, x, y, type }]);
+        },
+        [],
+    );
+
+    const removeExpPopup = useCallback((id: string) => {
+        setExpPopups((prev) => prev.filter((p) => p.id !== id));
+    }, []);
+
     useEffect(() => {
         if (!authLoading && !member) router.push("/login");
     }, [authLoading, member]);
@@ -301,7 +337,7 @@ export default function HomePage() {
         setTimeout(() => setToast(""), 3000);
     }
 
-    async function handleAttend() {
+    async function handleAttend(e: React.MouseEvent) {
         if (!player || !member) return;
         const today = new Date().toISOString().slice(0, 10);
         if (player.attend_last === today) {
@@ -313,26 +349,45 @@ export default function HomePage() {
             showToastMsg(result.message || "오류");
             return;
         }
-        showToastMsg(
-            result.levelUp
-                ? `🎊 레벨업! ${result.newLv?.name}`
-                : `☀️ 출석 완료! +${result.exp} EXP · ${result.streak}일 연속`,
+        pushExpPopup(
+            result.exp ?? EXP_REWARDS.ATTEND,
+            e.clientX,
+            e.clientY,
+            "attend",
         );
+        if (result.levelUp && result.newLv) {
+            setLevelUpInfo({
+                show: true,
+                level: result.newLv.level,
+                levelName: result.newLv.name,
+            });
+        } else {
+            showToastMsg(
+                `☀️ 출석 완료! +${result.exp} EXP · ${result.streak}일 연속`,
+            );
+        }
         loadData();
     }
 
-    async function completeQuest(quest: Quest) {
+    async function completeQuest(quest: Quest, e: React.MouseEvent) {
         if (!member) return;
         await supabase
             .from("quests")
             .update({ status: "완료" })
             .eq("id", quest.id);
         const result = await awardExp(member, "QUEST");
-        showToastMsg(
-            result?.levelUp
-                ? `🎊 레벨업! ${result.newLv?.name}`
-                : `⚔️ 완료! +${result?.amount} EXP`,
-        );
+        if (result?.amount != null) {
+            pushExpPopup(result.amount, e.clientX, e.clientY, "quest");
+        }
+        if (result?.levelUp && result.newLv) {
+            setLevelUpInfo({
+                show: true,
+                level: result.newLv.level,
+                levelName: result.newLv.name,
+            });
+        } else {
+            showToastMsg(`⚔️ 완료! +${result?.amount} EXP`);
+        }
         loadData();
     }
 
@@ -384,7 +439,12 @@ export default function HomePage() {
         loadData();
     }
 
-    async function updateTaskStatus(id: number, status: string, task: Task) {
+    async function updateTaskStatus(
+        id: number,
+        status: string,
+        task: Task,
+        anchor?: { x: number; y: number },
+    ) {
         const prev = task.status;
         await supabase.from("tasks").update({ status }).eq("id", id);
         if (status === "완료" && prev !== "완료") {
@@ -399,8 +459,21 @@ export default function HomePage() {
                 isUrgent,
                 isOnTime,
             );
-            if (result?.levelUp)
-                showToastMsg(`🎊 레벨업! ${result.newLv?.name}`);
+            if (result?.amount != null && anchor) {
+                pushExpPopup(
+                    result.amount,
+                    anchor.x,
+                    anchor.y,
+                    task.priority === "긴급" ? "urgent" : "complete",
+                );
+            }
+            if (result?.levelUp && result.newLv) {
+                setLevelUpInfo({
+                    show: true,
+                    level: result.newLv.level,
+                    levelName: result.newLv.name,
+                });
+            }
         }
         if (prev === "완료" && status !== "완료") {
             const isUrgent = task.priority === "긴급";
@@ -486,7 +559,7 @@ export default function HomePage() {
                                 </div>
                                 {!isGuest && (
                                     <button
-                                        onClick={handleAttend}
+                                        onClick={(e) => void handleAttend(e)}
                                         disabled={attended}
                                         className={`text-xs mt-1 px-2 py-0.5 rounded-full font-medium transition-all
                     ${attended ? "bg-green-100 text-green-700" : "bg-amber-500 text-white"}`}
@@ -643,7 +716,8 @@ export default function HomePage() {
                                         icon: "☀️",
                                         label: "출석체크",
                                         value: attended ? "완료" : "미완료",
-                                        onClick: handleAttend,
+                                        onClick: (ev: React.MouseEvent) =>
+                                            void handleAttend(ev),
                                         highlight: !attended,
                                     },
                                     {
@@ -722,8 +796,11 @@ export default function HomePage() {
                         ${i < quests.length - 1 ? "border-b border-stone-100" : ""}`}
                                                 >
                                                     <button
-                                                        onClick={() =>
-                                                            completeQuest(q)
+                                                        onClick={(ev) =>
+                                                            void completeQuest(
+                                                                q,
+                                                                ev,
+                                                            )
                                                         }
                                                         className="w-5 h-5 rounded-full border-2 border-stone-300 shrink-0 hover:border-amber-500 transition-colors"
                                                     />
@@ -936,14 +1013,27 @@ export default function HomePage() {
                                                         </div>
                                                         <select
                                                             value={t.status}
-                                                            onChange={(e) =>
-                                                                updateTaskStatus(
+                                                            onChange={(e) => {
+                                                                const el =
+                                                                    e.target;
+                                                                const r =
+                                                                    el.getBoundingClientRect();
+                                                                void updateTaskStatus(
                                                                     t.id,
-                                                                    e.target
-                                                                        .value,
+                                                                    el.value,
                                                                     t,
-                                                                )
-                                                            }
+                                                                    {
+                                                                        x:
+                                                                            r.left +
+                                                                            r.width /
+                                                                                2,
+                                                                        y:
+                                                                            r.top +
+                                                                            r.height /
+                                                                                2,
+                                                                    },
+                                                                );
+                                                            }}
                                                             className={`text-xs px-2 py-1 rounded-lg font-medium border-0 cursor-pointer shrink-0 ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}
                                                         >
                                                             {[
@@ -1051,6 +1141,23 @@ export default function HomePage() {
                         }}
                     />
                 )}
+
+                <LevelUpOverlay
+                    show={levelUpInfo.show}
+                    level={levelUpInfo.level}
+                    levelName={levelUpInfo.levelName}
+                    onClose={closeLevelUp}
+                />
+                {expPopups.map((p) => (
+                    <ExpPopup
+                        key={p.id}
+                        amount={p.amount}
+                        x={p.x}
+                        y={p.y}
+                        type={p.type}
+                        onDone={() => removeExpPopup(p.id)}
+                    />
+                ))}
 
                 {/* 토스트 */}
                 {toast && (
