@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
@@ -18,6 +19,9 @@ import type { Quest, Player, Task } from "@/lib/types";
 import { getDiff, formatWorkload } from "@/lib/utils";
 import { BAR_COLORS, TYPE_COLORS, STATUS_COLORS } from "@/lib/constants";
 import Avatar from "@/components/Avatar";
+import { DayPicker } from "react-day-picker";
+import { ko } from "date-fns/locale";
+import "react-day-picker/dist/style.css";
 
 type QuestFormType = { content: string; proj: string; end_date: string };
 
@@ -34,6 +38,16 @@ function QuestFormModal({
     onSubmit: () => void;
     onClose: () => void;
 }) {
+    const [showDatePicker, setShowDatePicker] = useState(false);
+    const toYmd = (d: Date) =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const selectedDate = questForm.end_date
+        ? new Date(`${questForm.end_date}T00:00:00`)
+        : undefined;
+    const dateLabel = selectedDate
+        ? `${selectedDate.getMonth() + 1}/${selectedDate.getDate()}`
+        : "마감일 선택";
+
     return (
         <div
             className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
@@ -90,17 +104,79 @@ function QuestFormModal({
                         <label className="text-xs font-medium text-stone-500 block mb-1.5">
                             마감일 (선택)
                         </label>
-                        <input
-                            type="date"
-                            className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                            value={questForm.end_date}
-                            onChange={(e) =>
-                                setQuestForm({
-                                    ...questForm,
-                                    end_date: e.target.value,
-                                })
-                            }
-                        />
+                        <button
+                            type="button"
+                            onClick={() => setShowDatePicker((p) => !p)}
+                            className={`w-full border rounded-lg px-3 py-2.5 text-sm text-left transition-all
+                            ${showDatePicker ? "ring-2 ring-amber-200 border-amber-300" : "border-stone-200 hover:border-stone-300"}`}
+                        >
+                            <span
+                                className={
+                                    selectedDate
+                                        ? "text-stone-800"
+                                        : "text-stone-400"
+                                }
+                            >
+                                {dateLabel}
+                            </span>
+                        </button>
+                        {showDatePicker &&
+                            typeof document !== "undefined" &&
+                            createPortal(
+                                <div
+                                    className="fixed inset-0 z-[200] bg-black/30"
+                                    onClick={() => setShowDatePicker(false)}
+                                    role="presentation"
+                                >
+                                    <div
+                                        className="absolute left-1/2 w-[min(calc(100vw-2rem),36rem)] -translate-x-1/2 rounded-xl border border-stone-200 bg-white p-3 shadow-2xl"
+                                        style={{
+                                            bottom: "max(5.5rem, calc(var(--nav-height, 0px) + 3.5rem))",
+                                        }}
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <div className="flex justify-center overflow-x-auto">
+                                            <DayPicker
+                                                mode="single"
+                                                selected={selectedDate}
+                                                onSelect={(d) => {
+                                                    setQuestForm({
+                                                        ...questForm,
+                                                        end_date: d
+                                                            ? toYmd(d)
+                                                            : "",
+                                                    });
+                                                }}
+                                                locale={ko}
+                                            />
+                                        </div>
+                                        <div className="mt-3 flex gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setQuestForm({
+                                                        ...questForm,
+                                                        end_date: "",
+                                                    })
+                                                }
+                                                className="flex-1 rounded-lg border border-stone-200 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
+                                            >
+                                                초기화
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setShowDatePicker(false)
+                                                }
+                                                className="flex-1 rounded-lg bg-amber-500 py-2 text-xs font-bold text-white hover:bg-amber-600"
+                                            >
+                                                적용
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>,
+                                document.body,
+                            )}
                     </div>
                     <button
                         onClick={onSubmit}
