@@ -54,5 +54,6 @@ export type Task = {
     content: string
     status: string
     end_date: string | null
+    task_id?: number | null
     created_at: string
   }
