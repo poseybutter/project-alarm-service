@@ -427,9 +427,9 @@ export default function TasksPage() {
                     </div>
 
                     {/* 필터 */}
-                    <div className="flex gap-2 px-4 pb-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 px-4 pb-3">
                         <select
-                            className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
+                            className="w-full min-w-0 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
                             value={filterMember}
                             onChange={(e) => setFilterMember(e.target.value)}
                         >
@@ -441,7 +441,7 @@ export default function TasksPage() {
                             ))}
                         </select>
                         <select
-                            className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
+                            className="w-full min-w-0 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
                             value={filterProject}
                             onChange={(e) => setFilterProject(e.target.value)}
                         >
@@ -453,7 +453,7 @@ export default function TasksPage() {
                             ))}
                         </select>
                         <select
-                            className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
+                            className="w-full min-w-0 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
                             value={filterPriority}
                             onChange={(e) => setFilterPriority(e.target.value)}
                         >
