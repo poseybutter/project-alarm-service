@@ -169,8 +169,8 @@ export default function NotificationDrawer({
                             새 알림이 없어요
                         </p>
                         <p className="text-xs text-stone-300 mt-1">
-                            업무 마감이 임박하거나 기한이 지났거나, 접근성
-                            만료가 있으면 표시돼요
+                            업무 마감이 임박하거나 기한이 지났거나, <br />
+                            접근성 만료가 있으면 표시돼요
                         </p>
                     </div>
                 ) : (
