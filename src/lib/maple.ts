@@ -77,6 +77,7 @@ export async function awardExp(
   const prevLv   = calcLevel(player.exp)
   const newExp   = Math.max(0, player.exp + change)
   const newMonthExp = Math.max(0, player.month_exp + change)
+  const newWeekExp = Math.max(0, (player.week_exp || 0) + (isAdding ? amount : -amount))
   const newLv    = calcLevel(newExp)
   const levelUp  = isAdding && newLv.level > prevLv.level
 
@@ -84,6 +85,7 @@ export async function awardExp(
   const updates: Record<string, number> = {
     exp       : newExp,
     month_exp : newMonthExp,
+    week_exp  : newWeekExp,
     level     : newLv.level,
   }
 
