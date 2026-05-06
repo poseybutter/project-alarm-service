@@ -1,75 +1,88 @@
-'use client'
+"use client";
 
-import { createContext, useContext, useEffect, useState } from 'react'
-import { User } from '@supabase/supabase-js'
-import { supabase } from '@/lib/supabase'
-import { getMemberName } from '@/lib/auth'
+import { createContext, useContext, useEffect, useState } from "react";
+import { User } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
+import { getMemberName } from "@/lib/auth";
 
 type AuthContextType = {
-  user         : User | null
-  member       : string | null
-  avatarUrl    : string | null
-  loading      : boolean
-  role         : string
-  refreshAvatar: () => void
-}
+    user: User | null;
+    member: string | null;
+    avatarUrl: string | null;
+    loading: boolean;
+    role: "admin" | "member" | "guest";
+    refreshAvatar: () => void;
+};
 
 const AuthContext = createContext<AuthContextType>({
-  user         : null,
-  member       : null,
-  avatarUrl    : null,
-  loading      : true,
-  role         : 'member',
-  refreshAvatar: () => {},
-})
+    user: null,
+    member: null,
+    avatarUrl: null,
+    loading: true,
+    role: "member",
+    refreshAvatar: () => {},
+});
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser]           = useState<User | null>(null)
-  const [loading, setLoading]     = useState(true)
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
-  const [role, setRole]           = useState<string>('member')
+    const [user, setUser] = useState<User | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+    const [role, setRole] = useState<"admin" | "member" | "guest">("member");
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      setLoading(false)
-    })
+    useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setUser(session?.user ?? null);
+            setLoading(false);
+        });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      setUser(session?.user ?? null)
-      setLoading(false)
-    })
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange((event, session) => {
+            setUser(session?.user ?? null);
+            setLoading(false);
+        });
 
-    return () => subscription.unsubscribe()
-  }, [])
+        return () => subscription.unsubscribe();
+    }, []);
 
-  const member = getMemberName(user?.email || '')
+    const member = getMemberName(user?.email || "");
 
-  async function loadAvatar(memberName: string) {
-    const { data } = await supabase
-      .from('players')
-      .select('avatar_url, role')
-      .eq('name', memberName)
-      .single()
-    setAvatarUrl(data?.avatar_url || null)
-    setRole(data?.role || 'member')
-  }
+    async function loadAvatar(memberName: string) {
+        if (memberName === "GUEST") {
+            setAvatarUrl(null);
+            setRole("guest");
+            return;
+        }
+        const { data } = await supabase
+            .from("players")
+            .select("avatar_url, role")
+            .eq("name", memberName)
+            .maybeSingle();
+        setAvatarUrl(data?.avatar_url || null);
+        setRole(data?.role === "admin" ? "admin" : "member");
+    }
 
-  useEffect(() => {
-    if (member) loadAvatar(member)
-  }, [member])
+    useEffect(() => {
+        if (member) loadAvatar(member);
+        else {
+            setAvatarUrl(null);
+            setRole("member");
+        }
+    }, [member]);
 
-  function refreshAvatar() {
-    if (member) loadAvatar(member)
-  }
+    function refreshAvatar() {
+        if (member) loadAvatar(member);
+    }
 
-  return (
-    <AuthContext.Provider value={{ user, member, avatarUrl, loading, role, refreshAvatar }}>
-      {children}
-    </AuthContext.Provider>
-  )
+    return (
+        <AuthContext.Provider
+            value={{ user, member, avatarUrl, loading, role, refreshAvatar }}
+        >
+            {children}
+        </AuthContext.Provider>
+    );
 }
 
 export function useAuth() {
-  return useContext(AuthContext)
+    return useContext(AuthContext);
 }

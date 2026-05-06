@@ -90,8 +90,9 @@ const EMPTY_EDIT = {
 
 export default function TasksPage() {
     const { member: currentMember, role } = useAuth();
+    const isGuest = role === "guest";
     const canEditOrDelete = (taskMember: string) =>
-        role === "admin" || taskMember === currentMember;
+        role !== "guest" && (role === "admin" || taskMember === currentMember);
     const assignableMembers =
         role === "admin" ? MEMBERS : [currentMember || ""];
 
@@ -376,24 +377,26 @@ export default function TasksPage() {
                             </p>
                         </div>
                         <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => {
-                                    setForm({
-                                        member: currentMember || "",
-                                        type: "",
-                                        proj: "",
-                                        content: "",
-                                        priority: "",
-                                        workload: 0,
-                                        issue: "",
-                                    });
-                                    setFormDateRange(undefined);
-                                    setShowModal(true);
-                                }}
-                                className="bg-amber-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg"
-                            >
-                                + 업무
-                            </button>
+                            {!isGuest && (
+                                <button
+                                    onClick={() => {
+                                        setForm({
+                                            member: currentMember || "",
+                                            type: "",
+                                            proj: "",
+                                            content: "",
+                                            priority: "",
+                                            workload: 0,
+                                            issue: "",
+                                        });
+                                        setFormDateRange(undefined);
+                                        setShowModal(true);
+                                    }}
+                                    className="bg-amber-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg"
+                                >
+                                    + 업무
+                                </button>
+                            )}
                             {/* 알림 + 유저메뉴는 Header 컴포넌트 없이 직접 */}
                             <NotificationButton />
                             <UserMenu />
@@ -620,6 +623,7 @@ export default function TasksPage() {
                                                                 )
                                                             }
                                                             className={`text-xs px-2 py-1 rounded-lg font-medium border-0 cursor-pointer ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}
+                                                            disabled={isGuest}
                                                         >
                                                             {[
                                                                 "대기",
