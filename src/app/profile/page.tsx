@@ -82,7 +82,8 @@ const TITLES = [
 ];
 
 export default function ProfilePage() {
-    const { member, refreshAvatar } = useAuth();
+    const { member, refreshAvatar, role } = useAuth();
+    const isGuest = member === "GUEST" || role === "guest";
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -405,62 +406,70 @@ export default function ProfilePage() {
                     <div className="bg-white rounded-2xl border border-stone-200 p-5 mb-4 text-center">
                         {/* 아바타 */}
                         <div className="relative w-16 h-16 mx-auto mb-3">
-                            <button
-                                onClick={() => setShowAvatarMenu(true)}
-                                className="w-16 h-16 rounded-full overflow-hidden border-2 border-amber-200 relative"
-                            >
-                                {player?.avatar_url ? (
-                                    <img
-                                        src={player.avatar_url}
-                                        alt={member}
-                                        className="w-full h-full object-cover"
-                                    />
-                                ) : (
-                                    <div className="w-full h-full bg-amber-100 flex items-center justify-center text-2xl font-bold text-amber-700">
-                                        {member.slice(1)}
-                                    </div>
-                                )}
-                                {/* 어두운 오버레이 */}
-                                <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity rounded-full">
-                                    <svg
-                                        width="18"
-                                        height="18"
-                                        viewBox="0 0 24 24"
-                                        fill="white"
-                                    >
-                                        <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z" />
-                                        <path d="M9 3L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2h-3.17L15 3H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" />
-                                    </svg>
+                            {isGuest ? (
+                                <div className="w-16 h-16 rounded-full bg-stone-100 border-2 border-stone-200 flex items-center justify-center text-3xl">
+                                    👤
                                 </div>
-                            </button>
-                            {/* 카메라 뱃지 */}
-                            <div className="absolute bottom-0 right-0 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center pointer-events-none">
-                                <svg
-                                    width="10"
-                                    height="10"
-                                    viewBox="0 0 24 24"
-                                    fill="white"
-                                >
-                                    <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z" />
-                                    <path d="M9 3L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2h-3.17L15 3H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" />
-                                </svg>
-                            </div>
-                            {/* 숨겨진 파일 input */}
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) uploadAvatar(file);
-                                    setShowAvatarMenu(false);
-                                }}
-                            />
+                            ) : (
+                                <>
+                                    <button
+                                        onClick={() => setShowAvatarMenu(true)}
+                                        className="w-16 h-16 rounded-full overflow-hidden border-2 border-amber-200 relative"
+                                    >
+                                        {player?.avatar_url ? (
+                                            <img
+                                                src={player.avatar_url}
+                                                alt={member}
+                                                className="w-full h-full object-cover"
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full bg-amber-100 flex items-center justify-center text-2xl font-bold text-amber-700">
+                                                {member.slice(1)}
+                                            </div>
+                                        )}
+                                        {/* 어두운 오버레이 */}
+                                        <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity rounded-full">
+                                            <svg
+                                                width="18"
+                                                height="18"
+                                                viewBox="0 0 24 24"
+                                                fill="white"
+                                            >
+                                                <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z" />
+                                                <path d="M9 3L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2h-3.17L15 3H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" />
+                                            </svg>
+                                        </div>
+                                    </button>
+                                    {/* 카메라 뱃지 */}
+                                    <div className="absolute bottom-0 right-0 w-5 h-5 bg-amber-500 rounded-full flex items-center justify-center pointer-events-none">
+                                        <svg
+                                            width="10"
+                                            height="10"
+                                            viewBox="0 0 24 24"
+                                            fill="white"
+                                        >
+                                            <path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4z" />
+                                            <path d="M9 3L7.17 5H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2h-3.17L15 3H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" />
+                                        </svg>
+                                    </div>
+                                    {/* 숨겨진 파일 input */}
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) uploadAvatar(file);
+                                            setShowAvatarMenu(false);
+                                        }}
+                                    />
+                                </>
+                            )}
                         </div>
 
                         {/* 아바타 액션 시트 */}
-                        {showAvatarMenu && (
+                        {!isGuest && showAvatarMenu && (
                             <div
                                 className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
                                 onClick={() => setShowAvatarMenu(false)}
@@ -505,73 +514,86 @@ export default function ProfilePage() {
                         <h2 className="text-lg font-bold text-stone-900 mb-1">
                             {member}
                         </h2>
-                        <div className="inline-flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium mb-3">
-                            {lv.name}
-                        </div>
-                        <button
-                            onClick={handleAttend}
-                            disabled={attended}
-                            className={`block mx-auto text-xs px-4 py-1.5 rounded-full font-medium mb-4 transition-all
+                        {isGuest ? (
+                            <div className="inline-flex items-center gap-1 px-3 py-1 bg-stone-200 text-stone-600 rounded-full text-xs font-medium mb-3">
+                                게스트
+                            </div>
+                        ) : (
+                            <>
+                                <div className="inline-flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium mb-3">
+                                    {lv.name}
+                                </div>
+                                <button
+                                    onClick={handleAttend}
+                                    disabled={attended}
+                                    className={`block mx-auto text-xs px-4 py-1.5 rounded-full font-medium mb-4 transition-all
                 ${attended ? "bg-green-100 text-green-700" : "bg-amber-500 text-white"}`}
-                        >
-                            {attended ? "✅ 첫 완료" : "☀️ 출석 체크"}
-                        </button>
+                                >
+                                    {attended ? "✅ 첫 완료" : "☀️ 출석 체크"}
+                                </button>
+                            </>
+                        )}
 
                         {/* EXP 바 */}
-                        <div className="mb-4">
-                            <div className="flex justify-between text-xs text-stone-400 mb-1.5">
-                                <span>
-                                    {player?.exp.toLocaleString() || 0} EXP
-                                </span>
-                                <span>{pct}%</span>
+                        {!isGuest && (
+                            <div className="mb-4">
+                                <div className="flex justify-between text-xs text-stone-400 mb-1.5">
+                                    <span>
+                                        {player?.exp.toLocaleString() || 0} EXP
+                                    </span>
+                                    <span>{pct}%</span>
+                                </div>
+                                <div className="h-2.5 bg-stone-100 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full rounded-full transition-all duration-500"
+                                        style={{
+                                            width: `${pct}%`,
+                                            background: barColor,
+                                        }}
+                                    />
+                                </div>
+                                <p className="text-xs text-stone-400 text-right mt-1">
+                                    {next
+                                        ? `수련 중인 검사까지 ${(next.exp - (player?.exp || 0)).toLocaleString()} EXP`
+                                        : "🌟 최고 레벨!"}
+                                </p>
                             </div>
-                            <div className="h-2.5 bg-stone-100 rounded-full overflow-hidden">
-                                <div
-                                    className="h-full rounded-full transition-all duration-500"
-                                    style={{
-                                        width: `${pct}%`,
-                                        background: barColor,
-                                    }}
-                                />
-                            </div>
-                            <p className="text-xs text-stone-400 text-right mt-1">
-                                {next
-                                    ? `수련 중인 검사까지 ${(next.exp - (player?.exp || 0)).toLocaleString()} EXP`
-                                    : "🌟 최고 레벨!"}
-                            </p>
-                        </div>
+                        )}
 
                         {/* 스탯 */}
-                        <div className="grid grid-cols-3 gap-2">
-                            {[
-                                {
-                                    label: "누적 EXP",
-                                    value: player?.exp.toLocaleString() || "0",
-                                },
-                                {
-                                    label: "이번 달 EXP",
-                                    value:
-                                        player?.month_exp.toLocaleString() ||
-                                        "0",
-                                },
-                                {
-                                    label: "연속 출석",
-                                    value: `${player?.attend_streak || 0}일`,
-                                },
-                            ].map((s) => (
-                                <div
-                                    key={s.label}
-                                    className="bg-stone-50 rounded-xl p-3"
-                                >
-                                    <div className="text-sm font-bold text-stone-800">
-                                        {s.value}
+                        {!isGuest && (
+                            <div className="grid grid-cols-3 gap-2">
+                                {[
+                                    {
+                                        label: "누적 EXP",
+                                        value:
+                                            player?.exp.toLocaleString() || "0",
+                                    },
+                                    {
+                                        label: "이번 달 EXP",
+                                        value:
+                                            player?.month_exp.toLocaleString() ||
+                                            "0",
+                                    },
+                                    {
+                                        label: "연속 출석",
+                                        value: `${player?.attend_streak || 0}일`,
+                                    },
+                                ].map((s) => (
+                                    <div
+                                        key={s.label}
+                                        className="bg-stone-50 rounded-xl p-3"
+                                    >
+                                        <div className="text-sm font-bold text-stone-800">
+                                            {s.value}
+                                        </div>
+                                        <div className="text-xs text-stone-400 mt-0.5">
+                                            {s.label}
+                                        </div>
                                     </div>
-                                    <div className="text-xs text-stone-400 mt-0.5">
-                                        {s.label}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     {/* 탭 */}
@@ -681,12 +703,16 @@ export default function ProfilePage() {
                                     <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
                                         프로젝트
                                     </span>
-                                    <button
-                                        onClick={() => setShowProjModal(true)}
-                                        className="text-xs text-amber-600 font-medium"
-                                    >
-                                        + 프로젝트 추가
-                                    </button>
+                                    {!isGuest && (
+                                        <button
+                                            onClick={() =>
+                                                setShowProjModal(true)
+                                            }
+                                            className="text-xs text-amber-600 font-medium"
+                                        >
+                                            + 프로젝트 추가
+                                        </button>
+                                    )}
                                 </div>
                                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
                                     {projects.length === 0 ? (
@@ -709,14 +735,16 @@ export default function ProfilePage() {
                                                         </p>
                                                     )}
                                                 </div>
-                                                <button
-                                                    onClick={() =>
-                                                        deleteProject(p.id)
-                                                    }
-                                                    className="text-xs text-stone-300 hover:text-red-400"
-                                                >
-                                                    삭제
-                                                </button>
+                                                {!isGuest && (
+                                                    <button
+                                                        onClick={() =>
+                                                            deleteProject(p.id)
+                                                        }
+                                                        className="text-xs text-stone-300 hover:text-red-400"
+                                                    >
+                                                        삭제
+                                                    </button>
+                                                )}
                                             </div>
                                         ))
                                     )}
@@ -729,12 +757,14 @@ export default function ProfilePage() {
                                     <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
                                         접근성
                                     </span>
-                                    <button
-                                        onClick={openAccModalForAdd}
-                                        className="text-xs text-amber-600 font-medium"
-                                    >
-                                        + 등록
-                                    </button>
+                                    {!isGuest && (
+                                        <button
+                                            onClick={openAccModalForAdd}
+                                            className="text-xs text-amber-600 font-medium"
+                                        >
+                                            + 등록
+                                        </button>
+                                    )}
                                 </div>
                                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
                                     {accessibility.length === 0 ? (
@@ -780,6 +810,7 @@ export default function ProfilePage() {
                                                             value={
                                                                 a.inspection_status
                                                             }
+                                                            disabled={isGuest}
                                                             onChange={(e) =>
                                                                 updateAccStatus(
                                                                     a.id,
@@ -800,25 +831,31 @@ export default function ProfilePage() {
                                                                 </option>
                                                             ))}
                                                         </select>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                openAccModalForEdit(
-                                                                    a,
-                                                                )
-                                                            }
-                                                            className="text-xs text-amber-600 hover:text-amber-700 font-medium"
-                                                        >
-                                                            수정
-                                                        </button>
-                                                        <button
-                                                            onClick={() =>
-                                                                deleteAcc(a.id)
-                                                            }
-                                                            className="text-xs text-stone-300 hover:text-red-400"
-                                                        >
-                                                            삭제
-                                                        </button>
+                                                        {!isGuest && (
+                                                            <>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        openAccModalForEdit(
+                                                                            a,
+                                                                        )
+                                                                    }
+                                                                    className="text-xs text-amber-600 hover:text-amber-700 font-medium"
+                                                                >
+                                                                    수정
+                                                                </button>
+                                                                <button
+                                                                    onClick={() =>
+                                                                        deleteAcc(
+                                                                            a.id,
+                                                                        )
+                                                                    }
+                                                                    className="text-xs text-stone-300 hover:text-red-400"
+                                                                >
+                                                                    삭제
+                                                                </button>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 </div>
                                             );
@@ -832,218 +869,250 @@ export default function ProfilePage() {
                     {/* 지난 업무 탭 */}
                     {tab === "history" && (
                         <div>
-                            {/* 기간 필터 */}
-                            <div className="flex gap-2 mb-3 flex-wrap">
-                                {[
-                                    { key: "week", label: "이번 주" },
-                                    { key: "lastweek", label: "지난 주" },
-                                    { key: "month", label: "이번 달" },
-                                    { key: "custom", label: "직접 설정" },
-                                ].map((f) => (
-                                    <button
-                                        key={f.key}
-                                        onClick={() => {
-                                            setHistoryFilter(
-                                                f.key as
-                                                    | "week"
-                                                    | "lastweek"
-                                                    | "month"
-                                                    | "custom",
-                                            );
-                                            if (f.key === "custom")
-                                                setShowDatePicker((p) => !p);
-                                            else setShowDatePicker(false);
-                                        }}
-                                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all
+                            {isGuest ? (
+                                <div className="text-center py-10 text-stone-400 text-sm">
+                                    게스트 계정은 지난 업무를 조회할 수 없어요
+                                </div>
+                            ) : (
+                                <>
+                                    {/* 기간 필터 */}
+                                    <div className="flex gap-2 mb-3 flex-wrap">
+                                        {[
+                                            { key: "week", label: "이번 주" },
+                                            {
+                                                key: "lastweek",
+                                                label: "지난 주",
+                                            },
+                                            { key: "month", label: "이번 달" },
+                                            {
+                                                key: "custom",
+                                                label: "직접 설정",
+                                            },
+                                        ].map((f) => (
+                                            <button
+                                                key={f.key}
+                                                onClick={() => {
+                                                    setHistoryFilter(
+                                                        f.key as
+                                                            | "week"
+                                                            | "lastweek"
+                                                            | "month"
+                                                            | "custom",
+                                                    );
+                                                    if (f.key === "custom")
+                                                        setShowDatePicker(
+                                                            (p) => !p,
+                                                        );
+                                                    else
+                                                        setShowDatePicker(
+                                                            false,
+                                                        );
+                                                }}
+                                                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all
                       ${
                           historyFilter === f.key
                               ? "bg-amber-500 text-white border-amber-500"
                               : "bg-white text-stone-500 border-stone-200"
                       }`}
-                                    >
-                                        {f.key === "custom" && dateRange?.from
-                                            ? `${dateRange.from.getMonth() + 1}/${dateRange.from.getDate()}${dateRange.to ? ` ~ ${dateRange.to.getMonth() + 1}/${dateRange.to.getDate()}` : ""}`
-                                            : f.label}
-                                    </button>
-                                ))}
-                            </div>
-
-                            {showDatePicker && (
-                                <div className="bg-white rounded-2xl border border-stone-200 mb-3 overflow-hidden shadow-lg">
-                                    {/* 상단 선택 현황 */}
-                                    <div className="grid grid-cols-2 divide-x divide-stone-100 border-b border-stone-100">
-                                        <div
-                                            className={`px-4 py-3 ${!dateRange?.from ? "bg-amber-50" : ""}`}
-                                        >
-                                            <p className="text-xs text-stone-400 mb-0.5">
-                                                시작일
-                                            </p>
-                                            <p
-                                                className={`text-sm font-bold ${dateRange?.from ? "text-stone-800" : "text-stone-300"}`}
                                             >
-                                                {dateRange?.from
-                                                    ? `${dateRange.from.getFullYear()}.${dateRange.from.getMonth() + 1}.${dateRange.from.getDate()}`
-                                                    : "날짜 선택"}
-                                            </p>
-                                        </div>
-                                        <div
-                                            className={`px-4 py-3 ${dateRange?.from && !dateRange?.to ? "bg-amber-50" : ""}`}
-                                        >
-                                            <p className="text-xs text-stone-400 mb-0.5">
-                                                종료일
-                                            </p>
-                                            <p
-                                                className={`text-sm font-bold ${dateRange?.to ? "text-stone-800" : "text-stone-300"}`}
-                                            >
-                                                {dateRange?.to
-                                                    ? `${dateRange.to.getFullYear()}.${dateRange.to.getMonth() + 1}.${dateRange.to.getDate()}`
-                                                    : "날짜 선택"}
-                                            </p>
-                                        </div>
+                                                {f.key === "custom" &&
+                                                dateRange?.from
+                                                    ? `${dateRange.from.getMonth() + 1}/${dateRange.from.getDate()}${dateRange.to ? ` ~ ${dateRange.to.getMonth() + 1}/${dateRange.to.getDate()}` : ""}`
+                                                    : f.label}
+                                            </button>
+                                        ))}
                                     </div>
 
-                                    {/* 달력 */}
-                                    <div className="flex justify-center px-2 py-2">
-                                        <DayPicker
-                                            mode="range"
-                                            selected={dateRange}
-                                            onSelect={(range) => {
-                                                setDateRange(range);
-                                            }}
-                                            locale={ko}
-                                            toDate={new Date()}
-                                        />
-                                    </div>
+                                    {showDatePicker && (
+                                        <div className="bg-white rounded-2xl border border-stone-200 mb-3 overflow-hidden shadow-lg">
+                                            {/* 상단 선택 현황 */}
+                                            <div className="grid grid-cols-2 divide-x divide-stone-100 border-b border-stone-100">
+                                                <div
+                                                    className={`px-4 py-3 ${!dateRange?.from ? "bg-amber-50" : ""}`}
+                                                >
+                                                    <p className="text-xs text-stone-400 mb-0.5">
+                                                        시작일
+                                                    </p>
+                                                    <p
+                                                        className={`text-sm font-bold ${dateRange?.from ? "text-stone-800" : "text-stone-300"}`}
+                                                    >
+                                                        {dateRange?.from
+                                                            ? `${dateRange.from.getFullYear()}.${dateRange.from.getMonth() + 1}.${dateRange.from.getDate()}`
+                                                            : "날짜 선택"}
+                                                    </p>
+                                                </div>
+                                                <div
+                                                    className={`px-4 py-3 ${dateRange?.from && !dateRange?.to ? "bg-amber-50" : ""}`}
+                                                >
+                                                    <p className="text-xs text-stone-400 mb-0.5">
+                                                        종료일
+                                                    </p>
+                                                    <p
+                                                        className={`text-sm font-bold ${dateRange?.to ? "text-stone-800" : "text-stone-300"}`}
+                                                    >
+                                                        {dateRange?.to
+                                                            ? `${dateRange.to.getFullYear()}.${dateRange.to.getMonth() + 1}.${dateRange.to.getDate()}`
+                                                            : "날짜 선택"}
+                                                    </p>
+                                                </div>
+                                            </div>
 
-                                    {/* 하단 */}
-                                    <div className="px-4 pb-4 flex gap-2">
-                                        <button
-                                            onClick={() => {
-                                                setDateRange(undefined);
-                                            }}
-                                            className="flex-1 py-2.5 text-xs border border-stone-200 rounded-xl text-stone-500 font-medium"
-                                        >
-                                            초기화
-                                        </button>
-                                        <button
-                                            onClick={() =>
-                                                setShowDatePicker(false)
+                                            {/* 달력 */}
+                                            <div className="flex justify-center px-2 py-2">
+                                                <DayPicker
+                                                    mode="range"
+                                                    selected={dateRange}
+                                                    onSelect={(range) => {
+                                                        setDateRange(range);
+                                                    }}
+                                                    locale={ko}
+                                                    toDate={new Date()}
+                                                />
+                                            </div>
+
+                                            {/* 하단 */}
+                                            <div className="px-4 pb-4 flex gap-2">
+                                                <button
+                                                    onClick={() => {
+                                                        setDateRange(undefined);
+                                                    }}
+                                                    className="flex-1 py-2.5 text-xs border border-stone-200 rounded-xl text-stone-500 font-medium"
+                                                >
+                                                    초기화
+                                                </button>
+                                                <button
+                                                    onClick={() =>
+                                                        setShowDatePicker(false)
+                                                    }
+                                                    className="flex-1 py-2.5 text-xs bg-amber-500 text-white rounded-xl font-medium"
+                                                >
+                                                    {dateRange?.from &&
+                                                    dateRange?.to
+                                                        ? "적용"
+                                                        : "닫기"}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* 프로젝트/상태 필터 */}
+                                    <div className="flex gap-2 mb-3">
+                                        <select
+                                            className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
+                                            value={historyProjFilter}
+                                            onChange={(e) =>
+                                                setHistoryProjFilter(
+                                                    e.target.value,
+                                                )
                                             }
-                                            className="flex-1 py-2.5 text-xs bg-amber-500 text-white rounded-xl font-medium"
                                         >
-                                            {dateRange?.from && dateRange?.to
-                                                ? "적용"
-                                                : "닫기"}
-                                        </button>
+                                            <option value="">
+                                                전체 프로젝트
+                                            </option>
+                                            {[
+                                                ...new Set(
+                                                    tasks
+                                                        .map((t) => t.proj)
+                                                        .filter(Boolean),
+                                                ),
+                                            ].map((p) => (
+                                                <option key={p} value={p}>
+                                                    {p}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <select
+                                            className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
+                                            value={historyStatusFilter}
+                                            onChange={(e) =>
+                                                setHistoryStatusFilter(
+                                                    e.target.value,
+                                                )
+                                            }
+                                        >
+                                            <option value="">전체 상태</option>
+                                            {[
+                                                "대기",
+                                                "시작 전",
+                                                "진행중",
+                                                "이슈 및 대기",
+                                                "완료",
+                                            ].map((s) => (
+                                                <option key={s} value={s}>
+                                                    {s}
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
-                                </div>
-                            )}
 
-                            {/* 프로젝트/상태 필터 */}
-                            <div className="flex gap-2 mb-3">
-                                <select
-                                    className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
-                                    value={historyProjFilter}
-                                    onChange={(e) =>
-                                        setHistoryProjFilter(e.target.value)
-                                    }
-                                >
-                                    <option value="">전체 프로젝트</option>
-                                    {[
-                                        ...new Set(
-                                            tasks
-                                                .map((t) => t.proj)
-                                                .filter(Boolean),
-                                        ),
-                                    ].map((p) => (
-                                        <option key={p} value={p}>
-                                            {p}
-                                        </option>
-                                    ))}
-                                </select>
-                                <select
-                                    className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
-                                    value={historyStatusFilter}
-                                    onChange={(e) =>
-                                        setHistoryStatusFilter(e.target.value)
-                                    }
-                                >
-                                    <option value="">전체 상태</option>
-                                    {[
-                                        "대기",
-                                        "시작 전",
-                                        "진행중",
-                                        "이슈 및 대기",
-                                        "완료",
-                                    ].map((s) => (
-                                        <option key={s} value={s}>
-                                            {s}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {/* 통계 */}
-                            <div className="grid grid-cols-3 gap-2 mb-3">
-                                {[
-                                    { n: historyTasks.length, l: "전체" },
-                                    {
-                                        n: historyTasks.filter(
-                                            (t) => t.status === "완료",
-                                        ).length,
-                                        l: "완료",
-                                        green: true,
-                                    },
-                                    {
-                                        n: historyTasks.reduce(
-                                            (s, t) => s + (t.workload || 0),
-                                            0,
-                                        ),
-                                        l: "총 공수",
-                                        amber: true,
-                                        fmt: true,
-                                    },
-                                ].map((s) => (
-                                    <div
-                                        key={s.l}
-                                        className="bg-white rounded-xl border border-stone-200 p-3 text-center"
-                                    >
-                                        <div
-                                            className={`text-lg font-bold ${s.green ? "text-green-600" : s.amber ? "text-amber-600" : "text-stone-800"}`}
-                                        >
-                                            {s.fmt
-                                                ? formatWorkload(s.n) || "-"
-                                                : s.n}
-                                        </div>
-                                        <div className="text-xs text-stone-400 mt-0.5">
-                                            {s.l}
-                                        </div>
+                                    {/* 통계 */}
+                                    <div className="grid grid-cols-3 gap-2 mb-3">
+                                        {[
+                                            {
+                                                n: historyTasks.length,
+                                                l: "전체",
+                                            },
+                                            {
+                                                n: historyTasks.filter(
+                                                    (t) => t.status === "완료",
+                                                ).length,
+                                                l: "완료",
+                                                green: true,
+                                            },
+                                            {
+                                                n: historyTasks.reduce(
+                                                    (s, t) =>
+                                                        s + (t.workload || 0),
+                                                    0,
+                                                ),
+                                                l: "총 공수",
+                                                amber: true,
+                                                fmt: true,
+                                            },
+                                        ].map((s) => (
+                                            <div
+                                                key={s.l}
+                                                className="bg-white rounded-xl border border-stone-200 p-3 text-center"
+                                            >
+                                                <div
+                                                    className={`text-lg font-bold ${s.green ? "text-green-600" : s.amber ? "text-amber-600" : "text-stone-800"}`}
+                                                >
+                                                    {s.fmt
+                                                        ? formatWorkload(s.n) ||
+                                                          "-"
+                                                        : s.n}
+                                                </div>
+                                                <div className="text-xs text-stone-400 mt-0.5">
+                                                    {s.l}
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
-                            </div>
 
-                            {historyTasks.length === 0 ? (
-                                <div className="text-center py-12 text-stone-400 text-sm">
-                                    <div className="text-4xl mb-3">📂</div>
-                                    <p>해당 기간에 업무가 없어요</p>
-                                    <p className="text-xs mt-1 text-stone-300">
-                                        개인 데이터 조회 — 팀 전체는 리포트에서
-                                        확인
-                                    </p>
-                                </div>
-                            ) : (
-                                <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                                    {historyTasks.map((t, i) => (
-                                        <div
-                                            key={t.id}
-                                            className={`px-4 py-3 ${i < historyTasks.length - 1 ? "border-b border-stone-100" : ""}`}
-                                        >
-                                            <div className="flex items-start justify-between gap-2">
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2 mb-0.5">
-                                                        {t.type && (
-                                                            <span
-                                                                className={`text-xs px-1.5 py-0.5 rounded font-medium shrink-0
+                                    {historyTasks.length === 0 ? (
+                                        <div className="text-center py-12 text-stone-400 text-sm">
+                                            <div className="text-4xl mb-3">
+                                                📂
+                                            </div>
+                                            <p>해당 기간에 업무가 없어요</p>
+                                            <p className="text-xs mt-1 text-stone-300">
+                                                개인 데이터 조회 — 팀 전체는
+                                                리포트에서 확인
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+                                            {historyTasks.map((t, i) => (
+                                                <div
+                                                    key={t.id}
+                                                    className={`px-4 py-3 ${i < historyTasks.length - 1 ? "border-b border-stone-100" : ""}`}
+                                                >
+                                                    <div className="flex items-start justify-between gap-2">
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-2 mb-0.5">
+                                                                {t.type && (
+                                                                    <span
+                                                                        className={`text-xs px-1.5 py-0.5 rounded font-medium shrink-0
                                 ${
                                     {
                                         프로젝트:
@@ -1054,70 +1123,71 @@ export default function ProfilePage() {
                                         업무지원: "bg-blue-100 text-blue-700",
                                     }[t.type] || "bg-gray-100 text-gray-600"
                                 }`}
-                                                            >
-                                                                {t.type}
-                                                            </span>
-                                                        )}
-                                                        <p
-                                                            className={`text-sm font-medium truncate
-                              ${t.status === "완료" ? "line-through text-stone-400" : "text-stone-800"}`}
-                                                        >
-                                                            {t.proj}
-                                                        </p>
-                                                    </div>
-                                                    {t.content && (
-                                                        <p className="text-xs text-stone-400 truncate">
-                                                            {t.content}
-                                                        </p>
-                                                    )}
-                                                    <div className="flex gap-2 text-xs text-stone-400 mt-0.5">
-                                                        {t.workload > 0 && (
-                                                            <span>
-                                                                {formatWorkload(
-                                                                    t.workload,
+                                                                    >
+                                                                        {t.type}
+                                                                    </span>
                                                                 )}
-                                                            </span>
-                                                        )}
-                                                        {t.start_date &&
-                                                            t.end_date && (
-                                                                <span>
-                                                                    {t.start_date
-                                                                        .slice(
-                                                                            5,
-                                                                        )
-                                                                        .replace(
-                                                                            "-",
-                                                                            "/",
-                                                                        )}{" "}
-                                                                    ~{" "}
-                                                                    {t.end_date
-                                                                        .slice(
-                                                                            5,
-                                                                        )
-                                                                        .replace(
-                                                                            "-",
-                                                                            "/",
-                                                                        )}
-                                                                </span>
+                                                                <p
+                                                                    className={`text-sm font-medium truncate
+                              ${t.status === "완료" ? "line-through text-stone-400" : "text-stone-800"}`}
+                                                                >
+                                                                    {t.proj}
+                                                                </p>
+                                                            </div>
+                                                            {t.content && (
+                                                                <p className="text-xs text-stone-400 truncate">
+                                                                    {t.content}
+                                                                </p>
                                                             )}
-                                                        {!t.start_date &&
-                                                            t.end_date && (
-                                                                <span>
-                                                                    ~
-                                                                    {t.end_date
-                                                                        .slice(
-                                                                            5,
-                                                                        )
-                                                                        .replace(
-                                                                            "-",
-                                                                            "/",
+                                                            <div className="flex gap-2 text-xs text-stone-400 mt-0.5">
+                                                                {t.workload >
+                                                                    0 && (
+                                                                    <span>
+                                                                        {formatWorkload(
+                                                                            t.workload,
                                                                         )}
-                                                                </span>
-                                                            )}
-                                                    </div>
-                                                </div>
-                                                <span
-                                                    className={`text-xs px-2 py-0.5 rounded-lg font-medium shrink-0
+                                                                    </span>
+                                                                )}
+                                                                {t.start_date &&
+                                                                    t.end_date && (
+                                                                        <span>
+                                                                            {t.start_date
+                                                                                .slice(
+                                                                                    5,
+                                                                                )
+                                                                                .replace(
+                                                                                    "-",
+                                                                                    "/",
+                                                                                )}{" "}
+                                                                            ~{" "}
+                                                                            {t.end_date
+                                                                                .slice(
+                                                                                    5,
+                                                                                )
+                                                                                .replace(
+                                                                                    "-",
+                                                                                    "/",
+                                                                                )}
+                                                                        </span>
+                                                                    )}
+                                                                {!t.start_date &&
+                                                                    t.end_date && (
+                                                                        <span>
+                                                                            ~
+                                                                            {t.end_date
+                                                                                .slice(
+                                                                                    5,
+                                                                                )
+                                                                                .replace(
+                                                                                    "-",
+                                                                                    "/",
+                                                                                )}
+                                                                        </span>
+                                                                    )}
+                                                            </div>
+                                                        </div>
+                                                        <span
+                                                            className={`text-xs px-2 py-0.5 rounded-lg font-medium shrink-0
                           ${
                               {
                                   완료: "bg-green-100 text-green-700",
@@ -1125,13 +1195,15 @@ export default function ProfilePage() {
                                   "이슈 및 대기": "bg-red-100 text-red-700",
                               }[t.status] || "bg-gray-100 text-gray-600"
                           }`}
-                                                >
-                                                    {t.status}
-                                                </span>
-                                            </div>
+                                                        >
+                                                            {t.status}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
-                                    ))}
-                                </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     )}
