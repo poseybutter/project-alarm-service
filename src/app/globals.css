@@ -1,59 +1,139 @@
 @import "tailwindcss";
 
 :root {
-  --nav-height: 67px;
-  --background: #ffffff;
-  --foreground: #171717;
+    --nav-height: 67px;
+    --background: #ffffff;
+    --foreground: #171717;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --font-sans: var(--font-geist-sans);
+    --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+    :root {
+        --background: #0a0a0a;
+        --foreground: #ededed;
+    }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+/* 리포트 주간 전달사항 Tiptap (ProseMirror) */
+.notice-editor .ProseMirror {
+    outline: none;
+}
+.notice-editor .ProseMirror p {
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: #44403c;
+    margin-bottom: 0.25rem;
+}
+.notice-editor .ProseMirror h1 {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #1c1917;
+    margin-bottom: 0.25rem;
+}
+.notice-editor .ProseMirror h2 {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #1c1917;
+    margin-bottom: 0.25rem;
+}
+.notice-editor .ProseMirror ul {
+    list-style-type: disc;
+    padding-left: 1rem;
+    font-size: 0.75rem;
+    margin-bottom: 0.25rem;
+    color: #44403c;
+}
+.notice-editor .ProseMirror ol {
+    list-style-type: decimal;
+    padding-left: 1rem;
+    font-size: 0.75rem;
+    margin-bottom: 0.25rem;
+    color: #44403c;
+}
+.notice-editor .ProseMirror strong {
+    font-weight: 700;
+}
+.notice-editor .ProseMirror em {
+    font-style: italic;
+}
+.notice-editor .tiptap p.is-editor-empty:first-child::before {
+    color: #a8a29e;
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    pointer-events: none;
 }
 
 /* DayPicker 에어비앤비 스타일 */
 .rdp {
-  --rdp-cell-size: 40px;
-  --rdp-accent-color: #f59e0b;
-  --rdp-background-color: #fef3c7;
-  margin: 0 !important;
+    --rdp-cell-size: 40px;
+    --rdp-accent-color: #f59e0b;
+    --rdp-background-color: #fef3c7;
+    margin: 0 !important;
 }
-.rdp-months { justify-content: center; }
-.rdp-caption { padding: 0 8px 8px; }
-.rdp-caption_label { font-size: 14px !important; font-weight: 700 !important; color: #1c1917; }
-.rdp-nav_button { color: #a8a29e !important; }
-.rdp-head_cell { font-size: 11px !important; color: #a8a29e !important; font-weight: 600 !important; }
-.rdp-day { font-size: 13px !important; font-weight: 500; border-radius: 50% !important; }
-.rdp-day_today { font-weight: 700 !important; color: #f59e0b !important; }
+.rdp-months {
+    justify-content: center;
+}
+.rdp-caption {
+    padding: 0 8px 8px;
+}
+.rdp-caption_label {
+    font-size: 14px !important;
+    font-weight: 700 !important;
+    color: #1c1917;
+}
+.rdp-nav_button {
+    color: #a8a29e !important;
+}
+.rdp-head_cell {
+    font-size: 11px !important;
+    color: #a8a29e !important;
+    font-weight: 600 !important;
+}
+.rdp-day {
+    font-size: 13px !important;
+    font-weight: 500;
+    border-radius: 50% !important;
+}
+.rdp-day_today {
+    font-weight: 700 !important;
+    color: #f59e0b !important;
+}
 .rdp-day_range_start .rdp-day_button,
 .rdp-day_range_end .rdp-day_button {
-  background-color: #f59e0b !important;
-  color: white !important;
-  border-radius: 50% !important;
+    background-color: #f59e0b !important;
+    color: white !important;
+    border-radius: 50% !important;
 }
 .rdp-day_range_middle {
-  background-color: #fef3c7 !important;
-  border-radius: 0 !important;
+    background-color: #fef3c7 !important;
+    border-radius: 0 !important;
 }
 .rdp-day_range_middle .rdp-day_button {
-  color: #92400e !important;
+    color: #92400e !important;
 }
-.rdp-day_range_start { border-radius: 50% 0 0 50% !important; }
-.rdp-day_range_end { border-radius: 0 50% 50% 0 !important; }
-.rdp-day_range_start.rdp-day_range_end { border-radius: 50% !important; }
-.rdp-button_reset:hover { background-color: #f5f5f4 !important; border-radius: 50% !important; }
+.rdp-day_range_start {
+    border-radius: 50% 0 0 50% !important;
+}
+.rdp-day_range_end {
+    border-radius: 0 50% 50% 0 !important;
+}
+.rdp-day_range_start.rdp-day_range_end {
+    border-radius: 50% !important;
+}
+.rdp-button_reset:hover {
+    background-color: #f5f5f4 !important;
+    border-radius: 50% !important;
+}
