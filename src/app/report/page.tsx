@@ -13,6 +13,7 @@ import NotificationButton from "@/components/NotificationButton";
 import { useAuth } from "@/components/AuthProvider";
 import type { Task } from "@/lib/types";
 import { MEMBERS, LEADER, MEMBER_COLORS, STATUS_COLORS } from "@/lib/constants";
+import TiptapSectionEditor from "@/components/TiptapSectionEditor";
 
 /** 전달사항 HTML이 사용자에게 보일 내용이 있는지 (빈 에디터·공백 태그 제외) */
 function noticeHtmlHasText(html: string | null | undefined): boolean {
@@ -22,6 +23,113 @@ function noticeHtmlHasText(html: string | null | undefined): boolean {
         .replace(/\u00a0/g, " ")
         .trim();
     return text.length > 0;
+}
+
+/** 자동 브리핑 플레인을 문단 단위로 분리 (빈 줄 / 줄바꿈+** / 공백+** 경계) */
+function splitBriefingPlainIntoChunks(raw: string): string[] {
+    const t = (raw || "")
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n")
+        .trim();
+    if (!t) return [];
+    let chunks = t.split(/\n\n+/).map((s) => s.trim()).filter(Boolean);
+    chunks = chunks.flatMap((chunk) => {
+        const aster = chunk.match(/\*\*/g)?.length ?? 0;
+        if (aster < 4) return [chunk];
+        const parts = chunk
+            .split(/\s+(?=\*\*)|\n(?=\*\*)/)
+            .map((s) => s.trim())
+            .filter(Boolean);
+        return parts.length > 1 ? parts : [chunk];
+    });
+    return chunks;
+}
+
+/** 이스케이프된 브리핑 조각에서 `**굵게**` → `<strong>` (자동문만 사용) */
+function briefingEscapedToHtmlWithBold(escapedWithBr: string): string {
+    return escapedWithBr.replace(
+        /\*\*([\s\S]+?)\*\*/g,
+        "<strong>$1</strong>",
+    );
+}
+
+/** 자동 생성 브리핑(플레인) → Tiptap·미리보기용 HTML (`**` → 굵게) */
+function plainBriefingToInitialHtml(plain: string): string {
+    const chunks = splitBriefingPlainIntoChunks(plain);
+    if (!chunks.length) return "<p></p>";
+    return chunks
+        .map((block) => {
+            const esc = block
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
+            const withBr = esc.replace(/\n/g, "<br>");
+            const inner = briefingEscapedToHtmlWithBold(withBr);
+            return `<p>${inner}</p>`;
+        })
+        .join("");
+}
+
+/** 보기 모드: 자동문을 에디터와 같은 타이포로 렌더 (읽기 전용) */
+function BriefingAutoPreview({ plain }: { plain: string }) {
+    const html = plain.trim() ? plainBriefingToInitialHtml(plain) : "<p></p>";
+    return (
+        <div className="notice-editor min-h-[2.5rem] overflow-x-auto rounded-lg border border-stone-200 bg-stone-50">
+            <div
+                className="ProseMirror tiptap min-h-[2.5rem] px-3 py-3 text-stone-700"
+                dangerouslySetInnerHTML={{ __html: html }}
+            />
+        </div>
+    );
+}
+
+/** 복사용: HTML → 줄바꿈 유지한 플레인 텍스트 */
+function htmlToPlainText(html: string): string {
+    if (!html?.trim()) return "";
+    return html
+        .replace(/<\/p>\s*<p>/gi, "\n\n")
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/<[^>]+>/g, "")
+        .replace(/\u00a0/g, " ")
+        .trim();
+}
+
+/** 노션 등: 굵게 유지하려면 text/html + text/plain 동시 제공 */
+function wrapClipboardBriefingDocument(bodyHtml: string): string {
+    const body = bodyHtml.trim() ? bodyHtml : "<p></p>";
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${body}</body></html>`;
+}
+
+async function copyBriefingRichToClipboard(
+    bodyHtml: string,
+    plainText: string,
+    setCopied: (v: boolean) => void,
+): Promise<void> {
+    const html = wrapClipboardBriefingDocument(bodyHtml);
+    const plain =
+        plainText.trim() ||
+        htmlToPlainText(bodyHtml).trim() ||
+        "(내용 없음)";
+    try {
+        if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+            await navigator.clipboard.write([
+                new ClipboardItem({
+                    "text/html": new Blob([html], { type: "text/html" }),
+                    "text/plain": new Blob([plain], { type: "text/plain" }),
+                }),
+            ]);
+        } else {
+            await navigator.clipboard.writeText(plain);
+        }
+    } catch {
+        try {
+            await navigator.clipboard.writeText(plain);
+        } catch {
+            /* ignore */
+        }
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
 }
 
 type TiptapNoticeEditorProps = {
@@ -171,7 +279,7 @@ function TiptapNoticeEditor({
 
 type BriefSection = "project" | "maintenance" | "etc";
 
-/** 주간 브리핑 자동문 (섹션별 textarea에 맞춤: [프로젝트]/[유지보수] 태그 생략, 업무 줄은 ⇒) */
+/** 주간 브리핑 자동문: proj 그룹, 제목에 담당(@), 업무는 ⇒ … — 상태, 이슈는 ⚠️ 이슈: … — 상태 (⇒와 구분) */
 function formatBriefingSection(tasks: Task[], section: BriefSection): string {
     if (!tasks.length) return "";
 
@@ -209,15 +317,17 @@ function formatBriefingSection(tasks: Task[], section: BriefSection): string {
         const highlight = groupTasks.some(
             (t) => t.priority === "긴급" || t.status === "이슈 및 대기",
         );
-        const members = [...new Set(groupTasks.map((t) => t.member))]
-            .map((m) => `@${m}`)
-            .join(" ");
-        const statuses = [...new Set(groupTasks.map((t) => t.status))].join(
-            ", ",
-        );
-        const titleInner =
-            `${typePrefix}${first.proj} (${statuses}) ${members}`.trim();
-        const titleLine = `**${highlight ? "⭐ " : ""}${titleInner}**`;
+        const titleProj = `${typePrefix}${first.proj}`.trim();
+        const uniqMembers = [...new Set(groupTasks.map((t) => t.member))];
+        const memberPart =
+            uniqMembers.length === 0
+                ? ""
+                : uniqMembers.length === 1
+                  ? ` @${uniqMembers[0]}`
+                  : ` (${uniqMembers.map((m) => `@${m}`).join(" · ")})`;
+        const titleLine = `**${highlight ? "⭐ " : ""}${titleProj}${memberPart}**`;
+
+        const multiMember = uniqMembers.length > 1;
 
         const bodyLines: string[] = [];
         for (const t of groupTasks) {
@@ -225,11 +335,22 @@ function formatBriefingSection(tasks: Task[], section: BriefSection): string {
             if (raw) {
                 for (const line of raw.split("\n")) {
                     const s = line.trim();
-                    if (s) bodyLines.push(`⇒ ${s}`);
+                    if (s) {
+                        bodyLines.push(
+                            multiMember
+                                ? `⇒ @${t.member} ${s} — ${t.status}`
+                                : `⇒ ${s} — ${t.status}`,
+                        );
+                    }
                 }
             }
             if (t.issue && String(t.issue).trim()) {
-                bodyLines.push(`이슈: ${String(t.issue).trim()}`);
+                const issueText = String(t.issue).trim();
+                bodyLines.push(
+                    multiMember
+                        ? `⚠️ @${t.member} · 이슈: ${issueText} — ${t.status}`
+                        : `⚠️ 이슈: ${issueText} — ${t.status}`,
+                );
             }
         }
 
@@ -374,6 +495,7 @@ export default function ReportPage() {
     const [editProject, setEditProject] = useState("");
     const [editMaintenance, setEditMaintenance] = useState("");
     const [editEtc, setEditEtc] = useState("");
+    const [briefingEditorKey, setBriefingEditorKey] = useState(0);
     const [saving, setSaving] = useState(false);
     const [editNotice, setEditNotice] = useState("");
     const [editingNotice, setEditingNotice] = useState(false);
@@ -469,6 +591,7 @@ export default function ReportPage() {
         setEditing(false);
         setEditingNotice(false);
         setNoticeEditorNonce((n) => n + 1);
+        setBriefingEditorKey((k) => k + 1);
     }, [wOff, mode]);
 
     useEffect(() => {
@@ -554,31 +677,35 @@ export default function ReportPage() {
         [wTasks],
     );
 
-    const displayProject = briefing !== null ? briefing.project : autoProject;
-    const displayMaintenance =
-        briefing !== null ? briefing.maintenance : autoMaintenance;
-    const displayEtc = briefing !== null ? briefing.etc : autoEtc;
     const isBriefingLocked = briefing?.is_locked === true;
 
     const editAllowed = canEdit(isBriefingLocked);
 
     function startEditing() {
-        setEditProject(briefing !== null ? briefing.project : autoProject);
-        setEditMaintenance(
-            briefing !== null ? briefing.maintenance : autoMaintenance,
-        );
-        setEditEtc(briefing !== null ? briefing.etc : autoEtc);
+        setEditProject(plainBriefingToInitialHtml(autoProject));
+        setEditMaintenance(plainBriefingToInitialHtml(autoMaintenance));
+        setEditEtc(plainBriefingToInitialHtml(autoEtc));
+        setBriefingEditorKey((k) => k + 1);
         setEditing(true);
     }
 
     function cancelEditing() {
         setEditing(false);
+        setBriefingEditorKey((k) => k + 1);
     }
 
-    function restoreAutoToEdits() {
-        setEditProject(autoProject);
-        setEditMaintenance(autoMaintenance);
-        setEditEtc(autoEtc);
+    function restoreBriefingSection(which: "project" | "maintenance" | "etc") {
+        const html = plainBriefingToInitialHtml(
+            which === "project"
+                ? autoProject
+                : which === "maintenance"
+                  ? autoMaintenance
+                  : autoEtc,
+        );
+        if (which === "project") setEditProject(html);
+        else if (which === "maintenance") setEditMaintenance(html);
+        else setEditEtc(html);
+        setBriefingEditorKey((k) => k + 1);
     }
 
     async function saveBriefing() {
@@ -1161,21 +1288,28 @@ export default function ReportPage() {
                                     <div className="p-4 space-y-5">
                                         {/* 프로젝트 */}
                                         <div>
-                                            <div className="flex items-center justify-between gap-2 mb-2">
+                                            <div className="mb-2 flex items-center justify-between gap-2">
                                                 <p className="text-xs font-bold text-stone-600">
                                                     [ 프로젝트 ]
                                                 </p>
                                                 <button
                                                     type="button"
                                                     onClick={() =>
-                                                        copySection(
+                                                        void copyBriefingRichToClipboard(
                                                             editing
                                                                 ? editProject
-                                                                : displayProject,
+                                                                : plainBriefingToInitialHtml(
+                                                                      autoProject,
+                                                                  ),
+                                                            editing
+                                                                ? htmlToPlainText(
+                                                                      editProject,
+                                                                  )
+                                                                : autoProject,
                                                             setCopiedProject,
                                                         )
                                                     }
-                                                    className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all shrink-0
+                                                    className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all
                               ${copiedProject ? "bg-green-500 text-white" : "bg-stone-800 text-white"}`}
                                                 >
                                                     {copiedProject
@@ -1184,39 +1318,60 @@ export default function ReportPage() {
                                                 </button>
                                             </div>
                                             {editing ? (
-                                                <textarea
-                                                    className="w-full text-xs text-stone-700 bg-stone-50 rounded-lg p-3 min-h-[120px] resize-y font-mono border border-stone-200"
-                                                    value={editProject}
-                                                    onChange={(e) =>
-                                                        setEditProject(
-                                                            e.target.value,
-                                                        )
-                                                    }
-                                                    spellCheck={false}
-                                                />
+                                                <>
+                                                    <TiptapSectionEditor
+                                                        key={`briefing-project-${wOff}-${briefingEditorKey}`}
+                                                        content={editProject}
+                                                        onChange={setEditProject}
+                                                        editable
+                                                        showToolbar
+                                                        placeholder="프로젝트 브리핑을 입력하세요..."
+                                                    />
+                                                    {editAllowed && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                restoreBriefingSection(
+                                                                    "project",
+                                                                )
+                                                            }
+                                                            className="mt-2 w-full rounded-lg border border-stone-200 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
+                                                        >
+                                                            이 섹션 자동 생성으로
+                                                            복원
+                                                        </button>
+                                                    )}
+                                                </>
                                             ) : (
-                                                <pre className="text-xs text-stone-700 bg-stone-50 rounded-lg p-3 whitespace-pre-wrap font-mono overflow-x-auto min-h-[2.5rem]">
-                                                    {displayProject || " "}
-                                                </pre>
+                                                <BriefingAutoPreview
+                                                    plain={autoProject}
+                                                />
                                             )}
                                         </div>
                                         {/* 유지보수 */}
                                         <div>
-                                            <div className="flex items-center justify-between gap-2 mb-2">
+                                            <div className="mb-2 flex items-center justify-between gap-2">
                                                 <p className="text-xs font-bold text-stone-600">
                                                     [ 유지보수 ]
                                                 </p>
                                                 <button
                                                     type="button"
                                                     onClick={() =>
-                                                        copySection(
+                                                        void copyBriefingRichToClipboard(
                                                             editing
                                                                 ? editMaintenance
-                                                                : displayMaintenance,
+                                                                : plainBriefingToInitialHtml(
+                                                                      autoMaintenance,
+                                                                  ),
+                                                            editing
+                                                                ? htmlToPlainText(
+                                                                      editMaintenance,
+                                                                  )
+                                                                : autoMaintenance,
                                                             setCopiedMaintenance,
                                                         )
                                                     }
-                                                    className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all shrink-0
+                                                    className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all
                               ${copiedMaintenance ? "bg-green-500 text-white" : "bg-stone-800 text-white"}`}
                                                 >
                                                     {copiedMaintenance
@@ -1225,39 +1380,62 @@ export default function ReportPage() {
                                                 </button>
                                             </div>
                                             {editing ? (
-                                                <textarea
-                                                    className="w-full text-xs text-stone-700 bg-stone-50 rounded-lg p-3 min-h-[120px] resize-y font-mono border border-stone-200"
-                                                    value={editMaintenance}
-                                                    onChange={(e) =>
-                                                        setEditMaintenance(
-                                                            e.target.value,
-                                                        )
-                                                    }
-                                                    spellCheck={false}
-                                                />
+                                                <>
+                                                    <TiptapSectionEditor
+                                                        key={`briefing-maintenance-${wOff}-${briefingEditorKey}`}
+                                                        content={
+                                                            editMaintenance
+                                                        }
+                                                        onChange={
+                                                            setEditMaintenance
+                                                        }
+                                                        editable
+                                                        showToolbar
+                                                        placeholder="유지보수 브리핑을 입력하세요..."
+                                                    />
+                                                    {editAllowed && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                restoreBriefingSection(
+                                                                    "maintenance",
+                                                                )
+                                                            }
+                                                            className="mt-2 w-full rounded-lg border border-stone-200 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
+                                                        >
+                                                            이 섹션 자동 생성으로
+                                                            복원
+                                                        </button>
+                                                    )}
+                                                </>
                                             ) : (
-                                                <pre className="text-xs text-stone-700 bg-stone-50 rounded-lg p-3 whitespace-pre-wrap font-mono overflow-x-auto min-h-[2.5rem]">
-                                                    {displayMaintenance || " "}
-                                                </pre>
+                                                <BriefingAutoPreview
+                                                    plain={autoMaintenance}
+                                                />
                                             )}
                                         </div>
                                         {/* 기타 */}
                                         <div>
-                                            <div className="flex items-center justify-between gap-2 mb-2">
+                                            <div className="mb-2 flex items-center justify-between gap-2">
                                                 <p className="text-xs font-bold text-stone-600">
                                                     [ 기타 ]
                                                 </p>
                                                 <button
                                                     type="button"
                                                     onClick={() =>
-                                                        copySection(
+                                                        void copyBriefingRichToClipboard(
                                                             editing
                                                                 ? editEtc
-                                                                : displayEtc,
+                                                                : plainBriefingToInitialHtml(
+                                                                      autoEtc,
+                                                                  ),
+                                                            editing
+                                                                ? htmlToPlainText(editEtc)
+                                                                : autoEtc,
                                                             setCopiedEtc,
                                                         )
                                                     }
-                                                    className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all shrink-0
+                                                    className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all
                               ${copiedEtc ? "bg-green-500 text-white" : "bg-stone-800 text-white"}`}
                                                 >
                                                     {copiedEtc
@@ -1266,20 +1444,34 @@ export default function ReportPage() {
                                                 </button>
                                             </div>
                                             {editing ? (
-                                                <textarea
-                                                    className="w-full text-xs text-stone-700 bg-stone-50 rounded-lg p-3 min-h-[120px] resize-y font-mono border border-stone-200"
-                                                    value={editEtc}
-                                                    onChange={(e) =>
-                                                        setEditEtc(
-                                                            e.target.value,
-                                                        )
-                                                    }
-                                                    spellCheck={false}
-                                                />
+                                                <>
+                                                    <TiptapSectionEditor
+                                                        key={`briefing-etc-${wOff}-${briefingEditorKey}`}
+                                                        content={editEtc}
+                                                        onChange={setEditEtc}
+                                                        editable
+                                                        showToolbar
+                                                        placeholder="기타 브리핑을 입력하세요..."
+                                                    />
+                                                    {editAllowed && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                restoreBriefingSection(
+                                                                    "etc",
+                                                                )
+                                                            }
+                                                            className="mt-2 w-full rounded-lg border border-stone-200 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
+                                                        >
+                                                            이 섹션 자동 생성으로
+                                                            복원
+                                                        </button>
+                                                    )}
+                                                </>
                                             ) : (
-                                                <pre className="text-xs text-stone-700 bg-stone-50 rounded-lg p-3 whitespace-pre-wrap font-mono overflow-x-auto min-h-[2.5rem]">
-                                                    {displayEtc || " "}
-                                                </pre>
+                                                <BriefingAutoPreview
+                                                    plain={autoEtc}
+                                                />
                                             )}
                                         </div>
                                         {editAllowed && editing && (
@@ -1295,13 +1487,6 @@ export default function ReportPage() {
                                                     {saving
                                                         ? "저장 중…"
                                                         : "저장하기"}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={restoreAutoToEdits}
-                                                    className="w-full rounded-xl border border-stone-200 py-2.5 text-xs font-medium text-stone-600 hover:bg-stone-50"
-                                                >
-                                                    자동 생성으로 복원
                                                 </button>
                                             </div>
                                         )}
