@@ -11,6 +11,7 @@ export type Task = {
     end_date: string | null;
     priority: string | null;
     issue: string | null;
+    is_plan?: boolean | null;
     created_at: string;
 };
 
