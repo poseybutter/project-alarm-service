@@ -61,15 +61,20 @@ function toLocalYmd(date: Date | undefined): string | null {
     return `${y}-${m}-${d}`;
 }
 
-function getWeekLabel() {
+function getWeekWin(offset: number = 0) {
     const now = new Date();
     const day = now.getDay();
-    const mon = new Date(now);
-    mon.setDate(now.getDate() - ((day + 6) % 7));
-    const fri = new Date(mon);
-    fri.setDate(mon.getDate() + 4);
-    const fmt = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
-    return `${now.getFullYear()}년 ${now.getMonth() + 1}월 · ${fmt(mon)}~${fmt(fri)}`;
+    const wed = new Date(now);
+    wed.setDate(now.getDate() - ((day + 4) % 7) + offset * 7);
+    wed.setHours(0, 0, 0, 0);
+    const nextWed = new Date(wed);
+    nextWed.setDate(wed.getDate() + 7);
+    nextWed.setHours(23, 59, 59, 999);
+    return {
+        from: wed.toISOString().slice(0, 10),
+        to: nextWed.toISOString().slice(0, 10),
+        label: `${wed.getFullYear()}년 ${wed.getMonth() + 1}월 · ${wed.getMonth() + 1}/${wed.getDate()}(수)~${nextWed.getMonth() + 1}/${nextWed.getDate()}(수)`,
+    };
 }
 
 const EMPTY_FORM = {
@@ -82,6 +87,7 @@ const EMPTY_FORM = {
     end_date: "",
     workload: 0,
     issue: "",
+    is_plan: false,
 };
 
 const EMPTY_EDIT = {
@@ -92,7 +98,51 @@ const EMPTY_EDIT = {
     workload: 0,
     issue: "",
     status: "",
+    is_plan: false,
 };
+
+function WorkloadInput({
+    value,
+    onChange,
+}: {
+    value: number;
+    onChange: (v: number) => void;
+}) {
+    return (
+        <div>
+            <div className="flex justify-between items-center mb-1.5">
+                <label className="text-xs font-medium text-stone-500">
+                    공수
+                </label>
+                {value > 0 && (
+                    <span className="text-xs text-amber-600 font-medium">
+                        {formatWorkload(value)}
+                    </span>
+                )}
+            </div>
+            <input
+                type="number"
+                className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm mb-2"
+                placeholder="분 직접 입력"
+                value={value || ""}
+                onChange={(e) => onChange(parseInt(e.target.value) || 0)}
+            />
+            <div className="flex gap-1.5 flex-wrap">
+                {WORKLOAD_PRESETS.map((p) => (
+                    <button
+                        type="button"
+                        key={p.label}
+                        onClick={() => onChange(p.value)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
+                ${value === p.value ? "bg-amber-500 text-white border-amber-500" : "bg-stone-50 text-stone-600 border-stone-200"}`}
+                    >
+                        {p.label}
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+}
 
 export default function TasksPage() {
     const { member: currentMember, role } = useAuth();
@@ -109,13 +159,7 @@ export default function TasksPage() {
     const [editTask, setEditTask] = useState<Task | null>(null);
     const [showEdit, setShowEdit] = useState(false);
     const [form, setForm] = useState({
-        member: "",
-        type: "",
-        proj: "",
-        content: "",
-        priority: "",
-        workload: 0,
-        issue: "",
+        ...EMPTY_FORM,
     });
     const [formDateRange, setFormDateRange] = useState<DateRange | undefined>();
     const [showFormDatePicker, setShowFormDatePicker] = useState(false);
@@ -124,7 +168,6 @@ export default function TasksPage() {
     const [editForm, setEditForm] = useState(EMPTY_EDIT);
     const [editDateRange, setEditDateRange] = useState<DateRange | undefined>();
     const [showEditDatePicker, setShowEditDatePicker] = useState(false);
-    const [projTab, setProjTab] = useState<"mine" | "all">("mine");
     const [editProjTab, setEditProjTab] = useState<"mine" | "all">("mine");
 
     const [filterMember, setFilterMember] = useState("");
@@ -188,10 +231,6 @@ export default function TasksPage() {
         };
     }, []);
 
-    useEffect(() => {
-        setProjTab("mine");
-    }, [form.member]);
-
     async function loadTasks() {
         setLoading(true);
         const { data } = await supabase
@@ -214,19 +253,6 @@ export default function TasksPage() {
         );
     }
 
-    const myProjOptions = useMemo(
-        () =>
-            projects
-                .filter(
-                    (p) =>
-                        (p.members || []).includes(form.member) ||
-                        p.member === form.member,
-                )
-                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
-                .map((p) => ({ value: p.name, label: p.name })),
-        [projects, form.member],
-    );
-
     const allProjOptions = useMemo(
         () =>
             projects
@@ -234,8 +260,34 @@ export default function TasksPage() {
                 .map((p) => ({ value: p.name, label: p.name })),
         [projects],
     );
-
-    const projOptions = projTab === "mine" ? myProjOptions : allProjOptions;
+    const addProjSelectStyles = useMemo(
+        () => ({
+            ...selectStyles,
+            control: (
+                base: Record<string, unknown>,
+                state: { isFocused: boolean },
+            ) => ({
+                ...base,
+                fontSize: "14px",
+                borderColor: state.isFocused ? "#f59e0b" : "#e7e5e4",
+                borderRadius: "8px",
+                boxShadow: state.isFocused ? "0 0 0 2px #fde68a" : "none",
+                "&:hover": { borderColor: "#d6d3d1" },
+                minHeight: "42px",
+                height: "42px",
+            }),
+            valueContainer: (base: Record<string, unknown>) => ({
+                ...base,
+                height: "42px",
+                padding: "0 12px",
+            }),
+            indicatorsContainer: (base: Record<string, unknown>) => ({
+                ...base,
+                height: "42px",
+            }),
+        }),
+        [],
+    );
 
     const editMember = editTask?.member ?? "";
 
@@ -264,6 +316,36 @@ export default function TasksPage() {
     const editProjOptions =
         editProjTab === "mine" ? editMyProjOptions : editAllProjOptions;
 
+    function getNextWeekRange() {
+        const now = new Date();
+        const day = now.getDay();
+        const wed = new Date(now);
+        wed.setDate(now.getDate() - ((day + 4) % 7) + 7);
+        wed.setHours(0, 0, 0, 0);
+        const nextWed = new Date(wed);
+        nextWed.setDate(wed.getDate() + 7);
+        nextWed.setHours(23, 59, 59, 999);
+        return { from: wed, to: nextWed };
+    }
+
+    function toggleIsPlan() {
+        const newVal = !form.is_plan;
+        if (newVal) {
+            const range = getNextWeekRange();
+            setFormDateRange({ from: range.from, to: range.to });
+        }
+        setForm((f) => ({ ...f, is_plan: newVal }));
+    }
+
+    function toggleEditIsPlan() {
+        const newVal = !editForm.is_plan;
+        if (newVal) {
+            const range = getNextWeekRange();
+            setEditDateRange({ from: range.from, to: range.to });
+        }
+        setEditForm((f) => ({ ...f, is_plan: newVal }));
+    }
+
     async function addTask() {
         if (!form.member || !form.proj)
             return alert("담당자와 프로젝트명은 필수예요");
@@ -283,18 +365,11 @@ export default function TasksPage() {
                 workload: form.workload || 0,
                 issue: form.issue || null,
                 status: "대기",
+                is_plan: form.is_plan ?? false,
             },
         ]);
         setShowModal(false);
-        setForm({
-            member: "",
-            type: "",
-            proj: "",
-            content: "",
-            priority: "",
-            workload: 0,
-            issue: "",
-        });
+        setForm({ ...EMPTY_FORM });
         setFormDateRange(undefined);
         setShowFormDatePicker(false);
         loadTasks();
@@ -311,6 +386,7 @@ export default function TasksPage() {
             workload: task.workload || 0,
             issue: task.issue || "",
             status: task.status || "대기",
+            is_plan: task.is_plan ?? false,
         });
         // 날짜 range 설정
         if (task.start_date || task.end_date) {
@@ -339,6 +415,7 @@ export default function TasksPage() {
                 workload: editForm.workload || 0,
                 issue: editForm.issue || null,
                 status: editForm.status,
+                is_plan: editForm.is_plan ?? false,
             })
             .eq("id", editTask.id);
         setShowEdit(false);
@@ -404,12 +481,23 @@ export default function TasksPage() {
         loadTasks();
     }
 
-    const filtered = tasks.filter((t) => {
-        if (filterMember && t.member !== filterMember) return false;
-        if (filterProject && t.proj !== filterProject) return false;
-        if (filterPriority && t.priority !== filterPriority) return false;
-        return true;
-    });
+    const wk = getWeekWin();
+
+    const filtered = tasks
+        .filter((t) => {
+            if (t.is_plan && t.status === "완료") return false;
+            if (t.is_plan) return true;
+            const s = t.start_date || t.end_date;
+            const e = t.end_date || t.start_date;
+            if (!s || !e) return false;
+            return s <= wk.to && e >= wk.from;
+        })
+        .filter((t) => {
+            if (filterMember && t.member !== filterMember) return false;
+            if (filterProject && t.proj !== filterProject) return false;
+            if (filterPriority && t.priority !== filterPriority) return false;
+            return true;
+        });
 
     const stats = {
         total: tasks.length,
@@ -432,49 +520,6 @@ export default function TasksPage() {
 
     const allProjects = [...new Set(tasks.map((t) => t.proj).filter(Boolean))];
 
-    // 공통 모달 폼 컴포넌트
-    function WorkloadInput({
-        value,
-        onChange,
-    }: {
-        value: number;
-        onChange: (v: number) => void;
-    }) {
-        return (
-            <div>
-                <div className="flex justify-between items-center mb-1.5">
-                    <label className="text-xs font-medium text-stone-500">
-                        공수
-                    </label>
-                    {value > 0 && (
-                        <span className="text-xs text-amber-600 font-medium">
-                            {formatWorkload(value)}
-                        </span>
-                    )}
-                </div>
-                <input
-                    type="number"
-                    className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm mb-2"
-                    placeholder="분 직접 입력"
-                    value={value || ""}
-                    onChange={(e) => onChange(parseInt(e.target.value) || 0)}
-                />
-                <div className="flex gap-1.5 flex-wrap">
-                    {WORKLOAD_PRESETS.map((p) => (
-                        <button
-                            key={p.label}
-                            onClick={() => onChange(p.value)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
-                ${value === p.value ? "bg-amber-500 text-white border-amber-500" : "bg-stone-50 text-stone-600 border-stone-200"}`}
-                        >
-                            {p.label}
-                        </button>
-                    ))}
-                </div>
-            </div>
-        );
-    }
-
     const formPeriodLabel = periodButtonLabel(formDateRange);
     const editPeriodLabel = periodButtonLabel(editDateRange);
 
@@ -489,7 +534,7 @@ export default function TasksPage() {
                                 업무 관리
                             </h1>
                             <p className="text-xs text-stone-400 mt-0.5">
-                                {getWeekLabel()}
+                                {wk.label}
                             </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -497,13 +542,8 @@ export default function TasksPage() {
                                 <button
                                     onClick={() => {
                                         setForm({
+                                            ...EMPTY_FORM,
                                             member: currentMember || "",
-                                            type: "",
-                                            proj: "",
-                                            content: "",
-                                            priority: "",
-                                            workload: 0,
-                                            issue: "",
                                         });
                                         setFormDateRange(undefined);
                                         setShowModal(true);
@@ -551,7 +591,9 @@ export default function TasksPage() {
                             <select
                                 className="w-full min-w-0 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600 appearance-none pr-8"
                                 value={filterMember}
-                                onChange={(e) => setFilterMember(e.target.value)}
+                                onChange={(e) =>
+                                    setFilterMember(e.target.value)
+                                }
                             >
                                 <option value="">전체 담당자</option>
                                 {MEMBERS.map((m) => (
@@ -566,7 +608,9 @@ export default function TasksPage() {
                             <select
                                 className="w-full min-w-0 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600 appearance-none pr-8"
                                 value={filterProject}
-                                onChange={(e) => setFilterProject(e.target.value)}
+                                onChange={(e) =>
+                                    setFilterProject(e.target.value)
+                                }
                             >
                                 <option value="">전체 프로젝트</option>
                                 {allProjects.map((p) => (
@@ -581,7 +625,9 @@ export default function TasksPage() {
                             <select
                                 className="w-full min-w-0 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600 appearance-none pr-8"
                                 value={filterPriority}
-                                onChange={(e) => setFilterPriority(e.target.value)}
+                                onChange={(e) =>
+                                    setFilterPriority(e.target.value)
+                                }
                             >
                                 <option value="">전체 우선순위</option>
                                 {["긴급", "높음", "보통", "낮음"].map((p) => (
@@ -665,12 +711,26 @@ export default function TasksPage() {
                                                             </p>
                                                         )}
                                                         {t.issue && (
-                                                            <div className="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded-lg mb-1 border border-amber-100">
+                                                            <div
+                                                                className={`text-xs px-2 py-1 rounded-lg mb-1 border ${
+                                                                    t.priority ===
+                                                                        "긴급" ||
+                                                                    t.status ===
+                                                                        "이슈 및 대기"
+                                                                        ? "bg-amber-200 text-amber-900 border-amber-300"
+                                                                        : "bg-amber-50 text-amber-700 border-amber-100"
+                                                                }`}
+                                                            >
                                                                 이슈: {t.issue}
                                                             </div>
                                                         )}
                                                         {/* 기간 + 공수 */}
                                                         <div className="flex items-center gap-2 text-xs text-stone-400">
+                                                            {t.is_plan && (
+                                                                <span className="text-[10px] px-1.5 py-0.5 bg-violet-100 text-violet-600 rounded font-bold shrink-0">
+                                                                    작업계획
+                                                                </span>
+                                                            )}
                                                             {t.workload > 0 && (
                                                                 <span>
                                                                     {formatWorkload(
@@ -738,7 +798,9 @@ export default function TasksPage() {
                                                         <div className="relative">
                                                             <select
                                                                 value={t.status}
-                                                                onChange={(e) => {
+                                                                onChange={(
+                                                                    e,
+                                                                ) => {
                                                                     const el =
                                                                         e.target;
                                                                     const r =
@@ -760,7 +822,9 @@ export default function TasksPage() {
                                                                     );
                                                                 }}
                                                                 className={`text-xs px-2 py-1 pr-7 rounded-lg font-medium border-0 cursor-pointer appearance-none ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}
-                                                                disabled={isGuest}
+                                                                disabled={
+                                                                    isGuest
+                                                                }
                                                             >
                                                                 {[
                                                                     "대기",
@@ -771,7 +835,9 @@ export default function TasksPage() {
                                                                 ].map((s) => (
                                                                     <option
                                                                         key={s}
-                                                                        value={s}
+                                                                        value={
+                                                                            s
+                                                                        }
                                                                     >
                                                                         {s}
                                                                     </option>
@@ -849,7 +915,8 @@ export default function TasksPage() {
                                 {/* 담당자 */}
                                 <div>
                                     <label className="text-xs font-medium text-stone-500 block mb-2">
-                                        담당자
+                                        담당자{" "}
+                                        <span className="text-red-500">*</span>
                                     </label>
                                     <div className="grid grid-cols-4 gap-2">
                                         {assignableMembers.map((m) => (
@@ -915,7 +982,8 @@ export default function TasksPage() {
                                                 onChange={(e) =>
                                                     setForm({
                                                         ...form,
-                                                        priority: e.target.value,
+                                                        priority:
+                                                            e.target.value,
                                                     })
                                                 }
                                             >
@@ -933,39 +1001,36 @@ export default function TasksPage() {
                                         </div>
                                     </div>
                                 </div>
+                                {/* 작업 계획 토글 */}
+                                <div className="flex items-center justify-between py-1">
+                                    <div>
+                                        <p className="text-sm font-medium text-stone-700">
+                                            작업 계획
+                                        </p>
+                                        <p className="text-xs text-stone-400 mt-0.5">
+                                            예정 업무로 등록해요
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={toggleIsPlan}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+                      ${form.is_plan ? "bg-amber-500" : "bg-stone-200"}`}
+                                    >
+                                        <span
+                                            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform
+                        ${form.is_plan ? "translate-x-6" : "translate-x-1"}`}
+                                        />
+                                    </button>
+                                </div>
                                 {/* 프로젝트 */}
                                 <div>
                                     <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        프로젝트
+                                        프로젝트{" "}
+                                        <span className="text-red-500">*</span>
                                     </label>
-                                    <div className="flex bg-stone-100 rounded-lg p-0.5 mb-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => setProjTab("mine")}
-                                            className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-all
-                        ${
-                            projTab === "mine"
-                                ? "bg-white text-stone-800 shadow-sm"
-                                : "text-stone-400"
-                        }`}
-                                        >
-                                            내 프로젝트
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setProjTab("all")}
-                                            className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-all
-                        ${
-                            projTab === "all"
-                                ? "bg-white text-stone-800 shadow-sm"
-                                : "text-stone-400"
-                        }`}
-                                        >
-                                            전체
-                                        </button>
-                                    </div>
                                     <Select
-                                        options={projOptions}
+                                        options={allProjOptions}
                                         value={
                                             form.proj
                                                 ? {
@@ -980,14 +1045,9 @@ export default function TasksPage() {
                                                 proj: opt?.value ?? "",
                                             })
                                         }
-                                        placeholder={
-                                            form.member
-                                                ? "프로젝트 선택"
-                                                : "담당자 선택"
-                                        }
-                                        isDisabled={!form.member}
+                                        placeholder="프로젝트 검색"
                                         isSearchable
-                                        styles={selectStyles}
+                                        styles={addProjSelectStyles}
                                         menuPortalTarget={
                                             typeof document !== "undefined"
                                                 ? document.body
@@ -1113,7 +1173,7 @@ export default function TasksPage() {
                                 {/* 이슈/비고 */}
                                 <div>
                                     <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        이슈 / 비고 (선택)
+                                        이슈 / 비고
                                     </label>
                                     <input
                                         className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
@@ -1244,7 +1304,8 @@ export default function TasksPage() {
                                                 onChange={(e) =>
                                                     setEditForm({
                                                         ...editForm,
-                                                        priority: e.target.value,
+                                                        priority:
+                                                            e.target.value,
                                                     })
                                                 }
                                             >
@@ -1261,6 +1322,28 @@ export default function TasksPage() {
                                             <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
                                         </div>
                                     </div>
+                                </div>
+                                {/* 작업 계획 토글 */}
+                                <div className="flex items-center justify-between py-1">
+                                    <div>
+                                        <p className="text-sm font-medium text-stone-700">
+                                            작업 계획
+                                        </p>
+                                        <p className="text-xs text-stone-400 mt-0.5">
+                                            예정 업무로 등록해요
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={toggleEditIsPlan}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+                      ${editForm.is_plan ? "bg-amber-500" : "bg-stone-200"}`}
+                                    >
+                                        <span
+                                            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform
+                        ${editForm.is_plan ? "translate-x-6" : "translate-x-1"}`}
+                                        />
+                                    </button>
                                 </div>
                                 {/* 프로젝트 */}
                                 <div>
