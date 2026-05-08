@@ -329,7 +329,8 @@ function formatBriefingSection(tasks: Task[], section: BriefSection): string {
         const multiMember = uniqMembers.length > 1;
 
         const bodyLines: string[] = [];
-        for (const t of groupTasks) {
+        const normalTasks = groupTasks.filter((t) => !t.is_plan);
+        for (const t of normalTasks) {
             const raw = (t.content || "").trim();
             if (raw) {
                 for (const line of raw.split("\n")) {
@@ -350,6 +351,28 @@ function formatBriefingSection(tasks: Task[], section: BriefSection): string {
                         ? `⚠️ @${t.member} · 이슈: ${issueText} — ${t.status}`
                         : `⚠️ 이슈: ${issueText} — ${t.status}`,
                 );
+            }
+        }
+
+        const planTasks = groupTasks.filter(
+            (t) => t.is_plan && t.status !== "완료",
+        );
+        for (const t of planTasks) {
+            const startStr = t.start_date
+                ? t.start_date.slice(5).replace("-", "/")
+                : "";
+            const endStr = t.end_date
+                ? t.end_date.slice(5).replace("-", "/")
+                : "";
+            const dateStr =
+                startStr && endStr
+                    ? `${startStr}~${endStr} `
+                    : endStr
+                      ? `~${endStr} `
+                      : "";
+            const raw = (t.content || "").trim();
+            if (raw) {
+                bodyLines.push(`⇒ **[작업 계획]** ${dateStr}${raw}`);
             }
         }
 
@@ -617,12 +640,13 @@ export default function ReportPage() {
     const wTasks = useMemo(
         () =>
             tasks.filter((t) => {
+                if (t.is_plan && t.status !== "완료") return true;
                 const s = t.start_date || t.end_date;
                 const e = t.end_date || t.start_date;
                 if (!s || !e) return false;
                 return s <= wk.to && e >= wk.from;
             }),
-        [tasks, wOff],
+        [tasks, wk.from, wk.to],
     );
 
     const mTasks = useMemo(
@@ -1057,7 +1081,6 @@ export default function ReportPage() {
                                     </div>
                                 ))}
                             </div>
-
 
                             {/* 주간 전달사항 */}
                             {mode === "weekly" && (
