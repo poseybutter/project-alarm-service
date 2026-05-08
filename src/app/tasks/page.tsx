@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
 import type { Task, Project } from "@/lib/types";
-import { getDiff, formatWorkload } from "@/lib/utils";
+import { getDiff, formatWorkload, normalizeProject } from "@/lib/utils";
 import {
     MEMBERS,
     TYPE_COLORS,
@@ -21,9 +21,12 @@ import Avatar from "@/components/Avatar";
 import LevelUpOverlay from "@/components/LevelUpOverlay";
 import ExpPopup, { type ExpPopupType } from "@/components/ExpPopup";
 import NotificationButton from "@/components/NotificationButton";
+import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { DayPicker, DateRange } from "react-day-picker";
 import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
+import Select from "react-select";
+import { selectStyles } from "@/lib/reactSelectStyles";
 
 const MEMBER_BORDER: Record<string, string> = {
     조현석: "border-purple-400 bg-purple-100 text-purple-700",
@@ -120,6 +123,8 @@ export default function TasksPage() {
     const [editForm, setEditForm] = useState(EMPTY_EDIT);
     const [editDateRange, setEditDateRange] = useState<DateRange | undefined>();
     const [showEditDatePicker, setShowEditDatePicker] = useState(false);
+    const [projTab, setProjTab] = useState<"mine" | "all">("mine");
+    const [editProjTab, setEditProjTab] = useState<"mine" | "all">("mine");
 
     const [filterMember, setFilterMember] = useState("");
     const [filterProject, setFilterProject] = useState("");
@@ -182,6 +187,10 @@ export default function TasksPage() {
         };
     }, []);
 
+    useEffect(() => {
+        setProjTab("mine");
+    }, [form.member]);
+
     async function loadTasks() {
         setLoading(true);
         const { data } = await supabase
@@ -197,10 +206,62 @@ export default function TasksPage() {
             .from("projects")
             .select("*")
             .order("name");
-        setProjects(data || []);
+        setProjects(
+            (data || []).map((row) =>
+                normalizeProject(row as Record<string, unknown>),
+            ),
+        );
     }
 
-    const myProjects = projects.filter((p) => p.member === form.member);
+    const myProjOptions = useMemo(
+        () =>
+            projects
+                .filter(
+                    (p) =>
+                        (p.members || []).includes(form.member) ||
+                        p.member === form.member,
+                )
+                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+                .map((p) => ({ value: p.name, label: p.name })),
+        [projects, form.member],
+    );
+
+    const allProjOptions = useMemo(
+        () =>
+            projects
+                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+                .map((p) => ({ value: p.name, label: p.name })),
+        [projects],
+    );
+
+    const projOptions = projTab === "mine" ? myProjOptions : allProjOptions;
+
+    const editMember = editTask?.member ?? "";
+
+    const editMyProjOptions = useMemo(
+        () =>
+            projects
+                .filter(
+                    (p) =>
+                        editMember &&
+                        ((p.members || []).includes(editMember) ||
+                            p.member === editMember),
+                )
+                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+                .map((p) => ({ value: p.name, label: p.name })),
+        [projects, editMember],
+    );
+
+    const editAllProjOptions = useMemo(
+        () =>
+            projects
+                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+                .map((p) => ({ value: p.name, label: p.name })),
+        [projects],
+    );
+
+    const editProjOptions =
+        editProjTab === "mine" ? editMyProjOptions : editAllProjOptions;
 
     async function addTask() {
         if (!form.member || !form.proj)
@@ -240,6 +301,7 @@ export default function TasksPage() {
 
     function openEdit(task: Task) {
         setEditTask(task);
+        setEditProjTab("mine");
         setEditForm({
             type: task.type || "",
             proj: task.proj || "",
@@ -859,28 +921,65 @@ export default function TasksPage() {
                                     <label className="text-xs font-medium text-stone-500 block mb-1.5">
                                         프로젝트
                                     </label>
-                                    <select
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white"
-                                        value={form.proj}
-                                        onChange={(e) =>
+                                    <div className="flex bg-stone-100 rounded-lg p-0.5 mb-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setProjTab("mine")}
+                                            className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-all
+                        ${
+                            projTab === "mine"
+                                ? "bg-white text-stone-800 shadow-sm"
+                                : "text-stone-400"
+                        }`}
+                                        >
+                                            내 프로젝트
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setProjTab("all")}
+                                            className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-all
+                        ${
+                            projTab === "all"
+                                ? "bg-white text-stone-800 shadow-sm"
+                                : "text-stone-400"
+                        }`}
+                                        >
+                                            전체
+                                        </button>
+                                    </div>
+                                    <Select
+                                        options={projOptions}
+                                        value={
+                                            form.proj
+                                                ? {
+                                                      value: form.proj,
+                                                      label: form.proj,
+                                                  }
+                                                : null
+                                        }
+                                        onChange={(opt) =>
                                             setForm({
                                                 ...form,
-                                                proj: e.target.value,
+                                                proj: opt?.value ?? "",
                                             })
                                         }
-                                        disabled={!form.member}
-                                    >
-                                        <option value="">
-                                            {form.member
-                                                ? "선택"
-                                                : "담당자를 먼저 선택해주세요"}
-                                        </option>
-                                        {myProjects.map((p) => (
-                                            <option key={p.id} value={p.name}>
-                                                {p.name}
-                                            </option>
-                                        ))}
-                                    </select>
+                                        placeholder={
+                                            form.member
+                                                ? "프로젝트 선택"
+                                                : "담당자 선택"
+                                        }
+                                        isDisabled={!form.member}
+                                        isSearchable
+                                        styles={selectStyles}
+                                        menuPortalTarget={
+                                            typeof document !== "undefined"
+                                                ? document.body
+                                                : null
+                                        }
+                                        noOptionsMessage={() =>
+                                            "검색 결과가 없어요"
+                                        }
+                                    />
                                 </div>
                                 {/* 업무 내용 */}
                                 <div>
@@ -958,6 +1057,11 @@ export default function TasksPage() {
                                                                 setFormDateRange
                                                             }
                                                             locale={ko}
+                                                            hideNavigation
+                                                            components={{
+                                                                MonthCaption:
+                                                                    DatePickerCaption,
+                                                            }}
                                                         />
                                                     </div>
                                                     <div className="mt-3 flex gap-2">
@@ -1137,14 +1241,62 @@ export default function TasksPage() {
                                     <label className="text-xs font-medium text-stone-500 block mb-1.5">
                                         프로젝트
                                     </label>
-                                    <input
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                                        value={editForm.proj}
-                                        onChange={(e) =>
+                                    <div className="flex bg-stone-100 rounded-lg p-0.5 mb-2">
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setEditProjTab("mine")
+                                            }
+                                            className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-all
+                        ${
+                            editProjTab === "mine"
+                                ? "bg-white text-stone-800 shadow-sm"
+                                : "text-stone-400"
+                        }`}
+                                        >
+                                            내 프로젝트
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setEditProjTab("all")
+                                            }
+                                            className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-all
+                        ${
+                            editProjTab === "all"
+                                ? "bg-white text-stone-800 shadow-sm"
+                                : "text-stone-400"
+                        }`}
+                                        >
+                                            전체
+                                        </button>
+                                    </div>
+                                    <Select
+                                        options={editProjOptions}
+                                        value={
+                                            editForm.proj
+                                                ? {
+                                                      value: editForm.proj,
+                                                      label: editForm.proj,
+                                                  }
+                                                : null
+                                        }
+                                        onChange={(opt) =>
                                             setEditForm({
                                                 ...editForm,
-                                                proj: e.target.value,
+                                                proj: opt?.value ?? "",
                                             })
+                                        }
+                                        placeholder="프로젝트 선택"
+                                        isSearchable
+                                        styles={selectStyles}
+                                        menuPortalTarget={
+                                            typeof document !== "undefined"
+                                                ? document.body
+                                                : null
+                                        }
+                                        noOptionsMessage={() =>
+                                            "검색 결과가 없어요"
                                         }
                                     />
                                 </div>
@@ -1226,6 +1378,11 @@ export default function TasksPage() {
                                                                 setEditDateRange
                                                             }
                                                             locale={ko}
+                                                            hideNavigation
+                                                            components={{
+                                                                MonthCaption:
+                                                                    DatePickerCaption,
+                                                            }}
                                                         />
                                                     </div>
                                                     <div className="mt-3 flex gap-2">

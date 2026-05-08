@@ -26,14 +26,21 @@ body {
     font-family: Arial, Helvetica, sans-serif;
 }
 
-/* Safari/iOS 호환성 */
+/* Safari/iOS 호환성 — button은 제외(모달 내 토글 클릭 불가 등 방지) */
 input,
 select,
-textarea,
-button {
+textarea {
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
+}
+
+/* 체크박스·라디오는 appearance 제거 시 클릭/표시가 깨지므로 원래 렌더링 유지 */
+input[type="checkbox"],
+input[type="radio"] {
+    -webkit-appearance: auto;
+    -moz-appearance: auto;
+    appearance: auto;
 }
 
 select {
