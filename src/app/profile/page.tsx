@@ -14,13 +14,14 @@ import AuthGuard from "@/components/AuthGuard";
 import UserMenu from "@/components/UserMenu";
 import NotificationButton from "@/components/NotificationButton";
 import Avatar from "@/components/Avatar";
+import { PageSpinner } from "@/components/Spinner";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { DayPicker, DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
 import { ko } from "date-fns/locale";
 import type { Player, Task } from "@/lib/types";
 import { formatWorkload } from "@/lib/utils";
-import { BAR_COLORS } from "@/lib/constants";
+import { BAR_COLORS, MEMBERS, MEMBER_COLORS } from "@/lib/constants";
 
 const TITLES = [
     {
@@ -81,8 +82,22 @@ const TITLES = [
     },
 ];
 
+function getThisWeekRange() {
+    const now = new Date();
+    const day = now.getDay();
+    const wed = new Date(now);
+    wed.setDate(now.getDate() - ((day + 4) % 7));
+    wed.setHours(0, 0, 0, 0);
+    const nextWed = new Date(wed);
+    nextWed.setDate(wed.getDate() + 7);
+    return {
+        from: wed.toISOString().slice(0, 10),
+        to: nextWed.toISOString().slice(0, 10),
+    };
+}
+
 export default function ProfilePage() {
-    const { member, refreshAvatar, role } = useAuth();
+    const { member, refreshAvatar, role, loading: authLoading } = useAuth();
     const isGuest = member === "GUEST" || role === "guest";
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -91,6 +106,7 @@ export default function ProfilePage() {
     const [tab, setTab] = useState<"info" | "history" | "titles">("info");
     const [players, setPlayers] = useState<Player[]>([]);
     const [tasks, setTasks] = useState<Task[]>([]);
+    const [weekTasks, setWeekTasks] = useState<Task[]>([]);
     const [toast, setToast] = useState("");
     const [historyFilter, setHistoryFilter] = useState<
         "week" | "lastweek" | "month" | "custom"
@@ -106,19 +122,33 @@ export default function ProfilePage() {
     }, [member]); // member 있을 때만 실행
 
     // hooks 다 선언하고 나서 조건 체크
+    if (authLoading) return <PageSpinner />;
     if (!member) return null;
 
     async function loadAll() {
-        const [{ data: playerData }, { data: taskData }] = await Promise.all([
+        const [
+            { data: playerData },
+            { data: taskData },
+            { data: teamTaskData },
+        ] = await Promise.all([
             supabase.from("players").select("*"),
             supabase
                 .from("tasks")
                 .select("*")
                 .eq("member", member)
                 .order("created_at", { ascending: false }),
+            supabase.from("tasks").select("*").in("member", MEMBERS),
         ]);
         setPlayers(playerData || []);
         setTasks(taskData || []);
+
+        const wr = getThisWeekRange();
+        const weekly = (teamTaskData || []).filter((t) => {
+            const s = t.start_date || t.end_date;
+            if (!s) return false;
+            return s >= wr.from && s < wr.to;
+        });
+        setWeekTasks(weekly);
     }
 
     function showToastMsg(msg: string) {
@@ -580,6 +610,79 @@ export default function ProfilePage() {
                                                 </div>
                                             );
                                         })}
+                                </div>
+                            </div>
+                            <div className="bg-white rounded-xl border border-stone-200 p-4 mb-3">
+                                <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-3">
+                                    이번 주 팀원별 공수
+                                </p>
+                                <div className="space-y-3">
+                                    {MEMBERS.map((m) => {
+                                        const mWL = weekTasks
+                                            .filter((t) => t.member === m)
+                                            .reduce(
+                                                (s, t) => s + (t.workload || 0),
+                                                0,
+                                            );
+                                        const mDone = weekTasks
+                                            .filter(
+                                                (t) =>
+                                                    t.member === m &&
+                                                    t.status === "완료",
+                                            )
+                                            .reduce(
+                                                (s, t) => s + (t.workload || 0),
+                                                0,
+                                            );
+                                        const maxWL = Math.max(
+                                            ...MEMBERS.map((mem) =>
+                                                weekTasks
+                                                    .filter(
+                                                        (t) => t.member === mem,
+                                                    )
+                                                    .reduce(
+                                                        (s, t) =>
+                                                            s +
+                                                            (t.workload || 0),
+                                                        0,
+                                                    ),
+                                            ),
+                                            1,
+                                        );
+                                        const c = MEMBER_COLORS[m];
+                                        return (
+                                            <div
+                                                key={m}
+                                                className="flex items-center gap-3"
+                                            >
+                                                <Avatar
+                                                    name={m}
+                                                    size={24}
+                                                    showName
+                                                />
+                                                <div className="flex-1 relative h-2 bg-stone-100 rounded-full overflow-hidden">
+                                                    <div
+                                                        className="absolute inset-y-0 left-0 rounded-full"
+                                                        style={{
+                                                            width: `${(mWL / maxWL) * 100}%`,
+                                                            background: c.bar,
+                                                            opacity: 0.25,
+                                                        }}
+                                                    />
+                                                    <div
+                                                        className="absolute inset-y-0 left-0 rounded-full"
+                                                        style={{
+                                                            width: `${(mDone / maxWL) * 100}%`,
+                                                            background: c.bar,
+                                                        }}
+                                                    />
+                                                </div>
+                                                <span className="text-xs text-stone-500 w-10 text-right font-medium shrink-0">
+                                                    {formatWorkload(mWL)}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>
