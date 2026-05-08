@@ -29,6 +29,7 @@ import LevelUpOverlay from "@/components/LevelUpOverlay";
 import MvpOverlay from "@/components/MvpOverlay";
 import ExpPopup, { type ExpPopupType } from "@/components/ExpPopup";
 import AttendanceHeatmap from "@/components/AttendanceHeatmap";
+import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { DayPicker } from "react-day-picker";
 import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
@@ -175,6 +176,11 @@ function QuestFormModal({
                                                     });
                                                 }}
                                                 locale={ko}
+                                                hideNavigation
+                                                components={{
+                                                    MonthCaption:
+                                                        DatePickerCaption,
+                                                }}
                                             />
                                         </div>
                                         <div className="mt-3 flex gap-2">
@@ -325,17 +331,13 @@ function HomeMyTaskRow({
                     }}
                     className={`shrink-0 cursor-pointer rounded-lg border-0 px-2 py-1 text-xs font-medium ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}
                 >
-                    {[
-                        "대기",
-                        "시작 전",
-                        "진행중",
-                        "이슈 및 대기",
-                        "완료",
-                    ].map((s) => (
-                        <option key={s} value={s}>
-                            {s}
-                        </option>
-                    ))}
+                    {["대기", "시작 전", "진행중", "이슈 및 대기", "완료"].map(
+                        (s) => (
+                            <option key={s} value={s}>
+                                {s}
+                            </option>
+                        ),
+                    )}
                 </select>
             </div>
         </div>
@@ -735,7 +737,11 @@ export default function HomePage() {
         loadData();
     }
 
-    async function submitDragQuest(content: string, endDate: string, task: Task) {
+    async function submitDragQuest(
+        content: string,
+        endDate: string,
+        task: Task,
+    ) {
         if (!member) return;
         await supabase.from("quests").insert([
             {
@@ -846,542 +852,552 @@ export default function HomePage() {
                 onDragStart={onDragStart}
                 onDragEnd={onDragEnd}
             >
-            <div className="min-h-screen bg-[#f7f6f3]">
-                <Header title="UD2팀 업무" />
+                <div className="min-h-screen bg-[#f7f6f3]">
+                    <Header title="UD2팀 업무" />
 
-                <div className="max-w-2xl mx-auto px-4 pt-3 pb-24">
-                    {/* 프로필 카드 */}
-                    <div className="bg-white rounded-2xl border border-stone-200 p-4 mb-3">
-                        <div className="flex items-center gap-3 mb-3">
-                            {isGuest ? (
-                                <div className="w-10 h-10 rounded-full bg-stone-100 flex items-center justify-center text-xl">
-                                    👤
-                                </div>
-                            ) : (
-                                <Avatar name={member} size={40} />
-                            )}
-                            <div className="flex-1">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-sm font-bold text-stone-900">
-                                        {member}
-                                    </span>
-                                    {isGuest ? (
-                                        <span className="text-xs px-2 py-0.5 bg-stone-200 text-stone-600 rounded-full font-medium">
-                                            게스트
+                    <div className="max-w-2xl mx-auto px-4 pt-3 pb-24">
+                        {/* 프로필 카드 */}
+                        <div className="bg-white rounded-2xl border border-stone-200 p-4 mb-3">
+                            <div className="flex items-center gap-3 mb-3">
+                                {isGuest ? (
+                                    <div className="w-10 h-10 rounded-full bg-stone-100 flex items-center justify-center text-xl">
+                                        👤
+                                    </div>
+                                ) : (
+                                    <Avatar name={member} size={40} />
+                                )}
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm font-bold text-stone-900">
+                                            {member}
                                         </span>
-                                    ) : (
-                                        <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
-                                            {lv.name}
-                                        </span>
+                                        {isGuest ? (
+                                            <span className="text-xs px-2 py-0.5 bg-stone-200 text-stone-600 rounded-full font-medium">
+                                                게스트
+                                            </span>
+                                        ) : (
+                                            <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
+                                                {lv.name}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {!isGuest && (
+                                        <button
+                                            onClick={(e) =>
+                                                void handleAttend(e)
+                                            }
+                                            disabled={attended}
+                                            className={`text-xs mt-1 px-2 py-0.5 rounded-full font-medium transition-all
+                    ${attended ? "bg-green-100 text-green-700" : "bg-amber-500 text-white"}`}
+                                        >
+                                            {attended
+                                                ? "✅ 출석완료"
+                                                : "☀️ 출석 체크"}
+                                        </button>
                                     )}
                                 </div>
                                 {!isGuest && (
-                                    <button
-                                        onClick={(e) => void handleAttend(e)}
-                                        disabled={attended}
-                                        className={`text-xs mt-1 px-2 py-0.5 rounded-full font-medium transition-all
-                    ${attended ? "bg-green-100 text-green-700" : "bg-amber-500 text-white"}`}
-                                    >
-                                        {attended
-                                            ? "✅ 출석완료"
-                                            : "☀️ 출석 체크"}
-                                    </button>
+                                    <div className="text-right text-xs text-stone-400">
+                                        <div>
+                                            🔥 {player?.attend_streak || 0}일
+                                            연속
+                                        </div>
+                                        <div>
+                                            이달 {stats.exp.toLocaleString()}{" "}
+                                            EXP
+                                        </div>
+                                    </div>
                                 )}
                             </div>
                             {!isGuest && (
-                                <div className="text-right text-xs text-stone-400">
-                                    <div>
-                                        🔥 {player?.attend_streak || 0}일 연속
+                                <div>
+                                    <div className="flex justify-between text-xs text-stone-400 mb-1">
+                                        <span>
+                                            {player?.exp.toLocaleString() || 0}{" "}
+                                            EXP
+                                        </span>
+                                        <span>
+                                            다음 레벨까지{" "}
+                                            {next
+                                                ? (
+                                                      next.exp -
+                                                      (player?.exp || 0)
+                                                  ).toLocaleString()
+                                                : 0}{" "}
+                                            EXP
+                                        </span>
                                     </div>
-                                    <div>
-                                        이달 {stats.exp.toLocaleString()} EXP
+                                    <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
+                                        <div
+                                            className="h-full rounded-full transition-all duration-500"
+                                            style={{
+                                                width: `${pct}%`,
+                                                background: barColor,
+                                            }}
+                                        />
                                     </div>
                                 </div>
                             )}
                         </div>
+
                         {!isGuest && (
+                            <div className="mb-3 w-full min-w-0 bg-white rounded-xl border border-stone-200 p-4">
+                                <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-3">
+                                    활동 기록
+                                </p>
+                                <AttendanceHeatmap member={member ?? ""} />
+                            </div>
+                        )}
+
+                        {isGuest ? (
+                            <>
+                                <div className="bg-white rounded-xl border border-stone-200 px-4 py-3 mb-3">
+                                    <p className="text-sm text-stone-500">
+                                        게스트 계정으로 로그인되었어요. 업무
+                                        현황을 확인할 수 있어요.
+                                    </p>
+                                </div>
+                                <div className="mb-3">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
+                                            팀원별 업무 현황
+                                        </span>
+                                    </div>
+                                    <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+                                        {guestTeamSummary.map((row, i) => (
+                                            <div
+                                                key={row.name}
+                                                className={`px-4 py-3 ${i < guestTeamSummary.length - 1 ? "border-b border-stone-100" : ""}`}
+                                            >
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <Avatar
+                                                            name={row.name}
+                                                            size={28}
+                                                        />
+                                                        <span className="text-sm font-medium text-stone-800">
+                                                            {row.name}
+                                                        </span>
+                                                        {row.hasUrgent && (
+                                                            <span
+                                                                className="text-xs"
+                                                                title="긴급 업무 있음"
+                                                            >
+                                                                ⭐
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-xs text-stone-500">
+                                                        진행중 {row.doingCount}
+                                                        건 / 완료{" "}
+                                                        {row.doneCount}건
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="mb-3">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
+                                            마감 임박 업무
+                                        </span>
+                                        <span className="text-xs text-red-500 font-medium">
+                                            {guestUrgentTasks.length}건
+                                        </span>
+                                    </div>
+                                    {guestUrgentTasks.length === 0 ? (
+                                        <div className="bg-white rounded-xl border border-stone-200 py-10 text-center">
+                                            <p className="text-stone-400 text-sm">
+                                                마감 임박 업무가 없어요
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+                                            {guestUrgentTasks.map((t, i) => {
+                                                const diff = getDiff(
+                                                    t.end_date,
+                                                );
+                                                return (
+                                                    <div
+                                                        key={t.id}
+                                                        className={`flex items-center gap-3 px-4 py-3 ${i < guestUrgentTasks.length - 1 ? "border-b border-stone-100" : ""}`}
+                                                    >
+                                                        <Avatar
+                                                            name={t.member}
+                                                            size={24}
+                                                        />
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-sm font-medium text-stone-800 truncate">
+                                                                {t.proj}
+                                                            </p>
+                                                            <p className="text-xs text-stone-400">
+                                                                {t.member}
+                                                            </p>
+                                                        </div>
+                                                        <span className="text-xs text-red-500 font-medium shrink-0">
+                                                            D
+                                                            {diff !== null &&
+                                                            diff < 0
+                                                                ? `+${Math.abs(diff)}`
+                                                                : `-${diff}`}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                {/* 스탯 */}
+                                <div className="grid grid-cols-3 gap-2 mb-3">
+                                    {[
+                                        {
+                                            icon: "☀️",
+                                            label: "출석체크",
+                                            value: attended ? "완료" : "미완료",
+                                            onClick: (ev: React.MouseEvent) =>
+                                                void handleAttend(ev),
+                                            highlight: !attended,
+                                        },
+                                        {
+                                            icon: "📋",
+                                            label: "퀘스트",
+                                            value: quests.length,
+                                            onClick: null,
+                                            highlight: false,
+                                        },
+                                        {
+                                            icon: "📊",
+                                            label: "월 EXP",
+                                            value: stats.exp,
+                                            onClick: null,
+                                            highlight: false,
+                                        },
+                                    ].map((s) => (
+                                        <button
+                                            key={s.label}
+                                            onClick={s.onClick || undefined}
+                                            className={`rounded-xl border p-2.5 text-center transition-all
+                  ${s.highlight ? "bg-amber-500 border-amber-500 text-white" : "bg-white border-stone-200 text-stone-800"}`}
+                                        >
+                                            <div className="text-lg">
+                                                {s.icon}
+                                            </div>
+                                            <div className="text-sm font-bold mt-0.5">
+                                                {s.value}
+                                            </div>
+                                            <div
+                                                className={`text-xs mt-0.5 ${s.highlight ? "text-amber-100" : "text-stone-400"}`}
+                                            >
+                                                {s.label}
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* 오늘의 퀘스트 */}
+                                <div className="mb-3">
+                                    <div className="mb-2 flex items-center justify-between">
+                                        <span className="text-xs font-bold uppercase tracking-wide text-stone-500">
+                                            오늘의 퀘스트
+                                        </span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs text-amber-600">
+                                                완료 시 EXP 지급
+                                            </span>
+                                            <button
+                                                onClick={() =>
+                                                    setShowAddQuest(true)
+                                                }
+                                                className="rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-medium text-white"
+                                            >
+                                                + 추가
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <DroppableQuestZone>
+                                        {quests.length === 0 ? (
+                                            <div className="rounded-xl border border-stone-200 bg-white py-10 text-center">
+                                                <p className="text-sm text-stone-400">
+                                                    오늘 퀘스트가 없어요
+                                                </p>
+                                                <p className="mt-1 text-xs text-stone-300">
+                                                    + 추가 버튼으로 퀘스트를
+                                                    만들어보세요!
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+                                                {quests.map((q, i) => {
+                                                    const diff = getDiff(
+                                                        q.end_date,
+                                                    );
+                                                    const linkedProj =
+                                                        q.task_id != null
+                                                            ? myTasks.find(
+                                                                  (t) =>
+                                                                      Number(
+                                                                          t.id,
+                                                                      ) ===
+                                                                      Number(
+                                                                          q.task_id,
+                                                                      ),
+                                                              )?.proj
+                                                            : undefined;
+                                                    return (
+                                                        <div
+                                                            key={q.id}
+                                                            className={`flex items-center gap-3 px-4 py-3
+                        ${i < quests.length - 1 ? "border-b border-stone-100" : ""}`}
+                                                        >
+                                                            <button
+                                                                onClick={(ev) =>
+                                                                    void completeQuest(
+                                                                        q,
+                                                                        ev,
+                                                                    )
+                                                                }
+                                                                className="h-5 w-5 shrink-0 rounded-full border-2 border-stone-300 transition-colors hover:border-amber-500"
+                                                            />
+                                                            <div className="min-w-0 flex-1">
+                                                                <p className="truncate text-sm font-medium text-stone-800">
+                                                                    {q.content}
+                                                                </p>
+                                                                <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                                                                    {(q.proj ||
+                                                                        linkedProj) && (
+                                                                        <span className="truncate text-xs text-stone-400">
+                                                                            {q.proj ||
+                                                                                linkedProj}
+                                                                        </span>
+                                                                    )}
+                                                                    {q.end_date && (
+                                                                        <span
+                                                                            className={`text-xs font-medium ${diff !== null && diff <= 3 ? "text-red-500" : "text-stone-400"}`}
+                                                                        >
+                                                                            {q.end_date
+                                                                                .slice(
+                                                                                    5,
+                                                                                )
+                                                                                .replace(
+                                                                                    "-",
+                                                                                    "/",
+                                                                                )}
+                                                                            {diff !==
+                                                                                null &&
+                                                                                ` D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex shrink-0 items-center gap-1.5">
+                                                                <span className="text-xs font-medium text-green-600">
+                                                                    +10 EXP
+                                                                </span>
+                                                                <button
+                                                                    onClick={() =>
+                                                                        openEditQuest(
+                                                                            q,
+                                                                        )
+                                                                    }
+                                                                    className="text-xs text-stone-300 transition-colors hover:text-amber-500"
+                                                                >
+                                                                    수정
+                                                                </button>
+                                                                <button
+                                                                    onClick={() =>
+                                                                        deleteQuest(
+                                                                            q.id,
+                                                                        )
+                                                                    }
+                                                                    className="text-xs text-stone-300 transition-colors hover:text-red-400"
+                                                                >
+                                                                    삭제
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </DroppableQuestZone>
+                                </div>
+
+                                {/* 내 업무 */}
+                                <div className="mb-3">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
+                                            내 업무
+                                        </span>
+                                        <span className="text-xs text-stone-400">
+                                            {activeMyTasks.length}건
+                                        </span>
+                                    </div>
+                                    {activeMyTasks.length === 0 ? (
+                                        <div className="bg-white rounded-xl border border-stone-200 py-10 text-center">
+                                            <p className="text-stone-400 text-sm">
+                                                진행 중인 업무가 없어요
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+                                            {activeMyTasks.map((t, i) => (
+                                                <HomeMyTaskRow
+                                                    key={t.id}
+                                                    task={t}
+                                                    showBorderBottom={
+                                                        i <
+                                                        activeMyTasks.length - 1
+                                                    }
+                                                    onStatusChange={
+                                                        updateTaskStatus
+                                                    }
+                                                />
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
+
+                        {/* 마감 임박 */}
+                        {!isGuest && urgentQuests.length > 0 && (
                             <div>
-                                <div className="flex justify-between text-xs text-stone-400 mb-1">
-                                    <span>
-                                        {player?.exp.toLocaleString() || 0} EXP
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
+                                        마감 임박
                                     </span>
-                                    <span>
-                                        다음 레벨까지{" "}
-                                        {next
-                                            ? (
-                                                  next.exp - (player?.exp || 0)
-                                              ).toLocaleString()
-                                            : 0}{" "}
-                                        EXP
+                                    <span className="text-xs text-red-500 font-medium">
+                                        {urgentQuests.length}건
                                     </span>
                                 </div>
-                                <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
-                                    <div
-                                        className="h-full rounded-full transition-all duration-500"
-                                        style={{
-                                            width: `${pct}%`,
-                                            background: barColor,
-                                        }}
-                                    />
+                                <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+                                    {urgentQuests.map((q, i) => {
+                                        const diff = getDiff(q.end_date);
+                                        return (
+                                            <div
+                                                key={q.id}
+                                                className={`flex items-center gap-3 px-4 py-3 ${i < urgentQuests.length - 1 ? "border-b border-stone-100" : ""}`}
+                                            >
+                                                <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-medium text-stone-800 truncate">
+                                                        {q.content}
+                                                    </p>
+                                                    {q.proj && (
+                                                        <p className="text-xs text-stone-400 truncate">
+                                                            {q.proj}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                <span className="text-xs text-red-500 font-medium shrink-0">
+                                                    D
+                                                    {diff !== null && diff < 0
+                                                        ? "+" + Math.abs(diff)
+                                                        : "-" + diff}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}
                     </div>
 
                     {!isGuest && (
-                        <div className="mb-3 w-full min-w-0 bg-white rounded-xl border border-stone-200 p-4">
-                            <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-3">
-                                활동 기록
-                            </p>
-                            <AttendanceHeatmap member={member ?? ""} />
+                        <DragOverlay className="pointer-events-none">
+                            {activeTask && (
+                                <div className="box-border w-[min(calc(100vw-2rem),42rem)] max-w-2xl rounded-xl border-2 border-amber-400 bg-white px-4 py-3 text-sm font-medium text-stone-800 opacity-90 shadow-xl">
+                                    {activeTask.proj}
+                                </div>
+                            )}
+                        </DragOverlay>
+                    )}
+
+                    {/* 퀘스트 추가 모달 */}
+                    {showAddQuest && (
+                        <QuestFormModal
+                            title="퀘스트 추가"
+                            questForm={questForm}
+                            setQuestForm={setQuestForm}
+                            onSubmit={addQuest}
+                            onClose={() => {
+                                setShowAddQuest(false);
+                                setQuestForm({
+                                    content: "",
+                                    proj: "",
+                                    end_date: "",
+                                });
+                            }}
+                        />
+                    )}
+
+                    {/* 퀘스트 수정 모달 */}
+                    {showEditQuest && (
+                        <QuestFormModal
+                            title="퀘스트 수정"
+                            questForm={questForm}
+                            setQuestForm={setQuestForm}
+                            onSubmit={saveEditQuest}
+                            onClose={() => {
+                                setShowEditQuest(false);
+                                setEditTarget(null);
+                                setQuestForm({
+                                    content: "",
+                                    proj: "",
+                                    end_date: "",
+                                });
+                            }}
+                        />
+                    )}
+
+                    <LevelUpOverlay
+                        show={levelUpInfo.show}
+                        level={levelUpInfo.level}
+                        levelName={levelUpInfo.levelName}
+                        onClose={closeLevelUp}
+                    />
+                    {mvpInfo?.show && (
+                        <MvpOverlay
+                            show={mvpInfo.show}
+                            mvpName={mvpInfo.name}
+                            weekExp={mvpInfo.weekExp}
+                            taskCount={mvpInfo.taskCount}
+                            onClose={() => setMvpInfo(null)}
+                        />
+                    )}
+                    {expPopups.map((p) => (
+                        <ExpPopup
+                            key={p.id}
+                            amount={p.amount}
+                            x={p.x}
+                            y={p.y}
+                            type={p.type}
+                            onDone={() => removeExpPopup(p.id)}
+                        />
+                    ))}
+
+                    {/* 토스트 */}
+                    {toast && (
+                        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-stone-800 text-white text-sm px-5 py-2.5 rounded-full shadow-lg z-50 whitespace-nowrap">
+                            {toast}
                         </div>
                     )}
 
-                    {isGuest ? (
-                        <>
-                            <div className="bg-white rounded-xl border border-stone-200 px-4 py-3 mb-3">
-                                <p className="text-sm text-stone-500">
-                                    게스트 계정으로 로그인되었어요. 업무 현황을
-                                    확인할 수 있어요.
-                                </p>
-                            </div>
-                            <div className="mb-3">
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
-                                        팀원별 업무 현황
-                                    </span>
-                                </div>
-                                <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                                    {guestTeamSummary.map((row, i) => (
-                                        <div
-                                            key={row.name}
-                                            className={`px-4 py-3 ${i < guestTeamSummary.length - 1 ? "border-b border-stone-100" : ""}`}
-                                        >
-                                            <div className="flex items-center justify-between gap-2">
-                                                <div className="flex items-center gap-2">
-                                                    <Avatar
-                                                        name={row.name}
-                                                        size={28}
-                                                    />
-                                                    <span className="text-sm font-medium text-stone-800">
-                                                        {row.name}
-                                                    </span>
-                                                    {row.hasUrgent && (
-                                                        <span
-                                                            className="text-xs"
-                                                            title="긴급 업무 있음"
-                                                        >
-                                                            ⭐
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <div className="text-xs text-stone-500">
-                                                    진행중 {row.doingCount}건 /
-                                                    완료 {row.doneCount}건
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                            <div className="mb-3">
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
-                                        마감 임박 업무
-                                    </span>
-                                    <span className="text-xs text-red-500 font-medium">
-                                        {guestUrgentTasks.length}건
-                                    </span>
-                                </div>
-                                {guestUrgentTasks.length === 0 ? (
-                                    <div className="bg-white rounded-xl border border-stone-200 py-10 text-center">
-                                        <p className="text-stone-400 text-sm">
-                                            마감 임박 업무가 없어요
-                                        </p>
-                                    </div>
-                                ) : (
-                                    <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                                        {guestUrgentTasks.map((t, i) => {
-                                            const diff = getDiff(t.end_date);
-                                            return (
-                                                <div
-                                                    key={t.id}
-                                                    className={`flex items-center gap-3 px-4 py-3 ${i < guestUrgentTasks.length - 1 ? "border-b border-stone-100" : ""}`}
-                                                >
-                                                    <Avatar
-                                                        name={t.member}
-                                                        size={24}
-                                                    />
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-sm font-medium text-stone-800 truncate">
-                                                            {t.proj}
-                                                        </p>
-                                                        <p className="text-xs text-stone-400">
-                                                            {t.member}
-                                                        </p>
-                                                    </div>
-                                                    <span className="text-xs text-red-500 font-medium shrink-0">
-                                                        D
-                                                        {diff !== null &&
-                                                        diff < 0
-                                                            ? `+${Math.abs(diff)}`
-                                                            : `-${diff}`}
-                                                    </span>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            {/* 스탯 */}
-                            <div className="grid grid-cols-3 gap-2 mb-3">
-                                {[
-                                    {
-                                        icon: "☀️",
-                                        label: "출석체크",
-                                        value: attended ? "완료" : "미완료",
-                                        onClick: (ev: React.MouseEvent) =>
-                                            void handleAttend(ev),
-                                        highlight: !attended,
-                                    },
-                                    {
-                                        icon: "📋",
-                                        label: "퀘스트",
-                                        value: quests.length,
-                                        onClick: null,
-                                        highlight: false,
-                                    },
-                                    {
-                                        icon: "📊",
-                                        label: "월 EXP",
-                                        value: stats.exp,
-                                        onClick: null,
-                                        highlight: false,
-                                    },
-                                ].map((s) => (
-                                    <button
-                                        key={s.label}
-                                        onClick={s.onClick || undefined}
-                                        className={`rounded-xl border p-2.5 text-center transition-all
-                  ${s.highlight ? "bg-amber-500 border-amber-500 text-white" : "bg-white border-stone-200 text-stone-800"}`}
-                                    >
-                                        <div className="text-lg">{s.icon}</div>
-                                        <div className="text-sm font-bold mt-0.5">
-                                            {s.value}
-                                        </div>
-                                        <div
-                                            className={`text-xs mt-0.5 ${s.highlight ? "text-amber-100" : "text-stone-400"}`}
-                                        >
-                                            {s.label}
-                                        </div>
-                                    </button>
-                                ))}
-                            </div>
-
-                            {/* 오늘의 퀘스트 */}
-                            <div className="mb-3">
-                                <div className="mb-2 flex items-center justify-between">
-                                    <span className="text-xs font-bold uppercase tracking-wide text-stone-500">
-                                        오늘의 퀘스트
-                                    </span>
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs text-amber-600">
-                                            완료 시 EXP 지급
-                                        </span>
-                                        <button
-                                            onClick={() =>
-                                                setShowAddQuest(true)
-                                            }
-                                            className="rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-medium text-white"
-                                        >
-                                            + 추가
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <DroppableQuestZone>
-                                    {quests.length === 0 ? (
-                                        <div className="rounded-xl border border-stone-200 bg-white py-10 text-center">
-                                            <p className="text-sm text-stone-400">
-                                                오늘 퀘스트가 없어요
-                                            </p>
-                                            <p className="mt-1 text-xs text-stone-300">
-                                                + 추가 버튼으로 퀘스트를
-                                                만들어보세요!
-                                            </p>
-                                        </div>
-                                    ) : (
-                                        <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
-                                            {quests.map((q, i) => {
-                                                const diff = getDiff(
-                                                    q.end_date,
-                                                );
-                                                const linkedProj =
-                                                    q.task_id != null
-                                                        ? myTasks.find(
-                                                              (t) =>
-                                                                  Number(
-                                                                      t.id,
-                                                                  ) ===
-                                                                  Number(
-                                                                      q.task_id,
-                                                                  ),
-                                                          )?.proj
-                                                        : undefined;
-                                                return (
-                                                    <div
-                                                        key={q.id}
-                                                        className={`flex items-center gap-3 px-4 py-3
-                        ${i < quests.length - 1 ? "border-b border-stone-100" : ""}`}
-                                                    >
-                                                        <button
-                                                            onClick={(ev) =>
-                                                                void completeQuest(
-                                                                    q,
-                                                                    ev,
-                                                                )
-                                                            }
-                                                            className="h-5 w-5 shrink-0 rounded-full border-2 border-stone-300 transition-colors hover:border-amber-500"
-                                                        />
-                                                        <div className="min-w-0 flex-1">
-                                                            <p className="truncate text-sm font-medium text-stone-800">
-                                                                {q.content}
-                                                            </p>
-                                                            <div className="mt-0.5 flex flex-wrap items-center gap-2">
-                                                                {(q.proj ||
-                                                                    linkedProj) && (
-                                                                    <span className="truncate text-xs text-stone-400">
-                                                                        {q.proj ||
-                                                                            linkedProj}
-                                                                    </span>
-                                                                )}
-                                                                {q.end_date && (
-                                                                    <span
-                                                                        className={`text-xs font-medium ${diff !== null && diff <= 3 ? "text-red-500" : "text-stone-400"}`}
-                                                                    >
-                                                                        {q.end_date
-                                                                            .slice(
-                                                                                5,
-                                                                            )
-                                                                            .replace(
-                                                                                "-",
-                                                                                "/",
-                                                                            )}
-                                                                        {diff !==
-                                                                            null &&
-                                                                            ` D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex shrink-0 items-center gap-1.5">
-                                                            <span className="text-xs font-medium text-green-600">
-                                                                +10 EXP
-                                                            </span>
-                                                            <button
-                                                                onClick={() =>
-                                                                    openEditQuest(
-                                                                        q,
-                                                                    )
-                                                                }
-                                                                className="text-xs text-stone-300 transition-colors hover:text-amber-500"
-                                                            >
-                                                                수정
-                                                            </button>
-                                                            <button
-                                                                onClick={() =>
-                                                                    deleteQuest(
-                                                                        q.id,
-                                                                    )
-                                                                }
-                                                                className="text-xs text-stone-300 transition-colors hover:text-red-400"
-                                                            >
-                                                                삭제
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-                                </DroppableQuestZone>
-                            </div>
-
-                            {/* 내 업무 */}
-                            <div className="mb-3">
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
-                                        내 업무
-                                    </span>
-                                    <span className="text-xs text-stone-400">
-                                        {activeMyTasks.length}건
-                                    </span>
-                                </div>
-                                {activeMyTasks.length === 0 ? (
-                                    <div className="bg-white rounded-xl border border-stone-200 py-10 text-center">
-                                        <p className="text-stone-400 text-sm">
-                                            진행 중인 업무가 없어요
-                                        </p>
-                                    </div>
-                                ) : (
-                                    <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
-                                        {activeMyTasks.map((t, i) => (
-                                            <HomeMyTaskRow
-                                                key={t.id}
-                                                task={t}
-                                                showBorderBottom={
-                                                    i < activeMyTasks.length - 1
-                                                }
-                                                onStatusChange={updateTaskStatus}
-                                            />
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </>
-                    )}
-
-                    {/* 마감 임박 */}
-                    {!isGuest && urgentQuests.length > 0 && (
-                        <div>
-                            <div className="flex justify-between items-center mb-2">
-                                <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
-                                    마감 임박
-                                </span>
-                                <span className="text-xs text-red-500 font-medium">
-                                    {urgentQuests.length}건
-                                </span>
-                            </div>
-                            <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                                {urgentQuests.map((q, i) => {
-                                    const diff = getDiff(q.end_date);
-                                    return (
-                                        <div
-                                            key={q.id}
-                                            className={`flex items-center gap-3 px-4 py-3 ${i < urgentQuests.length - 1 ? "border-b border-stone-100" : ""}`}
-                                        >
-                                            <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium text-stone-800 truncate">
-                                                    {q.content}
-                                                </p>
-                                                {q.proj && (
-                                                    <p className="text-xs text-stone-400 truncate">
-                                                        {q.proj}
-                                                    </p>
-                                                )}
-                                            </div>
-                                            <span className="text-xs text-red-500 font-medium shrink-0">
-                                                D
-                                                {diff !== null && diff < 0
-                                                    ? "+" + Math.abs(diff)
-                                                    : "-" + diff}
-                                            </span>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
+                    {dragQuestTask && (
+                        <DragQuestModal
+                            task={dragQuestTask}
+                            onClose={() => setDragQuestTask(null)}
+                            onSubmit={(content, endDate) =>
+                                submitDragQuest(content, endDate, dragQuestTask)
+                            }
+                        />
                     )}
                 </div>
-
-                {!isGuest && (
-                    <DragOverlay className="pointer-events-none">
-                        {activeTask && (
-                            <div className="box-border w-[min(calc(100vw-2rem),42rem)] max-w-2xl rounded-xl border-2 border-amber-400 bg-white px-4 py-3 text-sm font-medium text-stone-800 opacity-90 shadow-xl">
-                                {activeTask.proj}
-                            </div>
-                        )}
-                    </DragOverlay>
-                )}
-
-                {/* 퀘스트 추가 모달 */}
-                {showAddQuest && (
-                    <QuestFormModal
-                        title="퀘스트 추가"
-                        questForm={questForm}
-                        setQuestForm={setQuestForm}
-                        onSubmit={addQuest}
-                        onClose={() => {
-                            setShowAddQuest(false);
-                            setQuestForm({
-                                content: "",
-                                proj: "",
-                                end_date: "",
-                            });
-                        }}
-                    />
-                )}
-
-                {/* 퀘스트 수정 모달 */}
-                {showEditQuest && (
-                    <QuestFormModal
-                        title="퀘스트 수정"
-                        questForm={questForm}
-                        setQuestForm={setQuestForm}
-                        onSubmit={saveEditQuest}
-                        onClose={() => {
-                            setShowEditQuest(false);
-                            setEditTarget(null);
-                            setQuestForm({
-                                content: "",
-                                proj: "",
-                                end_date: "",
-                            });
-                        }}
-                    />
-                )}
-
-                <LevelUpOverlay
-                    show={levelUpInfo.show}
-                    level={levelUpInfo.level}
-                    levelName={levelUpInfo.levelName}
-                    onClose={closeLevelUp}
-                />
-                {mvpInfo?.show && (
-                    <MvpOverlay
-                        show={mvpInfo.show}
-                        mvpName={mvpInfo.name}
-                        weekExp={mvpInfo.weekExp}
-                        taskCount={mvpInfo.taskCount}
-                        onClose={() => setMvpInfo(null)}
-                    />
-                )}
-                {expPopups.map((p) => (
-                    <ExpPopup
-                        key={p.id}
-                        amount={p.amount}
-                        x={p.x}
-                        y={p.y}
-                        type={p.type}
-                        onDone={() => removeExpPopup(p.id)}
-                    />
-                ))}
-
-                {/* 토스트 */}
-                {toast && (
-                    <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-stone-800 text-white text-sm px-5 py-2.5 rounded-full shadow-lg z-50 whitespace-nowrap">
-                        {toast}
-                    </div>
-                )}
-
-                {dragQuestTask && (
-                    <DragQuestModal
-                        task={dragQuestTask}
-                        onClose={() => setDragQuestTask(null)}
-                        onSubmit={(content, endDate) =>
-                            submitDragQuest(
-                                content,
-                                endDate,
-                                dragQuestTask,
-                            )
-                        }
-                    />
-                )}
-            </div>
             </DndContext>
         </AuthGuard>
     );

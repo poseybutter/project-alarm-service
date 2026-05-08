@@ -15,6 +15,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko">
+      <head>
+        <link
+          href="https://cdn.jsdelivr.net/npm/remixicon@4.0.0/fonts/remixicon.css"
+          rel="stylesheet"
+        />
+      </head>
       <body className="bg-[#f7f6f3]">
         <AuthProvider>
           {children}

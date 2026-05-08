@@ -80,7 +80,7 @@ export default function NotificationDrawer({
                 .from("accessibility")
                 .select("*")
                 .eq("member", member)
-                .neq("inspection_status", "신청불필요"),
+                .eq("inspection_status", "신청필요"),
         ]);
 
         (tasks || [])
