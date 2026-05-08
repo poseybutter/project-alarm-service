@@ -230,9 +230,9 @@ npm run dev
 
 ## 👥 팀원
 
-| 이름   | 역할          |
-| ------ | ------------- |
-| TEAM_MEMBER_1 | 리더 / 관리자 |
-| TEAM_MEMBER_4 | 개발 / 관리자 |
-| TEAM_MEMBER_2 | 팀원          |
-| TEAM_MEMBER_3 | 팀원          |
+| 이름                                     | 역할          |
+| ---------------------------------------- | ------------- |
+| TEAM_MEMBER_1(https://github.com/hyunseokzzang) | 리더 / 관리자 |
+| TEAM_MEMBER_4                                   | 개발 / 관리자 |
+| TEAM_MEMBER_2                                   | 팀원          |
+| TEAM_MEMBER_3                                   | 팀원          |
