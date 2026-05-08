@@ -11,8 +11,9 @@ import { supabase } from "@/lib/supabase";
 import AuthGuard from "@/components/AuthGuard";
 import NotificationButton from "@/components/NotificationButton";
 import { useAuth } from "@/components/AuthProvider";
+import { PageSpinner } from "@/components/Spinner";
 import type { Task } from "@/lib/types";
-import { MEMBERS, LEADER, MEMBER_COLORS, STATUS_COLORS } from "@/lib/constants";
+import { MEMBERS, LEADER, STATUS_COLORS } from "@/lib/constants";
 import TiptapSectionEditor from "@/components/TiptapSectionEditor";
 
 /** 전달사항 HTML이 사용자에게 보일 내용이 있는지 (빈 에디터·공백 태그 제외) */
@@ -637,15 +638,6 @@ export default function ReportPage() {
 
     const curTasks = mode === "weekly" ? wTasks : mTasks;
 
-    const maxWL = Math.max(
-        ...MEMBERS.map((m) =>
-            curTasks
-                .filter((t) => t.member === m)
-                .reduce((s, t) => s + (t.workload || 0), 0),
-        ),
-        1,
-    );
-
     const autoProject = useMemo(
         () =>
             formatBriefingSection(
@@ -1028,9 +1020,7 @@ export default function ReportPage() {
 
                 <div className="max-w-2xl mx-auto px-4 pt-3 pb-24">
                     {loading ? (
-                        <div className="text-center py-16 text-stone-400 text-sm">
-                            불러오는 중...
-                        </div>
+                        <PageSpinner />
                     ) : (
                         <>
                             {/* 통계 */}
@@ -1068,65 +1058,6 @@ export default function ReportPage() {
                                 ))}
                             </div>
 
-                            {/* 팀원별 공수 바 */}
-                            <div className="bg-white rounded-xl border border-stone-200 p-4 mb-3">
-                                <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-3">
-                                    팀원별 공수
-                                </p>
-                                <div className="space-y-3">
-                                    {MEMBERS.map((m) => {
-                                        const mWL = curTasks
-                                            .filter((t) => t.member === m)
-                                            .reduce(
-                                                (s, t) => s + (t.workload || 0),
-                                                0,
-                                            );
-                                        const mDone = curTasks
-                                            .filter(
-                                                (t) =>
-                                                    t.member === m &&
-                                                    t.status === "완료",
-                                            )
-                                            .reduce(
-                                                (s, t) => s + (t.workload || 0),
-                                                0,
-                                            );
-                                        const c = MEMBER_COLORS[m];
-                                        return (
-                                            <div
-                                                key={m}
-                                                className="flex items-center gap-3"
-                                            >
-                                                <Avatar
-                                                    name={m}
-                                                    size={24}
-                                                    showName
-                                                />
-                                                <div className="flex-1 relative h-2 bg-stone-100 rounded-full overflow-hidden">
-                                                    <div
-                                                        className="absolute inset-y-0 left-0 rounded-full"
-                                                        style={{
-                                                            width: `${(mWL / maxWL) * 100}%`,
-                                                            background: c.bar,
-                                                            opacity: 0.25,
-                                                        }}
-                                                    />
-                                                    <div
-                                                        className="absolute inset-y-0 left-0 rounded-full"
-                                                        style={{
-                                                            width: `${(mDone / maxWL) * 100}%`,
-                                                            background: c.bar,
-                                                        }}
-                                                    />
-                                                </div>
-                                                <span className="text-xs text-stone-500 w-10 text-right font-medium shrink-0">
-                                                    {fmtMin(mWL)}
-                                                </span>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
 
                             {/* 주간 전달사항 */}
                             {mode === "weekly" && (
