@@ -7,6 +7,7 @@ import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
 import type { Task } from "@/lib/types";
 import { TYPE_COLORS } from "@/lib/constants";
+import { DatePickerCaption } from "@/components/DatePickerCaption";
 
 type DragQuestModalProps = {
     task: Task;
@@ -26,9 +27,7 @@ export default function DragQuestModal({
 
     const toYmd = (d: Date) =>
         `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    const selectedDate = endDate
-        ? new Date(`${endDate}T00:00:00`)
-        : undefined;
+    const selectedDate = endDate ? new Date(`${endDate}T00:00:00`) : undefined;
     const dateLabel = selectedDate
         ? `${selectedDate.getMonth() + 1}/${selectedDate.getDate()}`
         : "마감일 선택";
@@ -142,17 +141,22 @@ export default function DragQuestModal({
                                                 mode="single"
                                                 selected={selectedDate}
                                                 onSelect={(d) => {
-                                                    setEndDate(d ? toYmd(d) : "");
+                                                    setEndDate(
+                                                        d ? toYmd(d) : "",
+                                                    );
                                                 }}
                                                 locale={ko}
+                                                hideNavigation
+                                                components={{
+                                                    MonthCaption:
+                                                        DatePickerCaption,
+                                                }}
                                             />
                                         </div>
                                         <div className="mt-3 flex gap-2">
                                             <button
                                                 type="button"
-                                                onClick={() =>
-                                                    setEndDate("")
-                                                }
+                                                onClick={() => setEndDate("")}
                                                 className="flex-1 rounded-lg border border-stone-200 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
                                             >
                                                 초기화

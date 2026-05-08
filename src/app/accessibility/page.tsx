@@ -4,7 +4,13 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 const MEMBERS = ["TEAM_MEMBER_1", "TEAM_MEMBER_2", "TEAM_MEMBER_3", "TEAM_MEMBER_4"];
-const INSPECTION_STATUS = ["미신청", "신청완료", "신청불필요"];
+const INSPECTION_STATUS = ["갱신완료", "신청완료", "신청불필요"];
+
+function accStatusStyle(status: string) {
+    if (status === "신청완료") return "bg-green-100 text-green-700";
+    if (status === "신청불필요") return "bg-stone-100 text-stone-500";
+    return "bg-amber-100 text-amber-700";
+}
 
 type Accessibility = {
     id: number;
@@ -35,7 +41,7 @@ export default function AccessibilityPage() {
         member: "",
         start_date: "",
         end_date: "",
-        inspection_status: "미신청",
+        inspection_status: "갱신완료",
         note: "",
     });
 
@@ -49,7 +55,15 @@ export default function AccessibilityPage() {
             .from("accessibility")
             .select("*")
             .order("end_date");
-        setItems(data || []);
+        setItems(
+            (data || []).map((row) => ({
+                ...row,
+                inspection_status:
+                    row.inspection_status === "미신청"
+                        ? "갱신완료"
+                        : row.inspection_status,
+            })),
+        );
         setLoading(false);
     }
 
@@ -70,7 +84,7 @@ export default function AccessibilityPage() {
             member: "",
             start_date: "",
             end_date: "",
-            inspection_status: "미신청",
+            inspection_status: "갱신완료",
             note: "",
         });
         loadItems();
@@ -97,7 +111,7 @@ export default function AccessibilityPage() {
         total: items.length,
         urgent: items.filter((i) => {
             const d = getDiff(i.end_date);
-            return d !== null && d <= 45 && i.inspection_status === "미신청";
+            return d !== null && d <= 45 && i.inspection_status === "갱신완료";
         }).length,
         done: items.filter((i) => i.inspection_status === "신청완료").length,
     };
@@ -181,7 +195,7 @@ export default function AccessibilityPage() {
                                 const isUrgent =
                                     diff !== null &&
                                     diff <= 45 &&
-                                    item.inspection_status === "미신청";
+                                    item.inspection_status === "갱신완료";
                                 return (
                                     <div
                                         key={item.id}
@@ -226,14 +240,7 @@ export default function AccessibilityPage() {
                                                             e.target.value,
                                                         )
                                                     }
-                                                    className={`text-xs px-2 py-0.5 rounded-full font-medium border-0 cursor-pointer
-                            ${
-                                item.inspection_status === "신청완료"
-                                    ? "bg-green-100 text-green-700"
-                                    : item.inspection_status === "신청불필요"
-                                      ? "bg-blue-100 text-blue-700"
-                                      : "bg-amber-100 text-amber-700"
-                            }`}
+                                                    className={`text-xs px-2 py-0.5 rounded-full font-medium border-0 cursor-pointer ${accStatusStyle(item.inspection_status)}`}
                                                 >
                                                     {INSPECTION_STATUS.map(
                                                         (s) => (

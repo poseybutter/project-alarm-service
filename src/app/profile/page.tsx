@@ -12,14 +12,14 @@ import {
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import UserMenu from "@/components/UserMenu";
-import Header from "@/components/Header";
 import NotificationButton from "@/components/NotificationButton";
 import Avatar from "@/components/Avatar";
+import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { DayPicker, DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
 import { ko } from "date-fns/locale";
-import type { Player, Task, Accessibility, Project } from "@/lib/types";
-import { getDiff, formatWorkload } from "@/lib/utils";
+import type { Player, Task } from "@/lib/types";
+import { formatWorkload } from "@/lib/utils";
 import { BAR_COLORS } from "@/lib/constants";
 
 const TITLES = [
@@ -91,9 +91,6 @@ export default function ProfilePage() {
     const [tab, setTab] = useState<"info" | "history" | "titles">("info");
     const [players, setPlayers] = useState<Player[]>([]);
     const [tasks, setTasks] = useState<Task[]>([]);
-    const [accessibility, setAccessibility] = useState<Accessibility[]>([]);
-    const [projects, setProjects] = useState<Project[]>([]);
-    const [loading, setLoading] = useState(true);
     const [toast, setToast] = useState("");
     const [historyFilter, setHistoryFilter] = useState<
         "week" | "lastweek" | "month" | "custom"
@@ -102,50 +99,7 @@ export default function ProfilePage() {
     const [historyStatusFilter, setHistoryStatusFilter] = useState("");
     const [dateRange, setDateRange] = useState<DateRange | undefined>();
     const [showDatePicker, setShowDatePicker] = useState(false);
-    const [showProjModal, setShowProjModal] = useState(false);
-    const [showAccModal, setShowAccModal] = useState(false);
     const [showAvatarMenu, setShowAvatarMenu] = useState(false);
-    const [projForm, setProjForm] = useState({ name: "", client: "" });
-    const [editAcc, setEditAcc] = useState<Accessibility | null>(null);
-    const [accForm, setAccForm] = useState({
-        proj: "",
-        start_date: "",
-        end_date: "",
-        inspection_status: "미신청",
-        note: "",
-    });
-
-    const emptyAccForm = {
-        proj: "",
-        start_date: "",
-        end_date: "",
-        inspection_status: "미신청",
-        note: "",
-    } as const;
-
-    function openAccModalForAdd() {
-        setEditAcc(null);
-        setAccForm({ ...emptyAccForm });
-        setShowAccModal(true);
-    }
-
-    function openAccModalForEdit(a: Accessibility) {
-        setEditAcc(a);
-        setAccForm({
-            proj: a.proj,
-            start_date: a.start_date ? a.start_date.slice(0, 10) : "",
-            end_date: a.end_date ? a.end_date.slice(0, 10) : "",
-            inspection_status: a.inspection_status,
-            note: a.note ?? "",
-        });
-        setShowAccModal(true);
-    }
-
-    function closeAccModal() {
-        setShowAccModal(false);
-        setEditAcc(null);
-        setAccForm({ ...emptyAccForm });
-    }
 
     useEffect(() => {
         if (member) loadAll();
@@ -155,31 +109,16 @@ export default function ProfilePage() {
     if (!member) return null;
 
     async function loadAll() {
-        setLoading(true);
-        const [
-            { data: playerData },
-            { data: taskData },
-            { data: accData },
-            { data: projData },
-        ] = await Promise.all([
+        const [{ data: playerData }, { data: taskData }] = await Promise.all([
             supabase.from("players").select("*"),
             supabase
                 .from("tasks")
                 .select("*")
                 .eq("member", member)
                 .order("created_at", { ascending: false }),
-            supabase.from("accessibility").select("*").eq("member", member),
-            supabase
-                .from("projects")
-                .select("*")
-                .eq("member", member)
-                .order("name"),
         ]);
         setPlayers(playerData || []);
         setTasks(taskData || []);
-        setAccessibility(accData || []);
-        setProjects(projData || []);
-        setLoading(false);
     }
 
     function showToastMsg(msg: string) {
@@ -264,82 +203,9 @@ export default function ProfilePage() {
         loadAll();
     }
 
-    async function addProject() {
-        if (!projForm.name) return alert("프로젝트명은 필수예요");
-        await supabase.from("projects").insert([
-            {
-                name: projForm.name,
-                member: member,
-                client: projForm.client || null,
-            },
-        ]);
-        setShowProjModal(false);
-        setProjForm({ name: "", client: "" });
-        loadAll();
-    }
-
-    async function deleteProject(id: number) {
-        if (!confirm("삭제할까요?")) return;
-        await supabase.from("projects").delete().eq("id", id);
-        loadAll();
-    }
-
-    async function saveAccessibility() {
-        if (!accForm.proj) return alert("프로젝트명은 필수예요");
-        if (editAcc) {
-            const { error } = await supabase
-                .from("accessibility")
-                .update({
-                    proj: accForm.proj,
-                    start_date: accForm.start_date || null,
-                    end_date: accForm.end_date || null,
-                    inspection_status: accForm.inspection_status,
-                    note: accForm.note || null,
-                })
-                .eq("id", editAcc.id);
-            if (error) {
-                showToastMsg("저장 실패: " + error.message);
-                return;
-            }
-        } else {
-            const { error } = await supabase.from("accessibility").insert([
-                {
-                    proj: accForm.proj,
-                    member: member,
-                    start_date: accForm.start_date || null,
-                    end_date: accForm.end_date || null,
-                    note: accForm.note || null,
-                    inspection_status: accForm.inspection_status || "미신청",
-                },
-            ]);
-            if (error) {
-                showToastMsg("등록 실패: " + error.message);
-                return;
-            }
-        }
-        closeAccModal();
-        loadAll();
-    }
-
-    async function updateAccStatus(id: number, status: string) {
-        await supabase
-            .from("accessibility")
-            .update({ inspection_status: status })
-            .eq("id", id);
-        loadAll();
-    }
-
-    async function deleteAcc(id: number) {
-        if (!confirm("삭제할까요?")) return;
-        await supabase.from("accessibility").delete().eq("id", id);
-        loadAll();
-    }
-
     const player = players.find((p) => p.name === member);
     const myPlayer = player;
-    const myTitles = TITLES.filter(
-        (t) => myPlayer && t.condition(myPlayer),
-    );
+    const myTitles = TITLES.filter((t) => myPlayer && t.condition(myPlayer));
     const lv = player ? calcLevel(player.exp) : LEVELS[0];
     const next = player ? getNextLevel(player.exp) : null;
     const pct = player ? expBar(player.exp) : 0;
@@ -349,7 +215,6 @@ export default function ProfilePage() {
         BAR_COLORS[Math.min((lv.level || 1) - 1, BAR_COLORS.length - 1)];
 
     // 지난 업무 필터
-    const now = new Date();
     const getHistoryTasks = () => {
         let start: Date;
         let end: Date;
@@ -717,173 +582,6 @@ export default function ProfilePage() {
                                         })}
                                 </div>
                             </div>
-
-                            {/* 프로젝트 */}
-                            <div>
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
-                                        프로젝트
-                                    </span>
-                                    {!isGuest && (
-                                        <button
-                                            onClick={() =>
-                                                setShowProjModal(true)
-                                            }
-                                            className="text-xs text-amber-600 font-medium"
-                                        >
-                                            + 프로젝트 추가
-                                        </button>
-                                    )}
-                                </div>
-                                <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                                    {projects.length === 0 ? (
-                                        <p className="text-xs text-stone-400 text-center py-6">
-                                            프로젝트가 없어요
-                                        </p>
-                                    ) : (
-                                        projects.map((p, i) => (
-                                            <div
-                                                key={p.id}
-                                                className={`flex items-center justify-between px-4 py-3 ${i < projects.length - 1 ? "border-b border-stone-100" : ""}`}
-                                            >
-                                                <div>
-                                                    <p className="text-sm font-medium text-stone-800">
-                                                        {p.name}
-                                                    </p>
-                                                    {p.client && (
-                                                        <p className="text-xs text-stone-400">
-                                                            {p.client}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                                {!isGuest && (
-                                                    <button
-                                                        onClick={() =>
-                                                            deleteProject(p.id)
-                                                        }
-                                                        className="text-xs text-stone-300 hover:text-red-400"
-                                                    >
-                                                        삭제
-                                                    </button>
-                                                )}
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* 접근성 */}
-                            <div>
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
-                                        접근성
-                                    </span>
-                                    {!isGuest && (
-                                        <button
-                                            onClick={openAccModalForAdd}
-                                            className="text-xs text-amber-600 font-medium"
-                                        >
-                                            + 등록
-                                        </button>
-                                    )}
-                                </div>
-                                <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                                    {accessibility.length === 0 ? (
-                                        <p className="text-xs text-stone-400 text-center py-6">
-                                            등록된 항목이 없어요
-                                        </p>
-                                    ) : (
-                                        accessibility.map((a, i) => {
-                                            const diff = getDiff(a.end_date);
-                                            const isUrgent =
-                                                diff !== null &&
-                                                diff <= 45 &&
-                                                a.inspection_status ===
-                                                    "미신청";
-                                            return (
-                                                <div
-                                                    key={a.id}
-                                                    className={`flex items-center justify-between px-4 py-3 ${i < accessibility.length - 1 ? "border-b border-stone-100" : ""}`}
-                                                >
-                                                    <div>
-                                                        <div className="flex items-center gap-2">
-                                                            <p className="text-sm font-medium text-stone-800">
-                                                                {a.proj}
-                                                            </p>
-                                                            {isUrgent && (
-                                                                <span className="text-xs text-red-500 font-medium">
-                                                                    D-{diff}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        {a.end_date && (
-                                                            <p className="text-xs text-stone-400">
-                                                                만료일:{" "}
-                                                                {a.end_date.slice(
-                                                                    0,
-                                                                    10,
-                                                                )}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <select
-                                                            value={
-                                                                a.inspection_status
-                                                            }
-                                                            disabled={isGuest}
-                                                            onChange={(e) =>
-                                                                updateAccStatus(
-                                                                    a.id,
-                                                                    e.target
-                                                                        .value,
-                                                                )
-                                                            }
-                                                            className={`text-xs px-2 py-1 rounded-lg font-medium border-0 cursor-pointer
-                              ${a.inspection_status === "신청완료" ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}
-                                                        >
-                                                            {[
-                                                                "미신청",
-                                                                "신청완료",
-                                                                "신청불필요",
-                                                            ].map((s) => (
-                                                                <option key={s}>
-                                                                    {s}
-                                                                </option>
-                                                            ))}
-                                                        </select>
-                                                        {!isGuest && (
-                                                            <>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() =>
-                                                                        openAccModalForEdit(
-                                                                            a,
-                                                                        )
-                                                                    }
-                                                                    className="text-xs text-amber-600 hover:text-amber-700 font-medium"
-                                                                >
-                                                                    수정
-                                                                </button>
-                                                                <button
-                                                                    onClick={() =>
-                                                                        deleteAcc(
-                                                                            a.id,
-                                                                        )
-                                                                    }
-                                                                    className="text-xs text-stone-300 hover:text-red-400"
-                                                                >
-                                                                    삭제
-                                                                </button>
-                                                            </>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })
-                                    )}
-                                </div>
-                            </div>
                         </div>
                     )}
 
@@ -987,6 +685,11 @@ export default function ProfilePage() {
                                                         setDateRange(range);
                                                     }}
                                                     locale={ko}
+                                                    hideNavigation
+                                                    components={{
+                                                        MonthCaption:
+                                                            DatePickerCaption,
+                                                    }}
                                                     toDate={new Date()}
                                                 />
                                             </div>
@@ -1378,198 +1081,6 @@ export default function ProfilePage() {
                         </div>
                     )}
                 </div>
-
-                {/* 프로젝트 추가 모달 */}
-                {showProjModal && (
-                    <div
-                        className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
-                        style={{ marginBottom: "var(--nav-height)" }}
-                        onClick={() => setShowProjModal(false)}
-                    >
-                        <div
-                            className="bg-white rounded-t-2xl p-5 w-full max-w-2xl"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <div className="flex justify-between items-center mb-5">
-                                <h2 className="text-base font-bold">
-                                    프로젝트 추가
-                                </h2>
-                                <button
-                                    onClick={() => setShowProjModal(false)}
-                                    className="text-2xl text-stone-400"
-                                >
-                                    ×
-                                </button>
-                            </div>
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        프로젝트명
-                                    </label>
-                                    <input
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                                        placeholder="예) 사이버견본주택"
-                                        value={projForm.name}
-                                        onChange={(e) =>
-                                            setProjForm({
-                                                ...projForm,
-                                                name: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        고객사 (선택)
-                                    </label>
-                                    <input
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                                        placeholder="예) GS건설"
-                                        value={projForm.client}
-                                        onChange={(e) =>
-                                            setProjForm({
-                                                ...projForm,
-                                                client: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
-                                <button
-                                    onClick={addProject}
-                                    className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm"
-                                >
-                                    추가하기
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* 접근성 추가·수정 모달 */}
-                {showAccModal && (
-                    <div
-                        className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
-                        style={{ marginBottom: "var(--nav-height)" }}
-                        onClick={closeAccModal}
-                    >
-                        <div
-                            className="bg-white rounded-t-2xl p-5 w-full max-w-2xl"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <div className="flex justify-between items-center mb-5">
-                                <h2 className="text-base font-bold">
-                                    {editAcc ? "접근성 수정" : "접근성 추가"}
-                                </h2>
-                                <button
-                                    type="button"
-                                    onClick={closeAccModal}
-                                    className="text-2xl text-stone-400"
-                                >
-                                    ×
-                                </button>
-                            </div>
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        프로젝트명
-                                    </label>
-                                    <input
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                                        placeholder="예) 한국한의학연구원"
-                                        value={accForm.proj}
-                                        onChange={(e) =>
-                                            setAccForm({
-                                                ...accForm,
-                                                proj: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        시작일 (선택)
-                                    </label>
-                                    <input
-                                        type="date"
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                                        value={accForm.start_date}
-                                        onChange={(e) =>
-                                            setAccForm({
-                                                ...accForm,
-                                                start_date: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        인증 만료일
-                                    </label>
-                                    <input
-                                        type="date"
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                                        value={accForm.end_date}
-                                        onChange={(e) =>
-                                            setAccForm({
-                                                ...accForm,
-                                                end_date: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        점검 상태
-                                    </label>
-                                    <select
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white"
-                                        value={accForm.inspection_status}
-                                        onChange={(e) =>
-                                            setAccForm({
-                                                ...accForm,
-                                                inspection_status:
-                                                    e.target.value,
-                                            })
-                                        }
-                                    >
-                                        {[
-                                            "미신청",
-                                            "신청완료",
-                                            "신청불필요",
-                                        ].map((s) => (
-                                            <option key={s} value={s}>
-                                                {s}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        비고 (선택)
-                                    </label>
-                                    <input
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                                        placeholder="예) 기관 일정 조율 중"
-                                        value={accForm.note}
-                                        onChange={(e) =>
-                                            setAccForm({
-                                                ...accForm,
-                                                note: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={saveAccessibility}
-                                    className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm"
-                                >
-                                    {editAcc ? "저장하기" : "등록하기"}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
 
                 {/* 토스트 */}
                 {toast && (

@@ -2,21 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import type { Project } from "@/lib/types";
+import { normalizeProject, getProjectMembers } from "@/lib/utils";
+import { MEMBERS } from "@/lib/constants";
 
-const MEMBERS = ["TEAM_MEMBER_1", "TEAM_MEMBER_2", "TEAM_MEMBER_3", "TEAM_MEMBER_4"];
 const MEMBER_COLORS: Record<string, string> = {
     TEAM_MEMBER_1: "bg-purple-100 text-purple-700",
     TEAM_MEMBER_2: "bg-green-100 text-green-700",
     TEAM_MEMBER_3: "bg-amber-100 text-amber-700",
     TEAM_MEMBER_4: "bg-orange-100 text-orange-700",
-};
-
-type Project = {
-    id: number;
-    name: string;
-    member: string;
-    client: string | null;
-    type: string | null;
 };
 
 export default function ProjectsPage() {
@@ -35,8 +29,12 @@ export default function ProjectsPage() {
         const { data } = await supabase
             .from("projects")
             .select("*")
-            .order("member");
-        setProjects(data || []);
+            .order("name");
+        setProjects(
+            (data || []).map((row) =>
+                normalizeProject(row as Record<string, unknown>),
+            ),
+        );
         setLoading(false);
     }
 
@@ -47,6 +45,7 @@ export default function ProjectsPage() {
             {
                 name: form.name,
                 member: form.member,
+                members: [form.member],
                 client: form.client || null,
             },
         ]);
@@ -64,11 +63,11 @@ export default function ProjectsPage() {
     const filtered =
         filter === "전체"
             ? projects
-            : projects.filter((p) => p.member === filter);
+            : projects.filter((p) => getProjectMembers(p).includes(filter));
 
     const grouped = MEMBERS.reduce(
         (acc, m) => {
-            const mp = filtered.filter((p) => p.member === m);
+            const mp = filtered.filter((p) => getProjectMembers(p).includes(m));
             if (mp.length > 0) acc[m] = mp;
             return acc;
         },

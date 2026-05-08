@@ -27,12 +27,12 @@ function noticeHtmlHasText(html: string | null | undefined): boolean {
 
 /** 자동 브리핑 플레인을 문단 단위로 분리 (빈 줄 / 줄바꿈+** / 공백+** 경계) */
 function splitBriefingPlainIntoChunks(raw: string): string[] {
-    const t = (raw || "")
-        .replace(/\r\n/g, "\n")
-        .replace(/\r/g, "\n")
-        .trim();
+    const t = (raw || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
     if (!t) return [];
-    let chunks = t.split(/\n\n+/).map((s) => s.trim()).filter(Boolean);
+    let chunks = t
+        .split(/\n\n+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
     chunks = chunks.flatMap((chunk) => {
         const aster = chunk.match(/\*\*/g)?.length ?? 0;
         if (aster < 4) return [chunk];
@@ -47,10 +47,7 @@ function splitBriefingPlainIntoChunks(raw: string): string[] {
 
 /** 이스케이프된 브리핑 조각에서 `**굵게**` → `<strong>` (자동문만 사용) */
 function briefingEscapedToHtmlWithBold(escapedWithBr: string): string {
-    return escapedWithBr.replace(
-        /\*\*([\s\S]+?)\*\*/g,
-        "<strong>$1</strong>",
-    );
+    return escapedWithBr.replace(/\*\*([\s\S]+?)\*\*/g, "<strong>$1</strong>");
 }
 
 /** 자동 생성 브리핑(플레인) → Tiptap·미리보기용 HTML (`**` → 굵게) */
@@ -107,11 +104,12 @@ async function copyBriefingRichToClipboard(
 ): Promise<void> {
     const html = wrapClipboardBriefingDocument(bodyHtml);
     const plain =
-        plainText.trim() ||
-        htmlToPlainText(bodyHtml).trim() ||
-        "(내용 없음)";
+        plainText.trim() || htmlToPlainText(bodyHtml).trim() || "(내용 없음)";
     try {
-        if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        if (
+            typeof ClipboardItem !== "undefined" &&
+            navigator.clipboard?.write
+        ) {
             await navigator.clipboard.write([
                 new ClipboardItem({
                     "text/html": new Blob([html], { type: "text/html" }),
@@ -965,32 +963,34 @@ export default function ReportPage() {
                 </div>
 
                 {/* 주간/월간 탭 */}
-                <div className="bg-white border-b border-stone-200 px-4 pt-3 pb-0">
-                    <div className="max-w-2xl mx-auto flex">
-                        {[
-                            { key: "weekly", label: "주간 리포트" },
-                            { key: "monthly", label: "월간 리포트" },
-                        ].map((t) => (
-                            <button
-                                key={t.key}
-                                onClick={() =>
-                                    setMode(t.key as "weekly" | "monthly")
-                                }
-                                className={`flex-1 py-2.5 text-sm font-medium border-b-2 transition-all
+                <div className="border-b border-stone-200 px-4 py-3">
+                    <div className="max-w-2xl mx-auto">
+                        <div className="flex bg-white rounded-lg p-0.5">
+                            {[
+                                { key: "weekly", label: "주간 리포트" },
+                                { key: "monthly", label: "월간 리포트" },
+                            ].map((t) => (
+                                <button
+                                    key={t.key}
+                                    onClick={() =>
+                                        setMode(t.key as "weekly" | "monthly")
+                                    }
+                                    className={`flex-1 py-2 text-xs font-medium rounded-md transition-all
                     ${
                         mode === t.key
-                            ? "border-amber-500 text-amber-600"
-                            : "border-transparent text-stone-400"
+                            ? "bg-amber-500 text-white shadow-sm"
+                            : "text-stone-500 hover:text-stone-700"
                     }`}
-                            >
-                                {t.label}
-                            </button>
-                        ))}
+                                >
+                                    {t.label}
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
                 {/* 기간 네비 */}
-                <div className="bg-white border-b border-stone-200 px-4 py-2">
+                <div className="border-b border-stone-200 px-4 py-2">
                     <div className="max-w-2xl mx-auto flex items-center justify-between">
                         <button
                             onClick={() =>
@@ -1322,7 +1322,9 @@ export default function ReportPage() {
                                                     <TiptapSectionEditor
                                                         key={`briefing-project-${wOff}-${briefingEditorKey}`}
                                                         content={editProject}
-                                                        onChange={setEditProject}
+                                                        onChange={
+                                                            setEditProject
+                                                        }
                                                         editable
                                                         showToolbar
                                                         placeholder="프로젝트 브리핑을 입력하세요..."
@@ -1337,8 +1339,8 @@ export default function ReportPage() {
                                                             }
                                                             className="mt-2 w-full rounded-lg border border-stone-200 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
                                                         >
-                                                            이 섹션 자동 생성으로
-                                                            복원
+                                                            이 섹션 자동
+                                                            생성으로 복원
                                                         </button>
                                                     )}
                                                 </>
@@ -1403,8 +1405,8 @@ export default function ReportPage() {
                                                             }
                                                             className="mt-2 w-full rounded-lg border border-stone-200 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
                                                         >
-                                                            이 섹션 자동 생성으로
-                                                            복원
+                                                            이 섹션 자동
+                                                            생성으로 복원
                                                         </button>
                                                     )}
                                                 </>
@@ -1430,7 +1432,9 @@ export default function ReportPage() {
                                                                       autoEtc,
                                                                   ),
                                                             editing
-                                                                ? htmlToPlainText(editEtc)
+                                                                ? htmlToPlainText(
+                                                                      editEtc,
+                                                                  )
                                                                 : autoEtc,
                                                             setCopiedEtc,
                                                         )
@@ -1463,8 +1467,8 @@ export default function ReportPage() {
                                                             }
                                                             className="mt-2 w-full rounded-lg border border-stone-200 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
                                                         >
-                                                            이 섹션 자동 생성으로
-                                                            복원
+                                                            이 섹션 자동
+                                                            생성으로 복원
                                                         </button>
                                                     )}
                                                 </>
@@ -1744,9 +1748,17 @@ export default function ReportPage() {
                                                         건 완료
                                                     </p>
                                                 </div>
-                                                <span className="text-stone-400 text-xs">
-                                                    {isExp ? "▲" : "▽"}
-                                                </span>
+                                                {isExp ? (
+                                                    <i
+                                                        className="ri-arrow-up-s-line text-stone-400"
+                                                        aria-hidden
+                                                    />
+                                                ) : (
+                                                    <i
+                                                        className="ri-arrow-down-s-line text-stone-400"
+                                                        aria-hidden
+                                                    />
+                                                )}
                                             </button>
 
                                             {/* 상세 */}
@@ -1828,52 +1840,58 @@ export default function ReportPage() {
                                     <label className="mb-1.5 block text-xs font-medium text-stone-500">
                                         구분
                                     </label>
-                                    <select
-                                        className="w-full rounded-lg border border-stone-200 bg-white px-3 py-2.5 text-sm"
-                                        value={assignForm.type}
-                                        onChange={(e) =>
-                                            setAssignForm((f) => ({
-                                                ...f,
-                                                type: e.target.value,
-                                            }))
-                                        }
-                                    >
-                                        {[
-                                            "프로젝트",
-                                            "개편",
-                                            "고도화",
-                                            "유지보수",
-                                            "기타",
-                                        ].map((t) => (
-                                            <option key={t} value={t}>
-                                                {t}
-                                            </option>
-                                        ))}
-                                    </select>
+                                    <div className="relative">
+                                        <select
+                                            className="w-full appearance-none rounded-lg border border-stone-200 bg-white py-2.5 pl-3 pr-10 text-sm"
+                                            value={assignForm.type}
+                                            onChange={(e) =>
+                                                setAssignForm((f) => ({
+                                                    ...f,
+                                                    type: e.target.value,
+                                                }))
+                                            }
+                                        >
+                                            {[
+                                                "프로젝트",
+                                                "개편",
+                                                "고도화",
+                                                "유지보수",
+                                                "기타",
+                                            ].map((t) => (
+                                                <option key={t} value={t}>
+                                                    {t}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <i className="ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-stone-400" />
+                                    </div>
                                 </div>
                                 <div>
                                     <label className="mb-1.5 block text-xs font-medium text-stone-500">
                                         표시할 목록
                                     </label>
-                                    <select
-                                        className="w-full rounded-lg border border-stone-200 bg-white px-3 py-2.5 text-sm"
-                                        value={assignForm.status}
-                                        onChange={(e) =>
-                                            setAssignForm((f) => ({
-                                                ...f,
-                                                status: e.target.value as
-                                                    | "진행중"
-                                                    | "배정대기",
-                                            }))
-                                        }
-                                    >
-                                        <option value="진행중">
-                                            배정현황 (진행 중 배정)
-                                        </option>
-                                        <option value="배정대기">
-                                            배정대기
-                                        </option>
-                                    </select>
+                                    <div className="relative">
+                                        <select
+                                            className="w-full appearance-none rounded-lg border border-stone-200 bg-white py-2.5 pl-3 pr-10 text-sm"
+                                            value={assignForm.status}
+                                            onChange={(e) =>
+                                                setAssignForm((f) => ({
+                                                    ...f,
+                                                    status: e.target.value as
+                                                        | "진행중"
+                                                        | "배정대기",
+                                                }))
+                                            }
+                                        >
+                                            <option value="진행중">
+                                                배정현황 (진행 중 배정)
+                                            </option>
+                                            <option value="배정대기">
+                                                배정대기
+                                            </option>
+                                        </select>
+                                        <i className="ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-stone-400" />
+                                    </div>
                                 </div>
                                 <div>
                                     <label className="mb-1.5 block text-xs font-medium text-stone-500">
