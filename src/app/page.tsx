@@ -16,8 +16,8 @@ import {
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import Header from "@/components/Header";
-import type { Quest, Player, Task } from "@/lib/types";
-import { getDiff, formatWorkload } from "@/lib/utils";
+import type { Quest, Player, Task, Project } from "@/lib/types";
+import { getDiff, formatWorkload, normalizeProject } from "@/lib/utils";
 import {
     BAR_COLORS,
     TYPE_COLORS,
@@ -30,6 +30,7 @@ import MvpOverlay from "@/components/MvpOverlay";
 import ExpPopup, { type ExpPopupType } from "@/components/ExpPopup";
 import AttendanceHeatmap from "@/components/AttendanceHeatmap";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
+import { PageSpinner } from "@/components/Spinner";
 import { DayPicker } from "react-day-picker";
 import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
@@ -46,11 +47,22 @@ import {
     type DragStartEvent,
 } from "@dnd-kit/core";
 import DragQuestModal from "@/components/DragQuestModal";
+import Select from "react-select";
+import { selectStyles } from "@/lib/reactSelectStyles";
 
 type QuestFormType = {
     content: string;
     proj: string;
     end_date: string;
+};
+
+type QuestFormModalProps = {
+    title: string;
+    questForm: QuestFormType;
+    setQuestForm: React.Dispatch<React.SetStateAction<QuestFormType>>;
+    onSubmit: () => void;
+    onClose: () => void;
+    projects: Project[];
 };
 
 function QuestFormModal({
@@ -59,13 +71,8 @@ function QuestFormModal({
     setQuestForm,
     onSubmit,
     onClose,
-}: {
-    title: string;
-    questForm: QuestFormType;
-    setQuestForm: React.Dispatch<React.SetStateAction<QuestFormType>>;
-    onSubmit: () => void;
-    onClose: () => void;
-}) {
+    projects,
+}: QuestFormModalProps) {
     const [showDatePicker, setShowDatePicker] = useState(false);
     const toYmd = (d: Date) =>
         `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -75,6 +82,39 @@ function QuestFormModal({
     const dateLabel = selectedDate
         ? `${selectedDate.getMonth() + 1}/${selectedDate.getDate()}`
         : "마감일 선택";
+    const projOptions = [...projects]
+        .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+        .map((p) => ({ value: p.name, label: p.name }));
+    const questModalSelectStyles = {
+        ...selectStyles,
+        control: (
+            base: Record<string, unknown>,
+            state: { isFocused: boolean },
+        ) => ({
+            ...base,
+            fontSize: "14px",
+            borderColor: state.isFocused ? "#f59e0b" : "#e7e5e4",
+            borderRadius: "8px",
+            boxShadow: state.isFocused ? "0 0 0 2px #fde68a" : "none",
+            "&:hover": { borderColor: "#d6d3d1" },
+            minHeight: "42px",
+            height: "42px",
+        }),
+        valueContainer: (base: Record<string, unknown>) => ({
+            ...base,
+            height: "42px",
+            padding: "0 12px",
+        }),
+        indicatorsContainer: (base: Record<string, unknown>) => ({
+            ...base,
+            height: "42px",
+        }),
+        placeholder: (base: Record<string, unknown>) => ({
+            ...base,
+            fontSize: "14px",
+            color: "#a8a29e",
+        }),
+    };
 
     return (
         <div
@@ -98,7 +138,7 @@ function QuestFormModal({
                 <div className="space-y-4">
                     <div>
                         <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                            퀘스트 내용
+                            퀘스트 내용 <span className="text-red-500">*</span>
                         </label>
                         <textarea
                             className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm h-20 resize-none"
@@ -114,23 +154,39 @@ function QuestFormModal({
                     </div>
                     <div>
                         <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                            프로젝트 (선택)
+                            프로젝트
                         </label>
-                        <input
-                            className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                            placeholder="예) 모바일앱 웹뷰"
-                            value={questForm.proj}
-                            onChange={(e) =>
-                                setQuestForm({
-                                    ...questForm,
-                                    proj: e.target.value,
-                                })
+                        <Select
+                            options={projOptions}
+                            value={
+                                questForm.proj
+                                    ? {
+                                          value: questForm.proj,
+                                          label: questForm.proj,
+                                      }
+                                    : null
                             }
+                            onChange={(opt) =>
+                                setQuestForm((f) => ({
+                                    ...f,
+                                    proj: opt?.value ?? "",
+                                }))
+                            }
+                            placeholder="프로젝트 검색"
+                            isClearable
+                            isSearchable
+                            styles={questModalSelectStyles}
+                            menuPortalTarget={
+                                typeof document !== "undefined"
+                                    ? document.body
+                                    : null
+                            }
+                            noOptionsMessage={() => "검색 결과가 없어요"}
                         />
                     </div>
                     <div>
                         <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                            마감일 (선택)
+                            마감일
                         </label>
                         <button
                             type="button"
@@ -319,26 +375,33 @@ function HomeMyTaskRow({
                         <span>기간 미정</span>
                     )}
                 </div>
-                <select
-                    value={t.status}
-                    onChange={(e) => {
-                        const el = e.target;
-                        const r = el.getBoundingClientRect();
-                        void onStatusChange(t.id, el.value, t, {
-                            x: r.left + r.width / 2,
-                            y: r.top + r.height / 2,
-                        });
-                    }}
-                    className={`shrink-0 cursor-pointer rounded-lg border-0 px-2 py-1 text-xs font-medium ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}
-                >
-                    {["대기", "시작 전", "진행중", "이슈 및 대기", "완료"].map(
-                        (s) => (
+                <div className="relative shrink-0">
+                    <select
+                        value={t.status}
+                        onChange={(e) => {
+                            const el = e.target;
+                            const r = el.getBoundingClientRect();
+                            void onStatusChange(t.id, el.value, t, {
+                                x: r.left + r.width / 2,
+                                y: r.top + r.height / 2,
+                            });
+                        }}
+                        className={`cursor-pointer rounded-lg border-0 px-2 py-1 pr-7 text-xs font-medium appearance-none ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}
+                    >
+                        {[
+                            "대기",
+                            "시작 전",
+                            "진행중",
+                            "이슈 및 대기",
+                            "완료",
+                        ].map((s) => (
                             <option key={s} value={s}>
                                 {s}
                             </option>
-                        ),
-                    )}
-                </select>
+                        ))}
+                    </select>
+                    <i className="ri-arrow-down-s-line absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+                </div>
             </div>
         </div>
     );
@@ -364,6 +427,7 @@ export default function HomePage() {
     const [player, setPlayer] = useState<Player | null>(null);
     const [quests, setQuests] = useState<Quest[]>([]);
     const [myTasks, setMyTasks] = useState<Task[]>([]);
+    const [projects, setProjects] = useState<Project[]>([]);
     const [guestTeamTasks, setGuestTeamTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
     const [toast, setToast] = useState("");
@@ -580,7 +644,8 @@ export default function HomePage() {
         })();
     }, [member, authLoading]);
 
-    if (authLoading || !member) return null;
+    if (authLoading) return <PageSpinner />;
+    if (!member) return null;
 
     async function loadData() {
         setLoading(true);
@@ -589,6 +654,7 @@ export default function HomePage() {
             { data: questData },
             { data: myTaskData },
             { data: guestTaskData },
+            { data: projData },
         ] = await Promise.all([
             supabase
                 .from("players")
@@ -612,11 +678,20 @@ export default function HomePage() {
                       .select("*")
                       .order("end_date", { ascending: true })
                 : Promise.resolve({ data: [] as Task[] }),
+            supabase
+                .from("projects")
+                .select("*")
+                .order("name", { ascending: true }),
         ]);
         setPlayer(playerData);
         setQuests(questData || []);
         setMyTasks(myTaskData || []);
         setGuestTeamTasks(guestTaskData || []);
+        setProjects(
+            (projData || []).map((row) =>
+                normalizeProject(row as Record<string, unknown>),
+            ),
+        );
         setLoading(false);
     }
 
@@ -1324,6 +1399,7 @@ export default function HomePage() {
                             title="퀘스트 추가"
                             questForm={questForm}
                             setQuestForm={setQuestForm}
+                            projects={projects}
                             onSubmit={addQuest}
                             onClose={() => {
                                 setShowAddQuest(false);
@@ -1342,6 +1418,7 @@ export default function HomePage() {
                             title="퀘스트 수정"
                             questForm={questForm}
                             setQuestForm={setQuestForm}
+                            projects={projects}
                             onSubmit={saveEditQuest}
                             onClose={() => {
                                 setShowEditQuest(false);
