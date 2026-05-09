@@ -7,11 +7,27 @@ export const metadata: Metadata = {
     title: "UD2팀 업무 관리",
     description: "UD2 퍼블리싱팀 전용 업무 관리 앱",
     manifest: "/manifest.json",
+    icons: {
+        icon: [
+            {
+                url: "/icon/app-icon-192.png",
+                sizes: "192x192",
+                type: "image/png",
+            },
+            {
+                url: "/icon/app-icon-512.png",
+                sizes: "512x512",
+                type: "image/png",
+            },
+        ],
+        apple: "/icon/app-icon-192.png",
+    },
     appleWebApp: {
         capable: true,
         statusBarStyle: "default",
         title: "UD2",
     },
+    themeColor: "#ff6600",
     formatDetection: {
         telephone: false,
     },
@@ -30,9 +46,6 @@ export default function RootLayout({
     return (
         <html lang="ko">
             <head>
-                <link rel="manifest" href="/manifest.json" />
-                <meta name="theme-color" content="#ff6600" />
-                <link rel="apple-touch-icon" href="/icons/icon-192.png" />
                 <meta name="apple-mobile-web-app-capable" content="yes" />
                 <meta
                     name="apple-mobile-web-app-status-bar-style"
