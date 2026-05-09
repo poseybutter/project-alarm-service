@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Nav from "@/components/Nav";
 import { AuthProvider } from "@/components/AuthProvider";
@@ -31,7 +31,6 @@ export const metadata: Metadata = {
         statusBarStyle: "default",
         title: "UD2",
     },
-    themeColor: "#ff6600",
     formatDetection: {
         telephone: false,
     },
@@ -40,6 +39,10 @@ export const metadata: Metadata = {
         title: "UD2팀 업무 관리",
         description: "UD2 퍼블리싱팀 전용 업무 관리 앱",
     },
+};
+
+export const viewport: Viewport = {
+    themeColor: "#ff6600",
 };
 
 export default function RootLayout({
