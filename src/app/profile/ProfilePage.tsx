@@ -14,7 +14,6 @@ import AuthGuard from "@/components/AuthGuard";
 import UserMenu from "@/components/UserMenu";
 import NotificationButton from "@/components/NotificationButton";
 import Avatar from "@/components/Avatar";
-import { PageSpinner } from "@/components/Spinner";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { DayPicker, DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
@@ -97,7 +96,7 @@ function getThisWeekRange() {
 }
 
 export default function ProfilePage() {
-    const { member, refreshAvatar, role, loading: authLoading } = useAuth();
+    const { member, refreshAvatar, role } = useAuth();
     const isGuest = member === "GUEST" || role === "guest";
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -120,10 +119,6 @@ export default function ProfilePage() {
     useEffect(() => {
         if (member) loadAll();
     }, [member]); // member 있을 때만 실행
-
-    // hooks 다 선언하고 나서 조건 체크
-    if (authLoading) return <PageSpinner />;
-    if (!member) return null;
 
     async function loadAll() {
         const [
@@ -318,12 +313,12 @@ export default function ProfilePage() {
                                         {player?.avatar_url ? (
                                             <img
                                                 src={player.avatar_url}
-                                                alt={member}
+                                                alt={member ?? ""}
                                                 className="w-full h-full object-cover"
                                             />
                                         ) : (
                                             <div className="w-full h-full bg-amber-100 flex items-center justify-center text-2xl font-bold text-amber-700">
-                                                {member.slice(1)}
+                                                {(member ?? "").slice(1)}
                                             </div>
                                         )}
                                         {/* 어두운 오버레이 */}
