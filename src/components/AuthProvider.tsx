@@ -30,7 +30,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [role, setRole] = useState<"admin" | "member" | "guest">("member");
 
     useEffect(() => {
-        supabase.auth.getSession().then(({ data: { session } }) => {
+        supabase.auth.getSession().then(({ data: { session }, error }) => {
+            if (error) {
+                console.warn("세션 조회 실패:", error.message);
+                setUser(null);
+                setLoading(false);
+                return;
+            }
             setUser(session?.user ?? null);
             setLoading(false);
         });
@@ -38,7 +44,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const {
             data: { subscription },
         } = supabase.auth.onAuthStateChange((event, session) => {
-            setUser(session?.user ?? null);
+            if (event === "TOKEN_REFRESHED" || event === "SIGNED_IN") {
+                setUser(session?.user ?? null);
+            }
+            if (
+                event === "SIGNED_OUT" ||
+                (event as string) === "USER_DELETED"
+            ) {
+                setUser(null);
+            }
             setLoading(false);
         });
 
