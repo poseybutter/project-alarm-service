@@ -76,6 +76,7 @@ export default function ManagePage() {
     const [filterProjMember, setFilterProjMember] = useState("");
     const [filterProjLang, setFilterProjLang] = useState("");
     const [sortProj, setSortProj] = useState<"가나다" | "담당자">("가나다");
+    const [showArchived, setShowArchived] = useState(false);
     const [searchAcc, setSearchAcc] = useState("");
     const [filterAccMember, setFilterAccMember] = useState("");
     const [filterAccStatus, setFilterAccStatus] = useState("");
@@ -115,9 +116,10 @@ export default function ManagePage() {
     const projNameOptions = useMemo(
         () =>
             projects
+                .filter((p) => showArchived || !p.is_archived)
                 .sort((a, b) => a.name.localeCompare(b.name, "ko"))
                 .map((p) => ({ value: p.name, label: p.name })),
-        [projects],
+        [projects, showArchived],
     );
 
     const accTabProjFilterOptions = useMemo(
@@ -420,8 +422,17 @@ export default function ManagePage() {
         await loadData();
     }
 
+    async function toggleArchive(id: number, current: boolean) {
+        await supabase
+            .from("projects")
+            .update({ is_archived: !current })
+            .eq("id", id);
+        await loadData();
+    }
+
     const filteredProjects = projects
         .filter((p) => {
+            if (!showArchived && p.is_archived) return false;
             const q = searchProj.trim();
             const matchSearch =
                 !q || p.name.toLowerCase().includes(q.toLowerCase());
@@ -597,27 +608,45 @@ export default function ManagePage() {
                                     <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
                                 </div>
                             </div>
-                            <div className="flex items-center justify-between mb-3">
-                                <span className="text-xs text-stone-400">
+                            <div className="flex items-center justify-between gap-2 mb-3">
+                                <span className="text-xs text-stone-400 shrink-0">
                                     총 {filteredProjects.length}개
                                 </span>
-                                <div className="relative">
-                                    <select
-                                        className="border border-stone-200 rounded-lg px-2 py-1.5 text-xs bg-white appearance-none pr-8"
-                                        value={sortProj}
-                                        onChange={(e) =>
-                                            setSortProj(
-                                                e.target.value as
-                                                    | "가나다"
-                                                    | "담당자",
-                                            )
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setShowArchived((v) => !v)
                                         }
-                                        aria-label="정렬"
+                                        className={`text-xs px-2.5 py-1.5 rounded-lg border font-medium transition-all
+    ${showArchived ? "bg-stone-800 text-white border-stone-800" : "bg-white text-stone-500 border-stone-200"}`}
                                     >
-                                        <option value="가나다">가나다순</option>
-                                        <option value="담당자">담당자순</option>
-                                    </select>
-                                    <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+                                        {showArchived
+                                            ? "보관함 숨기기"
+                                            : `보관함 (${projects.filter((p) => p.is_archived).length})`}
+                                    </button>
+                                    <div className="relative">
+                                        <select
+                                            className="border border-stone-200 rounded-lg px-2 py-1.5 text-xs bg-white appearance-none pr-8"
+                                            value={sortProj}
+                                            onChange={(e) =>
+                                                setSortProj(
+                                                    e.target.value as
+                                                        | "가나다"
+                                                        | "담당자",
+                                                )
+                                            }
+                                            aria-label="정렬"
+                                        >
+                                            <option value="가나다">
+                                                가나다순
+                                            </option>
+                                            <option value="담당자">
+                                                담당자순
+                                            </option>
+                                        </select>
+                                        <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+                                    </div>
                                 </div>
                             </div>
                             {projects.length === 0 ? (
@@ -644,7 +673,8 @@ export default function ManagePage() {
                                     return (
                                         <div
                                             key={p.id}
-                                            className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-2"
+                                            className={`bg-white rounded-xl border border-stone-200 overflow-hidden mb-2
+    ${p.is_archived ? "opacity-50" : ""}`}
                                         >
                                             <div
                                                 role="button"
@@ -724,6 +754,24 @@ export default function ManagePage() {
                                                                 className="text-xs text-stone-400 hover:text-red-500"
                                                             >
                                                                 삭제
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(
+                                                                    e,
+                                                                ) => {
+                                                                    e.stopPropagation();
+                                                                    void toggleArchive(
+                                                                        p.id,
+                                                                        p.is_archived ??
+                                                                            false,
+                                                                    );
+                                                                }}
+                                                                className="text-[11px] text-stone-400 hover:text-stone-600"
+                                                            >
+                                                                {p.is_archived
+                                                                    ? "복원"
+                                                                    : "보관"}
                                                             </button>
                                                         </div>
                                                     )}
