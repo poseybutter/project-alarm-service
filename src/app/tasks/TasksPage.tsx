@@ -256,6 +256,7 @@ export default function TasksPage() {
     const allProjOptions = useMemo(
         () =>
             projects
+                .filter((p) => !p.is_archived)
                 .sort((a, b) => a.name.localeCompare(b.name, "ko"))
                 .map((p) => ({ value: p.name, label: p.name })),
         [projects],
@@ -294,6 +295,7 @@ export default function TasksPage() {
     const editMyProjOptions = useMemo(
         () =>
             projects
+                .filter((p) => !p.is_archived)
                 .filter(
                     (p) =>
                         editMember &&
@@ -308,6 +310,7 @@ export default function TasksPage() {
     const editAllProjOptions = useMemo(
         () =>
             projects
+                .filter((p) => !p.is_archived)
                 .sort((a, b) => a.name.localeCompare(b.name, "ko"))
                 .map((p) => ({ value: p.name, label: p.name })),
         [projects],

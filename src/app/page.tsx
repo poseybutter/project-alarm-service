@@ -84,6 +84,7 @@ function QuestFormModal({
         ? `${selectedDate.getMonth() + 1}/${selectedDate.getDate()}`
         : "마감일 선택";
     const projOptions = [...projects]
+        .filter((p) => !p.is_archived)
         .sort((a, b) => a.name.localeCompare(b.name, "ko"))
         .map((p) => ({ value: p.name, label: p.name }));
     const questModalSelectStyles = {
@@ -602,6 +603,7 @@ export default function HomePage() {
     const editMyProjOptions = useMemo(
         () =>
             projects
+                .filter((p) => !p.is_archived)
                 .filter(
                     (p) =>
                         editMember &&
@@ -616,6 +618,7 @@ export default function HomePage() {
     const editAllProjOptions = useMemo(
         () =>
             projects
+                .filter((p) => !p.is_archived)
                 .sort((a, b) => a.name.localeCompare(b.name, "ko"))
                 .map((p) => ({ value: p.name, label: p.name })),
         [projects],
