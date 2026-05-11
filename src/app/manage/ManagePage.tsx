@@ -1,7 +1,5 @@
 "use client";
 
-export const dynamic = "force-dynamic";
-
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useState } from "react";
 import { DayPicker } from "react-day-picker";
