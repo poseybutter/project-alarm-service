@@ -169,8 +169,6 @@ export default function ManagePage() {
         [],
     );
 
-    if (!member) return null;
-
     async function loadData() {
         setLoading(true);
         const [{ data: projData }, { data: accData }] = await Promise.all([
