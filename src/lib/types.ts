@@ -46,6 +46,7 @@ export type Project = {
     frequency: string | null;
     note: string | null;
     created_at: string;
+    is_archived?: boolean | null;
 };
 
 export type Accessibility = {
