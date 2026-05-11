@@ -79,7 +79,9 @@ export default function ManagePage() {
     const [searchAcc, setSearchAcc] = useState("");
     const [filterAccMember, setFilterAccMember] = useState("");
     const [filterAccStatus, setFilterAccStatus] = useState("");
-    const [sortAcc, setSortAcc] = useState<"가나다" | "담당자">("가나다");
+    const [sortAcc, setSortAcc] = useState<
+        "날짜순" | "가나다순" | "담당자순"
+    >("날짜순");
     const [showAccStartPicker, setShowAccStartPicker] = useState(false);
     const [showAccEndPicker, setShowAccEndPicker] = useState(false);
     const [accProjMode, setAccProjMode] = useState<"select" | "direct">(
@@ -461,13 +463,15 @@ export default function ManagePage() {
             return matchSearch && matchMember && matchStatus;
         })
         .sort((a, b) => {
-            if (sortAcc === "담당자") {
-                return (
-                    a.member.localeCompare(b.member, "ko") ||
-                    a.proj.localeCompare(b.proj, "ko")
-                );
+            if (sortAcc === "날짜순") {
+                if (!a.end_date) return 1;
+                if (!b.end_date) return -1;
+                return a.end_date.localeCompare(b.end_date);
             }
-            return a.proj.localeCompare(b.proj, "ko");
+            if (sortAcc === "담당자순") {
+                return (a.member || "").localeCompare(b.member || "", "ko");
+            }
+            return (a.proj || "").localeCompare(b.proj || "", "ko");
         });
 
     const canEditRowAcc = (a: Accessibility) =>
@@ -927,14 +931,18 @@ export default function ManagePage() {
                                         onChange={(e) =>
                                             setSortAcc(
                                                 e.target.value as
-                                                    | "가나다"
-                                                    | "담당자",
+                                                    | "날짜순"
+                                                    | "가나다순"
+                                                    | "담당자순",
                                             )
                                         }
                                         aria-label="접근성 정렬"
                                     >
-                                        <option value="가나다">가나다순</option>
-                                        <option value="담당자">담당자순</option>
+                                        <option value="날짜순">날짜순</option>
+                                        <option value="가나다순">가나다순</option>
+                                        <option value="담당자순">
+                                            담당자순
+                                        </option>
                                     </select>
                                     <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
                                 </div>
