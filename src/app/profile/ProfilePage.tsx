@@ -21,6 +21,7 @@ import { ko } from "date-fns/locale";
 import type { Player, Task } from "@/lib/types";
 import { formatWorkload } from "@/lib/utils";
 import { BAR_COLORS, MEMBERS, MEMBER_COLORS } from "@/lib/constants";
+import { toLocalYmd } from "@/lib/toLocalYmd";
 
 const TITLES = [
     {
@@ -90,8 +91,8 @@ function getThisWeekRange() {
     const nextWed = new Date(wed);
     nextWed.setDate(wed.getDate() + 7);
     return {
-        from: wed.toISOString().slice(0, 10),
-        to: nextWed.toISOString().slice(0, 10),
+        from: toLocalYmd(wed),
+        to: toLocalYmd(nextWed),
     };
 }
 
@@ -234,7 +235,7 @@ export default function ProfilePage() {
     const lv = player ? calcLevel(player.exp) : LEVELS[0];
     const next = player ? getNextLevel(player.exp) : null;
     const pct = player ? expBar(player.exp) : 0;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = toLocalYmd(new Date());
     const attended = player?.attend_last === today;
     const barColor =
         BAR_COLORS[Math.min((lv.level || 1) - 1, BAR_COLORS.length - 1)];
