@@ -28,6 +28,7 @@ import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
 import Select from "react-select";
 import { selectStyles } from "@/lib/reactSelectStyles";
+import { toLocalYmd } from "@/lib/toLocalYmd";
 
 const MEMBER_BORDER: Record<string, string> = {
     TEAM_MEMBER_1: "border-purple-400 bg-purple-100 text-purple-700",
@@ -53,14 +54,6 @@ function parseYmdToLocalDate(value: string | null): Date | undefined {
     return new Date(`${value}T00:00:00`);
 }
 
-function toLocalYmd(date: Date | undefined): string | null {
-    if (!date) return null;
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, "0");
-    const d = String(date.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-}
-
 function getWeekWin(offset: number = 0) {
     const now = new Date();
     const day = now.getDay();
@@ -71,8 +64,8 @@ function getWeekWin(offset: number = 0) {
     nextWed.setDate(wed.getDate() + 7);
     nextWed.setHours(23, 59, 59, 999);
     return {
-        from: wed.toISOString().slice(0, 10),
-        to: nextWed.toISOString().slice(0, 10),
+        from: toLocalYmd(wed),
+        to: toLocalYmd(nextWed),
         label: `${wed.getFullYear()}년 ${wed.getMonth() + 1}월 · ${wed.getMonth() + 1}/${wed.getDate()}(수)~${nextWed.getMonth() + 1}/${nextWed.getDate()}(수)`,
     };
 }
@@ -322,13 +315,17 @@ export default function TasksPage() {
     function getNextWeekRange() {
         const now = new Date();
         const day = now.getDay();
+        // 다음 주 수요일 (로컬 기준)
         const wed = new Date(now);
         wed.setDate(now.getDate() - ((day + 4) % 7) + 7);
         wed.setHours(0, 0, 0, 0);
         const nextWed = new Date(wed);
         nextWed.setDate(wed.getDate() + 7);
         nextWed.setHours(23, 59, 59, 999);
-        return { from: wed, to: nextWed };
+        return {
+            from: wed,
+            to: nextWed,
+        };
     }
 
     function toggleIsPlan() {
@@ -360,10 +357,10 @@ export default function TasksPage() {
                 content: form.content,
                 priority: form.priority || null,
                 start_date: formDateRange?.from
-                    ? formDateRange.from.toISOString().slice(0, 10)
+                    ? toLocalYmd(formDateRange.from)
                     : null,
                 end_date: formDateRange?.to
-                    ? formDateRange.to.toISOString().slice(0, 10)
+                    ? toLocalYmd(formDateRange.to)
                     : null,
                 workload: form.workload || 0,
                 issue: form.issue || null,
@@ -413,8 +410,12 @@ export default function TasksPage() {
                 proj: editForm.proj,
                 content: editForm.content,
                 priority: editForm.priority || null,
-                start_date: toLocalYmd(editDateRange?.from),
-                end_date: toLocalYmd(editDateRange?.to),
+                start_date: editDateRange?.from
+                    ? toLocalYmd(editDateRange.from)
+                    : null,
+                end_date: editDateRange?.to
+                    ? toLocalYmd(editDateRange.to)
+                    : null,
                 workload: editForm.workload || 0,
                 issue: editForm.issue || null,
                 status: editForm.status,

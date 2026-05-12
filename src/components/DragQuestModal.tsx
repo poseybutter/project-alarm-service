@@ -8,6 +8,7 @@ import "react-day-picker/dist/style.css";
 import type { Task } from "@/lib/types";
 import { TYPE_COLORS } from "@/lib/constants";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
+import { toLocalYmd } from "@/lib/toLocalYmd";
 
 type DragQuestModalProps = {
     task: Task;
@@ -25,8 +26,6 @@ export default function DragQuestModal({
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
-    const toYmd = (d: Date) =>
-        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const selectedDate = endDate ? new Date(`${endDate}T00:00:00`) : undefined;
     const dateLabel = selectedDate
         ? `${selectedDate.getMonth() + 1}/${selectedDate.getDate()}`
@@ -142,7 +141,7 @@ export default function DragQuestModal({
                                                 selected={selectedDate}
                                                 onSelect={(d) => {
                                                     setEndDate(
-                                                        d ? toYmd(d) : "",
+                                                        d ? toLocalYmd(d) : "",
                                                     );
                                                 }}
                                                 locale={ko}
