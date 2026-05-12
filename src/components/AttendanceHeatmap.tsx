@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { toLocalYmd } from "@/lib/toLocalYmd";
 
 type AttendanceHeatmapProps = {
     member: string;
@@ -27,10 +28,6 @@ function parseYmdUTC(iso: string): Date {
     return new Date(Date.UTC(y, m - 1, d));
 }
 
-function toYmdUTC(d: Date): string {
-    return d.toISOString().slice(0, 10);
-}
-
 function utcMondayOfContainingWeek(iso: string): Date {
     const dt = parseYmdUTC(iso);
     const dow = dt.getUTCDay();
@@ -54,7 +51,7 @@ function buildWeekGrid(today: string): {
         for (let c = 0; c < 16; c++) {
             const d = new Date(anchorMonday);
             d.setUTCDate(anchorMonday.getUTCDate() + (c - 15) * 7 + r);
-            grid[r][c] = toYmdUTC(d);
+            grid[r][c] = toLocalYmd(d);
         }
     }
     const monthLabels: (string | null)[] = [];
@@ -107,7 +104,7 @@ const LEGEND_SWATCHES = [
 
 export default function AttendanceHeatmap({ member }: AttendanceHeatmapProps) {
     const today = useMemo(
-        () => new Date().toISOString().slice(0, 10),
+        () => toLocalYmd(new Date()),
         [],
     );
     const { grid, monthLabels } = useMemo(

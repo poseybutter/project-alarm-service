@@ -14,6 +14,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { PageSpinner } from "@/components/Spinner";
 import type { Task } from "@/lib/types";
 import { MEMBERS, LEADER, STATUS_COLORS } from "@/lib/constants";
+import { toLocalYmd } from "@/lib/toLocalYmd";
 import TiptapSectionEditor from "@/components/TiptapSectionEditor";
 
 /** 전달사항 HTML이 사용자에게 보일 내용이 있는지 (빈 에디터·공백 태그 제외) */
@@ -407,8 +408,8 @@ function getWeekWin(offset: number) {
     const fmt = (d: Date) =>
         `${d.getMonth() + 1}/${d.getDate()}(${["일", "월", "화", "수", "목", "금", "토"][d.getDay()]})`;
     return {
-        from: wed.toISOString().slice(0, 10),
-        to: nextWed.toISOString().slice(0, 10),
+        from: toLocalYmd(wed),
+        to: toLocalYmd(nextWed),
         label: `${fmt(wed)} ~ ${fmt(nextWed)}`,
     };
 }
@@ -420,8 +421,8 @@ function getMonthWin(offset: number) {
     const first = new Date(year, month, 1);
     const last = new Date(year, month + 1, 0);
     return {
-        first: first.toISOString().slice(0, 10),
-        last: last.toISOString().slice(0, 10),
+        first: toLocalYmd(first),
+        last: toLocalYmd(last),
         label: `${first.getFullYear()}년 ${first.getMonth() + 1}월`,
     };
 }
