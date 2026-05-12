@@ -50,6 +50,7 @@ import {
 import DragQuestModal from "@/components/DragQuestModal";
 import Select from "react-select";
 import { selectStyles } from "@/lib/reactSelectStyles";
+import { toLocalYmd } from "@/lib/toLocalYmd";
 
 type QuestFormType = {
     content: string;
@@ -75,8 +76,6 @@ function QuestFormModal({
     projects,
 }: QuestFormModalProps) {
     const [showDatePicker, setShowDatePicker] = useState(false);
-    const toYmd = (d: Date) =>
-        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const selectedDate = questForm.end_date
         ? new Date(`${questForm.end_date}T00:00:00`)
         : undefined;
@@ -229,7 +228,7 @@ function QuestFormModal({
                                                     setQuestForm({
                                                         ...questForm,
                                                         end_date: d
-                                                            ? toYmd(d)
+                                                            ? toLocalYmd(d)
                                                             : "",
                                                     });
                                                 }}
@@ -291,13 +290,6 @@ function periodButtonLabel(range: DateRange | undefined): {
     if (!range.to) return { text: `${f} ~`, placeholder: false };
     const t = `${range.to.getMonth() + 1}/${range.to.getDate()}`;
     return { text: `${f} ~ ${t}`, placeholder: false };
-}
-
-function toLocalYmd(date: Date): string {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, "0");
-    const d = String(date.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
 }
 
 const EMPTY_EDIT_TASK = {
@@ -679,22 +671,19 @@ export default function HomePage() {
         const today = new Date();
         if (today.getDay() !== 1) return;
 
-        const shownKey = `mvp_shown_${today.toISOString().slice(0, 10)}`;
+        const shownKey = `mvp_shown_${toLocalYmd(today)}`;
         if (localStorage.getItem(shownKey)) return;
 
         const lockKey = `mvp_lock_${shownKey}`;
         if (sessionStorage.getItem(lockKey)) return;
         sessionStorage.setItem(lockKey, "1");
 
-        const toYmd = (d: Date) =>
-            `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
         const lastMonday = new Date(today);
         lastMonday.setDate(today.getDate() - 7);
         const lastSunday = new Date(today);
         lastSunday.setDate(today.getDate() - 1);
-        const startYmd = toYmd(lastMonday);
-        const endYmd = toYmd(lastSunday);
+        const startYmd = toLocalYmd(lastMonday);
+        const endYmd = toLocalYmd(lastSunday);
 
         const markShown = () => {
             try {
@@ -831,7 +820,7 @@ export default function HomePage() {
 
     async function handleAttend(e: React.MouseEvent) {
         if (!player || !member) return;
-        const today = new Date().toISOString().slice(0, 10);
+        const today = toLocalYmd(new Date());
         if (player.attend_last === today) {
             showToastMsg("오늘은 이미 출석했어요!");
             return;
@@ -1011,13 +1000,17 @@ export default function HomePage() {
     function getNextWeekRange() {
         const now = new Date();
         const day = now.getDay();
+        // 다음 주 수요일 (로컬 기준)
         const wed = new Date(now);
         wed.setDate(now.getDate() - ((day + 4) % 7) + 7);
         wed.setHours(0, 0, 0, 0);
         const nextWed = new Date(wed);
         nextWed.setDate(wed.getDate() + 7);
         nextWed.setHours(23, 59, 59, 999);
-        return { from: wed, to: nextWed };
+        return {
+            from: wed,
+            to: nextWed,
+        };
     }
 
     function toggleEditIsPlan() {
@@ -1092,7 +1085,7 @@ export default function HomePage() {
     const lv = player ? calcLevel(player.exp) : LEVELS[0];
     const next = player ? getNextLevel(player.exp) : null;
     const pct = player ? expBar(player.exp) : 0;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = toLocalYmd(new Date());
     const attended = player?.attend_last === today;
     const barColor =
         BAR_COLORS[Math.min((lv.level || 1) - 1, BAR_COLORS.length - 1)];

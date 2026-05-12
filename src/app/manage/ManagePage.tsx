@@ -18,6 +18,7 @@ import { getDiff, normalizeProject, getProjectMembers } from "@/lib/utils";
 import { MEMBERS } from "@/lib/constants";
 import Select from "react-select";
 import { selectStyles } from "@/lib/reactSelectStyles";
+import { toLocalYmd } from "@/lib/toLocalYmd";
 
 const EMPTY_PROJ_FORM = {
     name: "",
@@ -33,9 +34,6 @@ const EMPTY_PROJ_FORM = {
 };
 
 const PROJ_LANG_OPTIONS = ["PHP", "JSP", "기타"] as const;
-
-const toYmd = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 const ACC_INSPECTION_OPTIONS = [
     "신청필요",
@@ -1590,7 +1588,7 @@ export default function ManagePage() {
                                                                         ...f,
                                                                         start_date:
                                                                             d
-                                                                                ? toYmd(
+                                                                                ? toLocalYmd(
                                                                                       d,
                                                                                   )
                                                                                 : "",
@@ -1705,7 +1703,7 @@ export default function ManagePage() {
                                                                         ...f,
                                                                         end_date:
                                                                             d
-                                                                                ? toYmd(
+                                                                                ? toLocalYmd(
                                                                                       d,
                                                                                   )
                                                                                 : "",
