@@ -28,7 +28,10 @@ import { DayPicker, DateRange } from "react-day-picker";
 import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
 import Select from "react-select";
-import { selectStyles } from "@/lib/reactSelectStyles";
+import {
+    projectSearchSelectStyles,
+    taskFilterProjectSelectStyles,
+} from "@/lib/reactSelectStyles";
 import { toLocalYmd } from "@/lib/toLocalYmd";
 
 const MEMBER_BORDER: Record<string, string> = {
@@ -140,6 +143,7 @@ export default function TasksPage() {
     });
     const [formDateRange, setFormDateRange] = useState<DateRange | undefined>();
     const [showFormDatePicker, setShowFormDatePicker] = useState(false);
+    const [formProjTab, setFormProjTab] = useState<"mine" | "all">("mine");
 
     const [filterMember, setFilterMember] = useState("");
     const [filterProject, setFilterProject] = useState("");
@@ -232,34 +236,24 @@ export default function TasksPage() {
                 .map((p) => ({ value: p.name, label: p.name })),
         [projects],
     );
-    const addProjSelectStyles = useMemo(
-        () => ({
-            ...selectStyles,
-            control: (
-                base: Record<string, unknown>,
-                state: { isFocused: boolean },
-            ) => ({
-                ...base,
-                fontSize: "14px",
-                borderColor: state.isFocused ? "#f59e0b" : "#e7e5e4",
-                borderRadius: "8px",
-                boxShadow: state.isFocused ? "0 0 0 2px #fde68a" : "none",
-                "&:hover": { borderColor: "#d6d3d1" },
-                minHeight: "42px",
-                height: "42px",
-            }),
-            valueContainer: (base: Record<string, unknown>) => ({
-                ...base,
-                height: "42px",
-                padding: "0 12px",
-            }),
-            indicatorsContainer: (base: Record<string, unknown>) => ({
-                ...base,
-                height: "42px",
-            }),
-        }),
-        [],
+
+    const formMyProjOptions = useMemo(
+        () =>
+            projects
+                .filter((p) => !p.is_archived)
+                .filter(
+                    (p) =>
+                        form.member &&
+                        ((p.members || []).includes(form.member) ||
+                            p.member === form.member),
+                )
+                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+                .map((p) => ({ value: p.name, label: p.name })),
+        [projects, form.member],
     );
+
+    const formProjOptions =
+        formProjTab === "mine" ? formMyProjOptions : allProjOptions;
 
     function getNextWeekRange() {
         const now = new Date();
@@ -411,7 +405,13 @@ export default function TasksPage() {
         {} as Record<string, Task[]>,
     );
 
-    const allProjects = [...new Set(tasks.map((t) => t.proj).filter(Boolean))];
+    const filterProjectSelectOptions = useMemo(
+        () =>
+            [...new Set(tasks.map((t) => t.proj).filter(Boolean))]
+                .sort((a, b) => a.localeCompare(b, "ko"))
+                .map((p) => ({ value: p, label: p })),
+        [tasks],
+    );
 
     const formPeriodLabel = periodButtonLabel(formDateRange);
 
@@ -433,6 +433,7 @@ export default function TasksPage() {
                             {!isGuest && (
                                 <button
                                     onClick={() => {
+                                        setFormProjTab("mine");
                                         setForm({
                                             ...EMPTY_FORM,
                                             member: currentMember || "",
@@ -496,22 +497,31 @@ export default function TasksPage() {
                             </select>
                             <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
                         </div>
-                        <div className="relative">
-                            <select
-                                className="w-full min-w-0 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600 appearance-none pr-8"
-                                value={filterProject}
-                                onChange={(e) =>
-                                    setFilterProject(e.target.value)
+                        <div className="min-w-0">
+                            <Select
+                                options={filterProjectSelectOptions}
+                                value={
+                                    filterProject
+                                        ? {
+                                              value: filterProject,
+                                              label: filterProject,
+                                          }
+                                        : null
                                 }
-                            >
-                                <option value="">전체 프로젝트</option>
-                                {allProjects.map((p) => (
-                                    <option key={p} value={p}>
-                                        {p}
-                                    </option>
-                                ))}
-                            </select>
-                            <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+                                onChange={(opt) =>
+                                    setFilterProject(opt?.value ?? "")
+                                }
+                                placeholder="전체 프로젝트"
+                                isClearable
+                                isSearchable
+                                styles={taskFilterProjectSelectStyles}
+                                menuPortalTarget={
+                                    typeof document !== "undefined"
+                                        ? document.body
+                                        : null
+                                }
+                                noOptionsMessage={() => "프로젝트가 없어요"}
+                            />
                         </div>
                         <div className="relative">
                             <select
@@ -814,13 +824,14 @@ export default function TasksPage() {
                                         {assignableMembers.map((m) => (
                                             <button
                                                 key={m}
-                                                onClick={() =>
+                                                onClick={() => {
+                                                    setFormProjTab("mine");
                                                     setForm({
                                                         ...form,
                                                         member: m,
                                                         proj: "",
-                                                    })
-                                                }
+                                                    });
+                                                }}
                                                 className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border-2 transition-all
                           ${form.member === m ? MEMBER_BORDER[m] : "bg-stone-50 border-stone-200 text-stone-400"}`}
                                             >
@@ -921,8 +932,38 @@ export default function TasksPage() {
                                         프로젝트{" "}
                                         <span className="text-red-500">*</span>
                                     </label>
+                                    <div className="flex bg-stone-100 rounded-lg p-0.5 mb-2">
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setFormProjTab("mine")
+                                            }
+                                            className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-all
+                        ${
+                            formProjTab === "mine"
+                                ? "bg-white text-stone-800 shadow-sm"
+                                : "text-stone-400"
+                        }`}
+                                        >
+                                            내 프로젝트
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setFormProjTab("all")
+                                            }
+                                            className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-all
+                        ${
+                            formProjTab === "all"
+                                ? "bg-white text-stone-800 shadow-sm"
+                                : "text-stone-400"
+                        }`}
+                                        >
+                                            전체
+                                        </button>
+                                    </div>
                                     <Select
-                                        options={allProjOptions}
+                                        options={formProjOptions}
                                         value={
                                             form.proj
                                                 ? {
@@ -938,8 +979,9 @@ export default function TasksPage() {
                                             })
                                         }
                                         placeholder="프로젝트 검색"
+                                        isClearable
                                         isSearchable
-                                        styles={addProjSelectStyles}
+                                        styles={projectSearchSelectStyles}
                                         menuPortalTarget={
                                             typeof document !== "undefined"
                                                 ? document.body
