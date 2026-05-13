@@ -23,6 +23,26 @@ const AuthContext = createContext<AuthContextType>({
     refreshAvatar: () => {},
 });
 
+/** 리프레시 토큰 무효 등 → 로컬 스토리지만 비우고 다시 로그인 유도 */
+async function clearInvalidLocalSession() {
+    try {
+        await supabase.auth.signOut({ scope: "local" });
+    } catch {
+        /* ignore */
+    }
+}
+
+function looksLikeInvalidRefreshOrJwt(message: string | undefined) {
+    if (!message) return false;
+    const m = message.toLowerCase();
+    return (
+        m.includes("refresh token") ||
+        m.includes("invalid jwt") ||
+        m.includes("jwt expired") ||
+        m.includes("session missing")
+    );
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
@@ -30,16 +50,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [role, setRole] = useState<"admin" | "member" | "guest">("member");
 
     useEffect(() => {
-        supabase.auth.getSession().then(({ data: { session }, error }) => {
-            if (error) {
-                console.warn("세션 조회 실패:", error.message);
+        let cancelled = false;
+
+        async function boot() {
+            try {
+                const {
+                    data: { session },
+                    error,
+                } = await supabase.auth.getSession();
+                if (cancelled) return;
+                if (error) {
+                    console.warn("세션 조회 실패:", error.message);
+                    if (looksLikeInvalidRefreshOrJwt(error.message)) {
+                        await clearInvalidLocalSession();
+                    }
+                    setUser(null);
+                    return;
+                }
+                setUser(session?.user ?? null);
+            } catch (e) {
+                if (cancelled) return;
+                console.warn(
+                    "세션 조회 중 오류:",
+                    e instanceof Error ? e.message : e,
+                );
+                await clearInvalidLocalSession();
                 setUser(null);
-                setLoading(false);
-                return;
+            } finally {
+                if (!cancelled) setLoading(false);
             }
-            setUser(session?.user ?? null);
-            setLoading(false);
-        });
+        }
+
+        void boot();
 
         const {
             data: { subscription },
@@ -56,7 +98,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setLoading(false);
         });
 
-        return () => subscription.unsubscribe();
+        return () => {
+            cancelled = true;
+            subscription.unsubscribe();
+        };
     }, []);
 
     const member = getMemberName(user?.email || "");
