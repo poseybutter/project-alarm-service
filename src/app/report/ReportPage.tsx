@@ -396,14 +396,23 @@ function canEdit(isLocked: boolean): boolean {
 
 function getWeekWin(offset: number) {
     const now = new Date();
-    const day = now.getDay();
-    // 수요일 기준
-    const wed = new Date(now);
-    wed.setDate(now.getDate() - ((day + 4) % 7) + offset * 7);
+    // 수(3)~화(2) 한 주: 주 시작은 수요일. 목~화는 직전 수요일.
+    const y = now.getFullYear();
+    const mon = now.getMonth();
+    const dom = now.getDate();
+    const dow = now.getDay();
+    const daysFromWeekStart = (dow - 3 + 7) % 7;
+    const wed = new Date(y, mon, dom - daysFromWeekStart + offset * 7);
     wed.setHours(0, 0, 0, 0);
-    const nextWed = new Date(wed);
-    nextWed.setDate(wed.getDate() + 7);
-    nextWed.setHours(23, 59, 59, 999);
+    const nextWed = new Date(
+        wed.getFullYear(),
+        wed.getMonth(),
+        wed.getDate() + 7,
+        23,
+        59,
+        59,
+        999,
+    );
 
     const fmt = (d: Date) =>
         `${d.getMonth() + 1}/${d.getDate()}(${["일", "월", "화", "수", "목", "금", "토"][d.getDay()]})`;
@@ -546,14 +555,19 @@ export default function ReportPage() {
 
     const loadBriefing = useCallback(async () => {
         const weekStart = getWeekWin(wOff).from;
-        const { data } = await supabase
+        const { data, error } = await supabase
             .from("briefings")
             .select(
                 "project, maintenance, etc, notice, is_locked, edited_by, updated_at",
             )
             .eq("week_start", weekStart)
             .maybeSingle();
-        if (data) {
+
+        if (error) {
+            return;
+        }
+
+        if (data && noticeHtmlHasText(data.notice)) {
             setBriefing({
                 project: data.project ?? "",
                 maintenance: data.maintenance ?? "",
@@ -563,9 +577,41 @@ export default function ReportPage() {
                 edited_by: data.edited_by ?? null,
                 updated_at: data.updated_at ?? null,
             });
-        } else {
-            setBriefing(null);
+            return;
         }
+
+        const prevWeekStart = getWeekWin(wOff - 1).from;
+        const { data: prevData } = await supabase
+            .from("briefings")
+            .select("notice")
+            .eq("week_start", prevWeekStart)
+            .maybeSingle();
+
+        const rawPrev = prevData?.notice ?? null;
+        const carriedNotice = noticeHtmlHasText(rawPrev) ? rawPrev : null;
+
+        if (data) {
+            setBriefing({
+                project: data.project ?? "",
+                maintenance: data.maintenance ?? "",
+                etc: data.etc ?? "",
+                notice: carriedNotice,
+                is_locked: data.is_locked ?? false,
+                edited_by: data.edited_by ?? null,
+                updated_at: data.updated_at ?? null,
+            });
+            return;
+        }
+
+        setBriefing({
+            project: "",
+            maintenance: "",
+            etc: "",
+            notice: carriedNotice,
+            is_locked: false,
+            edited_by: null,
+            updated_at: null,
+        });
     }, [wOff]);
 
     const loadAssignments = useCallback(async () => {
