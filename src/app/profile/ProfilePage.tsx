@@ -14,6 +14,7 @@ import AuthGuard from "@/components/AuthGuard";
 import UserMenu from "@/components/UserMenu";
 import NotificationButton from "@/components/NotificationButton";
 import Avatar from "@/components/Avatar";
+import TaskEditModal from "@/components/TaskEditModal";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { DayPicker, DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
@@ -116,6 +117,10 @@ export default function ProfilePage() {
     const [dateRange, setDateRange] = useState<DateRange | undefined>();
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [showAvatarMenu, setShowAvatarMenu] = useState(false);
+    const [historyEditTask, setHistoryEditTask] = useState<Task | null>(null);
+
+    const canEditHistoryTask = (taskMember: string) =>
+        !isGuest && (role === "admin" || taskMember === member);
 
     useEffect(() => {
         if (member) loadAll();
@@ -145,6 +150,17 @@ export default function ProfilePage() {
             return s >= wr.from && s < wr.to;
         });
         setWeekTasks(weekly);
+    }
+
+    async function deleteHistoryTask(id: number) {
+        if (!confirm("정말 삭제하시겠어요?")) return;
+        const { error } = await supabase.from("tasks").delete().eq("id", id);
+        if (error) {
+            showToastMsg("삭제 실패: " + error.message);
+            return;
+        }
+        showToastMsg("삭제되었어요");
+        await loadAll();
     }
 
     function showToastMsg(msg: string) {
@@ -1009,18 +1025,57 @@ export default function ProfilePage() {
                                                                     )}
                                                             </div>
                                                         </div>
-                                                        <span
-                                                            className={`text-xs px-2 py-0.5 rounded-lg font-medium shrink-0
-                          ${
-                              {
-                                  완료: "bg-green-100 text-green-700",
-                                  진행중: "bg-blue-100 text-blue-700",
-                                  "이슈 및 대기": "bg-red-100 text-red-700",
-                              }[t.status] || "bg-gray-100 text-gray-600"
-                          }`}
-                                                        >
-                                                            {t.status}
-                                                        </span>
+                                                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                                                            <span
+                                                                className={`text-xs px-2 py-0.5 rounded-lg font-medium
+                                                                ${
+                                                                    {
+                                                                        완료: "bg-green-100 text-green-700",
+                                                                        진행중: "bg-blue-100 text-blue-700",
+                                                                        "이슈 및 대기":
+                                                                            "bg-red-100 text-red-700",
+                                                                    }[
+                                                                        t.status
+                                                                    ] ||
+                                                                    "bg-gray-100 text-gray-600"
+                                                                }`}
+                                                            >
+                                                                {t.status}
+                                                            </span>
+                                                            {canEditHistoryTask(
+                                                                t.member ?? "",
+                                                            ) && (
+                                                                <div className="flex flex-col items-end gap-1">
+                                                                    <button
+                                                                        type="button"
+                                                                        className="text-xs text-amber-600 hover:text-amber-700 font-medium whitespace-nowrap"
+                                                                        onClick={() =>
+                                                                            setHistoryEditTask(
+                                                                                t,
+                                                                            )
+                                                                        }
+                                                                    >
+                                                                        수정
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="text-xs text-stone-400 hover:text-red-500 whitespace-nowrap"
+                                                                        onClick={() => {
+                                                                            if (
+                                                                                typeof t.id ===
+                                                                                "number"
+                                                                            ) {
+                                                                                void deleteHistoryTask(
+                                                                                    t.id,
+                                                                                );
+                                                                            }
+                                                                        }}
+                                                                    >
+                                                                        삭제
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             ))}
@@ -1187,6 +1242,11 @@ export default function ProfilePage() {
                         {toast}
                     </div>
                 )}
+                <TaskEditModal
+                    task={historyEditTask}
+                    onClose={() => setHistoryEditTask(null)}
+                    onSaved={loadAll}
+                />
             </div>
         </AuthGuard>
     );
