@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -69,14 +69,14 @@ function plainBriefingToInitialHtml(plain: string): string {
         .join("");
 }
 
-/** 보기 모드: 자동문을 에디터와 같은 타이포로 렌더 (읽기 전용) */
-function BriefingAutoPreview({ plain }: { plain: string }) {
-    const html = plain.trim() ? plainBriefingToInitialHtml(plain) : "<p></p>";
+/** 보기 모드: DB에 저장된 브리핑 HTML (Tiptap 저장본) */
+function BriefingSavedHtmlPreview({ html }: { html: string }) {
+    const inner = html?.trim() ? html : "<p></p>";
     return (
         <div className="notice-editor min-h-[2.5rem] overflow-x-auto rounded-lg border border-stone-200 bg-stone-50">
             <div
                 className="ProseMirror tiptap min-h-[2.5rem] px-3 py-3 text-stone-700"
-                dangerouslySetInnerHTML={{ __html: html }}
+                dangerouslySetInnerHTML={{ __html: inner }}
             />
         </div>
     );
@@ -176,6 +176,16 @@ function TiptapNoticeEditor({
         editor.setEditable(editable);
     }, [editable, editor]);
 
+    /** 읽기 모드: 부모 briefing 갱신(loadBriefing 등) 시 에디터 본문 즉시 반영 */
+    useEffect(() => {
+        if (!editor || editor.isDestroyed) return;
+        if (editable) return;
+        const next = content || "";
+        const cur = editor.getHTML();
+        if (cur === next) return;
+        editor.commands.setContent(next, { emitUpdate: false });
+    }, [content, editor, editable]);
+
     useEffect(() => {
         if (!editor || editor.isDestroyed) return;
         const bump = () => setUiTick((t) => t + 1);
@@ -186,6 +196,18 @@ function TiptapNoticeEditor({
             editor.off("transaction", bump);
         };
     }, [editor]);
+
+    /** 저장 버튼 포커스 이동 직전에 마지막 HTML이 부모 state에 반영되도록 */
+    useEffect(() => {
+        if (!editor || editor.isDestroyed) return;
+        const flush = () => {
+            onChange(editor.getHTML());
+        };
+        editor.on("blur", flush);
+        return () => {
+            editor.off("blur", flush);
+        };
+    }, [editor, onChange]);
 
     const btn = (active: boolean) =>
         `rounded px-2 py-1 text-xs font-medium border transition-colors ${
@@ -517,6 +539,10 @@ export default function ReportPage() {
     const { member: currentMember, role } = useAuth();
     const [mode, setMode] = useState<"weekly" | "monthly">("weekly");
     const [wOff, setWOff] = useState(0);
+    const wOffRef = useRef(wOff);
+    useEffect(() => {
+        wOffRef.current = wOff;
+    }, [wOff]);
     const [mOff, setMOff] = useState(0);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
@@ -529,9 +555,17 @@ export default function ReportPage() {
     const [editEtc, setEditEtc] = useState("");
     const [briefingEditorKey, setBriefingEditorKey] = useState(0);
     const [saving, setSaving] = useState(false);
+    const savingBriefingRef = useRef(false);
     const [editNotice, setEditNotice] = useState("");
+    /** 저장 클릭 시점에 state 배치보다 앞선 값이 쓰이지 않도록 최신 HTML 유지 */
+    const editNoticeDraftRef = useRef("");
+    const onNoticeHtmlChange = useCallback((html: string) => {
+        editNoticeDraftRef.current = html;
+        setEditNotice(html);
+    }, []);
     const [editingNotice, setEditingNotice] = useState(false);
     const [savingNotice, setSavingNotice] = useState(false);
+    const savingNoticeRef = useRef(false);
     const [noticeEditorNonce, setNoticeEditorNonce] = useState(0);
     const [copiedProject, setCopiedProject] = useState(false);
     const [copiedMaintenance, setCopiedMaintenance] = useState(false);
@@ -550,11 +584,15 @@ export default function ReportPage() {
     const [showOtherInput, setShowOtherInput] = useState(false);
     const [copiedAssign, setCopiedAssign] = useState(false);
 
+    savingBriefingRef.current = saving;
+    savingNoticeRef.current = savingNotice;
+
     const wk = getWeekWin(wOff);
     const mn = getMonthWin(mOff);
 
     const loadBriefing = useCallback(async () => {
-        const weekStart = getWeekWin(wOff).from;
+        const offsetAtStart = wOffRef.current;
+        const weekStart = getWeekWin(offsetAtStart).from;
         const { data, error } = await supabase
             .from("briefings")
             .select(
@@ -564,6 +602,11 @@ export default function ReportPage() {
             .maybeSingle();
 
         if (error) {
+            console.error("[loadBriefing]", error.message);
+            return;
+        }
+
+        if (wOffRef.current !== offsetAtStart) {
             return;
         }
 
@@ -580,12 +623,16 @@ export default function ReportPage() {
             return;
         }
 
-        const prevWeekStart = getWeekWin(wOff - 1).from;
+        const prevWeekStart = getWeekWin(offsetAtStart - 1).from;
         const { data: prevData } = await supabase
             .from("briefings")
             .select("notice")
             .eq("week_start", prevWeekStart)
             .maybeSingle();
+
+        if (wOffRef.current !== offsetAtStart) {
+            return;
+        }
 
         const rawPrev = prevData?.notice ?? null;
         const carriedNotice = noticeHtmlHasText(rawPrev) ? rawPrev : null;
@@ -612,7 +659,7 @@ export default function ReportPage() {
             edited_by: null,
             updated_at: null,
         });
-    }, [wOff]);
+    }, []);
 
     const loadAssignments = useCallback(async () => {
         const { data } = await supabase
@@ -675,6 +722,9 @@ export default function ReportPage() {
                 "postgres_changes",
                 { event: "*", schema: "public", table: "briefings" },
                 () => {
+                    if (savingBriefingRef.current || savingNoticeRef.current) {
+                        return;
+                    }
                     void loadBriefing();
                 },
             )
@@ -743,9 +793,21 @@ export default function ReportPage() {
     const editAllowed = canEdit(isBriefingLocked);
 
     function startEditing() {
-        setEditProject(plainBriefingToInitialHtml(autoProject));
-        setEditMaintenance(plainBriefingToInitialHtml(autoMaintenance));
-        setEditEtc(plainBriefingToInitialHtml(autoEtc));
+        setEditProject(
+            noticeHtmlHasText(briefing?.project)
+                ? briefing?.project ?? ""
+                : plainBriefingToInitialHtml(autoProject),
+        );
+        setEditMaintenance(
+            noticeHtmlHasText(briefing?.maintenance)
+                ? briefing?.maintenance ?? ""
+                : plainBriefingToInitialHtml(autoMaintenance),
+        );
+        setEditEtc(
+            noticeHtmlHasText(briefing?.etc)
+                ? briefing?.etc ?? ""
+                : plainBriefingToInitialHtml(autoEtc),
+        );
         setBriefingEditorKey((k) => k + 1);
         setEditing(true);
     }
@@ -771,57 +833,66 @@ export default function ReportPage() {
 
     async function saveBriefing() {
         setSaving(true);
-        const weekStart = wk.from;
-        const { error } = await supabase.from("briefings").upsert(
-            {
-                week_start: weekStart,
-                project: editProject,
-                maintenance: editMaintenance,
-                etc: editEtc,
-                notice: briefing?.notice ?? null,
-                is_locked: briefing?.is_locked ?? false,
-                edited_by: currentMember ?? null,
-                updated_at: new Date().toISOString(),
-            },
-            { onConflict: "week_start" },
-        );
-        setSaving(false);
-        if (error) {
-            console.error(error);
-            alert("저장에 실패했어요: " + error.message);
-            return;
+        try {
+            const weekStart = wk.from;
+            console.log("[saveBriefing] weekStart:", weekStart);
+            const { error } = await supabase.from("briefings").upsert(
+                {
+                    week_start: weekStart,
+                    project: editProject,
+                    maintenance: editMaintenance,
+                    etc: editEtc,
+                    notice: briefing?.notice ?? null,
+                    is_locked: briefing?.is_locked ?? false,
+                    edited_by: currentMember ?? null,
+                    updated_at: new Date().toISOString(),
+                },
+                { onConflict: "week_start" },
+            );
+            console.log("[saveBriefing] error:", error);
+            if (error) {
+                console.error(error);
+                alert("저장에 실패했어요: " + error.message);
+                return;
+            }
+            setEditing(false);
+            await loadBriefing();
+        } finally {
+            setSaving(false);
         }
-        setEditing(false);
-        await loadBriefing();
     }
 
     async function saveNotice() {
         setSavingNotice(true);
-        const weekStart = wk.from;
-        const { error } = await supabase.from("briefings").upsert(
-            {
-                week_start: weekStart,
-                project: briefing?.project ?? "",
-                maintenance: briefing?.maintenance ?? "",
-                etc: briefing?.etc ?? "",
-                notice: noticeHtmlHasText(editNotice)
-                    ? editNotice.trim()
-                    : null,
-                is_locked: briefing?.is_locked ?? false,
-                edited_by: currentMember ?? null,
-                updated_at: new Date().toISOString(),
-            },
-            { onConflict: "week_start" },
-        );
-        setSavingNotice(false);
-        if (error) {
-            console.error(error);
-            alert("저장에 실패했어요: " + error.message);
-            return;
+        try {
+            const noticeHtml = editNoticeDraftRef.current;
+            const weekStart = wk.from;
+            const { error } = await supabase.from("briefings").upsert(
+                {
+                    week_start: weekStart,
+                    project: briefing?.project ?? "",
+                    maintenance: briefing?.maintenance ?? "",
+                    etc: briefing?.etc ?? "",
+                    notice: noticeHtmlHasText(noticeHtml)
+                        ? noticeHtml.trim()
+                        : null,
+                    is_locked: briefing?.is_locked ?? false,
+                    edited_by: currentMember ?? null,
+                    updated_at: new Date().toISOString(),
+                },
+                { onConflict: "week_start" },
+            );
+            if (error) {
+                console.error(error);
+                alert("저장에 실패했어요: " + error.message);
+                return;
+            }
+            await loadBriefing();
+            setEditingNotice(false);
+            setNoticeEditorNonce((n) => n + 1);
+        } finally {
+            setSavingNotice(false);
         }
-        setEditingNotice(false);
-        setNoticeEditorNonce((n) => n + 1);
-        await loadBriefing();
     }
 
     async function toggleLock() {
@@ -1034,6 +1105,7 @@ export default function ReportPage() {
                                 { key: "monthly", label: "월간 리포트" },
                             ].map((t) => (
                                 <button
+                                    type="button"
                                     key={t.key}
                                     onClick={() =>
                                         setMode(t.key as "weekly" | "monthly")
@@ -1056,6 +1128,7 @@ export default function ReportPage() {
                 <div className="border-b border-stone-200 px-4 py-2">
                     <div className="max-w-2xl mx-auto flex items-center justify-between">
                         <button
+                            type="button"
                             onClick={() =>
                                 mode === "weekly"
                                     ? setWOff((w) => w - 1)
@@ -1076,6 +1149,7 @@ export default function ReportPage() {
                             )}
                         </div>
                         <button
+                            type="button"
                             onClick={() =>
                                 mode === "weekly"
                                     ? setWOff((w) => Math.min(w + 1, 0))
@@ -1140,9 +1214,11 @@ export default function ReportPage() {
                                             <button
                                                 type="button"
                                                 onClick={() => {
-                                                    setEditNotice(
-                                                        briefing?.notice ?? "",
-                                                    );
+                                                    const initial =
+                                                        briefing?.notice ?? "";
+                                                    editNoticeDraftRef.current =
+                                                        initial;
+                                                    setEditNotice(initial);
                                                     setEditingNotice(true);
                                                     setNoticeEditorNonce(
                                                         (n) => n + 1,
@@ -1168,7 +1244,7 @@ export default function ReportPage() {
                                                         ? editNotice
                                                         : briefing?.notice ?? ""
                                                 }
-                                                onChange={setEditNotice}
+                                                onChange={onNoticeHtmlChange}
                                                 editable={
                                                     editingNotice && isLeader
                                                 }
@@ -1181,9 +1257,11 @@ export default function ReportPage() {
                                             <div className="flex gap-2">
                                                 <button
                                                     type="button"
-                                                    onClick={() =>
-                                                        void saveNotice()
-                                                    }
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        void saveNotice();
+                                                    }}
                                                     disabled={savingNotice}
                                                     className="flex-1 rounded-xl bg-amber-500 py-2.5 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50"
                                                 >
@@ -1194,11 +1272,13 @@ export default function ReportPage() {
                                                 <button
                                                     type="button"
                                                     onClick={() => {
-                                                        setEditingNotice(false);
-                                                        setEditNotice(
+                                                        const restored =
                                                             briefing?.notice ??
-                                                                "",
-                                                        );
+                                                            "";
+                                                        editNoticeDraftRef.current =
+                                                            restored;
+                                                        setEditingNotice(false);
+                                                        setEditNotice(restored);
                                                         setNoticeEditorNonce(
                                                             (n) => n + 1,
                                                         );
@@ -1299,14 +1379,17 @@ export default function ReportPage() {
                                                         void copyBriefingRichToClipboard(
                                                             editing
                                                                 ? editProject
-                                                                : plainBriefingToInitialHtml(
-                                                                      autoProject,
-                                                                  ),
+                                                                : briefing?.project ??
+                                                                      "",
                                                             editing
                                                                 ? htmlToPlainText(
                                                                       editProject,
                                                                   )
-                                                                : autoProject,
+                                                                : htmlToPlainText(
+                                                                      briefing?.project ??
+                                                                          "",
+                                                                  ) ||
+                                                                      autoProject,
                                                             setCopiedProject,
                                                         )
                                                     }
@@ -1346,8 +1429,10 @@ export default function ReportPage() {
                                                     )}
                                                 </>
                                             ) : (
-                                                <BriefingAutoPreview
-                                                    plain={autoProject}
+                                                <BriefingSavedHtmlPreview
+                                                    html={
+                                                        briefing?.project ?? ""
+                                                    }
                                                 />
                                             )}
                                         </div>
@@ -1363,14 +1448,17 @@ export default function ReportPage() {
                                                         void copyBriefingRichToClipboard(
                                                             editing
                                                                 ? editMaintenance
-                                                                : plainBriefingToInitialHtml(
-                                                                      autoMaintenance,
-                                                                  ),
+                                                                : briefing?.maintenance ??
+                                                                      "",
                                                             editing
                                                                 ? htmlToPlainText(
                                                                       editMaintenance,
                                                                   )
-                                                                : autoMaintenance,
+                                                                : htmlToPlainText(
+                                                                      briefing?.maintenance ??
+                                                                          "",
+                                                                  ) ||
+                                                                      autoMaintenance,
                                                             setCopiedMaintenance,
                                                         )
                                                     }
@@ -1412,8 +1500,11 @@ export default function ReportPage() {
                                                     )}
                                                 </>
                                             ) : (
-                                                <BriefingAutoPreview
-                                                    plain={autoMaintenance}
+                                                <BriefingSavedHtmlPreview
+                                                    html={
+                                                        briefing?.maintenance ??
+                                                        ""
+                                                    }
                                                 />
                                             )}
                                         </div>
@@ -1429,14 +1520,16 @@ export default function ReportPage() {
                                                         void copyBriefingRichToClipboard(
                                                             editing
                                                                 ? editEtc
-                                                                : plainBriefingToInitialHtml(
-                                                                      autoEtc,
-                                                                  ),
+                                                                : briefing?.etc ??
+                                                                      "",
                                                             editing
                                                                 ? htmlToPlainText(
                                                                       editEtc,
                                                                   )
-                                                                : autoEtc,
+                                                                : htmlToPlainText(
+                                                                      briefing?.etc ??
+                                                                          "",
+                                                                  ) || autoEtc,
                                                             setCopiedEtc,
                                                         )
                                                     }
@@ -1474,8 +1567,8 @@ export default function ReportPage() {
                                                     )}
                                                 </>
                                             ) : (
-                                                <BriefingAutoPreview
-                                                    plain={autoEtc}
+                                                <BriefingSavedHtmlPreview
+                                                    html={briefing?.etc ?? ""}
                                                 />
                                             )}
                                         </div>
@@ -1484,9 +1577,11 @@ export default function ReportPage() {
                                                 <button
                                                     type="button"
                                                     disabled={saving}
-                                                    onClick={() =>
-                                                        void saveBriefing()
-                                                    }
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        void saveBriefing();
+                                                    }}
                                                     className="w-full rounded-xl bg-amber-500 py-3 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50"
                                                 >
                                                     {saving
@@ -1712,6 +1807,7 @@ export default function ReportPage() {
                                         >
                                             {/* 헤더 */}
                                             <button
+                                                type="button"
                                                 onClick={() => toggleExpand(m)}
                                                 className="w-full flex items-center gap-3 px-4 py-3 text-left"
                                             >
