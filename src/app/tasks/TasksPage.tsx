@@ -21,6 +21,7 @@ import Avatar from "@/components/Avatar";
 import LevelUpOverlay from "@/components/LevelUpOverlay";
 import ExpPopup, { type ExpPopupType } from "@/components/ExpPopup";
 import NotificationButton from "@/components/NotificationButton";
+import TaskEditModal from "@/components/TaskEditModal";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { PageSpinner } from "@/components/Spinner";
 import { DayPicker, DateRange } from "react-day-picker";
@@ -49,11 +50,6 @@ function periodButtonLabel(range: DateRange | undefined): {
     return { text: `${f} ~ ${t}`, placeholder: false };
 }
 
-function parseYmdToLocalDate(value: string | null): Date | undefined {
-    if (!value) return undefined;
-    return new Date(`${value}T00:00:00`);
-}
-
 function getWeekWin(offset: number = 0) {
     const now = new Date();
     const day = now.getDay();
@@ -80,17 +76,6 @@ const EMPTY_FORM = {
     end_date: "",
     workload: 0,
     issue: "",
-    is_plan: false,
-};
-
-const EMPTY_EDIT = {
-    type: "",
-    proj: "",
-    content: "",
-    priority: "",
-    workload: 0,
-    issue: "",
-    status: "",
     is_plan: false,
 };
 
@@ -150,18 +135,11 @@ export default function TasksPage() {
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [editTask, setEditTask] = useState<Task | null>(null);
-    const [showEdit, setShowEdit] = useState(false);
     const [form, setForm] = useState({
         ...EMPTY_FORM,
     });
     const [formDateRange, setFormDateRange] = useState<DateRange | undefined>();
     const [showFormDatePicker, setShowFormDatePicker] = useState(false);
-
-    // 수정 모달용
-    const [editForm, setEditForm] = useState(EMPTY_EDIT);
-    const [editDateRange, setEditDateRange] = useState<DateRange | undefined>();
-    const [showEditDatePicker, setShowEditDatePicker] = useState(false);
-    const [editProjTab, setEditProjTab] = useState<"mine" | "all">("mine");
 
     const [filterMember, setFilterMember] = useState("");
     const [filterProject, setFilterProject] = useState("");
@@ -283,35 +261,6 @@ export default function TasksPage() {
         [],
     );
 
-    const editMember = editTask?.member ?? "";
-
-    const editMyProjOptions = useMemo(
-        () =>
-            projects
-                .filter((p) => !p.is_archived)
-                .filter(
-                    (p) =>
-                        editMember &&
-                        ((p.members || []).includes(editMember) ||
-                            p.member === editMember),
-                )
-                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
-                .map((p) => ({ value: p.name, label: p.name })),
-        [projects, editMember],
-    );
-
-    const editAllProjOptions = useMemo(
-        () =>
-            projects
-                .filter((p) => !p.is_archived)
-                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
-                .map((p) => ({ value: p.name, label: p.name })),
-        [projects],
-    );
-
-    const editProjOptions =
-        editProjTab === "mine" ? editMyProjOptions : editAllProjOptions;
-
     function getNextWeekRange() {
         const now = new Date();
         const day = now.getDay();
@@ -335,15 +284,6 @@ export default function TasksPage() {
             setFormDateRange({ from: range.from, to: range.to });
         }
         setForm((f) => ({ ...f, is_plan: newVal }));
-    }
-
-    function toggleEditIsPlan() {
-        const newVal = !editForm.is_plan;
-        if (newVal) {
-            const range = getNextWeekRange();
-            setEditDateRange({ from: range.from, to: range.to });
-        }
-        setEditForm((f) => ({ ...f, is_plan: newVal }));
     }
 
     async function addTask() {
@@ -377,57 +317,6 @@ export default function TasksPage() {
 
     function openEdit(task: Task) {
         setEditTask(task);
-        setEditProjTab("mine");
-        setEditForm({
-            type: task.type || "",
-            proj: task.proj || "",
-            content: task.content || "",
-            priority: task.priority || "",
-            workload: task.workload || 0,
-            issue: task.issue || "",
-            status: task.status || "대기",
-            is_plan: task.is_plan ?? false,
-        });
-        // 날짜 range 설정
-        if (task.start_date || task.end_date) {
-            setEditDateRange({
-                from: parseYmdToLocalDate(task.start_date),
-                to: parseYmdToLocalDate(task.end_date),
-            });
-        } else {
-            setEditDateRange(undefined);
-        }
-        setShowEditDatePicker(false);
-        setShowEdit(true);
-    }
-
-    async function saveEdit() {
-        if (!editTask) return;
-        await supabase
-            .from("tasks")
-            .update({
-                type: editForm.type,
-                proj: editForm.proj,
-                content: editForm.content,
-                priority: editForm.priority || null,
-                start_date: editDateRange?.from
-                    ? toLocalYmd(editDateRange.from)
-                    : null,
-                end_date: editDateRange?.to
-                    ? toLocalYmd(editDateRange.to)
-                    : null,
-                workload: editForm.workload || 0,
-                issue: editForm.issue || null,
-                status: editForm.status,
-                is_plan: editForm.is_plan ?? false,
-            })
-            .eq("id", editTask.id);
-        setShowEdit(false);
-        setEditTask(null);
-        setEditForm(EMPTY_EDIT);
-        setEditDateRange(undefined);
-        setShowEditDatePicker(false);
-        loadTasks();
     }
 
     async function updateStatus(
@@ -525,7 +414,6 @@ export default function TasksPage() {
     const allProjects = [...new Set(tasks.map((t) => t.proj).filter(Boolean))];
 
     const formPeriodLabel = periodButtonLabel(formDateRange);
-    const editPeriodLabel = periodButtonLabel(editDateRange);
 
     return (
         <AuthGuard>
@@ -1202,358 +1090,12 @@ export default function TasksPage() {
                     </div>
                 )}
 
-                {/* 업무 수정 모달 */}
-                {showEdit && editTask && (
-                    <div
-                        className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
-                        style={{ marginBottom: `var(--nav-height)` }}
-                        onClick={() => {
-                            setShowEdit(false);
-                            setEditTask(null);
-                            setEditForm(EMPTY_EDIT);
-                            setEditDateRange(undefined);
-                            setShowEditDatePicker(false);
-                        }}
-                    >
-                        <div
-                            className="bg-white rounded-t-2xl p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto"
-                            onClick={(e) => e.stopPropagation()}
-                        >
-                            <div className="flex justify-between items-center mb-5">
-                                <h2 className="text-base font-bold">
-                                    업무 수정
-                                </h2>
-                                <button
-                                    onClick={() => {
-                                        setShowEdit(false);
-                                        setEditTask(null);
-                                        setEditForm(EMPTY_EDIT);
-                                        setEditDateRange(undefined);
-                                        setShowEditDatePicker(false);
-                                    }}
-                                    className="text-2xl text-stone-400 leading-none"
-                                >
-                                    ×
-                                </button>
-                            </div>
-                            <div className="space-y-4">
-                                {/* 상태 */}
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        상태
-                                    </label>
-                                    <div className="relative">
-                                        <select
-                                            className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white appearance-none pr-8"
-                                            value={editForm.status}
-                                            onChange={(e) =>
-                                                setEditForm({
-                                                    ...editForm,
-                                                    status: e.target.value,
-                                                })
-                                            }
-                                        >
-                                            {[
-                                                "대기",
-                                                "시작 전",
-                                                "진행중",
-                                                "이슈 및 대기",
-                                                "완료",
-                                            ].map((s) => (
-                                                <option key={s}>{s}</option>
-                                            ))}
-                                        </select>
-                                        <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-                                    </div>
-                                </div>
-                                {/* 구분 + 우선순위 */}
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                            구분
-                                        </label>
-                                        <div className="relative">
-                                            <select
-                                                className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white appearance-none pr-8"
-                                                value={editForm.type}
-                                                onChange={(e) =>
-                                                    setEditForm({
-                                                        ...editForm,
-                                                        type: e.target.value,
-                                                    })
-                                                }
-                                            >
-                                                <option value="">선택</option>
-                                                {[
-                                                    "프로젝트",
-                                                    "유지보수",
-                                                    "고도화",
-                                                    "접근성",
-                                                    "업무지원",
-                                                ].map((t) => (
-                                                    <option key={t}>{t}</option>
-                                                ))}
-                                            </select>
-                                            <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                            우선순위
-                                        </label>
-                                        <div className="relative">
-                                            <select
-                                                className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white appearance-none pr-8"
-                                                value={editForm.priority}
-                                                onChange={(e) =>
-                                                    setEditForm({
-                                                        ...editForm,
-                                                        priority:
-                                                            e.target.value,
-                                                    })
-                                                }
-                                            >
-                                                <option value="">선택</option>
-                                                {[
-                                                    "긴급",
-                                                    "높음",
-                                                    "보통",
-                                                    "낮음",
-                                                ].map((p) => (
-                                                    <option key={p}>{p}</option>
-                                                ))}
-                                            </select>
-                                            <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-                                        </div>
-                                    </div>
-                                </div>
-                                {/* 작업 계획 토글 */}
-                                <div className="flex items-center justify-between py-1">
-                                    <div>
-                                        <p className="text-sm font-medium text-stone-700">
-                                            작업 계획
-                                        </p>
-                                        <p className="text-xs text-stone-400 mt-0.5">
-                                            예정 업무로 등록해요
-                                        </p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={toggleEditIsPlan}
-                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors
-                      ${editForm.is_plan ? "bg-amber-500" : "bg-stone-200"}`}
-                                    >
-                                        <span
-                                            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform
-                        ${editForm.is_plan ? "translate-x-6" : "translate-x-1"}`}
-                                        />
-                                    </button>
-                                </div>
-                                {/* 프로젝트 */}
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        프로젝트
-                                    </label>
-                                    <div className="flex bg-stone-100 rounded-lg p-0.5 mb-2">
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                setEditProjTab("mine")
-                                            }
-                                            className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-all
-                        ${
-                            editProjTab === "mine"
-                                ? "bg-white text-stone-800 shadow-sm"
-                                : "text-stone-400"
-                        }`}
-                                        >
-                                            내 프로젝트
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                setEditProjTab("all")
-                                            }
-                                            className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-all
-                        ${
-                            editProjTab === "all"
-                                ? "bg-white text-stone-800 shadow-sm"
-                                : "text-stone-400"
-                        }`}
-                                        >
-                                            전체
-                                        </button>
-                                    </div>
-                                    <Select
-                                        options={editProjOptions}
-                                        value={
-                                            editForm.proj
-                                                ? {
-                                                      value: editForm.proj,
-                                                      label: editForm.proj,
-                                                  }
-                                                : null
-                                        }
-                                        onChange={(opt) =>
-                                            setEditForm({
-                                                ...editForm,
-                                                proj: opt?.value ?? "",
-                                            })
-                                        }
-                                        placeholder="프로젝트 선택"
-                                        isSearchable
-                                        styles={selectStyles}
-                                        menuPortalTarget={
-                                            typeof document !== "undefined"
-                                                ? document.body
-                                                : null
-                                        }
-                                        noOptionsMessage={() =>
-                                            "검색 결과가 없어요"
-                                        }
-                                    />
-                                </div>
-                                {/* 업무 내용 */}
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        업무 내용
-                                    </label>
-                                    <textarea
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm h-20 resize-none"
-                                        value={editForm.content}
-                                        onChange={(e) =>
-                                            setEditForm({
-                                                ...editForm,
-                                                content: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
-                                {/* 공수 */}
-                                <WorkloadInput
-                                    value={editForm.workload}
-                                    onChange={(v) =>
-                                        setEditForm({
-                                            ...editForm,
-                                            workload: v,
-                                        })
-                                    }
-                                />
-                                {/* 기간 — 수정 모달 (오버레이 + absolute 패널) */}
-                                <div className="relative z-20">
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        기간
-                                    </label>
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            setShowEditDatePicker((o) => !o)
-                                        }
-                                        className={`w-full text-left border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white shadow-sm transition-colors
-                      ${showEditDatePicker ? "ring-2 ring-amber-200 border-amber-300" : "hover:border-stone-300"}`}
-                                    >
-                                        <span
-                                            className={
-                                                editPeriodLabel.placeholder
-                                                    ? "text-stone-400"
-                                                    : "text-stone-800"
-                                            }
-                                        >
-                                            {editPeriodLabel.text}
-                                        </span>
-                                    </button>
-                                    {showEditDatePicker &&
-                                        typeof document !== "undefined" &&
-                                        createPortal(
-                                            <div
-                                                className="fixed inset-0 z-[200] bg-black/30"
-                                                onClick={() =>
-                                                    setShowEditDatePicker(false)
-                                                }
-                                                role="presentation"
-                                            >
-                                                <div
-                                                    className="absolute left-1/2 w-[min(calc(100vw-2rem),36rem)] -translate-x-1/2 rounded-xl border border-stone-200 bg-white p-3 shadow-2xl"
-                                                    style={{
-                                                        bottom: "max(5.5rem, calc(var(--nav-height, 0px) + 3.5rem))",
-                                                    }}
-                                                    onClick={(e) =>
-                                                        e.stopPropagation()
-                                                    }
-                                                >
-                                                    <div className="flex justify-center overflow-x-auto">
-                                                        <DayPicker
-                                                            mode="range"
-                                                            selected={
-                                                                editDateRange
-                                                            }
-                                                            onSelect={
-                                                                setEditDateRange
-                                                            }
-                                                            locale={ko}
-                                                            hideNavigation
-                                                            components={{
-                                                                MonthCaption:
-                                                                    DatePickerCaption,
-                                                            }}
-                                                        />
-                                                    </div>
-                                                    <div className="mt-3 flex gap-2">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                setEditDateRange(
-                                                                    undefined,
-                                                                )
-                                                            }
-                                                            className="flex-1 rounded-lg border border-stone-200 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
-                                                        >
-                                                            초기화
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                setShowEditDatePicker(
-                                                                    false,
-                                                                )
-                                                            }
-                                                            className="flex-1 rounded-lg bg-amber-500 py-2 text-xs font-bold text-white hover:bg-amber-600"
-                                                        >
-                                                            적용
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>,
-                                            document.body,
-                                        )}
-                                </div>
-                                {/* 이슈/비고 */}
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        이슈 / 비고 (선택)
-                                    </label>
-                                    <input
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                                        placeholder="예) 클라이언트 피드백 대기..."
-                                        value={editForm.issue}
-                                        onChange={(e) =>
-                                            setEditForm({
-                                                ...editForm,
-                                                issue: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
-                                <button
-                                    onClick={saveEdit}
-                                    className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm"
-                                >
-                                    저장하기
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
+                <TaskEditModal
+                    task={editTask}
+                    onClose={() => setEditTask(null)}
+                    onSaved={loadTasks}
+                />
+
                 <LevelUpOverlay
                     show={levelUpInfo.show}
                     level={levelUpInfo.level}
