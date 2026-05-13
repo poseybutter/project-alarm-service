@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { DayPicker } from "react-day-picker";
 import { ko } from "date-fns/locale";
@@ -21,10 +21,16 @@ export default function DragQuestModal({
     onClose,
     onSubmit,
 }: DragQuestModalProps) {
-    const [content, setContent] = useState("");
+    const [content, setContent] = useState(task.content ?? "");
     const [endDate, setEndDate] = useState("");
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+
+    useEffect(() => {
+        setContent(task.content ?? "");
+        setEndDate("");
+        setShowDatePicker(false);
+    }, [task.id]);
 
     const selectedDate = endDate ? new Date(`${endDate}T00:00:00`) : undefined;
     const dateLabel = selectedDate

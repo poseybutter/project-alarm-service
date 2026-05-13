@@ -17,7 +17,16 @@ import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import Header from "@/components/Header";
 import type { Quest, Player, Task, Project } from "@/lib/types";
-import { getDiff, formatWorkload, normalizeProject } from "@/lib/utils";
+import {
+    getDiff,
+    formatWorkload,
+    normalizeProject,
+} from "@/lib/utils";
+import {
+    questContentLooksLikeStoredHtml,
+    questRichTextIsEffectivelyEmpty,
+    toQuestEditorInitialHtml,
+} from "@/lib/questContentDisplay";
 import {
     BAR_COLORS,
     TYPE_COLORS,
@@ -51,6 +60,38 @@ import DragQuestModal from "@/components/DragQuestModal";
 import Select from "react-select";
 import { selectStyles } from "@/lib/reactSelectStyles";
 import { toLocalYmd } from "@/lib/toLocalYmd";
+import TiptapQuestContentEditor from "@/components/TiptapQuestContentEditor";
+
+function QuestCardContent({
+    content,
+    plainClassName,
+}: {
+    content: string;
+    plainClassName?: string;
+}) {
+    const isHtml = questContentLooksLikeStoredHtml(content);
+    if (isHtml) {
+        const inner = content.trim() ? content.trim() : "<p></p>";
+        return (
+            <div className="notice-editor min-w-0">
+                <div
+                    className="ProseMirror tiptap break-words text-sm font-medium leading-snug text-stone-800 [&_li]:mb-0 [&_ol]:mb-0 [&_p]:!text-sm [&_p]:mb-1 [&_p:last-child]:mb-0 [&_ul]:mb-0"
+                    dangerouslySetInnerHTML={{ __html: inner }}
+                />
+            </div>
+        );
+    }
+    return (
+        <p
+            className={
+                plainClassName ??
+                "whitespace-pre-wrap break-words text-sm font-medium text-stone-800"
+            }
+        >
+            {content}
+        </p>
+    );
+}
 
 type QuestFormType = {
     content: string;
@@ -65,6 +106,7 @@ type QuestFormModalProps = {
     onSubmit: () => void;
     onClose: () => void;
     projects: Project[];
+    editorMountKey: string;
 };
 
 function QuestFormModal({
@@ -74,6 +116,7 @@ function QuestFormModal({
     onSubmit,
     onClose,
     projects,
+    editorMountKey,
 }: QuestFormModalProps) {
     const [showDatePicker, setShowDatePicker] = useState(false);
     const selectedDate = questForm.end_date
@@ -141,16 +184,15 @@ function QuestFormModal({
                         <label className="text-xs font-medium text-stone-500 block mb-1.5">
                             퀘스트 내용 <span className="text-red-500">*</span>
                         </label>
-                        <textarea
-                            className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm h-20 resize-none"
-                            placeholder="예) 메인 슬라이드 퍼블리싱"
-                            value={questForm.content}
-                            onChange={(e) =>
-                                setQuestForm({
-                                    ...questForm,
-                                    content: e.target.value,
-                                })
+                        <TiptapQuestContentEditor
+                            key={editorMountKey}
+                            initialHtml={toQuestEditorInitialHtml(
+                                questForm.content,
+                            )}
+                            onChange={(html) =>
+                                setQuestForm((f) => ({ ...f, content: html }))
                             }
+                            placeholder="예) 메인 슬라이드 퍼블리싱"
                         />
                     </div>
                     <div>
@@ -519,6 +561,7 @@ export default function HomePage() {
         proj: "",
         end_date: "",
     });
+    const [questAddEditorNonce, setQuestAddEditorNonce] = useState(0);
     const [activeTask, setActiveTask] = useState<Task | null>(null);
     const [dragQuestTask, setDragQuestTask] = useState<Task | null>(null);
 
@@ -873,7 +916,8 @@ export default function HomePage() {
     }
 
     async function addQuest() {
-        if (!questForm.content) return alert("퀘스트 내용은 필수예요");
+        if (questRichTextIsEffectivelyEmpty(questForm.content))
+            return alert("퀘스트 내용은 필수예요");
         await supabase.from("quests").insert([
             {
                 member: member,
@@ -902,7 +946,7 @@ export default function HomePage() {
     function openEditQuest(quest: Quest) {
         setEditTarget(quest);
         setQuestForm({
-            content: quest.content,
+            content: toQuestEditorInitialHtml(quest.content),
             proj: quest.proj || "",
             end_date: quest.end_date || "",
         });
@@ -936,10 +980,15 @@ export default function HomePage() {
         task: Task,
     ) {
         if (!member) return;
+        const trimmed = content.trim();
+        if (!trimmed) {
+            alert("내용을 입력해 주세요");
+            return;
+        }
         await supabase.from("quests").insert([
             {
                 member,
-                content,
+                content: trimmed,
                 proj: task.proj || null,
                 end_date: endDate || null,
                 task_id: task.id,
@@ -1387,9 +1436,12 @@ export default function HomePage() {
                                                 완료 시 EXP 지급
                                             </span>
                                             <button
-                                                onClick={() =>
-                                                    setShowAddQuest(true)
-                                                }
+                                                onClick={() => {
+                                                    setQuestAddEditorNonce(
+                                                        (n) => n + 1,
+                                                    );
+                                                    setShowAddQuest(true);
+                                                }}
                                                 className="rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-medium text-white"
                                             >
                                                 + 추가
@@ -1429,22 +1481,26 @@ export default function HomePage() {
                                                     return (
                                                         <div
                                                             key={q.id}
-                                                            className={`flex items-center gap-3 px-4 py-3
+                                                            className={`flex items-start gap-3 px-4 py-3
                         ${i < quests.length - 1 ? "border-b border-stone-100" : ""}`}
                                                         >
                                                             <button
-                                                                onClick={(ev) =>
+                                                                onClick={(
+                                                                    ev,
+                                                                ) =>
                                                                     void completeQuest(
                                                                         q,
                                                                         ev,
                                                                     )
                                                                 }
-                                                                className="h-5 w-5 shrink-0 rounded-full border-2 border-stone-300 transition-colors hover:border-amber-500"
+                                                                className="mt-0.5 h-5 w-5 shrink-0 rounded-full border-2 border-stone-300 transition-colors hover:border-amber-500"
                                                             />
                                                             <div className="min-w-0 flex-1">
-                                                                <p className="truncate text-sm font-medium text-stone-800">
-                                                                    {q.content}
-                                                                </p>
+                                                                <QuestCardContent
+                                                                    content={
+                                                                        q.content
+                                                                    }
+                                                                />
                                                                 <div className="mt-0.5 flex flex-wrap items-center gap-2">
                                                                     {(q.proj ||
                                                                         linkedProj) && (
@@ -1472,7 +1528,7 @@ export default function HomePage() {
                                                                     )}
                                                                 </div>
                                                             </div>
-                                                            <div className="flex shrink-0 items-center gap-1.5">
+                                                            <div className="flex shrink-0 items-start gap-1.5 pt-0.5">
                                                                 <span className="text-xs font-medium text-green-600">
                                                                     +10 EXP
                                                                 </span>
@@ -1560,23 +1616,25 @@ export default function HomePage() {
                                         return (
                                             <div
                                                 key={q.id}
-                                                className={`flex items-center gap-3 px-4 py-3 ${i < urgentQuests.length - 1 ? "border-b border-stone-100" : ""}`}
+                                                className={`flex items-start gap-3 px-4 py-3 ${i < urgentQuests.length - 1 ? "border-b border-stone-100" : ""}`}
                                             >
-                                                <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="text-sm font-medium text-stone-800 truncate">
-                                                        {q.content}
-                                                    </p>
+                                                <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-red-500" />
+                                                <div className="min-w-0 flex-1">
+                                                    <QuestCardContent
+                                                        content={q.content}
+                                                    />
                                                     {q.proj && (
-                                                        <p className="text-xs text-stone-400 truncate">
+                                                        <p className="truncate text-xs text-stone-400">
                                                             {q.proj}
                                                         </p>
                                                     )}
                                                 </div>
-                                                <span className="text-xs text-red-500 font-medium shrink-0">
+                                                <span className="shrink-0 self-start pt-0.5 text-xs font-medium text-red-500">
                                                     D
-                                                    {diff !== null && diff < 0
-                                                        ? "+" + Math.abs(diff)
+                                                    {diff !== null &&
+                                                    diff < 0
+                                                        ? "+" +
+                                                          Math.abs(diff)
                                                         : "-" + diff}
                                                 </span>
                                             </div>
@@ -1604,6 +1662,7 @@ export default function HomePage() {
                             questForm={questForm}
                             setQuestForm={setQuestForm}
                             projects={projects}
+                            editorMountKey={`a-${questAddEditorNonce}`}
                             onSubmit={addQuest}
                             onClose={() => {
                                 setShowAddQuest(false);
@@ -1617,12 +1676,13 @@ export default function HomePage() {
                     )}
 
                     {/* 퀘스트 수정 모달 */}
-                    {showEditQuest && (
+                    {showEditQuest && editTarget && (
                         <QuestFormModal
                             title="퀘스트 수정"
                             questForm={questForm}
                             setQuestForm={setQuestForm}
                             projects={projects}
+                            editorMountKey={`e-${editTarget.id}`}
                             onSubmit={saveEditQuest}
                             onClose={() => {
                                 setShowEditQuest(false);
