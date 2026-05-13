@@ -11,7 +11,7 @@ import { DayPicker, DateRange } from "react-day-picker";
 import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
 import Select from "react-select";
-import { selectStyles } from "@/lib/reactSelectStyles";
+import { projectSearchSelectStyles } from "@/lib/reactSelectStyles";
 import { toLocalYmd } from "@/lib/toLocalYmd";
 
 function periodButtonLabel(range: DateRange | undefined): {
@@ -411,9 +411,10 @@ export default function TaskEditModal({
                                     proj: opt?.value ?? "",
                                 })
                             }
-                            placeholder="프로젝트 선택"
+                            placeholder="프로젝트 검색"
+                            isClearable
                             isSearchable
-                            styles={selectStyles}
+                            styles={projectSearchSelectStyles}
                             menuPortalTarget={
                                 typeof document !== "undefined"
                                     ? document.body

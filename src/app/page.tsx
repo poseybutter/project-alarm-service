@@ -58,7 +58,7 @@ import {
 } from "@dnd-kit/core";
 import DragQuestModal from "@/components/DragQuestModal";
 import Select from "react-select";
-import { selectStyles } from "@/lib/reactSelectStyles";
+import { projectSearchSelectStyles } from "@/lib/reactSelectStyles";
 import { toLocalYmd } from "@/lib/toLocalYmd";
 import TiptapQuestContentEditor from "@/components/TiptapQuestContentEditor";
 
@@ -129,37 +129,6 @@ function QuestFormModal({
         .filter((p) => !p.is_archived)
         .sort((a, b) => a.name.localeCompare(b.name, "ko"))
         .map((p) => ({ value: p.name, label: p.name }));
-    const questModalSelectStyles = {
-        ...selectStyles,
-        control: (
-            base: Record<string, unknown>,
-            state: { isFocused: boolean },
-        ) => ({
-            ...base,
-            fontSize: "14px",
-            borderColor: state.isFocused ? "#f59e0b" : "#e7e5e4",
-            borderRadius: "8px",
-            boxShadow: state.isFocused ? "0 0 0 2px #fde68a" : "none",
-            "&:hover": { borderColor: "#d6d3d1" },
-            minHeight: "42px",
-            height: "42px",
-        }),
-        valueContainer: (base: Record<string, unknown>) => ({
-            ...base,
-            height: "42px",
-            padding: "0 12px",
-        }),
-        indicatorsContainer: (base: Record<string, unknown>) => ({
-            ...base,
-            height: "42px",
-        }),
-        placeholder: (base: Record<string, unknown>) => ({
-            ...base,
-            fontSize: "14px",
-            color: "#a8a29e",
-        }),
-    };
-
     return (
         <div
             className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
@@ -218,7 +187,7 @@ function QuestFormModal({
                             placeholder="프로젝트 검색"
                             isClearable
                             isSearchable
-                            styles={questModalSelectStyles}
+                            styles={projectSearchSelectStyles}
                             menuPortalTarget={
                                 typeof document !== "undefined"
                                     ? document.body
@@ -1893,7 +1862,7 @@ export default function HomePage() {
                                             }
                                             placeholder="프로젝트 선택"
                                             isSearchable
-                                            styles={selectStyles}
+                                            styles={projectSearchSelectStyles}
                                             menuPortalTarget={
                                                 typeof document !== "undefined"
                                                     ? document.body
