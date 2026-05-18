@@ -444,7 +444,7 @@ export default function ManagePage() {
     async function updateAccStatus(id: number, status: string) {
         const row = accessibility.find((a) => a.id === id);
         if (!row) return;
-        const can = !isGuest && (role === "admin" || row.member === member);
+        const can = !isGuest;
         if (!can) return;
         await supabase
             .from("accessibility")
@@ -456,7 +456,7 @@ export default function ManagePage() {
     async function deleteAcc(id: number) {
         const row = accessibility.find((a) => a.id === id);
         if (!row) return;
-        const can = !isGuest && (role === "admin" || row.member === member);
+        const can = !isGuest;
         if (!can) return;
         if (!confirm("삭제할까요?")) return;
         await supabase.from("accessibility").delete().eq("id", id);
@@ -524,8 +524,7 @@ export default function ManagePage() {
             return (a.proj || "").localeCompare(b.proj || "", "ko");
         });
 
-    const canEditRowAcc = (a: Accessibility) =>
-        !isGuest && (role === "admin" || a.member === member);
+    const canEditRowAcc = (_a: Accessibility) => !isGuest;
 
     return (
         <AuthGuard>
