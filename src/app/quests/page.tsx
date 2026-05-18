@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { awardExp } from '@/lib/maple'
+import Select from 'react-select'
+import { modalFormSelectStyles } from '@/lib/reactSelectStyles'
 
 const MEMBERS = ['TEAM_MEMBER_1', 'TEAM_MEMBER_2', 'TEAM_MEMBER_3', 'TEAM_MEMBER_4']
 const MEMBER_COLORS: Record<string, string> = {
@@ -226,13 +228,16 @@ export default function QuestsPage() {
             <div className="space-y-4">
               <div>
                 <label className="text-xs font-medium text-stone-500 block mb-1.5">담당자</label>
-                <select
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white"
-                  value={form.member}
-                  onChange={e => setForm({...form, member: e.target.value})}
-                >
-                  {MEMBERS.map(m => <option key={m}>{m}</option>)}
-                </select>
+                <Select
+                  options={MEMBERS.map(m => ({ value: m, label: m }))}
+                  value={form.member ? { value: form.member, label: form.member } : null}
+                  onChange={opt => setForm({ ...form, member: opt?.value ?? '' })}
+                  placeholder="담당자 선택"
+                  isSearchable={false}
+                  isClearable={false}
+                  styles={modalFormSelectStyles}
+                  menuPortalTarget={typeof document !== 'undefined' ? document.body : null}
+                />
               </div>
               <div>
                 <label className="text-xs font-medium text-stone-500 block mb-1.5">할 일</label>
