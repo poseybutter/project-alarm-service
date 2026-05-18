@@ -338,9 +338,7 @@ function formatBriefingSection(tasks: Task[], section: BriefSection): string {
                   ? "[기타] "
                   : "";
 
-        const highlight = groupTasks.some(
-            (t) => t.priority === "긴급" || t.status === "이슈 및 대기",
-        );
+        const highlight = groupTasks.some((t) => t.is_starred);
         const titleProj = `${typePrefix}${first.proj}`.trim();
         const uniqMembers = [...new Set(groupTasks.map((t) => t.member))];
         const memberPart =
@@ -409,13 +407,13 @@ function formatBriefingSection(tasks: Task[], section: BriefSection): string {
     return blocks.join("\n\n").trimEnd();
 }
 
-function canEdit(isLocked: boolean): boolean {
-    if (isLocked) return false;
-    const now = new Date();
+/** 브리핑 편집 허용 윈도우: 수요일 12:00 ~ 목요일 18:00 (KST 가정). */
+function isEditableWindow(now: Date = new Date()): boolean {
     const day = now.getDay();
     const hour = now.getHours();
-    if (day === 3 && hour < 10) return false;
-    return true;
+    if (day === 3 && hour >= 12) return true;
+    if (day === 4 && hour < 18) return true;
+    return false;
 }
 
 function getWeekWin(offset: number) {
@@ -539,6 +537,7 @@ const EMPTY_ASSIGN_FORM: {
 
 export default function ReportPage() {
     const { member: currentMember, role } = useAuth();
+    const isGuest = currentMember === "GUEST" || role === "guest";
     const [mode, setMode] = useState<"weekly" | "monthly">("weekly");
     const [wOff, setWOff] = useState(0);
     const wOffRef = useRef(wOff);
@@ -692,18 +691,34 @@ export default function ReportPage() {
         };
     }, [loadAssignments]);
 
-    useEffect(() => {
-        async function loadTasks() {
-            setLoading(true);
-            const { data } = await supabase
-                .from("tasks")
-                .select("*")
-                .order("created_at", { ascending: false });
-            setTasks(data || []);
-            setLoading(false);
-        }
-        void loadTasks();
+    const loadTasks = useCallback(async () => {
+        const { data } = await supabase
+            .from("tasks")
+            .select("*")
+            .order("created_at", { ascending: false });
+        setTasks(data || []);
     }, []);
+
+    useEffect(() => {
+        setLoading(true);
+        void loadTasks().finally(() => setLoading(false));
+    }, [loadTasks]);
+
+    useEffect(() => {
+        const channel = supabase
+            .channel("tasks-rt-report")
+            .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "tasks" },
+                () => {
+                    void loadTasks();
+                },
+            )
+            .subscribe();
+        return () => {
+            supabase.removeChannel(channel).catch(console.error);
+        };
+    }, [loadTasks]);
 
     useEffect(() => {
         setEditing(false);
@@ -790,26 +805,27 @@ export default function ReportPage() {
         [wTasks],
     );
 
-    const isBriefingLocked = briefing?.is_locked === true;
+    const editAllowed = !isGuest && isEditableWindow();
 
-    const editAllowed = canEdit(isBriefingLocked);
+    const isEditedBriefing =
+        noticeHtmlHasText(briefing?.project) ||
+        noticeHtmlHasText(briefing?.maintenance) ||
+        noticeHtmlHasText(briefing?.etc);
+
+    const displayProjectHtml = noticeHtmlHasText(briefing?.project)
+        ? briefing?.project ?? ""
+        : plainBriefingToInitialHtml(autoProject);
+    const displayMaintenanceHtml = noticeHtmlHasText(briefing?.maintenance)
+        ? briefing?.maintenance ?? ""
+        : plainBriefingToInitialHtml(autoMaintenance);
+    const displayEtcHtml = noticeHtmlHasText(briefing?.etc)
+        ? briefing?.etc ?? ""
+        : plainBriefingToInitialHtml(autoEtc);
 
     function startEditing() {
-        setEditProject(
-            noticeHtmlHasText(briefing?.project)
-                ? briefing?.project ?? ""
-                : plainBriefingToInitialHtml(autoProject),
-        );
-        setEditMaintenance(
-            noticeHtmlHasText(briefing?.maintenance)
-                ? briefing?.maintenance ?? ""
-                : plainBriefingToInitialHtml(autoMaintenance),
-        );
-        setEditEtc(
-            noticeHtmlHasText(briefing?.etc)
-                ? briefing?.etc ?? ""
-                : plainBriefingToInitialHtml(autoEtc),
-        );
+        setEditProject(displayProjectHtml);
+        setEditMaintenance(displayMaintenanceHtml);
+        setEditEtc(displayEtcHtml);
         setBriefingEditorKey((k) => k + 1);
         setEditing(true);
     }
@@ -831,6 +847,41 @@ export default function ReportPage() {
         else if (which === "maintenance") setEditMaintenance(html);
         else setEditEtc(html);
         setBriefingEditorKey((k) => k + 1);
+    }
+
+    async function restoreAutoBriefing() {
+        if (
+            !confirm(
+                "편집된 내용을 지우고 업무 데이터로부터 자동 취합을 다시 시작할까요?",
+            )
+        )
+            return;
+        setSaving(true);
+        try {
+            const weekStart = wk.from;
+            const { error } = await supabase.from("briefings").upsert(
+                {
+                    week_start: weekStart,
+                    project: null,
+                    maintenance: null,
+                    etc: null,
+                    notice: briefing?.notice ?? null,
+                    is_locked: briefing?.is_locked ?? false,
+                    edited_by: currentMember ?? null,
+                    updated_at: new Date().toISOString(),
+                },
+                { onConflict: "week_start" },
+            );
+            if (error) {
+                console.error(error);
+                alert("복원에 실패했어요: " + error.message);
+                return;
+            }
+            setEditing(false);
+            await loadBriefing();
+        } finally {
+            setSaving(false);
+        }
     }
 
     async function saveBriefing() {
@@ -895,30 +946,6 @@ export default function ReportPage() {
         } finally {
             setSavingNotice(false);
         }
-    }
-
-    async function toggleLock() {
-        const newLocked = !briefing?.is_locked;
-        const weekStart = wk.from;
-        const { error } = await supabase.from("briefings").upsert(
-            {
-                week_start: weekStart,
-                project: briefing?.project ?? "",
-                maintenance: briefing?.maintenance ?? "",
-                etc: briefing?.etc ?? "",
-                notice: briefing?.notice ?? null,
-                is_locked: newLocked,
-                edited_by: currentMember ?? null,
-                updated_at: new Date().toISOString(),
-            },
-            { onConflict: "week_start" },
-        );
-        if (error) {
-            alert("잠금 상태 변경 실패: " + error.message);
-            return;
-        }
-        setEditing(false);
-        await loadBriefing();
     }
 
     function copySection(text: string, setCopied: (v: boolean) => void) {
@@ -1303,28 +1330,11 @@ export default function ReportPage() {
                                             주간 브리핑
                                         </p>
                                         <div className="flex flex-wrap items-center gap-2">
-                                            {isLeader && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        void toggleLock()
-                                                    }
-                                                    className={`text-xs px-2.5 py-1 rounded-lg font-medium border transition-all ${
-                                                        isBriefingLocked
-                                                            ? "border-stone-300 bg-stone-100 text-stone-600"
-                                                            : "border-amber-200 bg-amber-50 text-amber-700"
-                                                    }`}
-                                                >
-                                                    {isBriefingLocked
-                                                        ? "🔒 잠금됨"
-                                                        : "🔓 잠금"}
-                                                </button>
-                                            )}
                                             {!editAllowed && (
                                                 <span className="text-xs text-stone-400">
-                                                    {isBriefingLocked
-                                                        ? "🔒 관리자가 브리핑을 잠금했어요"
-                                                        : "✏️ 수요일 오전 10시 이후 편집 가능해요"}
+                                                    {isGuest
+                                                        ? "✏️ 게스트는 편집할 수 없어요"
+                                                        : "✏️ 브리핑 편집은 매주 수요일 오후 12시부터 목요일 오후 6시까지 가능합니다"}
                                                 </span>
                                             )}
                                             {editAllowed && !editing && (
@@ -1347,25 +1357,23 @@ export default function ReportPage() {
                                             )}
                                         </div>
                                     </div>
-                                    {briefing !== null && (
-                                        <div className="px-4 py-2 border-b border-stone-100 bg-stone-50/80">
-                                            <p className="text-xs text-stone-500">
-                                                마지막 저장:{" "}
-                                                {briefing.edited_by ?? "—"} ·{" "}
-                                                {briefing.updated_at
-                                                    ? new Date(
-                                                          briefing.updated_at,
-                                                      ).toLocaleString(
-                                                          "ko-KR",
-                                                          {
-                                                              dateStyle:
-                                                                  "short",
-                                                              timeStyle:
-                                                                  "short",
-                                                          },
-                                                      )
-                                                    : "—"}
+                                    {!editing && isEditedBriefing && (
+                                        <div className="px-4 py-2 border-b border-amber-200 bg-amber-50 flex items-center justify-between gap-3 flex-wrap">
+                                            <p className="text-xs text-amber-700">
+                                                ⚠️ 편집된 브리핑입니다. 업무
+                                                변경사항이 자동으로 반영되지
+                                                않습니다.
                                             </p>
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    void restoreAutoBriefing()
+                                                }
+                                                disabled={saving}
+                                                className="text-xs px-2.5 py-1 rounded-lg font-medium border border-amber-300 bg-white text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+                                            >
+                                                자동생성으로 복원
+                                            </button>
                                         </div>
                                     )}
                                     <div className="p-4 space-y-5">
@@ -1381,17 +1389,14 @@ export default function ReportPage() {
                                                         void copyBriefingRichToClipboard(
                                                             editing
                                                                 ? editProject
-                                                                : briefing?.project ??
-                                                                      "",
+                                                                : displayProjectHtml,
                                                             editing
                                                                 ? htmlToPlainText(
                                                                       editProject,
                                                                   )
                                                                 : htmlToPlainText(
-                                                                      briefing?.project ??
-                                                                          "",
-                                                                  ) ||
-                                                                      autoProject,
+                                                                      displayProjectHtml,
+                                                                  ),
                                                             setCopiedProject,
                                                         )
                                                     }
@@ -1432,9 +1437,7 @@ export default function ReportPage() {
                                                 </>
                                             ) : (
                                                 <BriefingSavedHtmlPreview
-                                                    html={
-                                                        briefing?.project ?? ""
-                                                    }
+                                                    html={displayProjectHtml}
                                                 />
                                             )}
                                         </div>
@@ -1450,17 +1453,14 @@ export default function ReportPage() {
                                                         void copyBriefingRichToClipboard(
                                                             editing
                                                                 ? editMaintenance
-                                                                : briefing?.maintenance ??
-                                                                      "",
+                                                                : displayMaintenanceHtml,
                                                             editing
                                                                 ? htmlToPlainText(
                                                                       editMaintenance,
                                                                   )
                                                                 : htmlToPlainText(
-                                                                      briefing?.maintenance ??
-                                                                          "",
-                                                                  ) ||
-                                                                      autoMaintenance,
+                                                                      displayMaintenanceHtml,
+                                                                  ),
                                                             setCopiedMaintenance,
                                                         )
                                                     }
@@ -1504,8 +1504,7 @@ export default function ReportPage() {
                                             ) : (
                                                 <BriefingSavedHtmlPreview
                                                     html={
-                                                        briefing?.maintenance ??
-                                                        ""
+                                                        displayMaintenanceHtml
                                                     }
                                                 />
                                             )}
@@ -1522,16 +1521,14 @@ export default function ReportPage() {
                                                         void copyBriefingRichToClipboard(
                                                             editing
                                                                 ? editEtc
-                                                                : briefing?.etc ??
-                                                                      "",
+                                                                : displayEtcHtml,
                                                             editing
                                                                 ? htmlToPlainText(
                                                                       editEtc,
                                                                   )
                                                                 : htmlToPlainText(
-                                                                      briefing?.etc ??
-                                                                          "",
-                                                                  ) || autoEtc,
+                                                                      displayEtcHtml,
+                                                                  ),
                                                             setCopiedEtc,
                                                         )
                                                     }
@@ -1570,7 +1567,7 @@ export default function ReportPage() {
                                                 </>
                                             ) : (
                                                 <BriefingSavedHtmlPreview
-                                                    html={briefing?.etc ?? ""}
+                                                    html={displayEtcHtml}
                                                 />
                                             )}
                                         </div>
@@ -1868,11 +1865,11 @@ export default function ReportPage() {
                                                         className={`flex items-start gap-2 px-4 py-2.5 border-t border-stone-100
                             ${t.priority === "긴급" || t.status === "이슈 및 대기" ? "bg-amber-50" : ""}`}
                                                     >
-                                                        {(t.priority ===
-                                                            "긴급" ||
-                                                            t.status ===
-                                                                "이슈 및 대기") && (
-                                                            <span className="text-xs shrink-0 mt-1">
+                                                        {t.is_starred && (
+                                                            <span
+                                                                className="text-xs shrink-0 mt-1"
+                                                                title="핵심 프로젝트"
+                                                            >
                                                                 ⭐
                                                             </span>
                                                         )}
