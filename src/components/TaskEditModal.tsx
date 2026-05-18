@@ -11,7 +11,10 @@ import { DayPicker, DateRange } from "react-day-picker";
 import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
 import Select from "react-select";
-import { projectSearchSelectStyles } from "@/lib/reactSelectStyles";
+import {
+    projectSearchSelectStyles,
+    modalFormSelectStyles,
+} from "@/lib/reactSelectStyles";
 import { toLocalYmd } from "@/lib/toLocalYmd";
 
 function periodButtonLabel(range: DateRange | undefined): {
@@ -258,90 +261,108 @@ export default function TaskEditModal({
                         <label className="text-xs font-medium text-stone-500 block mb-1.5">
                             상태
                         </label>
-                        <div className="relative">
-                            <select
-                                className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white appearance-none pr-8"
-                                value={editForm.status}
-                                onChange={(e) =>
-                                    setEditForm({
-                                        ...editForm,
-                                        status: e.target.value,
-                                    })
-                                }
-                            >
-                                {[
-                                    "대기",
-                                    "시작 전",
-                                    "진행중",
-                                    "이슈 및 대기",
-                                    "완료",
-                                ].map((s) => (
-                                    <option key={s} value={s}>
-                                        {s}
-                                    </option>
-                                ))}
-                            </select>
-                            <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-                        </div>
+                        <Select
+                            options={[
+                                "대기",
+                                "시작 전",
+                                "진행중",
+                                "이슈 및 대기",
+                                "완료",
+                            ].map((s) => ({ value: s, label: s }))}
+                            value={
+                                editForm.status
+                                    ? {
+                                          value: editForm.status,
+                                          label: editForm.status,
+                                      }
+                                    : null
+                            }
+                            onChange={(opt) =>
+                                setEditForm({
+                                    ...editForm,
+                                    status: opt?.value ?? "",
+                                })
+                            }
+                            isSearchable={false}
+                            isClearable={false}
+                            styles={modalFormSelectStyles}
+                            menuPortalTarget={
+                                typeof document !== "undefined"
+                                    ? document.body
+                                    : null
+                            }
+                        />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                         <div>
                             <label className="text-xs font-medium text-stone-500 block mb-1.5">
                                 구분
                             </label>
-                            <div className="relative">
-                                <select
-                                    className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white appearance-none pr-8"
-                                    value={editForm.type}
-                                    onChange={(e) =>
-                                        setEditForm({
-                                            ...editForm,
-                                            type: e.target.value,
-                                        })
-                                    }
-                                >
-                                    <option value="">선택</option>
-                                    {[
-                                        "프로젝트",
-                                        "유지보수",
-                                        "고도화",
-                                        "접근성",
-                                        "업무지원",
-                                    ].map((ty) => (
-                                        <option key={ty} value={ty}>
-                                            {ty}
-                                        </option>
-                                    ))}
-                                </select>
-                                <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-                            </div>
+                            <Select
+                                options={[
+                                    "프로젝트",
+                                    "유지보수",
+                                    "고도화",
+                                    "접근성",
+                                    "업무지원",
+                                ].map((ty) => ({ value: ty, label: ty }))}
+                                value={
+                                    editForm.type
+                                        ? {
+                                              value: editForm.type,
+                                              label: editForm.type,
+                                          }
+                                        : null
+                                }
+                                onChange={(opt) =>
+                                    setEditForm({
+                                        ...editForm,
+                                        type: opt?.value ?? "",
+                                    })
+                                }
+                                placeholder="선택"
+                                isSearchable={false}
+                                isClearable={false}
+                                styles={modalFormSelectStyles}
+                                menuPortalTarget={
+                                    typeof document !== "undefined"
+                                        ? document.body
+                                        : null
+                                }
+                            />
                         </div>
                         <div>
                             <label className="text-xs font-medium text-stone-500 block mb-1.5">
                                 우선순위
                             </label>
-                            <div className="relative">
-                                <select
-                                    className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white appearance-none pr-8"
-                                    value={editForm.priority}
-                                    onChange={(e) =>
-                                        setEditForm({
-                                            ...editForm,
-                                            priority: e.target.value,
-                                        })
-                                    }
-                                >
-                                    <option value="">선택</option>
-                                    {["긴급", "높음", "보통", "낮음"].map(
-                                        (p) => (
-                                            <option key={p} value={p}>
-                                                {p}
-                                            </option>
-                                        ),
-                                    )}
-                                </select>
-                                <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-                            </div>
+                            <Select
+                                options={["긴급", "높음", "보통", "낮음"].map(
+                                    (p) => ({ value: p, label: p }),
+                                )}
+                                value={
+                                    editForm.priority
+                                        ? {
+                                              value: editForm.priority,
+                                              label: editForm.priority,
+                                          }
+                                        : null
+                                }
+                                onChange={(opt) =>
+                                    setEditForm({
+                                        ...editForm,
+                                        priority: opt?.value ?? "",
+                                    })
+                                }
+                                placeholder="선택"
+                                isSearchable={false}
+                                isClearable={false}
+                                styles={modalFormSelectStyles}
+                                menuPortalTarget={
+                                    typeof document !== "undefined"
+                                        ? document.body
+                                        : null
+                                }
+                            />
                         </div>
                     </div>
                     <div className="flex items-center justify-between py-1">

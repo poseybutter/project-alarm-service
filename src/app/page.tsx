@@ -58,7 +58,11 @@ import {
 } from "@dnd-kit/core";
 import DragQuestModal from "@/components/DragQuestModal";
 import Select from "react-select";
-import { projectSearchSelectStyles } from "@/lib/reactSelectStyles";
+import {
+    projectSearchSelectStyles,
+    modalFormSelectStyles,
+    badgeSelectStyles,
+} from "@/lib/reactSelectStyles";
 import { toLocalYmd } from "@/lib/toLocalYmd";
 import TiptapQuestContentEditor from "@/components/TiptapQuestContentEditor";
 
@@ -377,6 +381,7 @@ function HomeMyTaskRow({
         id: `task-${t.id}`,
         data: { task: t },
     });
+    const statusWrapRef = useRef<HTMLDivElement>(null);
     const diff = getDiff(t.end_date);
     const ddayRed = diff !== null && diff <= 7;
     const ddayLabel =
@@ -455,7 +460,40 @@ function HomeMyTaskRow({
                         <span>기간 미정</span>
                     )}
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    <div
+                        ref={statusWrapRef}
+                        className={`shrink-0 rounded-lg ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}
+                    >
+                        <Select
+                            options={[
+                                "대기",
+                                "시작 전",
+                                "진행중",
+                                "이슈 및 대기",
+                                "완료",
+                            ].map((s) => ({ value: s, label: s }))}
+                            value={{ value: t.status, label: t.status }}
+                            onChange={(opt) => {
+                                if (!opt) return;
+                                const r =
+                                    statusWrapRef.current?.getBoundingClientRect();
+                                void onStatusChange(t.id, opt.value, t, {
+                                    x: (r?.left ?? 0) + (r?.width ?? 0) / 2,
+                                    y: (r?.top ?? 0) + (r?.height ?? 0) / 2,
+                                });
+                            }}
+                            isSearchable={false}
+                            isClearable={false}
+                            styles={badgeSelectStyles}
+                            menuPortalTarget={
+                                typeof document !== "undefined"
+                                    ? document.body
+                                    : null
+                            }
+                            menuPlacement="auto"
+                        />
+                    </div>
                     {onEdit && (
                         <button
                             type="button"
@@ -465,33 +503,6 @@ function HomeMyTaskRow({
                             수정
                         </button>
                     )}
-                    <div className="relative shrink-0">
-                        <select
-                            value={t.status}
-                            onChange={(e) => {
-                                const el = e.target;
-                                const r = el.getBoundingClientRect();
-                                void onStatusChange(t.id, el.value, t, {
-                                    x: r.left + r.width / 2,
-                                    y: r.top + r.height / 2,
-                                });
-                            }}
-                            className={`cursor-pointer rounded-lg border-0 px-2 py-1 pr-7 text-xs font-medium appearance-none ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}
-                        >
-                            {[
-                                "대기",
-                                "시작 전",
-                                "진행중",
-                                "이슈 및 대기",
-                                "완료",
-                            ].map((s) => (
-                                <option key={s} value={s}>
-                                    {s}
-                                </option>
-                            ))}
-                        </select>
-                        <i className="ri-arrow-down-s-line absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-                    </div>
                 </div>
             </div>
         </div>
@@ -1705,88 +1716,123 @@ export default function HomePage() {
                                         <label className="mb-1.5 block text-xs font-medium text-stone-500">
                                             상태
                                         </label>
-                                        <div className="relative">
-                                            <select
-                                                className="w-full appearance-none rounded-lg border border-stone-200 bg-white px-3 py-2.5 pr-8 text-sm"
-                                                value={editForm.status}
-                                                onChange={(e) =>
-                                                    setEditForm({
-                                                        ...editForm,
-                                                        status: e.target.value,
-                                                    })
-                                                }
-                                            >
-                                                {[
-                                                    "대기",
-                                                    "시작 전",
-                                                    "진행중",
-                                                    "이슈 및 대기",
-                                                    "완료",
-                                                ].map((s) => (
-                                                    <option key={s}>{s}</option>
-                                                ))}
-                                            </select>
-                                            <i className="ri-arrow-down-s-line pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
-                                        </div>
+                                        <Select
+                                            options={[
+                                                "대기",
+                                                "시작 전",
+                                                "진행중",
+                                                "이슈 및 대기",
+                                                "완료",
+                                            ].map((s) => ({
+                                                value: s,
+                                                label: s,
+                                            }))}
+                                            value={
+                                                editForm.status
+                                                    ? {
+                                                          value: editForm.status,
+                                                          label: editForm.status,
+                                                      }
+                                                    : null
+                                            }
+                                            onChange={(opt) =>
+                                                setEditForm({
+                                                    ...editForm,
+                                                    status: opt?.value ?? "",
+                                                })
+                                            }
+                                            isSearchable={false}
+                                            isClearable={false}
+                                            styles={modalFormSelectStyles}
+                                            menuPortalTarget={
+                                                typeof document !== "undefined"
+                                                    ? document.body
+                                                    : null
+                                            }
+                                        />
                                     </div>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
                                             <label className="mb-1.5 block text-xs font-medium text-stone-500">
                                                 구분
                                             </label>
-                                            <div className="relative">
-                                                <select
-                                                    className="w-full appearance-none rounded-lg border border-stone-200 bg-white px-3 py-2.5 pr-8 text-sm"
-                                                    value={editForm.type}
-                                                    onChange={(e) =>
-                                                        setEditForm({
-                                                            ...editForm,
-                                                            type: e.target.value,
-                                                        })
-                                                    }
-                                                >
-                                                    <option value="">선택</option>
-                                                    {[
-                                                        "프로젝트",
-                                                        "유지보수",
-                                                        "고도화",
-                                                        "접근성",
-                                                        "업무지원",
-                                                    ].map((t) => (
-                                                        <option key={t}>{t}</option>
-                                                    ))}
-                                                </select>
-                                                <i className="ri-arrow-down-s-line pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
-                                            </div>
+                                            <Select
+                                                options={[
+                                                    "프로젝트",
+                                                    "유지보수",
+                                                    "고도화",
+                                                    "접근성",
+                                                    "업무지원",
+                                                ].map((t) => ({
+                                                    value: t,
+                                                    label: t,
+                                                }))}
+                                                value={
+                                                    editForm.type
+                                                        ? {
+                                                              value: editForm.type,
+                                                              label: editForm.type,
+                                                          }
+                                                        : null
+                                                }
+                                                onChange={(opt) =>
+                                                    setEditForm({
+                                                        ...editForm,
+                                                        type: opt?.value ?? "",
+                                                    })
+                                                }
+                                                placeholder="선택"
+                                                isSearchable={false}
+                                                isClearable={false}
+                                                styles={modalFormSelectStyles}
+                                                menuPortalTarget={
+                                                    typeof document !==
+                                                    "undefined"
+                                                        ? document.body
+                                                        : null
+                                                }
+                                            />
                                         </div>
                                         <div>
                                             <label className="mb-1.5 block text-xs font-medium text-stone-500">
                                                 우선순위
                                             </label>
-                                            <div className="relative">
-                                                <select
-                                                    className="w-full appearance-none rounded-lg border border-stone-200 bg-white px-3 py-2.5 pr-8 text-sm"
-                                                    value={editForm.priority}
-                                                    onChange={(e) =>
-                                                        setEditForm({
-                                                            ...editForm,
-                                                            priority:
-                                                                e.target.value,
-                                                        })
-                                                    }
-                                                >
-                                                    <option value="">선택</option>
-                                                    {[
-                                                        "긴급",
-                                                        "높음",
-                                                        "보통",
-                                                        "낮음",
-                                                    ].map((p) => (
-                                                        <option key={p}>{p}</option>
-                                                    ))}
-                                                </select>
-                                                <i className="ri-arrow-down-s-line pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
-                                            </div>
+                                            <Select
+                                                options={[
+                                                    "긴급",
+                                                    "높음",
+                                                    "보통",
+                                                    "낮음",
+                                                ].map((p) => ({
+                                                    value: p,
+                                                    label: p,
+                                                }))}
+                                                value={
+                                                    editForm.priority
+                                                        ? {
+                                                              value: editForm.priority,
+                                                              label: editForm.priority,
+                                                          }
+                                                        : null
+                                                }
+                                                onChange={(opt) =>
+                                                    setEditForm({
+                                                        ...editForm,
+                                                        priority:
+                                                            opt?.value ?? "",
+                                                    })
+                                                }
+                                                placeholder="선택"
+                                                isSearchable={false}
+                                                isClearable={false}
+                                                styles={modalFormSelectStyles}
+                                                menuPortalTarget={
+                                                    typeof document !==
+                                                    "undefined"
+                                                        ? document.body
+                                                        : null
+                                                }
+                                            />
                                         </div>
                                     </div>
                                     <div className="flex items-center justify-between py-1">

@@ -16,6 +16,8 @@ import type { Task } from "@/lib/types";
 import { MEMBERS, LEADER, STATUS_COLORS } from "@/lib/constants";
 import { toLocalYmd } from "@/lib/toLocalYmd";
 import TiptapSectionEditor from "@/components/TiptapSectionEditor";
+import Select from "react-select";
+import { modalFormSelectStyles } from "@/lib/reactSelectStyles";
 
 /** 전달사항 HTML이 사용자에게 보일 내용이 있는지 (빈 에디터·공백 태그 제외) */
 function noticeHtmlHasText(html: string | null | undefined): boolean {
@@ -1937,58 +1939,78 @@ export default function ReportPage() {
                                     <label className="mb-1.5 block text-xs font-medium text-stone-500">
                                         구분
                                     </label>
-                                    <div className="relative">
-                                        <select
-                                            className="w-full appearance-none rounded-lg border border-stone-200 bg-white py-2.5 pl-3 pr-10 text-sm"
-                                            value={assignForm.type}
-                                            onChange={(e) =>
-                                                setAssignForm((f) => ({
-                                                    ...f,
-                                                    type: e.target.value,
-                                                }))
-                                            }
-                                        >
-                                            {[
-                                                "프로젝트",
-                                                "개편",
-                                                "고도화",
-                                                "유지보수",
-                                                "기타",
-                                            ].map((t) => (
-                                                <option key={t} value={t}>
-                                                    {t}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <i className="ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-stone-400" />
-                                    </div>
+                                    <Select
+                                        options={[
+                                            "프로젝트",
+                                            "개편",
+                                            "고도화",
+                                            "유지보수",
+                                            "기타",
+                                        ].map((t) => ({ value: t, label: t }))}
+                                        value={
+                                            assignForm.type
+                                                ? {
+                                                      value: assignForm.type,
+                                                      label: assignForm.type,
+                                                  }
+                                                : null
+                                        }
+                                        onChange={(opt) =>
+                                            setAssignForm((f) => ({
+                                                ...f,
+                                                type: opt?.value ?? "",
+                                            }))
+                                        }
+                                        isSearchable={false}
+                                        isClearable={false}
+                                        styles={modalFormSelectStyles}
+                                        menuPortalTarget={
+                                            typeof document !== "undefined"
+                                                ? document.body
+                                                : null
+                                        }
+                                    />
                                 </div>
                                 <div>
                                     <label className="mb-1.5 block text-xs font-medium text-stone-500">
                                         표시할 목록
                                     </label>
-                                    <div className="relative">
-                                        <select
-                                            className="w-full appearance-none rounded-lg border border-stone-200 bg-white py-2.5 pl-3 pr-10 text-sm"
-                                            value={assignForm.status}
-                                            onChange={(e) =>
-                                                setAssignForm((f) => ({
-                                                    ...f,
-                                                    status: e.target.value as
-                                                        | "진행중"
-                                                        | "배정대기",
-                                                }))
-                                            }
-                                        >
-                                            <option value="진행중">
-                                                배정현황 (진행 중 배정)
-                                            </option>
-                                            <option value="배정대기">
-                                                배정대기
-                                            </option>
-                                        </select>
-                                        <i className="ri-arrow-down-s-line pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-stone-400" />
-                                    </div>
+                                    <Select
+                                        options={[
+                                            {
+                                                value: "진행중",
+                                                label: "배정현황 (진행 중 배정)",
+                                            },
+                                            {
+                                                value: "배정대기",
+                                                label: "배정대기",
+                                            },
+                                        ]}
+                                        value={{
+                                            value: assignForm.status,
+                                            label:
+                                                assignForm.status === "진행중"
+                                                    ? "배정현황 (진행 중 배정)"
+                                                    : "배정대기",
+                                        }}
+                                        onChange={(opt) => {
+                                            if (!opt) return;
+                                            setAssignForm((f) => ({
+                                                ...f,
+                                                status: opt.value as
+                                                    | "진행중"
+                                                    | "배정대기",
+                                            }));
+                                        }}
+                                        isSearchable={false}
+                                        isClearable={false}
+                                        styles={modalFormSelectStyles}
+                                        menuPortalTarget={
+                                            typeof document !== "undefined"
+                                                ? document.body
+                                                : null
+                                        }
+                                    />
                                 </div>
                                 <div>
                                     <label className="mb-1.5 block text-xs font-medium text-stone-500">

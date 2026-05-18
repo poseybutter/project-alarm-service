@@ -17,7 +17,12 @@ import type { Accessibility, Project } from "@/lib/types";
 import { getDiff, normalizeProject, getProjectMembers } from "@/lib/utils";
 import { MEMBERS } from "@/lib/constants";
 import Select from "react-select";
-import { selectStyles } from "@/lib/reactSelectStyles";
+import {
+    selectStyles,
+    taskFilterProjectSelectStyles,
+    modalFormSelectStyles,
+    badgeSelectStyles,
+} from "@/lib/reactSelectStyles";
 import { toLocalYmd } from "@/lib/toLocalYmd";
 
 const EMPTY_PROJ_FORM = {
@@ -48,6 +53,44 @@ function accStatusStyle(status: string) {
     if (status === "신청완료") return "bg-blue-100 text-blue-700";
     if (status === "신청불필요") return "bg-stone-100 text-stone-500";
     return "bg-amber-100 text-amber-700"; // 신청필요
+}
+
+const ACC_OPTIONS = ACC_INSPECTION_OPTIONS.map((s) => ({
+    value: s,
+    label: s,
+}));
+
+function AccInspectionBadgeSelect({
+    status,
+    disabled,
+    onChange,
+}: {
+    status: string;
+    disabled: boolean;
+    onChange: (next: string) => void;
+}) {
+    return (
+        <div
+            className={`rounded-lg ${accStatusStyle(status)} ${disabled ? "opacity-70 cursor-not-allowed" : ""}`}
+        >
+            <Select
+                options={ACC_OPTIONS}
+                value={{ value: status, label: status }}
+                isDisabled={disabled}
+                onChange={(opt) => {
+                    if (!opt) return;
+                    onChange(opt.value);
+                }}
+                isSearchable={false}
+                isClearable={false}
+                styles={badgeSelectStyles}
+                menuPortalTarget={
+                    typeof document !== "undefined" ? document.body : null
+                }
+                menuPlacement="auto"
+            />
+        </div>
+    );
 }
 
 export default function ManagePage() {
@@ -560,7 +603,7 @@ export default function ManagePage() {
                                         placeholder="프로젝트 선택"
                                         isClearable
                                         isSearchable
-                                        styles={selectStyles}
+                                        styles={taskFilterProjectSelectStyles}
                                         menuPortalTarget={
                                             typeof document !== "undefined"
                                                 ? document.body
@@ -571,39 +614,66 @@ export default function ManagePage() {
                                         }
                                     />
                                 </div>
-                                <div className="relative min-w-0 shrink max-w-[38%] sm:max-w-none">
-                                    <select
-                                        className="min-w-0 w-full border border-stone-200 rounded-lg px-2 py-2 text-xs bg-white appearance-none pr-8"
-                                        value={filterProjMember}
-                                        onChange={(e) =>
-                                            setFilterProjMember(e.target.value)
-                                        }
+                                <div className="min-w-0 shrink max-w-[38%] sm:max-w-none">
+                                    <Select
                                         aria-label="담당자 필터"
-                                    >
-                                        <option value="">전체 담당자</option>
-                                        {MEMBERS.map((m) => (
-                                            <option key={m} value={m}>
-                                                {m}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-                                </div>
-                                <div className="relative min-w-0 shrink max-w-[38%] sm:max-w-none">
-                                    <select
-                                        className="min-w-0 w-full border border-stone-200 rounded-lg px-2 py-2 text-xs bg-white appearance-none pr-8"
-                                        value={filterProjLang}
-                                        onChange={(e) =>
-                                            setFilterProjLang(e.target.value)
+                                        options={MEMBERS.map((m) => ({
+                                            value: m,
+                                            label: m,
+                                        }))}
+                                        value={
+                                            filterProjMember
+                                                ? {
+                                                      value: filterProjMember,
+                                                      label: filterProjMember,
+                                                  }
+                                                : null
                                         }
+                                        onChange={(opt) =>
+                                            setFilterProjMember(
+                                                opt?.value ?? "",
+                                            )
+                                        }
+                                        placeholder="전체 담당자"
+                                        isClearable
+                                        isSearchable={false}
+                                        styles={taskFilterProjectSelectStyles}
+                                        menuPortalTarget={
+                                            typeof document !== "undefined"
+                                                ? document.body
+                                                : null
+                                        }
+                                    />
+                                </div>
+                                <div className="min-w-0 shrink max-w-[38%] sm:max-w-none">
+                                    <Select
                                         aria-label="언어 필터"
-                                    >
-                                        <option value="">전체 언어</option>
-                                        <option value="JSP">JSP</option>
-                                        <option value="PHP">PHP</option>
-                                        <option value="기타">기타</option>
-                                    </select>
-                                    <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+                                        options={[
+                                            { value: "JSP", label: "JSP" },
+                                            { value: "PHP", label: "PHP" },
+                                            { value: "기타", label: "기타" },
+                                        ]}
+                                        value={
+                                            filterProjLang
+                                                ? {
+                                                      value: filterProjLang,
+                                                      label: filterProjLang,
+                                                  }
+                                                : null
+                                        }
+                                        onChange={(opt) =>
+                                            setFilterProjLang(opt?.value ?? "")
+                                        }
+                                        placeholder="전체 언어"
+                                        isClearable
+                                        isSearchable={false}
+                                        styles={taskFilterProjectSelectStyles}
+                                        menuPortalTarget={
+                                            typeof document !== "undefined"
+                                                ? document.body
+                                                : null
+                                        }
+                                    />
                                 </div>
                             </div>
                             <div className="flex items-center justify-between gap-2 mb-3">
@@ -623,27 +693,37 @@ export default function ManagePage() {
                                             ? "보관함 숨기기"
                                             : `보관함 (${projects.filter((p) => p.is_archived).length})`}
                                     </button>
-                                    <div className="relative">
-                                        <select
-                                            className="border border-stone-200 rounded-lg px-2 py-1.5 text-xs bg-white appearance-none pr-8"
-                                            value={sortProj}
-                                            onChange={(e) =>
+                                    <div className="min-w-[7rem]">
+                                        <Select
+                                            aria-label="정렬"
+                                            options={[
+                                                { value: "가나다", label: "가나다순" },
+                                                { value: "담당자", label: "담당자순" },
+                                            ]}
+                                            value={{
+                                                value: sortProj,
+                                                label:
+                                                    sortProj === "가나다"
+                                                        ? "가나다순"
+                                                        : "담당자순",
+                                            }}
+                                            onChange={(opt) => {
+                                                if (!opt) return;
                                                 setSortProj(
-                                                    e.target.value as
+                                                    opt.value as
                                                         | "가나다"
                                                         | "담당자",
-                                                )
+                                                );
+                                            }}
+                                            isSearchable={false}
+                                            isClearable={false}
+                                            styles={taskFilterProjectSelectStyles}
+                                            menuPortalTarget={
+                                                typeof document !== "undefined"
+                                                    ? document.body
+                                                    : null
                                             }
-                                            aria-label="정렬"
-                                        >
-                                            <option value="가나다">
-                                                가나다순
-                                            </option>
-                                            <option value="담당자">
-                                                담당자순
-                                            </option>
-                                        </select>
-                                        <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+                                        />
                                     </div>
                                 </div>
                             </div>
@@ -765,7 +845,7 @@ export default function ManagePage() {
                                                                             false,
                                                                     );
                                                                 }}
-                                                                className="text-[11px] text-stone-400 hover:text-stone-600"
+                                                                className="text-xs text-stone-400 hover:text-stone-600"
                                                             >
                                                                 {p.is_archived
                                                                     ? "복원"
@@ -909,7 +989,7 @@ export default function ManagePage() {
                                         placeholder="프로젝트 선택"
                                         isClearable
                                         isSearchable
-                                        styles={selectStyles}
+                                        styles={taskFilterProjectSelectStyles}
                                         menuPortalTarget={
                                             typeof document !== "undefined"
                                                 ? document.body
@@ -920,75 +1000,117 @@ export default function ManagePage() {
                                         }
                                     />
                                 </div>
-                                <div className="relative min-w-0 shrink">
-                                    <select
-                                        className="min-w-0 w-full border border-stone-200 rounded-lg px-2 py-2 text-xs bg-white appearance-none pr-8"
-                                        value={filterAccMember}
-                                        onChange={(e) =>
-                                            setFilterAccMember(e.target.value)
-                                        }
+                                <div className="min-w-0 shrink">
+                                    <Select
                                         aria-label="담당자 필터"
-                                    >
-                                        <option value="">전체 담당자</option>
-                                        {MEMBERS.map((m) => (
-                                            <option key={m} value={m}>
-                                                {m}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-                                </div>
-                                <div className="relative min-w-0 shrink">
-                                    <select
-                                        className="min-w-0 w-full border border-stone-200 rounded-lg px-2 py-2 text-xs bg-white appearance-none pr-8"
-                                        value={filterAccStatus}
-                                        onChange={(e) =>
-                                            setFilterAccStatus(e.target.value)
+                                        options={MEMBERS.map((m) => ({
+                                            value: m,
+                                            label: m,
+                                        }))}
+                                        value={
+                                            filterAccMember
+                                                ? {
+                                                      value: filterAccMember,
+                                                      label: filterAccMember,
+                                                  }
+                                                : null
                                         }
+                                        onChange={(opt) =>
+                                            setFilterAccMember(
+                                                opt?.value ?? "",
+                                            )
+                                        }
+                                        placeholder="전체 담당자"
+                                        isClearable
+                                        isSearchable={false}
+                                        styles={taskFilterProjectSelectStyles}
+                                        menuPortalTarget={
+                                            typeof document !== "undefined"
+                                                ? document.body
+                                                : null
+                                        }
+                                    />
+                                </div>
+                                <div className="min-w-0 shrink">
+                                    <Select
                                         aria-label="점검 상태 필터"
-                                    >
-                                        <option value="">전체 상태</option>
-                                        <option value="신청필요">
-                                            신청필요
-                                        </option>
-                                        <option value="신청완료">
-                                            신청완료
-                                        </option>
-                                        <option value="취득·갱신완료">
-                                            취득·갱신완료
-                                        </option>
-                                        <option value="신청불필요">
-                                            신청불필요
-                                        </option>
-                                    </select>
-                                    <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+                                        options={[
+                                            {
+                                                value: "신청필요",
+                                                label: "신청필요",
+                                            },
+                                            {
+                                                value: "신청완료",
+                                                label: "신청완료",
+                                            },
+                                            {
+                                                value: "취득·갱신완료",
+                                                label: "취득·갱신완료",
+                                            },
+                                            {
+                                                value: "신청불필요",
+                                                label: "신청불필요",
+                                            },
+                                        ]}
+                                        value={
+                                            filterAccStatus
+                                                ? {
+                                                      value: filterAccStatus,
+                                                      label: filterAccStatus,
+                                                  }
+                                                : null
+                                        }
+                                        onChange={(opt) =>
+                                            setFilterAccStatus(
+                                                opt?.value ?? "",
+                                            )
+                                        }
+                                        placeholder="전체 상태"
+                                        isClearable
+                                        isSearchable={false}
+                                        styles={taskFilterProjectSelectStyles}
+                                        menuPortalTarget={
+                                            typeof document !== "undefined"
+                                                ? document.body
+                                                : null
+                                        }
+                                    />
                                 </div>
                             </div>
                             <div className="mb-3 flex items-center justify-between">
                                 <span className="text-xs text-stone-400">
                                     총 {filteredAcc.length}개
                                 </span>
-                                <div className="relative">
-                                    <select
-                                        className="border border-stone-200 rounded-lg px-2 py-1.5 text-xs bg-white appearance-none pr-8"
-                                        value={sortAcc}
-                                        onChange={(e) =>
+                                <div className="min-w-[7rem]">
+                                    <Select
+                                        aria-label="접근성 정렬"
+                                        options={[
+                                            { value: "날짜순", label: "날짜순" },
+                                            { value: "가나다순", label: "가나다순" },
+                                            { value: "담당자순", label: "담당자순" },
+                                        ]}
+                                        value={{
+                                            value: sortAcc,
+                                            label: sortAcc,
+                                        }}
+                                        onChange={(opt) => {
+                                            if (!opt) return;
                                             setSortAcc(
-                                                e.target.value as
+                                                opt.value as
                                                     | "날짜순"
                                                     | "가나다순"
                                                     | "담당자순",
-                                            )
+                                            );
+                                        }}
+                                        isSearchable={false}
+                                        isClearable={false}
+                                        styles={taskFilterProjectSelectStyles}
+                                        menuPortalTarget={
+                                            typeof document !== "undefined"
+                                                ? document.body
+                                                : null
                                         }
-                                        aria-label="접근성 정렬"
-                                    >
-                                        <option value="날짜순">날짜순</option>
-                                        <option value="가나다순">가나다순</option>
-                                        <option value="담당자순">
-                                            담당자순
-                                        </option>
-                                    </select>
-                                    <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+                                    />
                                 </div>
                             </div>
                             <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
@@ -1066,40 +1188,18 @@ export default function ManagePage() {
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-2 shrink-0">
-                                                    <div className="relative">
-                                                        <select
-                                                            value={
-                                                                a.inspection_status
-                                                            }
-                                                            disabled={!canRow}
-                                                            onChange={(e) => {
-                                                                if (canRow)
-                                                                    void updateAccStatus(
-                                                                        a.id,
-                                                                        e.target
-                                                                            .value,
-                                                                    );
-                                                            }}
-                                                            title="점검 상태"
-                                                            className={`text-xs px-2 py-1 pr-7 rounded-lg font-medium border-0 max-w-[5.5rem] sm:max-w-none appearance-none
-                              ${!canRow ? "cursor-not-allowed opacity-70" : "cursor-pointer"}
-                              ${accStatusStyle(a.inspection_status)}`}
-                                                        >
-                                                            {ACC_INSPECTION_OPTIONS.map(
-                                                                (s) => (
-                                                                    <option
-                                                                        key={s}
-                                                                        value={
-                                                                            s
-                                                                        }
-                                                                    >
-                                                                        {s}
-                                                                    </option>
-                                                                ),
-                                                            )}
-                                                        </select>
-                                                        <i className="ri-arrow-down-s-line absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-                                                    </div>
+                                                    <AccInspectionBadgeSelect
+                                                        status={
+                                                            a.inspection_status
+                                                        }
+                                                        disabled={!canRow}
+                                                        onChange={(next) =>
+                                                            void updateAccStatus(
+                                                                a.id,
+                                                                next,
+                                                            )
+                                                        }
+                                                    />
                                                     {canRow && (
                                                         <>
                                                             <button
@@ -1778,26 +1878,28 @@ export default function ManagePage() {
                                     <label className="text-xs font-medium text-stone-500 block mb-1.5">
                                         점검 상태
                                     </label>
-                                    <div className="relative">
-                                        <select
-                                            className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white appearance-none pr-8"
-                                            value={accForm.inspection_status}
-                                            onChange={(e) =>
-                                                setAccForm({
-                                                    ...accForm,
-                                                    inspection_status:
-                                                        e.target.value,
-                                                })
-                                            }
-                                        >
-                                            {ACC_INSPECTION_OPTIONS.map((s) => (
-                                                <option key={s} value={s}>
-                                                    {s}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-                                    </div>
+                                    <Select
+                                        options={ACC_OPTIONS}
+                                        value={{
+                                            value: accForm.inspection_status,
+                                            label: accForm.inspection_status,
+                                        }}
+                                        onChange={(opt) => {
+                                            if (!opt) return;
+                                            setAccForm({
+                                                ...accForm,
+                                                inspection_status: opt.value,
+                                            });
+                                        }}
+                                        isSearchable={false}
+                                        isClearable={false}
+                                        styles={modalFormSelectStyles}
+                                        menuPortalTarget={
+                                            typeof document !== "undefined"
+                                                ? document.body
+                                                : null
+                                        }
+                                    />
                                 </div>
                                 <div>
                                     <label className="text-xs font-medium text-stone-500 block mb-1.5">
