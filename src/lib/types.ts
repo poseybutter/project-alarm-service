@@ -12,6 +12,7 @@ export type Task = {
     priority: string | null;
     issue: string | null;
     is_plan?: boolean | null;
+    is_starred?: boolean | null;
     created_at: string;
 };
 
