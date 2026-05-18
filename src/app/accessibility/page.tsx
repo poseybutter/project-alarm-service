@@ -2,14 +2,53 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import Select from "react-select";
+import {
+    badgeSelectStyles,
+    modalFormSelectStyles,
+} from "@/lib/reactSelectStyles";
 
 const MEMBERS = ["조현석", "조정연", "이헌희", "이지은"];
 const INSPECTION_STATUS = ["갱신완료", "신청완료", "신청불필요"];
+const INSPECTION_OPTIONS = INSPECTION_STATUS.map((s) => ({
+    value: s,
+    label: s,
+}));
 
 function accStatusStyle(status: string) {
     if (status === "신청완료") return "bg-green-100 text-green-700";
     if (status === "신청불필요") return "bg-stone-100 text-stone-500";
     return "bg-amber-100 text-amber-700";
+}
+
+function InspectionBadgeSelect({
+    status,
+    onChange,
+}: {
+    status: string;
+    onChange: (next: string) => void;
+}) {
+    return (
+        <div
+            className={`rounded-full ${accStatusStyle(status)}`}
+        >
+            <Select
+                options={INSPECTION_OPTIONS}
+                value={{ value: status, label: status }}
+                onChange={(opt) => {
+                    if (!opt) return;
+                    onChange(opt.value);
+                }}
+                isSearchable={false}
+                isClearable={false}
+                styles={badgeSelectStyles}
+                menuPortalTarget={
+                    typeof document !== "undefined" ? document.body : null
+                }
+                menuPlacement="auto"
+            />
+        </div>
+    );
 }
 
 type Accessibility = {
@@ -230,29 +269,17 @@ export default function AccessibilityPage() {
                                                 </div>
                                             </div>
                                             <div className="flex flex-col items-end gap-1.5 shrink-0">
-                                                <select
-                                                    value={
+                                                <InspectionBadgeSelect
+                                                    status={
                                                         item.inspection_status
                                                     }
-                                                    onChange={(e) =>
+                                                    onChange={(next) =>
                                                         updateInspection(
                                                             item.id,
-                                                            e.target.value,
+                                                            next,
                                                         )
                                                     }
-                                                    className={`text-xs px-2 py-0.5 rounded-full font-medium border-0 cursor-pointer ${accStatusStyle(item.inspection_status)}`}
-                                                >
-                                                    {INSPECTION_STATUS.map(
-                                                        (s) => (
-                                                            <option
-                                                                key={s}
-                                                                value={s}
-                                                            >
-                                                                {s}
-                                                            </option>
-                                                        ),
-                                                    )}
-                                                </select>
+                                                />
                                                 <button
                                                     onClick={() =>
                                                         deleteItem(item.id)
@@ -295,21 +322,35 @@ export default function AccessibilityPage() {
                                 <label className="text-xs font-medium text-stone-500 block mb-1.5">
                                     담당자
                                 </label>
-                                <select
-                                    className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white"
-                                    value={form.member}
-                                    onChange={(e) =>
+                                <Select
+                                    options={MEMBERS.map((m) => ({
+                                        value: m,
+                                        label: m,
+                                    }))}
+                                    value={
+                                        form.member
+                                            ? {
+                                                  value: form.member,
+                                                  label: form.member,
+                                              }
+                                            : null
+                                    }
+                                    onChange={(opt) =>
                                         setForm({
                                             ...form,
-                                            member: e.target.value,
+                                            member: opt?.value ?? "",
                                         })
                                     }
-                                >
-                                    <option value="">선택</option>
-                                    {MEMBERS.map((m) => (
-                                        <option key={m}>{m}</option>
-                                    ))}
-                                </select>
+                                    placeholder="선택"
+                                    isSearchable={false}
+                                    isClearable={false}
+                                    styles={modalFormSelectStyles}
+                                    menuPortalTarget={
+                                        typeof document !== "undefined"
+                                            ? document.body
+                                            : null
+                                    }
+                                />
                             </div>
                             <div>
                                 <label className="text-xs font-medium text-stone-500 block mb-1.5">
@@ -365,20 +406,28 @@ export default function AccessibilityPage() {
                                 <label className="text-xs font-medium text-stone-500 block mb-1.5">
                                     심사신청 상태
                                 </label>
-                                <select
-                                    className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white"
-                                    value={form.inspection_status}
-                                    onChange={(e) =>
+                                <Select
+                                    options={INSPECTION_OPTIONS}
+                                    value={{
+                                        value: form.inspection_status,
+                                        label: form.inspection_status,
+                                    }}
+                                    onChange={(opt) => {
+                                        if (!opt) return;
                                         setForm({
                                             ...form,
-                                            inspection_status: e.target.value,
-                                        })
+                                            inspection_status: opt.value,
+                                        });
+                                    }}
+                                    isSearchable={false}
+                                    isClearable={false}
+                                    styles={modalFormSelectStyles}
+                                    menuPortalTarget={
+                                        typeof document !== "undefined"
+                                            ? document.body
+                                            : null
                                     }
-                                >
-                                    {INSPECTION_STATUS.map((s) => (
-                                        <option key={s}>{s}</option>
-                                    ))}
-                                </select>
+                                />
                             </div>
                             <div>
                                 <label className="text-xs font-medium text-stone-500 block mb-1.5">

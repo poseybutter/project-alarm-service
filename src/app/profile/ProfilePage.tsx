@@ -23,6 +23,8 @@ import type { Player, Task } from "@/lib/types";
 import { formatWorkload } from "@/lib/utils";
 import { BAR_COLORS, MEMBERS, MEMBER_COLORS } from "@/lib/constants";
 import { toLocalYmd } from "@/lib/toLocalYmd";
+import Select from "react-select";
+import { taskFilterProjectSelectStyles } from "@/lib/reactSelectStyles";
 
 const TITLES = [
     {
@@ -836,52 +838,87 @@ export default function ProfilePage() {
 
                                     {/* 프로젝트/상태 필터 */}
                                     <div className="flex gap-2 mb-3">
-                                        <select
-                                            className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
-                                            value={historyProjFilter}
-                                            onChange={(e) =>
-                                                setHistoryProjFilter(
-                                                    e.target.value,
-                                                )
-                                            }
-                                        >
-                                            <option value="">
-                                                전체 프로젝트
-                                            </option>
-                                            {[
-                                                ...new Set(
-                                                    tasks
-                                                        .map((t) => t.proj)
-                                                        .filter(Boolean),
-                                                ),
-                                            ].map((p) => (
-                                                <option key={p} value={p}>
-                                                    {p}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <select
-                                            className="flex-1 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600"
-                                            value={historyStatusFilter}
-                                            onChange={(e) =>
-                                                setHistoryStatusFilter(
-                                                    e.target.value,
-                                                )
-                                            }
-                                        >
-                                            <option value="">전체 상태</option>
-                                            {[
-                                                "대기",
-                                                "시작 전",
-                                                "진행중",
-                                                "이슈 및 대기",
-                                                "완료",
-                                            ].map((s) => (
-                                                <option key={s} value={s}>
-                                                    {s}
-                                                </option>
-                                            ))}
-                                        </select>
+                                        <div className="flex-1 min-w-0">
+                                            <Select
+                                                options={[
+                                                    ...new Set(
+                                                        tasks
+                                                            .map((t) => t.proj)
+                                                            .filter(Boolean),
+                                                    ),
+                                                ].map((p) => ({
+                                                    value: p,
+                                                    label: p,
+                                                }))}
+                                                value={
+                                                    historyProjFilter
+                                                        ? {
+                                                              value: historyProjFilter,
+                                                              label: historyProjFilter,
+                                                          }
+                                                        : null
+                                                }
+                                                onChange={(opt) =>
+                                                    setHistoryProjFilter(
+                                                        opt?.value ?? "",
+                                                    )
+                                                }
+                                                placeholder="전체 프로젝트"
+                                                isClearable
+                                                isSearchable
+                                                styles={
+                                                    taskFilterProjectSelectStyles
+                                                }
+                                                menuPortalTarget={
+                                                    typeof document !==
+                                                    "undefined"
+                                                        ? document.body
+                                                        : null
+                                                }
+                                                noOptionsMessage={() =>
+                                                    "프로젝트가 없어요"
+                                                }
+                                            />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <Select
+                                                options={[
+                                                    "대기",
+                                                    "시작 전",
+                                                    "진행중",
+                                                    "이슈 및 대기",
+                                                    "완료",
+                                                ].map((s) => ({
+                                                    value: s,
+                                                    label: s,
+                                                }))}
+                                                value={
+                                                    historyStatusFilter
+                                                        ? {
+                                                              value: historyStatusFilter,
+                                                              label: historyStatusFilter,
+                                                          }
+                                                        : null
+                                                }
+                                                onChange={(opt) =>
+                                                    setHistoryStatusFilter(
+                                                        opt?.value ?? "",
+                                                    )
+                                                }
+                                                placeholder="전체 상태"
+                                                isClearable
+                                                isSearchable={false}
+                                                styles={
+                                                    taskFilterProjectSelectStyles
+                                                }
+                                                menuPortalTarget={
+                                                    typeof document !==
+                                                    "undefined"
+                                                        ? document.body
+                                                        : null
+                                                }
+                                            />
+                                        </div>
                                     </div>
 
                                     {/* 통계 */}
@@ -1045,7 +1082,7 @@ export default function ProfilePage() {
                                                             {canEditHistoryTask(
                                                                 t.member ?? "",
                                                             ) && (
-                                                                <div className="flex flex-col items-end gap-1">
+                                                                <div className="flex items-center gap-2">
                                                                     <button
                                                                         type="button"
                                                                         className="text-xs text-amber-600 hover:text-amber-700 font-medium whitespace-nowrap"

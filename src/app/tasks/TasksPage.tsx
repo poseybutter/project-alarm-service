@@ -31,6 +31,8 @@ import Select from "react-select";
 import {
     projectSearchSelectStyles,
     taskFilterProjectSelectStyles,
+    modalFormSelectStyles,
+    badgeSelectStyles,
 } from "@/lib/reactSelectStyles";
 import { toLocalYmd } from "@/lib/toLocalYmd";
 
@@ -121,6 +123,58 @@ function WorkloadInput({
                     </button>
                 ))}
             </div>
+        </div>
+    );
+}
+
+const STATUS_OPTIONS = [
+    "대기",
+    "시작 전",
+    "진행중",
+    "이슈 및 대기",
+    "완료",
+].map((s) => ({ value: s, label: s }));
+
+function TaskStatusBadgeSelect({
+    task,
+    disabled,
+    onChange,
+}: {
+    task: Task;
+    disabled: boolean;
+    onChange: (
+        id: number,
+        status: string,
+        task: Task,
+        anchor: { x: number; y: number },
+    ) => void;
+}) {
+    const wrapRef = useRef<HTMLDivElement>(null);
+    return (
+        <div
+            ref={wrapRef}
+            className={`rounded-lg ${STATUS_COLORS[task.status] || "bg-gray-100 text-gray-600"} ${disabled ? "opacity-70" : ""}`}
+        >
+            <Select
+                options={STATUS_OPTIONS}
+                value={{ value: task.status, label: task.status }}
+                isDisabled={disabled}
+                onChange={(opt) => {
+                    if (!opt) return;
+                    const r = wrapRef.current?.getBoundingClientRect();
+                    onChange(task.id, opt.value, task, {
+                        x: (r?.left ?? 0) + (r?.width ?? 0) / 2,
+                        y: (r?.top ?? 0) + (r?.height ?? 0) / 2,
+                    });
+                }}
+                isSearchable={false}
+                isClearable={false}
+                styles={badgeSelectStyles}
+                menuPortalTarget={
+                    typeof document !== "undefined" ? document.body : null
+                }
+                menuPlacement="auto"
+            />
         </div>
     );
 }
@@ -480,22 +534,33 @@ export default function TasksPage() {
 
                     {/* 필터 */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 px-4 pb-3">
-                        <div className="relative">
-                            <select
-                                className="w-full min-w-0 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600 appearance-none pr-8"
-                                value={filterMember}
-                                onChange={(e) =>
-                                    setFilterMember(e.target.value)
+                        <div className="min-w-0">
+                            <Select
+                                options={MEMBERS.map((m) => ({
+                                    value: m,
+                                    label: m,
+                                }))}
+                                value={
+                                    filterMember
+                                        ? {
+                                              value: filterMember,
+                                              label: filterMember,
+                                          }
+                                        : null
                                 }
-                            >
-                                <option value="">전체 담당자</option>
-                                {MEMBERS.map((m) => (
-                                    <option key={m} value={m}>
-                                        {m}
-                                    </option>
-                                ))}
-                            </select>
-                            <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+                                onChange={(opt) =>
+                                    setFilterMember(opt?.value ?? "")
+                                }
+                                placeholder="전체 담당자"
+                                isClearable
+                                isSearchable={false}
+                                styles={taskFilterProjectSelectStyles}
+                                menuPortalTarget={
+                                    typeof document !== "undefined"
+                                        ? document.body
+                                        : null
+                                }
+                            />
                         </div>
                         <div className="min-w-0">
                             <Select
@@ -523,22 +588,32 @@ export default function TasksPage() {
                                 noOptionsMessage={() => "프로젝트가 없어요"}
                             />
                         </div>
-                        <div className="relative">
-                            <select
-                                className="w-full min-w-0 text-xs border border-stone-200 rounded-lg px-2 py-2 bg-white text-stone-600 appearance-none pr-8"
-                                value={filterPriority}
-                                onChange={(e) =>
-                                    setFilterPriority(e.target.value)
+                        <div className="min-w-0">
+                            <Select
+                                options={["긴급", "높음", "보통", "낮음"].map(
+                                    (p) => ({ value: p, label: p }),
+                                )}
+                                value={
+                                    filterPriority
+                                        ? {
+                                              value: filterPriority,
+                                              label: filterPriority,
+                                          }
+                                        : null
                                 }
-                            >
-                                <option value="">전체 우선순위</option>
-                                {["긴급", "높음", "보통", "낮음"].map((p) => (
-                                    <option key={p} value={p}>
-                                        {p}
-                                    </option>
-                                ))}
-                            </select>
-                            <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
+                                onChange={(opt) =>
+                                    setFilterPriority(opt?.value ?? "")
+                                }
+                                placeholder="전체 우선순위"
+                                isClearable
+                                isSearchable={false}
+                                styles={taskFilterProjectSelectStyles}
+                                menuPortalTarget={
+                                    typeof document !== "undefined"
+                                        ? document.body
+                                        : null
+                                }
+                            />
                         </div>
                     </div>
 
@@ -697,60 +772,27 @@ export default function TasksPage() {
                                                         </div>
                                                     </div>
                                                     <div className="flex flex-col items-end gap-1.5 shrink-0">
-                                                        <div className="relative">
-                                                            <select
-                                                                value={t.status}
-                                                                onChange={(
-                                                                    e,
-                                                                ) => {
-                                                                    const el =
-                                                                        e.target;
-                                                                    const r =
-                                                                        el.getBoundingClientRect();
-                                                                    void updateStatus(
-                                                                        t.id,
-                                                                        el.value,
-                                                                        t,
-                                                                        {
-                                                                            x:
-                                                                                r.left +
-                                                                                r.width /
-                                                                                    2,
-                                                                            y:
-                                                                                r.top +
-                                                                                r.height /
-                                                                                    2,
-                                                                        },
-                                                                    );
-                                                                }}
-                                                                className={`text-xs px-2 py-1 pr-7 rounded-lg font-medium border-0 cursor-pointer appearance-none ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}
-                                                                disabled={
-                                                                    isGuest
-                                                                }
-                                                            >
-                                                                {[
-                                                                    "대기",
-                                                                    "시작 전",
-                                                                    "진행중",
-                                                                    "이슈 및 대기",
-                                                                    "완료",
-                                                                ].map((s) => (
-                                                                    <option
-                                                                        key={s}
-                                                                        value={
-                                                                            s
-                                                                        }
-                                                                    >
-                                                                        {s}
-                                                                    </option>
-                                                                ))}
-                                                            </select>
-                                                            <i className="ri-arrow-down-s-line absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-                                                        </div>
+                                                        <TaskStatusBadgeSelect
+                                                            task={t}
+                                                            disabled={isGuest}
+                                                            onChange={(
+                                                                id,
+                                                                status,
+                                                                task,
+                                                                anchor,
+                                                            ) =>
+                                                                void updateStatus(
+                                                                    id,
+                                                                    status,
+                                                                    task,
+                                                                    anchor,
+                                                                )
+                                                            }
+                                                        />
                                                         {canEditOrDelete(
                                                             t.member,
                                                         ) && (
-                                                            <>
+                                                            <div className="flex items-center gap-2">
                                                                 <button
                                                                     onClick={() =>
                                                                         openEdit(
@@ -771,7 +813,7 @@ export default function TasksPage() {
                                                                 >
                                                                     삭제
                                                                 </button>
-                                                            </>
+                                                            </div>
                                                         )}
                                                     </div>
                                                 </div>
@@ -849,59 +891,80 @@ export default function TasksPage() {
                                         <label className="text-xs font-medium text-stone-500 block mb-1.5">
                                             구분
                                         </label>
-                                        <div className="relative">
-                                            <select
-                                                className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white appearance-none pr-8"
-                                                value={form.type}
-                                                onChange={(e) =>
-                                                    setForm({
-                                                        ...form,
-                                                        type: e.target.value,
-                                                    })
-                                                }
-                                            >
-                                                <option value="">선택</option>
-                                                {[
-                                                    "프로젝트",
-                                                    "유지보수",
-                                                    "고도화",
-                                                    "접근성",
-                                                    "업무지원",
-                                                ].map((t) => (
-                                                    <option key={t}>{t}</option>
-                                                ))}
-                                            </select>
-                                            <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-                                        </div>
+                                        <Select
+                                            options={[
+                                                "프로젝트",
+                                                "유지보수",
+                                                "고도화",
+                                                "접근성",
+                                                "업무지원",
+                                            ].map((t) => ({
+                                                value: t,
+                                                label: t,
+                                            }))}
+                                            value={
+                                                form.type
+                                                    ? {
+                                                          value: form.type,
+                                                          label: form.type,
+                                                      }
+                                                    : null
+                                            }
+                                            onChange={(opt) =>
+                                                setForm({
+                                                    ...form,
+                                                    type: opt?.value ?? "",
+                                                })
+                                            }
+                                            placeholder="선택"
+                                            isSearchable={false}
+                                            isClearable={false}
+                                            styles={modalFormSelectStyles}
+                                            menuPortalTarget={
+                                                typeof document !== "undefined"
+                                                    ? document.body
+                                                    : null
+                                            }
+                                        />
                                     </div>
                                     <div>
                                         <label className="text-xs font-medium text-stone-500 block mb-1.5">
                                             우선순위
                                         </label>
-                                        <div className="relative">
-                                            <select
-                                                className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm bg-white appearance-none pr-8"
-                                                value={form.priority}
-                                                onChange={(e) =>
-                                                    setForm({
-                                                        ...form,
-                                                        priority:
-                                                            e.target.value,
-                                                    })
-                                                }
-                                            >
-                                                <option value="">선택</option>
-                                                {[
-                                                    "긴급",
-                                                    "높음",
-                                                    "보통",
-                                                    "낮음",
-                                                ].map((p) => (
-                                                    <option key={p}>{p}</option>
-                                                ))}
-                                            </select>
-                                            <i className="ri-arrow-down-s-line absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
-                                        </div>
+                                        <Select
+                                            options={[
+                                                "긴급",
+                                                "높음",
+                                                "보통",
+                                                "낮음",
+                                            ].map((p) => ({
+                                                value: p,
+                                                label: p,
+                                            }))}
+                                            value={
+                                                form.priority
+                                                    ? {
+                                                          value: form.priority,
+                                                          label: form.priority,
+                                                      }
+                                                    : null
+                                            }
+                                            onChange={(opt) =>
+                                                setForm({
+                                                    ...form,
+                                                    priority: opt?.value ?? "",
+                                                })
+                                            }
+                                            placeholder="선택"
+                                            isSearchable={false}
+                                            isClearable={false}
+                                            styles={modalFormSelectStyles}
+                                            menuPortalTarget={
+                                                typeof document !== "undefined"
+                                                    ? document.body
+                                                    : null
+                                            }
+                                        />
                                     </div>
                                 </div>
                                 {/* 작업 계획 토글 */}
