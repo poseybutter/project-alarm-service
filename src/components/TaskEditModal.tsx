@@ -42,6 +42,7 @@ const EMPTY_EDIT = {
     issue: "",
     status: "",
     is_plan: false,
+    is_starred: false,
 };
 
 function WorkloadInput({
@@ -130,6 +131,7 @@ export default function TaskEditModal({
             issue: task.issue || "",
             status: task.status || "대기",
             is_plan: task.is_plan ?? false,
+            is_starred: task.is_starred ?? false,
         });
         if (task.start_date || task.end_date) {
             setEditDateRange({
@@ -228,6 +230,7 @@ export default function TaskEditModal({
                 issue: editForm.issue || null,
                 status: editForm.status,
                 is_plan: editForm.is_plan ?? false,
+                is_starred: editForm.is_starred ?? false,
             })
             .eq("id", task.id);
         await Promise.resolve(onSaved());
@@ -383,6 +386,32 @@ export default function TaskEditModal({
                             <span
                                 className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform
                         ${editForm.is_plan ? "translate-x-6" : "translate-x-1"}`}
+                            />
+                        </button>
+                    </div>
+                    <div className="flex items-center justify-between py-1">
+                        <div>
+                            <p className="text-sm font-medium text-stone-700">
+                                ⭐ 핵심 프로젝트
+                            </p>
+                            <p className="text-xs text-stone-400 mt-0.5">
+                                주간 브리핑·목록에서 강조 표시
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() =>
+                                setEditForm((f) => ({
+                                    ...f,
+                                    is_starred: !f.is_starred,
+                                }))
+                            }
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+                      ${editForm.is_starred ? "bg-amber-500" : "bg-stone-200"}`}
+                        >
+                            <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform
+                        ${editForm.is_starred ? "translate-x-6" : "translate-x-1"}`}
                             />
                         </button>
                     </div>

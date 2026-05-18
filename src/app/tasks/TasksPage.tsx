@@ -82,6 +82,7 @@ const EMPTY_FORM = {
     workload: 0,
     issue: "",
     is_plan: false,
+    is_starred: false,
 };
 
 function WorkloadInput({
@@ -354,6 +355,7 @@ export default function TasksPage() {
                 issue: form.issue || null,
                 status: "대기",
                 is_plan: form.is_plan ?? false,
+                is_starred: form.is_starred ?? false,
             },
         ]);
         setShowModal(false);
@@ -663,9 +665,11 @@ export default function TasksPage() {
                                                 <div className="flex items-start gap-3">
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center gap-2 mb-1">
-                                                            {t.priority ===
-                                                                "긴급" && (
-                                                                <span className="text-xs">
+                                                            {t.is_starred && (
+                                                                <span
+                                                                    className="text-xs"
+                                                                    title="핵심 프로젝트"
+                                                                >
                                                                     ⭐
                                                                 </span>
                                                             )}
@@ -986,6 +990,32 @@ export default function TasksPage() {
                                         <span
                                             className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform
                         ${form.is_plan ? "translate-x-6" : "translate-x-1"}`}
+                                        />
+                                    </button>
+                                </div>
+                                <div className="flex items-center justify-between py-1">
+                                    <div>
+                                        <p className="text-sm font-medium text-stone-700">
+                                            ⭐ 핵심 프로젝트
+                                        </p>
+                                        <p className="text-xs text-stone-400 mt-0.5">
+                                            주간 브리핑·목록에서 강조 표시
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setForm((f) => ({
+                                                ...f,
+                                                is_starred: !f.is_starred,
+                                            }))
+                                        }
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+                      ${form.is_starred ? "bg-amber-500" : "bg-stone-200"}`}
+                                    >
+                                        <span
+                                            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform
+                        ${form.is_starred ? "translate-x-6" : "translate-x-1"}`}
                                         />
                                     </button>
                                 </div>

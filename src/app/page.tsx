@@ -316,6 +316,7 @@ const EMPTY_EDIT_TASK = {
     issue: "",
     status: "",
     is_plan: false,
+    is_starred: false,
 };
 
 function HomeWorkloadInput({
@@ -394,8 +395,11 @@ function HomeMyTaskRow({
             <div className="mb-1.5 flex items-start gap-2">
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                        {t.priority === "긴급" && (
-                            <span className="shrink-0 text-xs" title="긴급">
+                        {t.is_starred && (
+                            <span
+                                className="shrink-0 text-xs"
+                                title="핵심 프로젝트"
+                            >
                                 ⭐
                             </span>
                         )}
@@ -1062,6 +1066,7 @@ export default function HomePage() {
             issue: task.issue || "",
             status: task.status || "대기",
             is_plan: task.is_plan ?? false,
+            is_starred: task.is_starred ?? false,
         });
         if (task.start_date || task.end_date) {
             setEditDateRange({
@@ -1101,6 +1106,7 @@ export default function HomePage() {
                 issue: editForm.issue || null,
                 status: editForm.status,
                 is_plan: editForm.is_plan ?? false,
+                is_starred: editForm.is_starred ?? false,
             })
             .eq("id", editTask.id);
         setShowEditTask(false);
@@ -1134,10 +1140,10 @@ export default function HomePage() {
             (t) => t.status !== "완료",
         ).length;
         const doneCount = memberTasks.filter((t) => t.status === "완료").length;
-        const hasUrgent = memberTasks.some(
-            (t) => t.status !== "완료" && t.priority === "긴급",
+        const hasStarred = memberTasks.some(
+            (t) => t.status !== "완료" && t.is_starred,
         );
-        return { name, doingCount, doneCount, hasUrgent };
+        return { name, doingCount, doneCount, hasStarred };
     });
 
     const guestUrgentTasks = guestTeamTasks
@@ -1285,10 +1291,10 @@ export default function HomePage() {
                                                         <span className="text-sm font-medium text-stone-800">
                                                             {row.name}
                                                         </span>
-                                                        {row.hasUrgent && (
+                                                        {row.hasStarred && (
                                                             <span
                                                                 className="text-xs"
-                                                                title="긴급 업무 있음"
+                                                                title="핵심 프로젝트 있음"
                                                             >
                                                                 ⭐
                                                             </span>
@@ -1853,6 +1859,32 @@ export default function HomePage() {
                                             <span
                                                 className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform
                         ${editForm.is_plan ? "translate-x-6" : "translate-x-1"}`}
+                                            />
+                                        </button>
+                                    </div>
+                                    <div className="flex items-center justify-between py-1">
+                                        <div>
+                                            <p className="text-sm font-medium text-stone-700">
+                                                ⭐ 핵심 프로젝트
+                                            </p>
+                                            <p className="mt-0.5 text-xs text-stone-400">
+                                                주간 브리핑·목록에서 강조 표시
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setEditForm((f) => ({
+                                                    ...f,
+                                                    is_starred: !f.is_starred,
+                                                }))
+                                            }
+                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+                      ${editForm.is_starred ? "bg-amber-500" : "bg-stone-200"}`}
+                                        >
+                                            <span
+                                                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform
+                        ${editForm.is_starred ? "translate-x-6" : "translate-x-1"}`}
                                             />
                                         </button>
                                     </div>
