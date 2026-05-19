@@ -2011,7 +2011,7 @@ export default function ReportPage() {
                                 </div>
                                 <div>
                                     <label className="mb-1.5 block text-xs font-medium text-stone-500">
-                                        프로젝트명
+                                        프로젝트명 <span className="text-red-500">*</span>
                                     </label>
                                     <input
                                         className="w-full rounded-lg border border-stone-200 px-3 py-2.5 text-sm"
@@ -2080,7 +2080,7 @@ export default function ReportPage() {
                                 </div>
                                 <div>
                                     <label className="mb-1.5 block text-xs font-medium text-stone-500">
-                                        URL (선택)
+                                        URL
                                     </label>
                                     <input
                                         className="w-full rounded-lg border border-stone-200 px-3 py-2.5 text-sm"
@@ -2094,25 +2094,23 @@ export default function ReportPage() {
                                         placeholder="https://..."
                                     />
                                 </div>
-                                {assignForm.status === "배정대기" && (
-                                    <div>
-                                        <label className="mb-1.5 block text-xs font-medium text-stone-500">
-                                            사업기간 메모 (선택)
-                                        </label>
-                                        <textarea
-                                            className="min-h-[88px] w-full resize-y rounded-lg border border-stone-200 px-3 py-2.5 text-sm"
-                                            value={assignForm.period_note}
-                                            onChange={(e) =>
-                                                setAssignForm((f) => ({
-                                                    ...f,
-                                                    period_note: e.target.value,
-                                                }))
-                                            }
-                                            placeholder="예) 사업기간: 2026년 5월~12월"
-                                            spellCheck={false}
-                                        />
-                                    </div>
-                                )}
+                                <div>
+                                    <label className="mb-1.5 block text-xs font-medium text-stone-500">
+                                        메모
+                                    </label>
+                                    <textarea
+                                        className="min-h-[88px] w-full resize-y rounded-lg border border-stone-200 px-3 py-2.5 text-sm"
+                                        value={assignForm.period_note}
+                                        onChange={(e) =>
+                                            setAssignForm((f) => ({
+                                                ...f,
+                                                period_note: e.target.value,
+                                            }))
+                                        }
+                                        placeholder="예) 사업기간: 2026년 5월~12월"
+                                        spellCheck={false}
+                                    />
+                                </div>
                                 <button
                                     type="button"
                                     onClick={() => void saveAssignment()}
