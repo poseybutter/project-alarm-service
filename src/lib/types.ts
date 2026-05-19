@@ -13,6 +13,7 @@ export type Task = {
     issue: string | null;
     is_plan?: boolean | null;
     is_starred?: boolean | null;
+    is_excluded_today?: boolean | null;
     created_at: string;
 };
 
@@ -69,5 +70,6 @@ export type Quest = {
     status: string;
     end_date: string | null;
     task_id?: number | null;
+    order_index?: number | null;
     created_at: string;
 };
