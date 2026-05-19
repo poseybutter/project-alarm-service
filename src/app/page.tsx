@@ -46,17 +46,19 @@ import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
 import {
     DndContext,
-    DragOverlay,
     PointerSensor,
     TouchSensor,
     useSensor,
     useSensors,
-    useDraggable,
-    useDroppable,
     type DragEndEvent,
-    type DragStartEvent,
 } from "@dnd-kit/core";
-import DragQuestModal from "@/components/DragQuestModal";
+import {
+    SortableContext,
+    verticalListSortingStrategy,
+    useSortable,
+    arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import Select from "react-select";
 import {
     projectSearchSelectStyles,
@@ -69,17 +71,19 @@ import TiptapQuestContentEditor from "@/components/TiptapQuestContentEditor";
 function QuestCardContent({
     content,
     plainClassName,
+    completing,
 }: {
     content: string;
     plainClassName?: string;
+    completing?: boolean;
 }) {
     const isHtml = questContentLooksLikeStoredHtml(content);
     if (isHtml) {
         const inner = content.trim() ? content.trim() : "<p></p>";
         return (
-            <div className="notice-editor min-w-0">
+            <div className={`notice-editor min-w-0 ${completing ? "line-through text-stone-400" : ""}`}>
                 <div
-                    className="ProseMirror tiptap break-words text-sm font-medium leading-snug text-stone-800 [&_li]:mb-0 [&_ol]:mb-0 [&_p]:!text-sm [&_p]:mb-1 [&_p:last-child]:mb-0 [&_ul]:mb-0"
+                    className={`ProseMirror tiptap break-words text-sm font-medium leading-snug [&_li]:mb-0 [&_ol]:mb-0 [&_p]:!text-sm [&_p]:mb-1 [&_p:last-child]:mb-0 [&_ul]:mb-0 ${completing ? "text-stone-400" : "text-stone-800"}`}
                     dangerouslySetInnerHTML={{ __html: inner }}
                 />
             </div>
@@ -88,8 +92,10 @@ function QuestCardContent({
     return (
         <p
             className={
-                plainClassName ??
-                "whitespace-pre-wrap break-words text-sm font-medium text-stone-800"
+                completing
+                    ? "whitespace-pre-wrap break-words text-sm font-medium text-stone-400 line-through"
+                    : (plainClassName ??
+                      "whitespace-pre-wrap break-words text-sm font-medium text-stone-800")
             }
         >
             {content}
@@ -367,6 +373,7 @@ function HomeMyTaskRow({
     showBorderBottom,
     onStatusChange,
     onEdit,
+    onDelete,
 }: {
     task: Task;
     showBorderBottom: boolean;
@@ -377,11 +384,8 @@ function HomeMyTaskRow({
         anchor?: { x: number; y: number },
     ) => void;
     onEdit?: (task: Task) => void;
+    onDelete?: (id: number) => void;
 }) {
-    const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-        id: `task-${t.id}`,
-        data: { task: t },
-    });
     const statusWrapRef = useRef<HTMLDivElement>(null);
     const diff = getDiff(t.end_date);
     const ddayRed = diff !== null && diff <= 7;
@@ -389,8 +393,7 @@ function HomeMyTaskRow({
         diff === null ? "" : diff < 0 ? `D+${Math.abs(diff)}` : `D-${diff}`;
     return (
         <div
-            ref={setNodeRef}
-            className={`px-4 py-3 ${showBorderBottom ? "border-b border-stone-100" : ""} ${t.priority === "긴급" ? "bg-amber-50" : ""} ${isDragging ? "opacity-60" : ""}`}
+            className={`px-4 py-3 ${showBorderBottom ? "border-b border-stone-100" : ""} ${t.priority === "긴급" ? "bg-amber-50" : ""}`}
         >
             <div className="mb-1.5 flex items-start gap-2">
                 <div className="min-w-0 flex-1">
@@ -425,14 +428,6 @@ function HomeMyTaskRow({
                         </p>
                     )}
                 </div>
-                <button
-                    type="button"
-                    {...listeners}
-                    {...attributes}
-                    className="touch-none cursor-grab px-1 text-stone-300 hover:text-stone-500 active:cursor-grabbing"
-                >
-                    ⠿
-                </button>
             </div>
             <div className="mt-1 flex items-end justify-between gap-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-stone-400">
@@ -498,14 +493,27 @@ function HomeMyTaskRow({
                             menuPlacement="auto"
                         />
                     </div>
-                    {onEdit && (
-                        <button
-                            type="button"
-                            onClick={() => onEdit(t)}
-                            className="text-xs text-stone-300 transition-colors hover:text-amber-500"
-                        >
-                            수정
-                        </button>
+                    {(onEdit || onDelete) && (
+                        <div className="flex items-center gap-2">
+                            {onEdit && (
+                                <button
+                                    type="button"
+                                    onClick={() => onEdit(t)}
+                                    className="text-xs text-stone-300 transition-colors hover:text-amber-500"
+                                >
+                                    수정
+                                </button>
+                            )}
+                            {onDelete && (
+                                <button
+                                    type="button"
+                                    onClick={() => onDelete(t.id)}
+                                    className="text-xs text-stone-300 transition-colors hover:text-red-400"
+                                >
+                                    삭제
+                                </button>
+                            )}
+                        </div>
                     )}
                 </div>
             </div>
@@ -513,14 +521,213 @@ function HomeMyTaskRow({
     );
 }
 
-function DroppableQuestZone({ children }: { children: React.ReactNode }) {
-    const { setNodeRef, isOver } = useDroppable({ id: "quest-zone" });
+/** 세션 내 완료 퀘스트 (되돌리기 가능) */
+function CompletedQuestItem({
+    quest: q,
+    showBorderBottom,
+    onUndo,
+}: {
+    quest: Quest;
+    showBorderBottom: boolean;
+    onUndo: (q: Quest) => void;
+}) {
+    return (
+        <div
+            className={`flex items-center gap-3 px-4 py-3 opacity-60 ${showBorderBottom ? "border-b border-stone-100" : ""}`}
+        >
+            <span className="shrink-0 text-base leading-none">✨</span>
+            <div className="min-w-0 flex-1">
+                <QuestCardContent content={q.content} completing />
+                {q.proj && (
+                    <p className="mt-0.5 truncate text-xs text-stone-400">
+                        {q.proj}
+                    </p>
+                )}
+            </div>
+            <button
+                type="button"
+                onClick={() => onUndo(q)}
+                className="shrink-0 whitespace-nowrap text-xs text-stone-300 transition-colors hover:text-amber-500"
+            >
+                ↩ 되돌리기
+            </button>
+        </div>
+    );
+}
+
+/** 오늘 기간인 업무 자동 포함 카드 */
+function TodayTaskItem({
+    task: t,
+    showBorderBottom,
+    onExclude,
+}: {
+    task: Task;
+    showBorderBottom: boolean;
+    onExclude: (id: number) => void;
+}) {
+    return (
+        <div
+            className={`flex items-center gap-3 px-4 py-3 bg-stone-50/60 ${showBorderBottom ? "border-b border-stone-100" : ""}`}
+        >
+            <span className="shrink-0 text-base leading-none">🗡️</span>
+            <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                    {t.is_starred && (
+                        <span className="shrink-0 text-xs" title="핵심 프로젝트">
+                            ⭐
+                        </span>
+                    )}
+                    {t.type && (
+                        <span
+                            className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[t.type] || "bg-gray-100 text-gray-600"}`}
+                        >
+                            {t.type}
+                        </span>
+                    )}
+                    <span className="truncate text-sm font-medium text-stone-700">
+                        {t.proj}
+                    </span>
+                </div>
+                {t.content && (
+                    <p className="mt-0.5 break-words text-xs text-stone-500 line-clamp-1">
+                        {t.content}
+                    </p>
+                )}
+            </div>
+            <button
+                type="button"
+                onClick={() => onExclude(t.id)}
+                className="shrink-0 text-stone-300 transition-colors hover:text-red-400 text-lg leading-none"
+                title="오늘 목록에서 빼기"
+            >
+                −
+            </button>
+        </div>
+    );
+}
+
+function SortableQuestItem({
+    quest: q,
+    index,
+    questsLength,
+    showDragHandle,
+    isCompleting,
+    myTasks,
+    onComplete,
+    onEdit,
+    onDelete,
+}: {
+    quest: Quest;
+    index: number;
+    questsLength: number;
+    showDragHandle: boolean;
+    isCompleting: boolean;
+    myTasks: Task[];
+    onComplete: (q: Quest, e: React.MouseEvent) => void;
+    onEdit: (q: Quest) => void;
+    onDelete: (id: number) => void;
+}) {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging,
+        isOver,
+    } = useSortable({ id: q.id });
+
+    const style: React.CSSProperties = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+    };
+
+    const diff = getDiff(q.end_date);
+    const linkedProj =
+        q.task_id != null
+            ? myTasks.find((t) => Number(t.id) === Number(q.task_id))?.proj
+            : undefined;
+
     return (
         <div
             ref={setNodeRef}
-            className={`min-h-[80px] rounded-xl transition-all ${isOver ? "ring-2 ring-amber-400 ring-offset-2" : ""}`}
+            style={style}
+            className={`flex items-start gap-3 px-4 py-3 ${
+                isCompleting
+                    ? "quest-completing"
+                    : isDragging
+                    ? "border-2 border-dashed border-amber-400 opacity-50 rounded-lg"
+                    : isOver
+                    ? "border-2 border-dashed border-amber-300 bg-amber-50 rounded-lg"
+                    : index < questsLength - 1
+                    ? "border-b border-stone-100"
+                    : ""
+            }`}
         >
-            {children}
+            {/* 드래그 핸들 */}
+            {showDragHandle && (
+                <button
+                    type="button"
+                    {...listeners}
+                    {...attributes}
+                    className="touch-none cursor-grab self-center px-0.5 text-stone-300 hover:text-stone-500 active:cursor-grabbing"
+                    tabIndex={-1}
+                    aria-label="순서 변경"
+                >
+                    ⠿
+                </button>
+            )}
+            {/* 완료 버튼 / 아이콘 */}
+            <button
+                onClick={(ev) => { if (!isCompleting) onComplete(q, ev); }}
+                disabled={isCompleting}
+                className={`mt-0.5 shrink-0 text-base leading-none transition-transform ${isCompleting ? "cursor-default" : "hover:scale-125 active:scale-110"}`}
+                aria-label={isCompleting ? "완료 처리 중" : "퀘스트 완료"}
+            >
+                {isCompleting ? "✨" : "⚔️"}
+            </button>
+            <div className={`min-w-0 flex-1 ${isCompleting ? "opacity-60" : ""}`}>
+                <QuestCardContent content={q.content} completing={isCompleting} />
+                <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                    {(q.proj || linkedProj) && (
+                        <span className="truncate text-xs text-stone-400">
+                            {q.proj || linkedProj}
+                        </span>
+                    )}
+                    {q.end_date && (
+                        <span
+                            className={`text-xs font-medium ${diff !== null && diff <= 3 ? "text-red-500" : "text-stone-400"}`}
+                        >
+                            {q.end_date.slice(5).replace("-", "/")}
+                            {diff !== null &&
+                                ` D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
+                        </span>
+                    )}
+                </div>
+            </div>
+            <div className="flex shrink-0 items-start gap-1.5 pt-0.5">
+                {!isCompleting && (
+                    <span className="text-xs font-medium text-green-600">
+                        +10 EXP
+                    </span>
+                )}
+                {!isCompleting && (
+                    <button
+                        onClick={() => onEdit(q)}
+                        className="text-xs text-stone-300 transition-colors hover:text-amber-500"
+                    >
+                        수정
+                    </button>
+                )}
+                {!isCompleting && (
+                    <button
+                        onClick={() => onDelete(q.id)}
+                        className="text-xs text-stone-300 transition-colors hover:text-red-400"
+                    >
+                        삭제
+                    </button>
+                )}
+            </div>
         </div>
     );
 }
@@ -538,6 +745,8 @@ export default function HomePage() {
     const [loading, setLoading] = useState(true);
     const [toast, setToast] = useState("");
     const [showAddQuest, setShowAddQuest] = useState(false);
+    const [completingQuestIds, setCompletingQuestIds] = useState<Set<number>>(new Set());
+    const [completedQuestsThisSession, setCompletedQuestsThisSession] = useState<Quest[]>([]);
     const [showEditQuest, setShowEditQuest] = useState(false);
     const [editTarget, setEditTarget] = useState<Quest | null>(null);
     const [questForm, setQuestForm] = useState<QuestFormType>({
@@ -546,8 +755,6 @@ export default function HomePage() {
         end_date: "",
     });
     const [questAddEditorNonce, setQuestAddEditorNonce] = useState(0);
-    const [activeTask, setActiveTask] = useState<Task | null>(null);
-    const [dragQuestTask, setDragQuestTask] = useState<Task | null>(null);
 
     const [showEditTask, setShowEditTask] = useState(false);
     const [editTask, setEditTask] = useState<Task | null>(null);
@@ -565,18 +772,31 @@ export default function HomePage() {
         }),
     );
 
-    const onDragStart = useCallback((event: DragStartEvent) => {
-        const t = event.active.data.current?.task as Task | undefined;
-        setActiveTask(t ?? null);
-    }, []);
+    const onQuestDragEnd = useCallback(
+        async (event: DragEndEvent) => {
+            const { active, over } = event;
+            if (!over || active.id === over.id) return;
 
-    const onDragEnd = useCallback((event: DragEndEvent) => {
-        const t = event.active.data.current?.task as Task | undefined;
-        if (event.over?.id === "quest-zone" && t) {
-            setDragQuestTask(t);
-        }
-        setActiveTask(null);
-    }, []);
+            setQuests((prev) => {
+                const oldIndex = prev.findIndex((q) => q.id === active.id);
+                const newIndex = prev.findIndex((q) => q.id === over.id);
+                if (oldIndex === -1 || newIndex === -1) return prev;
+                const reordered = arrayMove(prev, oldIndex, newIndex);
+                // 개별 update (order_index만 업데이트)
+                reordered.forEach(({ id }, i) => {
+                    void supabase
+                        .from("quests")
+                        .update({ order_index: i })
+                        .eq("id", id)
+                        .then(({ error }) => {
+                            if (error) console.error("[quest reorder]", error.message);
+                        });
+                });
+                return reordered;
+            });
+        },
+        [],
+    );
 
     const [levelUpInfo, setLevelUpInfo] = useState({
         show: false,
@@ -811,7 +1031,8 @@ export default function HomePage() {
                 .select("*")
                 .eq("member", member)
                 .neq("status", "완료")
-                .order("end_date", { ascending: true }),
+                .order("order_index", { ascending: true, nullsFirst: false })
+                .order("created_at", { ascending: true }),
             supabase
                 .from("tasks")
                 .select("*")
@@ -879,13 +1100,21 @@ export default function HomePage() {
 
     async function completeQuest(quest: Quest, e: React.MouseEvent) {
         if (!member) return;
+        if (completingQuestIds.has(quest.id)) return;
+        const { clientX, clientY } = e;
+
+        // 애니메이션 시작
+        setCompletingQuestIds((prev) => new Set([...prev, quest.id]));
+        await new Promise<void>((resolve) => setTimeout(resolve, 650));
+
+        // DB 업데이트 + EXP 지급
         await supabase
             .from("quests")
             .update({ status: "완료" })
             .eq("id", quest.id);
         const result = await awardExp(member, "QUEST");
         if (result?.amount != null) {
-            pushExpPopup(result.amount, e.clientX, e.clientY, "quest");
+            pushExpPopup(result.amount, clientX, clientY, "quest");
         }
         if (result?.levelUp && result.newLv) {
             setLevelUpInfo({
@@ -896,12 +1125,25 @@ export default function HomePage() {
         } else {
             showToastMsg(`⚔️ 완료! +${result?.amount} EXP`);
         }
+
+        // 애니메이션 종료 + 완료 목록 이동
+        setCompletingQuestIds((prev) => {
+            const next = new Set(prev);
+            next.delete(quest.id);
+            return next;
+        });
+        setQuests((prev) => prev.filter((q) => q.id !== quest.id));
+        setCompletedQuestsThisSession((prev) => [...prev, quest]);
         loadData();
     }
 
     async function addQuest() {
         if (questRichTextIsEffectivelyEmpty(questForm.content))
             return alert("퀘스트 내용은 필수예요");
+        const maxOrder = quests.reduce(
+            (m, q) => Math.max(m, q.order_index ?? 0),
+            0,
+        );
         await supabase.from("quests").insert([
             {
                 member: member,
@@ -910,6 +1152,7 @@ export default function HomePage() {
                 end_date: questForm.end_date || null,
                 task_id: null,
                 status: "대기",
+                order_index: maxOrder + 1,
             },
         ]);
         setShowAddQuest(false);
@@ -924,6 +1167,25 @@ export default function HomePage() {
     async function deleteQuest(id: number) {
         if (!confirm("삭제할까요?")) return;
         await supabase.from("quests").delete().eq("id", id);
+        loadData();
+    }
+
+    async function undoQuest(quest: Quest) {
+        await supabase
+            .from("quests")
+            .update({ status: "대기" })
+            .eq("id", quest.id);
+        setCompletedQuestsThisSession((prev) =>
+            prev.filter((q) => q.id !== quest.id),
+        );
+        loadData();
+    }
+
+    async function excludeToday(taskId: number) {
+        await supabase
+            .from("tasks")
+            .update({ is_excluded_today: true })
+            .eq("id", taskId);
         loadData();
     }
 
@@ -955,30 +1217,6 @@ export default function HomePage() {
             proj: "",
             end_date: "",
         });
-        loadData();
-    }
-
-    async function submitDragQuest(
-        content: string,
-        endDate: string,
-        task: Task,
-    ) {
-        if (!member) return;
-        const trimmed = content.trim();
-        if (!trimmed) {
-            alert("내용을 입력해 주세요");
-            return;
-        }
-        await supabase.from("quests").insert([
-            {
-                member,
-                content: trimmed,
-                proj: task.proj || null,
-                end_date: endDate || null,
-                task_id: task.id,
-                status: "대기",
-            },
-        ]);
         loadData();
     }
 
@@ -1053,6 +1291,12 @@ export default function HomePage() {
             setEditDateRange({ from: range.from, to: range.to });
         }
         setEditForm((f) => ({ ...f, is_plan: newVal }));
+    }
+
+    async function deleteMyTask(id: number) {
+        if (!confirm("삭제할까요?")) return;
+        await supabase.from("tasks").delete().eq("id", id);
+        loadData();
     }
 
     function openEditTask(task: Task) {
@@ -1158,12 +1402,30 @@ export default function HomePage() {
 
     const activeMyTasks = myTasks.filter((t) => t.status !== "완료");
 
+    const autoTodayTasks = myTasks.filter((t) => {
+        if (t.status === "완료") return false;
+        if (t.is_excluded_today === true) return false;
+        if (!t.end_date) return false;
+        const afterStart = !t.start_date || t.start_date <= today;
+        const beforeEnd = t.end_date >= today;
+        return afterStart && beforeEnd;
+    });
+
+    // 오늘의 퀘스트 진행 바
+    const completedCount = completedQuestsThisSession.length;
+    const totalQuestCount =
+        autoTodayTasks.length + quests.length + completedCount;
+    const progressPct =
+        totalQuestCount > 0
+            ? Math.round((completedCount / totalQuestCount) * 100)
+            : 0;
+    const allQuestsDone = totalQuestCount > 0 && completedCount === totalQuestCount;
+
     return (
         <AuthGuard>
             <DndContext
                 sensors={sensors}
-                onDragStart={onDragStart}
-                onDragEnd={onDragEnd}
+                onDragEnd={onQuestDragEnd}
             >
                 <div className="min-h-screen bg-[#f7f6f3]">
                     <Header title="UD2팀 업무" />
@@ -1413,138 +1675,126 @@ export default function HomePage() {
 
                                 {/* 오늘의 퀘스트 */}
                                 <div className="mb-3">
-                                    <div className="mb-2 flex items-center justify-between">
-                                        <span className="text-xs font-bold uppercase tracking-wide text-stone-500">
-                                            오늘의 퀘스트
-                                        </span>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-xs text-amber-600">
-                                                완료 시 EXP 지급
+                                    <div className="mb-2 flex items-end justify-between">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="text-xs font-bold uppercase tracking-wide text-stone-500">
+                                                📋 오늘의 퀘스트
                                             </span>
-                                            <button
-                                                onClick={() => {
-                                                    setQuestAddEditorNonce(
-                                                        (n) => n + 1,
-                                                    );
-                                                    setShowAddQuest(true);
-                                                }}
-                                                className="rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-medium text-white"
-                                            >
-                                                + 추가
-                                            </button>
+                                            <span className="text-xs text-stone-400">
+                                                {completedCount}/
+                                                {totalQuestCount} 완료
+                                                {allQuestsDone &&
+                                                    totalQuestCount > 0 &&
+                                                    " 🎉"}
+                                            </span>
                                         </div>
+                                        <button
+                                            onClick={() => {
+                                                setQuestAddEditorNonce(
+                                                    (n) => n + 1,
+                                                );
+                                                setShowAddQuest(true);
+                                            }}
+                                            className="rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-medium text-white"
+                                        >
+                                            + 추가
+                                        </button>
                                     </div>
+                                    <div className="mb-2 h-2 overflow-hidden rounded-full bg-stone-200">
+                                        <div
+                                            className={`h-full rounded-full transition-all duration-500 ${allQuestsDone ? "bg-green-400" : "bg-amber-400"}`}
+                                            style={{ width: `${progressPct}%` }}
+                                        />
+                                    </div>
+                                    <p className="mb-2 text-xs text-stone-400">
+                                        💡 오늘 기간인 업무가 자동으로 추가돼요. 드래그(⠿)로 우선순위를 정할 수 있어요!
+                                    </p>
 
-                                    <DroppableQuestZone>
-                                        {quests.length === 0 ? (
-                                            <div className="rounded-xl border border-stone-200 bg-white py-10 text-center">
-                                                <p className="text-sm text-stone-400">
-                                                    오늘 퀘스트가 없어요
-                                                </p>
-                                                <p className="mt-1 text-xs text-stone-300">
-                                                    + 추가 버튼으로 퀘스트를
-                                                    만들어보세요!
-                                                </p>
-                                            </div>
-                                        ) : (
+                                    {autoTodayTasks.length === 0 &&
+                                    quests.length === 0 &&
+                                    completedQuestsThisSession.length === 0 ? (
+                                        <div className="rounded-xl border border-stone-200 bg-white py-10 text-center">
+                                            <p className="text-sm text-stone-400">
+                                                오늘 퀘스트가 없어요
+                                            </p>
+                                            <p className="mt-1 text-xs text-stone-300">
+                                                + 추가 버튼으로 퀘스트를
+                                                만들어보세요!
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <SortableContext
+                                            items={quests.map((q) => q.id)}
+                                            strategy={verticalListSortingStrategy}
+                                        >
                                             <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
-                                                {quests.map((q, i) => {
-                                                    const diff = getDiff(
-                                                        q.end_date,
-                                                    );
-                                                    const linkedProj =
-                                                        q.task_id != null
-                                                            ? myTasks.find(
-                                                                  (t) =>
-                                                                      Number(
-                                                                          t.id,
-                                                                      ) ===
-                                                                      Number(
-                                                                          q.task_id,
-                                                                      ),
-                                                              )?.proj
-                                                            : undefined;
-                                                    return (
-                                                        <div
-                                                            key={q.id}
-                                                            className={`flex items-start gap-3 px-4 py-3
-                        ${i < quests.length - 1 ? "border-b border-stone-100" : ""}`}
-                                                        >
-                                                            <button
-                                                                onClick={(
-                                                                    ev,
-                                                                ) =>
-                                                                    void completeQuest(
-                                                                        q,
-                                                                        ev,
-                                                                    )
-                                                                }
-                                                                className="mt-0.5 h-5 w-5 shrink-0 rounded-full border-2 border-stone-300 transition-colors hover:border-amber-500"
-                                                            />
-                                                            <div className="min-w-0 flex-1">
-                                                                <QuestCardContent
-                                                                    content={
-                                                                        q.content
+                                                {autoTodayTasks.map((t, i) => (
+                                                    <TodayTaskItem
+                                                        key={`task-${t.id}`}
+                                                        task={t}
+                                                        showBorderBottom={
+                                                            i <
+                                                                autoTodayTasks.length -
+                                                                    1 ||
+                                                            quests.length > 0 ||
+                                                            completedQuestsThisSession.length >
+                                                                0
+                                                        }
+                                                        onExclude={excludeToday}
+                                                    />
+                                                ))}
+                                                {quests.map((q, i) => (
+                                                    <SortableQuestItem
+                                                        key={q.id}
+                                                        quest={q}
+                                                        index={i}
+                                                        questsLength={
+                                                            quests.length
+                                                        }
+                                                        showDragHandle={
+                                                            quests.length > 1
+                                                        }
+                                                        isCompleting={completingQuestIds.has(
+                                                            q.id,
+                                                        )}
+                                                        myTasks={myTasks}
+                                                        onComplete={
+                                                            completeQuest
+                                                        }
+                                                        onEdit={openEditQuest}
+                                                        onDelete={deleteQuest}
+                                                    />
+                                                ))}
+                                                {completedQuestsThisSession.length >
+                                                    0 && (
+                                                    <>
+                                                        {(autoTodayTasks.length >
+                                                            0 ||
+                                                            quests.length >
+                                                                0) && (
+                                                            <div className="border-t border-stone-100" />
+                                                        )}
+                                                        {completedQuestsThisSession.map(
+                                                            (q, i) => (
+                                                                <CompletedQuestItem
+                                                                    key={q.id}
+                                                                    quest={q}
+                                                                    showBorderBottom={
+                                                                        i <
+                                                                        completedQuestsThisSession.length -
+                                                                            1
+                                                                    }
+                                                                    onUndo={
+                                                                        undoQuest
                                                                     }
                                                                 />
-                                                                <div className="mt-0.5 flex flex-wrap items-center gap-2">
-                                                                    {(q.proj ||
-                                                                        linkedProj) && (
-                                                                        <span className="truncate text-xs text-stone-400">
-                                                                            {q.proj ||
-                                                                                linkedProj}
-                                                                        </span>
-                                                                    )}
-                                                                    {q.end_date && (
-                                                                        <span
-                                                                            className={`text-xs font-medium ${diff !== null && diff <= 3 ? "text-red-500" : "text-stone-400"}`}
-                                                                        >
-                                                                            {q.end_date
-                                                                                .slice(
-                                                                                    5,
-                                                                                )
-                                                                                .replace(
-                                                                                    "-",
-                                                                                    "/",
-                                                                                )}
-                                                                            {diff !==
-                                                                                null &&
-                                                                                ` D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex shrink-0 items-start gap-1.5 pt-0.5">
-                                                                <span className="text-xs font-medium text-green-600">
-                                                                    +10 EXP
-                                                                </span>
-                                                                <button
-                                                                    onClick={() =>
-                                                                        openEditQuest(
-                                                                            q,
-                                                                        )
-                                                                    }
-                                                                    className="text-xs text-stone-300 transition-colors hover:text-amber-500"
-                                                                >
-                                                                    수정
-                                                                </button>
-                                                                <button
-                                                                    onClick={() =>
-                                                                        deleteQuest(
-                                                                            q.id,
-                                                                        )
-                                                                    }
-                                                                    className="text-xs text-stone-300 transition-colors hover:text-red-400"
-                                                                >
-                                                                    삭제
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
+                                                            ),
+                                                        )}
+                                                    </>
+                                                )}
                                             </div>
-                                        )}
-                                    </DroppableQuestZone>
+                                        </SortableContext>
+                                    )}
                                 </div>
 
                                 {/* 내 업무 */}
@@ -1577,6 +1827,7 @@ export default function HomePage() {
                                                         updateTaskStatus
                                                     }
                                                     onEdit={openEditTask}
+                                                    onDelete={deleteMyTask}
                                                 />
                                             ))}
                                         </div>
@@ -1630,16 +1881,6 @@ export default function HomePage() {
                             </div>
                         )}
                     </div>
-
-                    {!isGuest && (
-                        <DragOverlay className="pointer-events-none">
-                            {activeTask && (
-                                <div className="box-border w-[min(calc(100vw-2rem),42rem)] max-w-2xl rounded-xl border-2 border-amber-400 bg-white px-4 py-3 text-sm font-medium text-stone-800 opacity-90 shadow-xl">
-                                    {activeTask.proj}
-                                </div>
-                            )}
-                        </DragOverlay>
-                    )}
 
                     {/* 퀘스트 추가 모달 */}
                     {showAddQuest && (
@@ -2126,15 +2367,6 @@ export default function HomePage() {
                         </div>
                     )}
 
-                    {dragQuestTask && (
-                        <DragQuestModal
-                            task={dragQuestTask}
-                            onClose={() => setDragQuestTask(null)}
-                            onSubmit={(content, endDate) =>
-                                submitDragQuest(content, endDate, dragQuestTask)
-                            }
-                        />
-                    )}
                 </div>
             </DndContext>
         </AuthGuard>
