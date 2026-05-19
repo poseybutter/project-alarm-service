@@ -550,8 +550,8 @@ export default function ProfilePage() {
                         {[
                             { key: "info", label: "내 정보" },
                             { key: "history", label: "지난 업무" },
-                            { key: "titles", label: "성장" },
                             { key: "quests", label: "완료 퀘스트" },
+                            { key: "titles", label: "성장" },
                         ].map((t) => (
                             <button
                                 key={t.key}

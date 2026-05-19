@@ -662,7 +662,7 @@ export default function TasksPage() {
                           ${isDone ? "opacity-50" : ""}
                           ${t.priority === "긴급" || t.status === "이슈 및 대기" ? "bg-amber-50" : ""}`}
                                             >
-                                                <div className="flex items-start gap-3">
+                                                <div className="flex gap-3">
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center gap-2 mb-1">
                                                             {t.is_starred && (
@@ -775,7 +775,7 @@ export default function TasksPage() {
                                                                 )}
                                                         </div>
                                                     </div>
-                                                    <div className="flex flex-col items-end gap-1.5 shrink-0">
+                                                    <div className="flex flex-col justify-between items-end gap-1.5 shrink-0">
                                                         <TaskStatusBadgeSelect
                                                             task={t}
                                                             disabled={isGuest}
