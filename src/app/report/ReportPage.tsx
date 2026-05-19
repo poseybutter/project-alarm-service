@@ -1363,7 +1363,7 @@ export default function ReportPage() {
                                 {mode === "weekly" ? wk.label : mn.label}
                             </p>
                             {mode === "weekly" && (
-                                <p className="text-xs text-stone-400 mt-0.5">
+                                <p className="text-[13px] text-stone-400 mt-0.5">
                                     매주 수요일 자동 취합
                                 </p>
                             )}
@@ -1416,7 +1416,7 @@ export default function ReportPage() {
                                         >
                                             {s.n}
                                         </div>
-                                        <div className="text-xs text-stone-400 mt-0.5">
+                                        <div className="text-[13px] text-stone-400 mt-0.5">
                                             {s.l}
                                         </div>
                                     </div>
@@ -1458,7 +1458,7 @@ export default function ReportPage() {
                                                     theme="checklist"
                                                 />
                                             ) : (
-                                                <p className="text-xs text-stone-400">
+                                                <p className="text-[13px] text-stone-400">
                                                     이번 주 확인 사항이 없어요
                                                 </p>
                                             )
@@ -1562,7 +1562,7 @@ export default function ReportPage() {
                                                             theme="okr"
                                                         />
                                                     ) : (
-                                                        <p className="text-xs text-stone-400">
+                                                        <p className="text-[13px] text-stone-400">
                                                             등록된 OKR이 없어요
                                                         </p>
                                                     )
@@ -1652,7 +1652,7 @@ export default function ReportPage() {
                                                     theme="notice"
                                                 />
                                             ) : (
-                                                <p className="text-xs text-stone-400">
+                                                <p className="text-[13px] text-stone-400">
                                                     이번 주 전달사항이 없어요
                                                 </p>
                                             )
@@ -1714,14 +1714,14 @@ export default function ReportPage() {
                                                 주간 브리핑
                                             </p>
                                             {isEditedBriefing && (
-                                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">
+                                                <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">
                                                     편집됨
                                                 </span>
                                             )}
                                         </div>
                                         <div className="flex flex-wrap items-center gap-2">
                                             {!editAllowed && (
-                                                <span className="text-xs text-stone-400">
+                                                <span className="text-[13px] text-stone-400">
                                                     {isGuest
                                                         ? "✏️ 게스트는 편집할 수 없어요"
                                                         : "✏️ 브리핑 편집은 매주 목요일에만 가능합니다"}
@@ -1763,7 +1763,7 @@ export default function ReportPage() {
                                         {/* 프로젝트 */}
                                         <div>
                                             <div className="mb-2 flex items-center justify-between gap-2">
-                                                <p className="text-xs font-bold text-stone-600">
+                                                <p className="text-sm font-bold text-stone-600">
                                                     [ 프로젝트 ]
                                                 </p>
                                                 <button
@@ -1802,7 +1802,7 @@ export default function ReportPage() {
                                         {/* 유지보수 */}
                                         <div>
                                             <div className="mb-2 flex items-center justify-between gap-2">
-                                                <p className="text-xs font-bold text-stone-600">
+                                                <p className="text-sm font-bold text-stone-600">
                                                     [ 유지보수 ]
                                                 </p>
                                                 <button
@@ -1843,7 +1843,7 @@ export default function ReportPage() {
                                         {/* 기타 */}
                                         <div>
                                             <div className="mb-2 flex items-center justify-between gap-2">
-                                                <p className="text-xs font-bold text-stone-600">
+                                                <p className="text-sm font-bold text-stone-600">
                                                     [ 기타 ]
                                                 </p>
                                                 <button
@@ -1919,11 +1919,11 @@ export default function ReportPage() {
                                     </div>
                                     <div className="p-4 space-y-4">
                                         <div>
-                                            <p className="text-xs font-extrabold text-stone-600 mb-2">
+                                            <p className="text-sm font-extrabold text-stone-600 mb-2">
                                                 [배정현황]
                                             </p>
                                             {assignActive.length === 0 ? (
-                                                <p className="text-xs text-stone-400">
+                                                <p className="text-[13px] text-stone-400">
                                                     등록된 항목이 없어요
                                                 </p>
                                             ) : (
@@ -1931,7 +1931,7 @@ export default function ReportPage() {
                                                     {assignActive.map((a) => (
                                                         <li
                                                             key={a.id}
-                                                            className="flex items-start gap-3 text-xs text-stone-800"
+                                                            className="flex items-start gap-3 text-[13px] text-stone-800"
                                                         >
                                                             <span className="flex-1 min-w-0 leading-relaxed break-words">
                                                                 <span className="font-extrabold text-stone-700">
@@ -1967,7 +1967,7 @@ export default function ReportPage() {
                                                                                 a,
                                                                             )
                                                                         }
-                                                                        className="text-[11px] text-stone-400 hover:text-amber-600"
+                                                                        className="text-xs text-stone-400 hover:text-amber-600"
                                                                     >
                                                                         수정
                                                                     </button>
@@ -1978,7 +1978,7 @@ export default function ReportPage() {
                                                                                 a.id,
                                                                             )
                                                                         }
-                                                                        className="text-[11px] text-stone-400 hover:text-red-500"
+                                                                        className="text-xs text-stone-400 hover:text-red-500"
                                                                     >
                                                                         삭제
                                                                     </button>
@@ -1990,11 +1990,11 @@ export default function ReportPage() {
                                             )}
                                         </div>
                                         <div>
-                                            <p className="text-xs font-extrabold text-stone-600 mb-2">
+                                            <p className="text-sm font-extrabold text-stone-600 mb-2">
                                                 [배정대기]
                                             </p>
                                             {assignWaiting.length === 0 ? (
-                                                <p className="text-xs text-stone-400">
+                                                <p className="text-[13px] text-stone-400">
                                                     등록된 항목이 없어요
                                                 </p>
                                             ) : (
@@ -2002,7 +2002,7 @@ export default function ReportPage() {
                                                     {assignWaiting.map((a) => (
                                                         <li
                                                             key={a.id}
-                                                            className="text-xs text-stone-800"
+                                                            className="text-[13px] text-stone-800"
                                                         >
                                                             <div className="flex items-start gap-3">
                                                                 <span className="flex-1 min-w-0 leading-relaxed break-words">
@@ -2037,7 +2037,7 @@ export default function ReportPage() {
                                                                                     a,
                                                                                 )
                                                                             }
-                                                                            className="text-[11px] text-stone-400 hover:text-amber-600"
+                                                                            className="text-xs text-stone-400 hover:text-amber-600"
                                                                         >
                                                                             수정
                                                                         </button>
@@ -2048,7 +2048,7 @@ export default function ReportPage() {
                                                                                     a.id,
                                                                                 )
                                                                             }
-                                                                            className="text-[11px] text-stone-400 hover:text-red-500"
+                                                                            className="text-xs text-stone-400 hover:text-red-500"
                                                                         >
                                                                             삭제
                                                                         </button>
@@ -2070,7 +2070,7 @@ export default function ReportPage() {
                                                                                       key={
                                                                                           i
                                                                                       }
-                                                                                      className="mt-1 pl-3 text-[11px] text-stone-500"
+                                                                                      className="mt-1 pl-3 text-xs text-stone-500"
                                                                                   >
                                                                                       •{" "}
                                                                                       {line.trim()}
@@ -2140,7 +2140,7 @@ export default function ReportPage() {
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <p className="text-xs text-stone-400">
+                                                    <p className="text-[13px] text-stone-400">
                                                         {mt.length}건 ·{" "}
                                                         {
                                                             mt.filter(
@@ -2187,22 +2187,22 @@ export default function ReportPage() {
                                                             {t.status}
                                                         </span>
                                                         <div className="flex-1 min-w-0">
-                                                            <p className="text-xs font-bold text-stone-800">
+                                                            <p className="text-[13px] font-bold text-stone-800">
                                                                 {t.proj}
                                                             </p>
                                                             {t.content && (
-                                                                <p className="text-xs text-stone-400 truncate">
+                                                                <p className="text-[13px] text-stone-400 truncate">
                                                                     {t.content}
                                                                 </p>
                                                             )}
                                                             {t.issue && (
-                                                                <div className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded mt-1">
+                                                                <div className="text-[13px] bg-amber-100 text-amber-700 px-2 py-1 rounded mt-1">
                                                                     이슈:{" "}
                                                                     {t.issue}
                                                                 </div>
                                                             )}
                                                         </div>
-                                                        <span className="text-xs font-bold text-amber-600 shrink-0">
+                                                        <span className="text-[13px] font-bold text-amber-600 shrink-0">
                                                             {fmtMin(t.workload)}
                                                         </span>
                                                     </div>
@@ -2357,7 +2357,7 @@ export default function ReportPage() {
                                                         name={name}
                                                         size={32}
                                                     />
-                                                    <span className="text-[10px] font-medium text-stone-600">
+                                                    <span className="text-xs font-medium text-stone-600">
                                                         {name.slice(1)}
                                                     </span>
                                                 </button>
