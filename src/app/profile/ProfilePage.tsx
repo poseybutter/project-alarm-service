@@ -983,7 +983,7 @@ export default function ProfilePage() {
                                                     key={t.id}
                                                     className={`px-4 py-3 ${i < historyTasks.length - 1 ? "border-b border-stone-100" : ""}`}
                                                 >
-                                                    <div className="flex items-start justify-between gap-2">
+                                                    <div className="flex justify-between gap-2">
                                                         <div className="flex-1 min-w-0">
                                                             <div className="flex items-center gap-2 mb-0.5">
                                                                 {t.type && (
@@ -1062,9 +1062,10 @@ export default function ProfilePage() {
                                                                     )}
                                                             </div>
                                                         </div>
-                                                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                                                        <div className="flex flex-col justify-between gap-1.5 shrink-0">
                                                             <span
-                                                                className={`text-xs px-2 py-0.5 rounded-lg font-medium
+                                                                className={`text-xs px-2 py-0.5 rounded-lg font-medium text-center
+                                                           
                                                                 ${
                                                                     {
                                                                         완료: "bg-green-100 text-green-700",
