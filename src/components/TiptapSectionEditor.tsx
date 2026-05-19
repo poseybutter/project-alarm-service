@@ -28,7 +28,12 @@ export default function TiptapSectionEditor({
         immediatelyRender: false,
         extensions: [
             StarterKit.configure({
-                heading: { levels: [1, 2] },
+                // heading: #(H1) ##(H2) ###(H3) 자동 변환 포함
+                heading: { levels: [1, 2, 3] },
+                // hardBreak: Shift+Enter → <br> (기본 포함)
+                hardBreak: {},
+                // bold: **text** / __text__, italic: *text* / _text__
+                // bulletList: - (space), orderedList: 1. (space) 모두 기본 포함
             }),
             Placeholder.configure({
                 placeholder,
