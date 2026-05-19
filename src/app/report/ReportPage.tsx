@@ -1362,11 +1362,6 @@ export default function ReportPage() {
                             <p className="text-sm font-bold text-stone-800">
                                 {mode === "weekly" ? wk.label : mn.label}
                             </p>
-                            {mode === "weekly" && (
-                                <p className="text-[13px] text-stone-400 mt-0.5">
-                                    매주 수요일 자동 취합
-                                </p>
-                            )}
                         </div>
                         <button
                             type="button"
@@ -1427,7 +1422,7 @@ export default function ReportPage() {
                             {mode === "weekly" && (
                                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-3">
                                     <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-stone-100">
-                                        <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">
+                                        <p className="text-sm font-bold text-stone-400 uppercase tracking-wide">
                                             📌 확인해주세요
                                         </p>
                                         {isLeader && !editingChecklist && (
@@ -1521,8 +1516,8 @@ export default function ReportPage() {
                                         tabIndex={0}
                                         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setOkrExpanded((v) => !v); }}
                                     >
-                                        <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">
-                                            🎯 OKR
+                                        <p className="text-sm font-bold text-stone-400 uppercase tracking-wide">
+                                            OKR
                                         </p>
                                         <div className="flex items-center gap-2">
                                             {isLeader && !editingOkr && (
@@ -1621,7 +1616,7 @@ export default function ReportPage() {
                             {mode === "weekly" && (
                                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-3">
                                     <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-stone-100">
-                                        <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">
+                                        <p className="text-sm font-bold text-stone-400 uppercase tracking-wide">
                                             주간 전달사항
                                         </p>
                                         {isLeader && !editingNotice && (
@@ -1710,7 +1705,7 @@ export default function ReportPage() {
                                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-3">
                                     <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-stone-100">
                                         <div className="flex items-center gap-2">
-                                            <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">
+                                            <p className="text-sm font-bold text-stone-400 uppercase tracking-wide">
                                                 주간 브리핑
                                             </p>
                                             {isEditedBriefing && (
@@ -1905,7 +1900,7 @@ export default function ReportPage() {
                             {mode === "weekly" && (
                                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-3">
                                     <div className="flex items-center justify-between px-4 py-3 border-b border-stone-100">
-                                        <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">
+                                        <p className="text-sm font-bold text-stone-400 uppercase tracking-wide">
                                             담당 배정
                                         </p>
                                         <button
@@ -2098,7 +2093,7 @@ export default function ReportPage() {
 
                             {/* 팀원별 상세 (아코디언) */}
                             <div>
-                                <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-2">
+                                <p className="text-sm font-bold text-stone-400 uppercase tracking-wide mb-2">
                                     팀원별 상세
                                 </p>
                                 {MEMBERS.map((m) => {
