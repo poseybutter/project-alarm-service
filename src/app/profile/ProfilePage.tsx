@@ -8,6 +8,7 @@ import {
     expBar,
     attendanceCheck,
     LEVELS,
+    awardExp,
 } from "@/lib/maple";
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
@@ -186,6 +187,7 @@ export default function ProfilePage() {
             .from("quests")
             .update({ status: "대기" })
             .eq("id", id);
+        if (member) await awardExp(member, "QUEST", false); // -10 EXP
         await loadAll();
     }
 
@@ -465,7 +467,7 @@ export default function ProfilePage() {
                                                 <span className="text-base">
                                                     {t.icon}
                                                 </span>
-                                                <span className="text-[10px] font-medium text-amber-700">
+                                                <span className="text-[11px] font-medium text-amber-700">
                                                     {t.name}
                                                 </span>
                                             </div>
@@ -1159,7 +1161,7 @@ export default function ProfilePage() {
                                 <div className="py-12 text-center">
                                     <div className="mb-3 text-4xl">🎯</div>
                                     <p className="text-sm text-stone-400">
-                                        완료한 퀘스트가 없어요 🎯
+                                        완료한 퀘스트가 없어요
                                     </p>
                                 </div>
                             ) : (

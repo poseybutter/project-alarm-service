@@ -1240,6 +1240,7 @@ export default function HomePage() {
             .from("quests")
             .update({ status: "대기" })
             .eq("id", quest.id);
+        await awardExp(member!, "QUEST", false); // -10 EXP
         setCompletedQuestsThisSession((prev) =>
             prev.filter((q) => q.id !== quest.id),
         );
