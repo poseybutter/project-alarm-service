@@ -374,6 +374,7 @@ function HomeMyTaskRow({
     onStatusChange,
     onEdit,
     onDelete,
+    onCompleting,
 }: {
     task: Task;
     showBorderBottom: boolean;
@@ -385,6 +386,7 @@ function HomeMyTaskRow({
     ) => void;
     onEdit?: (task: Task) => void;
     onDelete?: (id: number) => void;
+    onCompleting?: (taskId: number) => void;
 }) {
     const statusWrapRef = useRef<HTMLDivElement>(null);
     const diff = getDiff(t.end_date);
@@ -395,14 +397,12 @@ function HomeMyTaskRow({
         <div
             className={`px-4 py-3 ${showBorderBottom ? "border-b border-stone-100" : ""} ${t.priority === "긴급" ? "bg-amber-50" : ""}`}
         >
-            <div className="mb-1.5 flex items-start gap-2">
+            <div className="flex gap-3">
+                {/* 왼쪽: 텍스트 정보 */}
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                         {t.is_starred && (
-                            <span
-                                className="shrink-0 text-xs"
-                                title="핵심 프로젝트"
-                            >
+                            <span className="shrink-0 text-xs" title="핵심 프로젝트">
                                 ⭐
                             </span>
                         )}
@@ -427,42 +427,34 @@ function HomeMyTaskRow({
                             이슈: {t.issue}
                         </p>
                     )}
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-stone-400">
+                        {t.workload > 0 && (
+                            <span>{formatWorkload(t.workload)}</span>
+                        )}
+                        {t.start_date && t.end_date && (
+                            <span className={ddayRed ? "font-medium text-red-500" : ""}>
+                                {t.start_date.slice(5).replace("-", "/")} ~{" "}
+                                {t.end_date.slice(5).replace("-", "/")}
+                                {ddayLabel && ` · ${ddayLabel}`}
+                            </span>
+                        )}
+                        {!t.start_date && t.end_date && (
+                            <span className={ddayRed ? "font-medium text-red-500" : ""}>
+                                ~{t.end_date.slice(5).replace("-", "/")}
+                                {ddayLabel && ` · ${ddayLabel}`}
+                            </span>
+                        )}
+                        {t.workload === 0 && !t.start_date && !t.end_date && (
+                            <span>기간 미정</span>
+                        )}
+                    </div>
                 </div>
-            </div>
-            <div className="mt-1 flex items-end justify-between gap-2">
-                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-stone-400">
-                    {t.workload > 0 && (
-                        <span>{formatWorkload(t.workload)}</span>
-                    )}
-                    {t.start_date && t.end_date && (
-                        <span
-                            className={
-                                ddayRed ? "font-medium text-red-500" : ""
-                            }
-                        >
-                            {t.start_date.slice(5).replace("-", "/")} ~{" "}
-                            {t.end_date.slice(5).replace("-", "/")}
-                            {ddayLabel && ` · ${ddayLabel}`}
-                        </span>
-                    )}
-                    {!t.start_date && t.end_date && (
-                        <span
-                            className={
-                                ddayRed ? "font-medium text-red-500" : ""
-                            }
-                        >
-                            ~{t.end_date.slice(5).replace("-", "/")}
-                            {ddayLabel && ` · ${ddayLabel}`}
-                        </span>
-                    )}
-                    {t.workload === 0 && !t.start_date && !t.end_date && (
-                        <span>기간 미정</span>
-                    )}
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-1.5">
+
+                {/* 오른쪽: 상태 select + 수정/삭제 버튼 */}
+                <div className="flex shrink-0 flex-col justify-between items-end gap-1.5">
                     <div
                         ref={statusWrapRef}
-                        className={`shrink-0 rounded-lg ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}
+                        className={`rounded-lg ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}
                     >
                         <Select
                             options={[
@@ -477,6 +469,9 @@ function HomeMyTaskRow({
                                 if (!opt) return;
                                 const r =
                                     statusWrapRef.current?.getBoundingClientRect();
+                                if (opt.value === "완료" && t.status !== "완료") {
+                                    onCompleting?.(t.id);
+                                }
                                 void onStatusChange(t.id, opt.value, t, {
                                     x: (r?.left ?? 0) + (r?.width ?? 0) / 2,
                                     y: (r?.top ?? 0) + (r?.height ?? 0) / 2,
@@ -559,15 +554,17 @@ function CompletedQuestItem({
 function TodayTaskItem({
     task: t,
     showBorderBottom,
+    isCompleting,
     onExclude,
 }: {
     task: Task;
     showBorderBottom: boolean;
+    isCompleting: boolean;
     onExclude: (id: number) => void;
 }) {
     return (
         <div
-            className={`flex items-center gap-3 px-4 py-3 bg-stone-50/60 ${showBorderBottom ? "border-b border-stone-100" : ""}`}
+            className={`flex items-center gap-3 px-4 py-3 bg-stone-50/60 ${showBorderBottom ? "border-b border-stone-100" : ""} ${isCompleting ? "quest-completing" : ""}`}
         >
             <span className="shrink-0 text-base leading-none">🗡️</span>
             <div className="min-w-0 flex-1">
@@ -747,6 +744,7 @@ export default function HomePage() {
     const [showAddQuest, setShowAddQuest] = useState(false);
     const [completingQuestIds, setCompletingQuestIds] = useState<Set<number>>(new Set());
     const [completedQuestsThisSession, setCompletedQuestsThisSession] = useState<Quest[]>([]);
+    const [completingTaskIds, setCompletingTaskIds] = useState<Set<number>>(new Set());
     const [showEditQuest, setShowEditQuest] = useState(false);
     const [editTarget, setEditTarget] = useState<Quest | null>(null);
     const [questForm, setQuestForm] = useState<QuestFormType>({
@@ -1179,6 +1177,18 @@ export default function HomePage() {
             prev.filter((q) => q.id !== quest.id),
         );
         loadData();
+    }
+
+    function handleTaskCompleting(taskId: number) {
+        setCompletingTaskIds((prev) => new Set([...prev, taskId]));
+        setTimeout(() => {
+            loadData();
+            setCompletingTaskIds((prev) => {
+                const next = new Set(prev);
+                next.delete(taskId);
+                return next;
+            });
+        }, 650);
     }
 
     async function excludeToday(taskId: number) {
@@ -1640,7 +1650,7 @@ export default function HomePage() {
                                         {
                                             icon: "📋",
                                             label: "퀘스트",
-                                            value: quests.length,
+                                            value: autoTodayTasks.length + quests.length,
                                             onClick: null,
                                             highlight: false,
                                         },
@@ -1740,6 +1750,9 @@ export default function HomePage() {
                                                             completedQuestsThisSession.length >
                                                                 0
                                                         }
+                                                        isCompleting={completingTaskIds.has(
+                                                            t.id,
+                                                        )}
                                                         onExclude={excludeToday}
                                                     />
                                                 ))}
@@ -1828,6 +1841,9 @@ export default function HomePage() {
                                                     }
                                                     onEdit={openEditTask}
                                                     onDelete={deleteMyTask}
+                                                    onCompleting={
+                                                        handleTaskCompleting
+                                                    }
                                                 />
                                             ))}
                                         </div>
