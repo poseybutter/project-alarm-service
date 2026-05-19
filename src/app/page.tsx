@@ -109,6 +109,10 @@ type QuestFormType = {
     end_date: string;
 };
 
+type QuestListItem =
+    | { type: "task"; data: Task; id: string }
+    | { type: "quest"; data: Quest; id: string };
+
 type QuestFormModalProps = {
     title: string;
     questForm: QuestFormType;
@@ -552,20 +556,63 @@ function CompletedQuestItem({
 
 /** 오늘 기간인 업무 자동 포함 카드 */
 function TodayTaskItem({
+    id,
     task: t,
     showBorderBottom,
+    showDragHandle,
     isCompleting,
     onExclude,
 }: {
+    id: string;
     task: Task;
     showBorderBottom: boolean;
+    showDragHandle: boolean;
     isCompleting: boolean;
     onExclude: (id: number) => void;
 }) {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging,
+        isOver,
+    } = useSortable({ id });
+
+    const style: React.CSSProperties = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+    };
+
     return (
         <div
-            className={`flex items-center gap-3 px-4 py-3 bg-stone-50/60 ${showBorderBottom ? "border-b border-stone-100" : ""} ${isCompleting ? "quest-completing" : ""}`}
+            ref={setNodeRef}
+            style={style}
+            className={`flex items-center gap-3 px-4 py-3 bg-stone-50/60 ${
+                isCompleting
+                    ? "quest-completing"
+                    : isDragging
+                    ? "border-2 border-dashed border-amber-400 opacity-50 rounded-lg"
+                    : isOver
+                    ? "border-2 border-dashed border-amber-300 bg-amber-50 rounded-lg"
+                    : showBorderBottom
+                    ? "border-b border-stone-100"
+                    : ""
+            }`}
         >
+            {showDragHandle && (
+                <button
+                    type="button"
+                    {...listeners}
+                    {...attributes}
+                    className="touch-none cursor-grab self-center px-0.5 text-stone-300 hover:text-stone-500 active:cursor-grabbing"
+                    tabIndex={-1}
+                    aria-label="순서 변경"
+                >
+                    ⠿
+                </button>
+            )}
             <span className="shrink-0 text-base leading-none">🗡️</span>
             <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -604,9 +651,9 @@ function TodayTaskItem({
 }
 
 function SortableQuestItem({
+    sortableId,
     quest: q,
-    index,
-    questsLength,
+    showBorderBottom,
     showDragHandle,
     isCompleting,
     myTasks,
@@ -614,9 +661,9 @@ function SortableQuestItem({
     onEdit,
     onDelete,
 }: {
+    sortableId: string;
     quest: Quest;
-    index: number;
-    questsLength: number;
+    showBorderBottom: boolean;
     showDragHandle: boolean;
     isCompleting: boolean;
     myTasks: Task[];
@@ -632,7 +679,7 @@ function SortableQuestItem({
         transition,
         isDragging,
         isOver,
-    } = useSortable({ id: q.id });
+    } = useSortable({ id: sortableId });
 
     const style: React.CSSProperties = {
         transform: CSS.Transform.toString(transform),
@@ -656,7 +703,7 @@ function SortableQuestItem({
                     ? "border-2 border-dashed border-amber-400 opacity-50 rounded-lg"
                     : isOver
                     ? "border-2 border-dashed border-amber-300 bg-amber-50 rounded-lg"
-                    : index < questsLength - 1
+                    : showBorderBottom
                     ? "border-b border-stone-100"
                     : ""
             }`}
@@ -745,6 +792,7 @@ export default function HomePage() {
     const [completingQuestIds, setCompletingQuestIds] = useState<Set<number>>(new Set());
     const [completedQuestsThisSession, setCompletedQuestsThisSession] = useState<Quest[]>([]);
     const [completingTaskIds, setCompletingTaskIds] = useState<Set<number>>(new Set());
+    const [allQuestItems, setAllQuestItems] = useState<QuestListItem[]>([]);
     const [showEditQuest, setShowEditQuest] = useState(false);
     const [editTarget, setEditTarget] = useState<Quest | null>(null);
     const [questForm, setQuestForm] = useState<QuestFormType>({
@@ -771,24 +819,26 @@ export default function HomePage() {
     );
 
     const onQuestDragEnd = useCallback(
-        async (event: DragEndEvent) => {
+        (event: DragEndEvent) => {
             const { active, over } = event;
             if (!over || active.id === over.id) return;
 
-            setQuests((prev) => {
-                const oldIndex = prev.findIndex((q) => q.id === active.id);
-                const newIndex = prev.findIndex((q) => q.id === over.id);
+            setAllQuestItems((prev) => {
+                const oldIndex = prev.findIndex((item) => item.id === active.id);
+                const newIndex = prev.findIndex((item) => item.id === over.id);
                 if (oldIndex === -1 || newIndex === -1) return prev;
                 const reordered = arrayMove(prev, oldIndex, newIndex);
-                // 개별 update (order_index만 업데이트)
-                reordered.forEach(({ id }, i) => {
-                    void supabase
-                        .from("quests")
-                        .update({ order_index: i })
-                        .eq("id", id)
-                        .then(({ error }) => {
-                            if (error) console.error("[quest reorder]", error.message);
-                        });
+                // quest 타입만 order_index 저장
+                reordered.forEach((item, i) => {
+                    if (item.type === "quest") {
+                        void supabase
+                            .from("quests")
+                            .update({ order_index: i })
+                            .eq("id", item.data.id)
+                            .then(({ error }) => {
+                                if (error) console.error("[quest reorder]", error.message);
+                            });
+                    }
                 });
                 return reordered;
             });
@@ -1006,6 +1056,23 @@ export default function HomePage() {
             }
         })();
     }, [member, authLoading]);
+
+    // myTasks/quests 변경 시 통합 목록 재구성 (드래그 중에는 allQuestItems만 변경되므로 deps 불변)
+    useEffect(() => {
+        const todayStr = toLocalYmd(new Date());
+        const todayTasks = myTasks.filter((t) => {
+            if (t.status === "완료") return false;
+            if (t.is_excluded_today === true) return false;
+            if (!t.end_date) return false;
+            const afterStart = !t.start_date || t.start_date <= todayStr;
+            const beforeEnd = t.end_date >= todayStr;
+            return afterStart && beforeEnd;
+        });
+        setAllQuestItems([
+            ...todayTasks.map((t) => ({ type: "task" as const, data: t, id: `task-${t.id}` })),
+            ...quests.map((q) => ({ type: "quest" as const, data: q, id: `quest-${q.id}` })),
+        ]);
+    }, [myTasks, quests]);
 
     if (authLoading) return <PageSpinner />;
     if (!member) return null;
@@ -1412,19 +1479,9 @@ export default function HomePage() {
 
     const activeMyTasks = myTasks.filter((t) => t.status !== "완료");
 
-    const autoTodayTasks = myTasks.filter((t) => {
-        if (t.status === "완료") return false;
-        if (t.is_excluded_today === true) return false;
-        if (!t.end_date) return false;
-        const afterStart = !t.start_date || t.start_date <= today;
-        const beforeEnd = t.end_date >= today;
-        return afterStart && beforeEnd;
-    });
-
     // 오늘의 퀘스트 진행 바
     const completedCount = completedQuestsThisSession.length;
-    const totalQuestCount =
-        autoTodayTasks.length + quests.length + completedCount;
+    const totalQuestCount = allQuestItems.length + completedCount;
     const progressPct =
         totalQuestCount > 0
             ? Math.round((completedCount / totalQuestCount) * 100)
@@ -1650,7 +1707,7 @@ export default function HomePage() {
                                         {
                                             icon: "📋",
                                             label: "퀘스트",
-                                            value: autoTodayTasks.length + quests.length,
+                                            value: allQuestItems.length,
                                             onClick: null,
                                             highlight: false,
                                         },
@@ -1720,8 +1777,7 @@ export default function HomePage() {
                                         💡 오늘 기간인 업무가 자동으로 추가돼요. 드래그(⠿)로 우선순위를 정할 수 있어요!
                                     </p>
 
-                                    {autoTodayTasks.length === 0 &&
-                                    quests.length === 0 &&
+                                    {allQuestItems.length === 0 &&
                                     completedQuestsThisSession.length === 0 ? (
                                         <div className="rounded-xl border border-stone-200 bg-white py-10 text-center">
                                             <p className="text-sm text-stone-400">
@@ -1734,57 +1790,47 @@ export default function HomePage() {
                                         </div>
                                     ) : (
                                         <SortableContext
-                                            items={quests.map((q) => q.id)}
+                                            items={allQuestItems.map((item) => item.id)}
                                             strategy={verticalListSortingStrategy}
                                         >
                                             <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
-                                                {autoTodayTasks.map((t, i) => (
-                                                    <TodayTaskItem
-                                                        key={`task-${t.id}`}
-                                                        task={t}
-                                                        showBorderBottom={
-                                                            i <
-                                                                autoTodayTasks.length -
-                                                                    1 ||
-                                                            quests.length > 0 ||
-                                                            completedQuestsThisSession.length >
-                                                                0
-                                                        }
-                                                        isCompleting={completingTaskIds.has(
-                                                            t.id,
-                                                        )}
-                                                        onExclude={excludeToday}
-                                                    />
-                                                ))}
-                                                {quests.map((q, i) => (
-                                                    <SortableQuestItem
-                                                        key={q.id}
-                                                        quest={q}
-                                                        index={i}
-                                                        questsLength={
-                                                            quests.length
-                                                        }
-                                                        showDragHandle={
-                                                            quests.length > 1
-                                                        }
-                                                        isCompleting={completingQuestIds.has(
-                                                            q.id,
-                                                        )}
-                                                        myTasks={myTasks}
-                                                        onComplete={
-                                                            completeQuest
-                                                        }
-                                                        onEdit={openEditQuest}
-                                                        onDelete={deleteQuest}
-                                                    />
-                                                ))}
+                                                {allQuestItems.map((item, i) => {
+                                                    const showBorderBottom =
+                                                        i < allQuestItems.length - 1 ||
+                                                        completedQuestsThisSession.length > 0;
+                                                    const showDragHandle = allQuestItems.length > 1;
+                                                    if (item.type === "task") {
+                                                        return (
+                                                            <TodayTaskItem
+                                                                key={item.id}
+                                                                id={item.id}
+                                                                task={item.data}
+                                                                showBorderBottom={showBorderBottom}
+                                                                showDragHandle={showDragHandle}
+                                                                isCompleting={completingTaskIds.has(item.data.id)}
+                                                                onExclude={excludeToday}
+                                                            />
+                                                        );
+                                                    }
+                                                    return (
+                                                        <SortableQuestItem
+                                                            key={item.id}
+                                                            sortableId={item.id}
+                                                            quest={item.data}
+                                                            showBorderBottom={showBorderBottom}
+                                                            showDragHandle={showDragHandle}
+                                                            isCompleting={completingQuestIds.has(item.data.id)}
+                                                            myTasks={myTasks}
+                                                            onComplete={completeQuest}
+                                                            onEdit={openEditQuest}
+                                                            onDelete={deleteQuest}
+                                                        />
+                                                    );
+                                                })}
                                                 {completedQuestsThisSession.length >
                                                     0 && (
                                                     <>
-                                                        {(autoTodayTasks.length >
-                                                            0 ||
-                                                            quests.length >
-                                                                0) && (
+                                                        {allQuestItems.length > 0 && (
                                                             <div className="border-t border-stone-100" />
                                                         )}
                                                         {completedQuestsThisSession.map(
