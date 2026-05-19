@@ -126,9 +126,6 @@ export default function ManagePage() {
     >("날짜순");
     const [showAccStartPicker, setShowAccStartPicker] = useState(false);
     const [showAccEndPicker, setShowAccEndPicker] = useState(false);
-    const [accProjMode, setAccProjMode] = useState<"select" | "direct">(
-        "select",
-    );
     const [projForm, setProjForm] = useState({ ...EMPTY_PROJ_FORM });
     const [accForm, setAccForm] = useState({
         proj: "",
@@ -357,7 +354,6 @@ export default function ManagePage() {
         setEditAcc(null);
         setShowAccStartPicker(false);
         setShowAccEndPicker(false);
-        setAccProjMode("select");
         setAccForm({
             ...emptyAccForm,
             accMember: member || "",
@@ -375,8 +371,6 @@ export default function ManagePage() {
                 : a.inspection_status === "갱신완료"
                   ? "취득·갱신완료"
                   : a.inspection_status;
-        const inProjectList = projects.some((p) => p.name === a.proj);
-        setAccProjMode(inProjectList ? "select" : "direct");
         setAccForm({
             proj: a.proj,
             start_date: a.start_date ? a.start_date.slice(0, 10) : "",
@@ -394,7 +388,6 @@ export default function ManagePage() {
         setEditAcc(null);
         setShowAccStartPicker(false);
         setShowAccEndPicker(false);
-        setAccProjMode("select");
         setAccForm({ ...emptyAccForm });
     }
 
@@ -1527,98 +1520,38 @@ export default function ManagePage() {
                                     </p>
                                 )}
                                 <div>
-                                    <div className="flex items-center justify-between mb-1.5 gap-2">
-                                        <label className="text-xs font-medium text-stone-500">
-                                            프로젝트명{" "}
-                                            <span className="text-red-500">
-                                                *
-                                            </span>
-                                        </label>
-                                        <div className="flex bg-stone-100 rounded-lg p-0.5 shrink-0">
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setAccProjMode("select");
-                                                    setAccForm((f) => ({
-                                                        ...f,
-                                                        proj: "",
-                                                    }));
-                                                }}
-                                                className={`text-[10px] px-2 py-1 rounded-md font-medium transition-all
-                          ${
-                              accProjMode === "select"
-                                  ? "bg-white text-stone-800 shadow-sm"
-                                  : "text-stone-400"
-                          }`}
-                                            >
-                                                목록에서 선택
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setAccProjMode("direct");
-                                                    setAccForm((f) => ({
-                                                        ...f,
-                                                        proj: "",
-                                                    }));
-                                                }}
-                                                className={`text-[10px] px-2 py-1 rounded-md font-medium transition-all
-                          ${
-                              accProjMode === "direct"
-                                  ? "bg-white text-stone-800 shadow-sm"
-                                  : "text-stone-400"
-                          }`}
-                                            >
-                                                직접 입력
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div style={{ minHeight: "42px" }}>
-                                        {accProjMode === "select" ? (
-                                            <Select
-                                                options={accModalProjOptions}
-                                                value={
-                                                    accForm.proj
-                                                        ? {
-                                                              value: accForm.proj,
-                                                              label: accForm.proj,
-                                                          }
-                                                        : null
-                                                }
-                                                onChange={(opt) =>
-                                                    setAccForm((f) => ({
-                                                        ...f,
-                                                        proj: opt?.value ?? "",
-                                                    }))
-                                                }
-                                                placeholder="프로젝트 검색"
-                                                isSearchable
-                                                styles={accModalSelectStyles}
-                                                menuPortalTarget={
-                                                    typeof document !==
-                                                    "undefined"
-                                                        ? document.body
-                                                        : null
-                                                }
-                                                noOptionsMessage={() =>
-                                                    "검색 결과가 없어요"
-                                                }
-                                            />
-                                        ) : (
-                                            <input
-                                                className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                                                style={{ height: "42px" }}
-                                                placeholder="프로젝트명 직접 입력"
-                                                value={accForm.proj}
-                                                onChange={(e) =>
-                                                    setAccForm((f) => ({
-                                                        ...f,
-                                                        proj: e.target.value,
-                                                    }))
-                                                }
-                                            />
-                                        )}
-                                    </div>
+                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
+                                        프로젝트명{" "}
+                                        <span className="text-red-500">*</span>
+                                    </label>
+                                    <Select
+                                        options={accModalProjOptions}
+                                        value={
+                                            accForm.proj
+                                                ? {
+                                                      value: accForm.proj,
+                                                      label: accForm.proj,
+                                                  }
+                                                : null
+                                        }
+                                        onChange={(opt) =>
+                                            setAccForm((f) => ({
+                                                ...f,
+                                                proj: opt?.value ?? "",
+                                            }))
+                                        }
+                                        placeholder="프로젝트 검색"
+                                        isSearchable
+                                        styles={accModalSelectStyles}
+                                        menuPortalTarget={
+                                            typeof document !== "undefined"
+                                                ? document.body
+                                                : null
+                                        }
+                                        noOptionsMessage={() =>
+                                            "검색 결과가 없어요"
+                                        }
+                                    />
                                 </div>
                                 <div className="relative z-20">
                                     <label className="text-xs font-medium text-stone-500 block mb-1.5">
