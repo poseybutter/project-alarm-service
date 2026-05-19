@@ -75,12 +75,46 @@ function plainBriefingToInitialHtml(plain: string): string {
 function BriefingSavedHtmlPreview({ html }: { html: string }) {
     const inner = html?.trim() ? html : "<p></p>";
     return (
-        <div className="notice-editor min-h-[2.5rem] overflow-x-auto rounded-lg border border-stone-200 bg-stone-50">
+        <div className="notice-editor overflow-x-auto rounded-lg border border-stone-200 bg-stone-50">
             <div
-                className="ProseMirror tiptap min-h-[2.5rem] px-3 py-3 text-stone-700"
+                className="ProseMirror tiptap px-3 py-3 text-stone-700"
                 dangerouslySetInnerHTML={{ __html: inner }}
             />
         </div>
+    );
+}
+
+const PROSE_CLASSES =
+    "[&_h1]:text-lg [&_h1]:font-bold [&_h1]:mb-2 " +
+    "[&_h2]:text-base [&_h2]:font-semibold [&_h2]:mb-1.5 " +
+    "[&_p]:mb-1.5 [&_p:last-child]:mb-0 " +
+    "[&_ul]:list-disc [&_ul]:pl-4 [&_ul]:mb-1.5 " +
+    "[&_ol]:list-decimal [&_ol]:pl-4 [&_ol]:mb-1.5 " +
+    "[&_li]:mb-0.5 " +
+    "[&_strong]:font-semibold";
+
+const SECTION_THEME = {
+    checklist: "bg-red-50 border-l-4 border-red-400",
+    okr: "bg-blue-50 border-l-4 border-blue-400",
+    notice: "bg-amber-50 border-l-4 border-amber-400",
+} as const;
+
+type SectionTheme = keyof typeof SECTION_THEME;
+
+/** 확인해주세요 / OKR / 주간 전달사항 읽기 모드 렌더러 */
+function SectionHtmlReadView({
+    html,
+    theme,
+}: {
+    html: string;
+    theme: SectionTheme;
+}) {
+    const inner = html?.trim() ? html : "";
+    return (
+        <div
+            className={`rounded-lg px-4 py-3 text-sm text-stone-700 ${SECTION_THEME[theme]} ${PROSE_CLASSES}`}
+            dangerouslySetInnerHTML={{ __html: inner }}
+        />
     );
 }
 
@@ -99,6 +133,37 @@ function htmlToPlainText(html: string): string {
 function wrapClipboardBriefingDocument(bodyHtml: string): string {
     const body = bodyHtml.trim() ? bodyHtml : "<p></p>";
     return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${body}</body></html>`;
+}
+
+/** HTML → 마크다운 변환 (Copy 버튼용) */
+function htmlToMarkdown(html: string): string {
+    if (!html?.trim()) return "";
+    return html
+        .replace(/<strong>([\s\S]*?)<\/strong>/gi, "**$1**")
+        .replace(/<em>([\s\S]*?)<\/em>/gi, "*$1*")
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/<\/p>\s*<p>/gi, "\n\n")
+        .replace(/<\/li>\s*<li>/gi, "\n")
+        .replace(/<ul[^>]*>([\s\S]*?)<\/ul>/gi, (_, inner) =>
+            inner
+                .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, "- $1")
+                .trim(),
+        )
+        .replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_, inner) => {
+            let i = 0;
+            return inner
+                .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_: string, c: string) => `${++i}. ${c}`)
+                .trim();
+        })
+        .replace(/<[^>]+>/g, "")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/\u00a0/g, " ")
+        .replace(/\n{3,}/g, "\n\n") // 3줄 이상 연속 줄바꿈 → 2줄로 축약
+        .trim();
 }
 
 async function copyBriefingRichToClipboard(
@@ -129,6 +194,20 @@ async function copyBriefingRichToClipboard(
         } catch {
             /* ignore */
         }
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+}
+
+async function copyBriefingMarkdown(
+    bodyHtml: string,
+    setCopied: (v: boolean) => void,
+): Promise<void> {
+    const markdown = htmlToMarkdown(bodyHtml) || "(내용 없음)";
+    try {
+        await navigator.clipboard.writeText(markdown);
+    } catch {
+        /* ignore */
     }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -371,8 +450,8 @@ function formatBriefingSection(tasks: Task[], section: BriefSection): string {
                 const issueText = String(t.issue).trim();
                 bodyLines.push(
                     multiMember
-                        ? `⚠️ @${t.member} · 이슈: ${issueText} — ${t.status}`
-                        : `⚠️ 이슈: ${issueText} — ${t.status}`,
+                        ? `⚠️ @${t.member} · ${issueText}`
+                        : `⚠️ ${issueText}`,
                 );
             }
         }
@@ -393,13 +472,15 @@ function formatBriefingSection(tasks: Task[], section: BriefSection): string {
                     : endStr
                       ? `~${endStr} `
                       : "";
-            const raw = (t.content || "").trim();
+            const raw = (t.content || "").replace(/\n{2,}/g, "\n").trim();
             if (raw) {
-                bodyLines.push(`⇒ **[작업 계획]** ${dateStr}${raw}`);
+                bodyLines.push(`⇒ ${dateStr}${raw}`);
             }
         }
 
-        const blockParts = [titleLine, "", ...bodyLines];
+        // 제목·본문을 \n으로 연결해 한 <p> 안에 <br>로 묶이도록 함
+        // (빈 줄 없이 → splitBriefingPlainIntoChunks가 하나의 청크로 유지)
+        const blockParts = [titleLine, ...bodyLines];
         const block = blockParts.join("\n").replace(/\n+$/, "");
         blocks.push(block);
     }
@@ -407,12 +488,11 @@ function formatBriefingSection(tasks: Task[], section: BriefSection): string {
     return blocks.join("\n\n").trimEnd();
 }
 
-/** 브리핑 편집 허용 윈도우: 수요일 12:00 ~ 목요일 18:00 (KST 가정). */
+/** 브리핑 편집 허용 윈도우: 목요일 00:00 ~ 18:00 (KST 가정). */
 function isEditableWindow(now: Date = new Date()): boolean {
     const day = now.getDay();
     const hour = now.getHours();
-    if (day === 3 && hour >= 12) return true;
-    if (day === 4 && hour < 18) return true;
+    if (day === 4 && hour < 18) return true; // 목 00:00~17:59
     return false;
 }
 
@@ -471,6 +551,8 @@ type BriefingRow = {
     etc: string;
     /** Tiptap 저장 HTML */
     notice: string | null;
+    checklist: string | null;
+    okr: string | null;
     is_locked: boolean;
     edited_by: string | null;
     updated_at: string | null;
@@ -568,6 +650,27 @@ export default function ReportPage() {
     const [savingNotice, setSavingNotice] = useState(false);
     const savingNoticeRef = useRef(false);
     const [noticeEditorNonce, setNoticeEditorNonce] = useState(0);
+    const [editChecklist, setEditChecklist] = useState("");
+    const editChecklistDraftRef = useRef("");
+    const onChecklistHtmlChange = useCallback((html: string) => {
+        editChecklistDraftRef.current = html;
+        setEditChecklist(html);
+    }, []);
+    const [editingChecklist, setEditingChecklist] = useState(false);
+    const [savingChecklist, setSavingChecklist] = useState(false);
+    const savingChecklistRef = useRef(false);
+    const [checklistEditorNonce, setChecklistEditorNonce] = useState(0);
+    const [editOkr, setEditOkr] = useState("");
+    const editOkrDraftRef = useRef("");
+    const onOkrHtmlChange = useCallback((html: string) => {
+        editOkrDraftRef.current = html;
+        setEditOkr(html);
+    }, []);
+    const [editingOkr, setEditingOkr] = useState(false);
+    const [savingOkr, setSavingOkr] = useState(false);
+    const savingOkrRef = useRef(false);
+    const [okrEditorNonce, setOkrEditorNonce] = useState(0);
+    const [okrExpanded, setOkrExpanded] = useState(false);
     const [copiedProject, setCopiedProject] = useState(false);
     const [copiedMaintenance, setCopiedMaintenance] = useState(false);
     const [copiedEtc, setCopiedEtc] = useState(false);
@@ -587,6 +690,8 @@ export default function ReportPage() {
 
     savingBriefingRef.current = saving;
     savingNoticeRef.current = savingNotice;
+    savingChecklistRef.current = savingChecklist;
+    savingOkrRef.current = savingOkr;
 
     const wk = getWeekWin(wOff);
     const mn = getMonthWin(mOff);
@@ -597,7 +702,7 @@ export default function ReportPage() {
         const { data, error } = await supabase
             .from("briefings")
             .select(
-                "project, maintenance, etc, notice, is_locked, edited_by, updated_at",
+                "project, maintenance, etc, notice, checklist, okr, is_locked, edited_by, updated_at",
             )
             .eq("week_start", weekStart)
             .maybeSingle();
@@ -617,6 +722,8 @@ export default function ReportPage() {
                 maintenance: data.maintenance ?? "",
                 etc: data.etc ?? "",
                 notice: data.notice ?? null,
+                checklist: data.checklist ?? null,
+                okr: data.okr ?? null,
                 is_locked: data.is_locked ?? false,
                 edited_by: data.edited_by ?? null,
                 updated_at: data.updated_at ?? null,
@@ -627,7 +734,7 @@ export default function ReportPage() {
         const prevWeekStart = getWeekWin(offsetAtStart - 1).from;
         const { data: prevData } = await supabase
             .from("briefings")
-            .select("notice")
+            .select("notice, checklist")
             .eq("week_start", prevWeekStart)
             .maybeSingle();
 
@@ -637,6 +744,8 @@ export default function ReportPage() {
 
         const rawPrev = prevData?.notice ?? null;
         const carriedNotice = noticeHtmlHasText(rawPrev) ? rawPrev : null;
+        const rawPrevChecklist = prevData?.checklist ?? null;
+        const carriedChecklist = noticeHtmlHasText(rawPrevChecklist) ? rawPrevChecklist : null;
 
         if (data) {
             setBriefing({
@@ -644,6 +753,8 @@ export default function ReportPage() {
                 maintenance: data.maintenance ?? "",
                 etc: data.etc ?? "",
                 notice: carriedNotice,
+                checklist: data.checklist ?? carriedChecklist,
+                okr: data.okr ?? null,
                 is_locked: data.is_locked ?? false,
                 edited_by: data.edited_by ?? null,
                 updated_at: data.updated_at ?? null,
@@ -656,6 +767,8 @@ export default function ReportPage() {
             maintenance: "",
             etc: "",
             notice: carriedNotice,
+            checklist: carriedChecklist,
+            okr: null,
             is_locked: false,
             edited_by: null,
             updated_at: null,
@@ -725,6 +838,10 @@ export default function ReportPage() {
         setEditingNotice(false);
         setNoticeEditorNonce((n) => n + 1);
         setBriefingEditorKey((k) => k + 1);
+        setEditingChecklist(false);
+        setChecklistEditorNonce((n) => n + 1);
+        setEditingOkr(false);
+        setOkrEditorNonce((n) => n + 1);
     }, [wOff, mode]);
 
     useEffect(() => {
@@ -739,7 +856,7 @@ export default function ReportPage() {
                 "postgres_changes",
                 { event: "*", schema: "public", table: "briefings" },
                 () => {
-                    if (savingBriefingRef.current || savingNoticeRef.current) {
+                    if (savingBriefingRef.current || savingNoticeRef.current || savingChecklistRef.current || savingOkrRef.current) {
                         return;
                     }
                     void loadBriefing();
@@ -866,6 +983,8 @@ export default function ReportPage() {
                     maintenance: null,
                     etc: null,
                     notice: briefing?.notice ?? null,
+                    checklist: briefing?.checklist ?? null,
+                    okr: briefing?.okr ?? null,
                     is_locked: briefing?.is_locked ?? false,
                     edited_by: currentMember ?? null,
                     updated_at: new Date().toISOString(),
@@ -896,6 +1015,8 @@ export default function ReportPage() {
                     maintenance: editMaintenance,
                     etc: editEtc,
                     notice: briefing?.notice ?? null,
+                    checklist: briefing?.checklist ?? null,
+                    okr: briefing?.okr ?? null,
                     is_locked: briefing?.is_locked ?? false,
                     edited_by: currentMember ?? null,
                     updated_at: new Date().toISOString(),
@@ -929,6 +1050,8 @@ export default function ReportPage() {
                     notice: noticeHtmlHasText(noticeHtml)
                         ? noticeHtml.trim()
                         : null,
+                    checklist: briefing?.checklist ?? null,
+                    okr: briefing?.okr ?? null,
                     is_locked: briefing?.is_locked ?? false,
                     edited_by: currentMember ?? null,
                     updated_at: new Date().toISOString(),
@@ -945,6 +1068,74 @@ export default function ReportPage() {
             setNoticeEditorNonce((n) => n + 1);
         } finally {
             setSavingNotice(false);
+        }
+    }
+
+    async function saveChecklist() {
+        setSavingChecklist(true);
+        try {
+            const checklistHtml = editChecklistDraftRef.current;
+            const weekStart = wk.from;
+            const { error } = await supabase.from("briefings").upsert(
+                {
+                    week_start: weekStart,
+                    project: briefing?.project ?? "",
+                    maintenance: briefing?.maintenance ?? "",
+                    etc: briefing?.etc ?? "",
+                    notice: briefing?.notice ?? null,
+                    checklist: noticeHtmlHasText(checklistHtml)
+                        ? checklistHtml.trim()
+                        : null,
+                    okr: briefing?.okr ?? null,
+                    is_locked: briefing?.is_locked ?? false,
+                    edited_by: currentMember ?? null,
+                    updated_at: new Date().toISOString(),
+                },
+                { onConflict: "week_start" },
+            );
+            if (error) {
+                console.error(error);
+                alert("저장에 실패했어요: " + error.message);
+                return;
+            }
+            await loadBriefing();
+            setEditingChecklist(false);
+            setChecklistEditorNonce((n) => n + 1);
+        } finally {
+            setSavingChecklist(false);
+        }
+    }
+
+    async function saveOkr() {
+        setSavingOkr(true);
+        try {
+            const okrHtml = editOkrDraftRef.current;
+            const weekStart = wk.from;
+            const { error } = await supabase.from("briefings").upsert(
+                {
+                    week_start: weekStart,
+                    project: briefing?.project ?? "",
+                    maintenance: briefing?.maintenance ?? "",
+                    etc: briefing?.etc ?? "",
+                    notice: briefing?.notice ?? null,
+                    checklist: briefing?.checklist ?? null,
+                    okr: noticeHtmlHasText(okrHtml) ? okrHtml.trim() : null,
+                    is_locked: briefing?.is_locked ?? false,
+                    edited_by: currentMember ?? null,
+                    updated_at: new Date().toISOString(),
+                },
+                { onConflict: "week_start" },
+            );
+            if (error) {
+                console.error(error);
+                alert("저장에 실패했어요: " + error.message);
+                return;
+            }
+            await loadBriefing();
+            setEditingOkr(false);
+            setOkrEditorNonce((n) => n + 1);
+        } finally {
+            setSavingOkr(false);
         }
     }
 
@@ -1232,6 +1423,200 @@ export default function ReportPage() {
                                 ))}
                             </div>
 
+                            {/* 확인해주세요 */}
+                            {mode === "weekly" && (
+                                <div className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-3">
+                                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-stone-100">
+                                        <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">
+                                            📌 확인해주세요
+                                        </p>
+                                        {isLeader && !editingChecklist && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const initial =
+                                                        briefing?.checklist ?? "";
+                                                    editChecklistDraftRef.current =
+                                                        initial;
+                                                    setEditChecklist(initial);
+                                                    setEditingChecklist(true);
+                                                    setChecklistEditorNonce(
+                                                        (n) => n + 1,
+                                                    );
+                                                }}
+                                                className="text-xs px-2.5 py-1 rounded-lg font-medium border border-stone-200 bg-stone-100 text-stone-600 hover:bg-stone-50"
+                                            >
+                                                편집
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="p-4 space-y-3">
+                                        {!editingChecklist ? (
+                                            noticeHtmlHasText(briefing?.checklist) ? (
+                                                <SectionHtmlReadView
+                                                    html={briefing!.checklist!}
+                                                    theme="checklist"
+                                                />
+                                            ) : (
+                                                <p className="text-xs text-stone-400">
+                                                    이번 주 확인 사항이 없어요
+                                                </p>
+                                            )
+                                        ) : (
+                                            <TiptapNoticeEditor
+                                                key={`checklist-${wOff}-${checklistEditorNonce}`}
+                                                content={editChecklist}
+                                                onChange={onChecklistHtmlChange}
+                                                editable={isLeader}
+                                                showToolbar={isLeader}
+                                            />
+                                        )}
+                                        {editingChecklist && isLeader && (
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        void saveChecklist();
+                                                    }}
+                                                    disabled={savingChecklist}
+                                                    className="flex-1 rounded-xl bg-amber-500 py-2.5 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50"
+                                                >
+                                                    {savingChecklist
+                                                        ? "저장 중…"
+                                                        : "저장하기"}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const restored =
+                                                            briefing?.checklist ??
+                                                            "";
+                                                        editChecklistDraftRef.current =
+                                                            restored;
+                                                        setEditingChecklist(false);
+                                                        setEditChecklist(restored);
+                                                        setChecklistEditorNonce(
+                                                            (n) => n + 1,
+                                                        );
+                                                    }}
+                                                    className="flex-1 rounded-xl border border-stone-200 py-2.5 text-sm font-medium text-stone-600 hover:bg-stone-50"
+                                                >
+                                                    취소
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* OKR */}
+                            {mode === "weekly" && (
+                                <div className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-3">
+                                    <div
+                                        className="flex items-center justify-between px-4 py-3 border-b border-stone-100 cursor-pointer"
+                                        onClick={() => setOkrExpanded((v) => !v)}
+                                        role="button"
+                                        tabIndex={0}
+                                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setOkrExpanded((v) => !v); }}
+                                    >
+                                        <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">
+                                            🎯 OKR
+                                        </p>
+                                        <div className="flex items-center gap-2">
+                                            {isLeader && !editingOkr && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const initial =
+                                                            briefing?.okr ?? "";
+                                                        editOkrDraftRef.current =
+                                                            initial;
+                                                        setEditOkr(initial);
+                                                        setEditingOkr(true);
+                                                        setOkrExpanded(true);
+                                                        setOkrEditorNonce(
+                                                            (n) => n + 1,
+                                                        );
+                                                    }}
+                                                    className="text-xs px-2.5 py-1 rounded-lg font-medium border border-stone-200 bg-stone-100 text-stone-600 hover:bg-stone-50"
+                                                >
+                                                    편집
+                                                </button>
+                                            )}
+                                            <i
+                                                className={`${okrExpanded ? "ri-arrow-up-s-line" : "ri-arrow-down-s-line"} text-stone-400`}
+                                                aria-hidden
+                                            />
+                                        </div>
+                                    </div>
+                                    {okrExpanded && (
+                                        <>
+                                            <div className="p-4 space-y-3">
+                                                {!editingOkr ? (
+                                                    noticeHtmlHasText(briefing?.okr) ? (
+                                                        <SectionHtmlReadView
+                                                            html={briefing!.okr!}
+                                                            theme="okr"
+                                                        />
+                                                    ) : (
+                                                        <p className="text-xs text-stone-400">
+                                                            등록된 OKR이 없어요
+                                                        </p>
+                                                    )
+                                                ) : (
+                                                    <TiptapNoticeEditor
+                                                        key={`okr-${wOff}-${okrEditorNonce}`}
+                                                        content={editOkr}
+                                                        onChange={onOkrHtmlChange}
+                                                        editable={isLeader}
+                                                        showToolbar={isLeader}
+                                                    />
+                                                )}
+                                                {editingOkr && isLeader && (
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+                                                                void saveOkr();
+                                                            }}
+                                                            disabled={savingOkr}
+                                                            className="flex-1 rounded-xl bg-amber-500 py-2.5 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50"
+                                                        >
+                                                            {savingOkr
+                                                                ? "저장 중…"
+                                                                : "저장하기"}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const restored =
+                                                                    briefing?.okr ??
+                                                                    "";
+                                                                editOkrDraftRef.current =
+                                                                    restored;
+                                                                setEditingOkr(false);
+                                                                setEditOkr(restored);
+                                                                setOkrEditorNonce(
+                                                                    (n) => n + 1,
+                                                                );
+                                                            }}
+                                                            className="flex-1 rounded-xl border border-stone-200 py-2.5 text-sm font-medium text-stone-600 hover:bg-stone-50"
+                                                        >
+                                                            취소
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
                             {/* 주간 전달사항 */}
                             {mode === "weekly" && (
                                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-3">
@@ -1260,26 +1645,24 @@ export default function ReportPage() {
                                         )}
                                     </div>
                                     <div className="p-4 space-y-3">
-                                        {!editingNotice &&
-                                        !noticeHtmlHasText(briefing?.notice) ? (
-                                            <p className="text-xs text-stone-400">
-                                                이번 주 전달사항이 없어요
-                                            </p>
+                                        {!editingNotice ? (
+                                            noticeHtmlHasText(briefing?.notice) ? (
+                                                <SectionHtmlReadView
+                                                    html={briefing!.notice!}
+                                                    theme="notice"
+                                                />
+                                            ) : (
+                                                <p className="text-xs text-stone-400">
+                                                    이번 주 전달사항이 없어요
+                                                </p>
+                                            )
                                         ) : (
                                             <TiptapNoticeEditor
                                                 key={`notice-${wOff}-${noticeEditorNonce}`}
-                                                content={
-                                                    editingNotice
-                                                        ? editNotice
-                                                        : briefing?.notice ?? ""
-                                                }
+                                                content={editNotice}
                                                 onChange={onNoticeHtmlChange}
-                                                editable={
-                                                    editingNotice && isLeader
-                                                }
-                                                showToolbar={
-                                                    editingNotice && isLeader
-                                                }
+                                                editable={isLeader}
+                                                showToolbar={isLeader}
                                             />
                                         )}
                                         {editingNotice && isLeader && (
@@ -1326,16 +1709,35 @@ export default function ReportPage() {
                             {mode === "weekly" && (
                                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-3">
                                     <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-stone-100">
-                                        <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">
-                                            주간 브리핑
-                                        </p>
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">
+                                                주간 브리핑
+                                            </p>
+                                            {isEditedBriefing && (
+                                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">
+                                                    편집됨
+                                                </span>
+                                            )}
+                                        </div>
                                         <div className="flex flex-wrap items-center gap-2">
                                             {!editAllowed && (
                                                 <span className="text-xs text-stone-400">
                                                     {isGuest
                                                         ? "✏️ 게스트는 편집할 수 없어요"
-                                                        : "✏️ 브리핑 편집은 매주 수요일 오후 12시부터 목요일 오후 6시까지 가능합니다"}
+                                                        : "✏️ 브리핑 편집은 매주 목요일에만 가능합니다"}
                                                 </span>
+                                            )}
+                                            {!isGuest && !editing && isEditedBriefing && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        void restoreAutoBriefing()
+                                                    }
+                                                    disabled={saving}
+                                                    className="text-xs px-2.5 py-1 rounded-lg font-medium border border-stone-200 bg-stone-100 text-stone-600 hover:bg-stone-50 disabled:opacity-50"
+                                                >
+                                                    복원
+                                                </button>
                                             )}
                                             {editAllowed && !editing && (
                                                 <button
@@ -1357,25 +1759,6 @@ export default function ReportPage() {
                                             )}
                                         </div>
                                     </div>
-                                    {!editing && isEditedBriefing && (
-                                        <div className="px-4 py-2 border-b border-amber-200 bg-amber-50 flex items-center justify-between gap-3 flex-wrap">
-                                            <p className="text-xs text-amber-700">
-                                                ⚠️ 편집된 브리핑입니다. 업무
-                                                변경사항이 자동으로 반영되지
-                                                않습니다.
-                                            </p>
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    void restoreAutoBriefing()
-                                                }
-                                                disabled={saving}
-                                                className="text-xs px-2.5 py-1 rounded-lg font-medium border border-amber-300 bg-white text-amber-700 hover:bg-amber-100 disabled:opacity-50"
-                                            >
-                                                자동생성으로 복원
-                                            </button>
-                                        </div>
-                                    )}
                                     <div className="p-4 space-y-5">
                                         {/* 프로젝트 */}
                                         <div>
@@ -1386,17 +1769,10 @@ export default function ReportPage() {
                                                 <button
                                                     type="button"
                                                     onClick={() =>
-                                                        void copyBriefingRichToClipboard(
+                                                        void copyBriefingMarkdown(
                                                             editing
                                                                 ? editProject
                                                                 : displayProjectHtml,
-                                                            editing
-                                                                ? htmlToPlainText(
-                                                                      editProject,
-                                                                  )
-                                                                : htmlToPlainText(
-                                                                      displayProjectHtml,
-                                                                  ),
                                                             setCopiedProject,
                                                         )
                                                     }
@@ -1409,32 +1785,14 @@ export default function ReportPage() {
                                                 </button>
                                             </div>
                                             {editing ? (
-                                                <>
-                                                    <TiptapSectionEditor
-                                                        key={`briefing-project-${wOff}-${briefingEditorKey}`}
-                                                        content={editProject}
-                                                        onChange={
-                                                            setEditProject
-                                                        }
-                                                        editable
-                                                        showToolbar
-                                                        placeholder="프로젝트 브리핑을 입력하세요..."
-                                                    />
-                                                    {editAllowed && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                restoreBriefingSection(
-                                                                    "project",
-                                                                )
-                                                            }
-                                                            className="mt-2 w-full rounded-lg border border-stone-200 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
-                                                        >
-                                                            이 섹션 자동
-                                                            생성으로 복원
-                                                        </button>
-                                                    )}
-                                                </>
+                                                <TiptapSectionEditor
+                                                    key={`briefing-project-${wOff}-${briefingEditorKey}`}
+                                                    content={editProject}
+                                                    onChange={setEditProject}
+                                                    editable
+                                                    showToolbar
+                                                    placeholder="프로젝트 브리핑을 입력하세요..."
+                                                />
                                             ) : (
                                                 <BriefingSavedHtmlPreview
                                                     html={displayProjectHtml}
@@ -1450,17 +1808,10 @@ export default function ReportPage() {
                                                 <button
                                                     type="button"
                                                     onClick={() =>
-                                                        void copyBriefingRichToClipboard(
+                                                        void copyBriefingMarkdown(
                                                             editing
                                                                 ? editMaintenance
                                                                 : displayMaintenanceHtml,
-                                                            editing
-                                                                ? htmlToPlainText(
-                                                                      editMaintenance,
-                                                                  )
-                                                                : htmlToPlainText(
-                                                                      displayMaintenanceHtml,
-                                                                  ),
                                                             setCopiedMaintenance,
                                                         )
                                                     }
@@ -1473,34 +1824,14 @@ export default function ReportPage() {
                                                 </button>
                                             </div>
                                             {editing ? (
-                                                <>
-                                                    <TiptapSectionEditor
-                                                        key={`briefing-maintenance-${wOff}-${briefingEditorKey}`}
-                                                        content={
-                                                            editMaintenance
-                                                        }
-                                                        onChange={
-                                                            setEditMaintenance
-                                                        }
-                                                        editable
-                                                        showToolbar
-                                                        placeholder="유지보수 브리핑을 입력하세요..."
-                                                    />
-                                                    {editAllowed && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                restoreBriefingSection(
-                                                                    "maintenance",
-                                                                )
-                                                            }
-                                                            className="mt-2 w-full rounded-lg border border-stone-200 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
-                                                        >
-                                                            이 섹션 자동
-                                                            생성으로 복원
-                                                        </button>
-                                                    )}
-                                                </>
+                                                <TiptapSectionEditor
+                                                    key={`briefing-maintenance-${wOff}-${briefingEditorKey}`}
+                                                    content={editMaintenance}
+                                                    onChange={setEditMaintenance}
+                                                    editable
+                                                    showToolbar
+                                                    placeholder="유지보수 브리핑을 입력하세요..."
+                                                />
                                             ) : (
                                                 <BriefingSavedHtmlPreview
                                                     html={
@@ -1518,17 +1849,10 @@ export default function ReportPage() {
                                                 <button
                                                     type="button"
                                                     onClick={() =>
-                                                        void copyBriefingRichToClipboard(
+                                                        void copyBriefingMarkdown(
                                                             editing
                                                                 ? editEtc
                                                                 : displayEtcHtml,
-                                                            editing
-                                                                ? htmlToPlainText(
-                                                                      editEtc,
-                                                                  )
-                                                                : htmlToPlainText(
-                                                                      displayEtcHtml,
-                                                                  ),
                                                             setCopiedEtc,
                                                         )
                                                     }
@@ -1541,30 +1865,14 @@ export default function ReportPage() {
                                                 </button>
                                             </div>
                                             {editing ? (
-                                                <>
-                                                    <TiptapSectionEditor
-                                                        key={`briefing-etc-${wOff}-${briefingEditorKey}`}
-                                                        content={editEtc}
-                                                        onChange={setEditEtc}
-                                                        editable
-                                                        showToolbar
-                                                        placeholder="기타 브리핑을 입력하세요..."
-                                                    />
-                                                    {editAllowed && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                restoreBriefingSection(
-                                                                    "etc",
-                                                                )
-                                                            }
-                                                            className="mt-2 w-full rounded-lg border border-stone-200 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
-                                                        >
-                                                            이 섹션 자동
-                                                            생성으로 복원
-                                                        </button>
-                                                    )}
-                                                </>
+                                                <TiptapSectionEditor
+                                                    key={`briefing-etc-${wOff}-${briefingEditorKey}`}
+                                                    content={editEtc}
+                                                    onChange={setEditEtc}
+                                                    editable
+                                                    showToolbar
+                                                    placeholder="기타 브리핑을 입력하세요..."
+                                                />
                                             ) : (
                                                 <BriefingSavedHtmlPreview
                                                     html={displayEtcHtml}
