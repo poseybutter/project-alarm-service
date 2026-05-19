@@ -2,6 +2,33 @@
 @import "pretendard/dist/web/variable/pretendardvariable.css";
 @import "tailwindcss";
 
+/* 메이플스토리 커서 */
+* {
+    cursor: url('/cursors/point.cur') 0 0, auto;
+}
+
+button:not(:disabled),
+a,
+[role="button"],
+select,
+label,
+.cursor-pointer {
+    cursor: url('/cursors/hand_open.cur') 8 4, pointer;
+}
+
+button:disabled {
+    cursor: not-allowed;
+}
+
+.drag-handle,
+[data-drag-handle] {
+    cursor: url('/cursors/grab.cur') 8 8, grab;
+}
+
+*:active:not(:disabled) {
+    cursor: url('/cursors/point_click.cur') 0 0, auto;
+}
+
 :root {
     color-scheme: light;
     --nav-height: 67px;
@@ -122,6 +149,28 @@ textarea {
     float: left;
     height: 0;
     pointer-events: none;
+}
+
+/* 퀘스트 완료 반짝 애니메이션 */
+@keyframes quest-sparkle {
+    0% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    20% {
+        transform: scale(1.04);
+    }
+    60% {
+        transform: scale(0.98);
+        opacity: 0.8;
+    }
+    100% {
+        transform: scale(1);
+        opacity: 0.6;
+    }
+}
+.quest-completing {
+    animation: quest-sparkle 0.65s ease-out forwards;
 }
 
 /* DayPicker 에어비앤비 스타일 */

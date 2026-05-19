@@ -19,7 +19,7 @@ import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { DayPicker, DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
 import { ko } from "date-fns/locale";
-import type { Player, Task } from "@/lib/types";
+import type { Player, Task, Quest } from "@/lib/types";
 import { formatWorkload } from "@/lib/utils";
 import { BAR_COLORS, MEMBERS, MEMBER_COLORS } from "@/lib/constants";
 import { toLocalYmd } from "@/lib/toLocalYmd";
@@ -106,7 +106,7 @@ export default function ProfilePage() {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // useState 선언
-    const [tab, setTab] = useState<"info" | "history" | "titles">("info");
+    const [tab, setTab] = useState<"info" | "history" | "titles" | "quests">("info");
     const [players, setPlayers] = useState<Player[]>([]);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [weekTasks, setWeekTasks] = useState<Task[]>([]);
@@ -120,6 +120,7 @@ export default function ProfilePage() {
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [showAvatarMenu, setShowAvatarMenu] = useState(false);
     const [historyEditTask, setHistoryEditTask] = useState<Task | null>(null);
+    const [completedQuests, setCompletedQuests] = useState<Quest[]>([]);
 
     const canEditHistoryTask = (taskMember: string) =>
         !isGuest && (role === "admin" || taskMember === member);
@@ -133,6 +134,7 @@ export default function ProfilePage() {
             { data: playerData },
             { data: taskData },
             { data: teamTaskData },
+            { data: completedQuestData },
         ] = await Promise.all([
             supabase.from("players").select("*"),
             supabase
@@ -141,9 +143,18 @@ export default function ProfilePage() {
                 .eq("member", member)
                 .order("created_at", { ascending: false }),
             supabase.from("tasks").select("*").in("member", MEMBERS),
+            isGuest
+                ? Promise.resolve({ data: [] as Quest[] })
+                : supabase
+                      .from("quests")
+                      .select("*")
+                      .eq("member", member)
+                      .eq("status", "완료")
+                      .order("created_at", { ascending: false }),
         ]);
         setPlayers(playerData || []);
         setTasks(taskData || []);
+        setCompletedQuests((completedQuestData as Quest[]) || []);
 
         const wr = getThisWeekRange();
         const weekly = (teamTaskData || []).filter((t) => {
@@ -168,6 +179,14 @@ export default function ProfilePage() {
     function showToastMsg(msg: string) {
         setToast(msg);
         setTimeout(() => setToast(""), 3000);
+    }
+
+    async function undoCompletedQuest(id: number) {
+        await supabase
+            .from("quests")
+            .update({ status: "대기" })
+            .eq("id", id);
+        await loadAll();
     }
 
     async function uploadAvatar(file: File) {
@@ -532,12 +551,17 @@ export default function ProfilePage() {
                             { key: "info", label: "내 정보" },
                             { key: "history", label: "지난 업무" },
                             { key: "titles", label: "성장" },
+                            { key: "quests", label: "완료 퀘스트" },
                         ].map((t) => (
                             <button
                                 key={t.key}
                                 onClick={() =>
                                     setTab(
-                                        t.key as "info" | "history" | "titles",
+                                        t.key as
+                                            | "info"
+                                            | "history"
+                                            | "titles"
+                                            | "quests",
                                     )
                                 }
                                 className={`flex-1 py-2 text-xs font-medium rounded-lg transition-all
@@ -1120,6 +1144,84 @@ export default function ProfilePage() {
                                         </div>
                                     )}
                                 </>
+                            )}
+                        </div>
+                    )}
+
+                    {/* 완료 퀘스트 탭 */}
+                    {tab === "quests" && (
+                        <div>
+                            {isGuest ? (
+                                <div className="py-10 text-center text-sm text-stone-400">
+                                    게스트 계정은 퀘스트를 조회할 수 없어요
+                                </div>
+                            ) : completedQuests.length === 0 ? (
+                                <div className="py-12 text-center">
+                                    <div className="mb-3 text-4xl">🎯</div>
+                                    <p className="text-sm text-stone-400">
+                                        완료한 퀘스트가 없어요 🎯
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
+                                    {completedQuests.map((q, i) => {
+                                        const plain = q.content.includes("<")
+                                            ? q.content
+                                                  .replace(/<[^>]+>/g, " ")
+                                                  .replace(/\s+/g, " ")
+                                                  .trim()
+                                            : q.content;
+                                        const firstLine =
+                                            plain.split("\n")[0]?.trim() ??
+                                            plain;
+                                        const dateLabel = q.created_at
+                                            ? new Date(
+                                                  q.created_at,
+                                              ).toLocaleDateString("ko-KR", {
+                                                  month: "numeric",
+                                                  day: "numeric",
+                                              })
+                                            : "";
+                                        return (
+                                            <div
+                                                key={q.id}
+                                                className={`flex items-center gap-3 px-4 py-3 ${i < completedQuests.length - 1 ? "border-b border-stone-100" : ""}`}
+                                            >
+                                                <span className="shrink-0 text-base leading-none">
+                                                    ✨
+                                                </span>
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="break-words text-sm font-medium text-stone-700 line-through">
+                                                        {firstLine}
+                                                    </p>
+                                                    <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                                                        {q.proj && (
+                                                            <span className="truncate text-xs text-stone-400">
+                                                                {q.proj}
+                                                            </span>
+                                                        )}
+                                                        {dateLabel && (
+                                                            <span className="text-xs text-stone-300">
+                                                                {dateLabel}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        void undoCompletedQuest(
+                                                            q.id,
+                                                        )
+                                                    }
+                                                    className="shrink-0 whitespace-nowrap text-xs text-stone-300 transition-colors hover:text-amber-500"
+                                                >
+                                                    ↩ 되돌리기
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             )}
                         </div>
                     )}
