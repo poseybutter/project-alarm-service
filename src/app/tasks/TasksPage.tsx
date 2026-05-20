@@ -11,6 +11,7 @@ import {
     STATUS_COLORS,
     WORKLOAD_PRESETS,
     LEADER,
+    TEAM_ID,
 } from "@/lib/constants";
 import { awardExp } from "@/lib/maple";
 import AuthGuard from "@/components/AuthGuard";
@@ -250,6 +251,7 @@ export default function TasksPage() {
                     const { data } = await supabase
                         .from("tasks")
                         .select("*")
+                        .eq("team_id", TEAM_ID)
                         .order("created_at", { ascending: false });
                     setTasks(data || []);
                 },
@@ -266,6 +268,7 @@ export default function TasksPage() {
         const { data } = await supabase
             .from("tasks")
             .select("*")
+            .eq("team_id", TEAM_ID)
             .order("created_at", { ascending: false });
         setTasks(data || []);
         setLoading(false);
@@ -275,6 +278,7 @@ export default function TasksPage() {
         const { data } = await supabase
             .from("projects")
             .select("*")
+            .eq("team_id", TEAM_ID)
             .order("name");
         setProjects(
             (data || []).map((row) =>
@@ -356,6 +360,7 @@ export default function TasksPage() {
                 status: "대기",
                 is_plan: form.is_plan ?? false,
                 is_starred: form.is_starred ?? false,
+                team_id: TEAM_ID,
             },
         ]);
         setShowModal(false);

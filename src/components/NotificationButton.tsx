@@ -5,6 +5,7 @@ import { useAuth } from "./AuthProvider";
 import NotificationDrawer from "./NotificationDrawer";
 import { supabase } from "@/lib/supabase";
 import { getDiff } from "@/lib/utils";
+import { TEAM_ID } from "@/lib/constants";
 
 export default function NotificationButton() {
     const { member } = useAuth();
@@ -32,11 +33,13 @@ export default function NotificationButton() {
             supabase
                 .from("tasks")
                 .select("end_date")
+                .eq("team_id", TEAM_ID)
                 .eq("member", member)
                 .neq("status", "완료"),
             supabase
                 .from("accessibility")
                 .select("end_date")
+                .eq("team_id", TEAM_ID)
                 .eq("member", member)
                 .eq("inspection_status", "신청필요"),
         ]);

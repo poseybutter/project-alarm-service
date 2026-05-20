@@ -1,3 +1,5 @@
+export const TEAM_ID = 'ud2'
+
 export const MEMBERS = ['TEAM_MEMBER_1', 'TEAM_MEMBER_2', 'TEAM_MEMBER_3', 'TEAM_MEMBER_4']
 export const LEADER  = 'TEAM_MEMBER_1'
 
