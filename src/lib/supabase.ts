@@ -1,14 +1,12 @@
-import { createClient } from '@supabase/supabase-js'
+import { createBrowserClient } from '@supabase/ssr'
 export * from './types'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
-export const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: {
-    flowType: 'pkce',
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true,
-  }
-})
+/**
+ * 브라우저용 Supabase 클라이언트.
+ * PKCE code_verifier 등 auth state를 쿠키에 저장하므로,
+ * 서버 라우트 핸들러(@supabase/ssr createServerClient)와 세션 교환이 가능하다.
+ */
+export const supabase = createBrowserClient(supabaseUrl, supabaseKey)

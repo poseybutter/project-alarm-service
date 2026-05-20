@@ -2,18 +2,28 @@ import { supabase } from "./supabase";
 
 // 구글 로그인
 export async function signInWithGoogle() {
+    const siteUrl =
+        process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
     const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-            redirectTo: `${window.location.origin}/auth/callback`,
+            redirectTo: `${siteUrl}/auth/callback`,
         },
     });
     if (error) console.error(error);
 }
 
 // 로그아웃
+// 서버 라우트(/api/auth/logout)를 거쳐야 audit_logs 기록 + Supabase signOut + 백엔드 세션 종료가 함께 처리된다.
+// 클라이언트에서 supabase.auth.signOut()을 직접 부르면 sb-* 쿠키가 먼저 사라져 서버에서 세션을 못 읽는다.
 export async function signOut() {
-    await supabase.auth.signOut();
+    try {
+        await fetch("/api/auth/logout", { method: "POST" });
+    } catch (err) {
+        console.error("[signOut] /api/auth/logout failed:", err);
+        // 서버 라우트 실패 시 최소한 클라이언트 세션은 정리
+        await supabase.auth.signOut();
+    }
 }
 
 // 현재 유저

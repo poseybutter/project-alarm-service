@@ -1,9 +1,17 @@
 import type { Metadata, Viewport } from "next";
+import { JetBrains_Mono } from "next/font/google";
 import "@sun-typeface/suit/fonts/variable/woff2/SUIT-Variable.css";
 import "./globals.css";
 import Nav from "@/components/Nav";
 import PageTransition from "@/components/PageTransition";
 import { AuthProvider } from "@/components/AuthProvider";
+
+const jetbrainsMono = JetBrains_Mono({
+    subsets: ["latin"],
+    weight: ["400", "500", "700"],
+    variable: "--font-jetbrains-mono",
+    display: "swap",
+});
 
 /** 배포 후 아이콘이 폰에 안 바뀌면 숫자만 올려서 캐시 무효화 */
 const ICON_CACHE = "v=2";
@@ -58,7 +66,7 @@ export default function RootLayout({
     children: React.ReactNode;
 }) {
     return (
-        <html lang="ko">
+        <html lang="ko" className={jetbrainsMono.variable}>
             <head>
                 {/* metadata.icons 외에 sizes·캐시 무효화용 (모바일 PWA 아이콘 갱신) */}
                 <link
