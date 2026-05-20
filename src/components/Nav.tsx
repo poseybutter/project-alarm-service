@@ -3,6 +3,7 @@
 import type { CSSProperties } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 import { useAuth } from "./AuthProvider";
 
 const navStyle = { "--nav-height": "67px" } as CSSProperties;
@@ -18,6 +19,10 @@ const NAV_ITEMS = [
 export default function Nav() {
     const { member, loading } = useAuth();
     const pathname = usePathname();
+
+    useEffect(() => {
+        window.scrollTo(0, 0);
+    }, [pathname]);
 
     if (loading || !member) return null;
     if (pathname === "/login") return null;

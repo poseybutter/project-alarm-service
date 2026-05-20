@@ -146,7 +146,7 @@ export default function QuestsPage() {
         </div>
 
         {/* 퀘스트 목록 */}
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-24">
           {loading ? (
             <div className="text-center py-16 text-stone-400 text-sm">불러오는 중...</div>
           ) : filtered.length === 0 ? (
