@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import "@sun-typeface/suit/fonts/variable/woff2/SUIT-Variable.css";
 import "./globals.css";
 import Nav from "@/components/Nav";
 import PageTransition from "@/components/PageTransition";
