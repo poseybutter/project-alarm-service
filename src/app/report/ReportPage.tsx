@@ -1926,59 +1926,84 @@ export default function ReportPage() {
                                                     {assignActive.map((a) => (
                                                         <li
                                                             key={a.id}
-                                                            className="flex items-start gap-3 text-[13px] text-stone-800"
+                                                            className="text-[13px] text-stone-800"
                                                         >
-                                                            <span className="flex-1 min-w-0 leading-relaxed break-words">
-                                                                <span className="font-extrabold text-stone-700">
-                                                                    ⇒ [{a.type}]
-                                                                </span>{" "}
-                                                                {a.url ? (
-                                                                    <a
-                                                                        href={
-                                                                            a.url
-                                                                        }
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        className="text-amber-600 hover:underline font-medium"
-                                                                        aria-label={`${a.name} 관련 링크 새 창으로 열림`}
-                                                                    >
-                                                                        {a.name}
-                                                                    </a>
-                                                                ) : (
-                                                                    a.name
-                                                                )}
-                                                                {" : "}
-                                                                {(
-                                                                    a.members ||
-                                                                    []
-                                                                ).join(", ")}
-                                                            </span>
-                                                            {isLeader && (
-                                                                <span className="flex shrink-0 gap-2">
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() =>
-                                                                            openEditAssignment(
-                                                                                a,
-                                                                            )
-                                                                        }
-                                                                        className="text-xs text-stone-400 hover:text-amber-600"
-                                                                    >
-                                                                        수정
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() =>
-                                                                            void deleteAssignment(
-                                                                                a.id,
-                                                                            )
-                                                                        }
-                                                                        className="text-xs text-stone-400 hover:text-red-500"
-                                                                    >
-                                                                        삭제
-                                                                    </button>
+                                                            <div className="flex items-start gap-3">
+                                                                <span className="flex-1 min-w-0 leading-relaxed break-words">
+                                                                    <span className="font-extrabold text-stone-700">
+                                                                        ⇒ [{a.type}]
+                                                                    </span>{" "}
+                                                                    {a.url ? (
+                                                                        <a
+                                                                            href={
+                                                                                a.url
+                                                                            }
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className="text-amber-600 hover:underline font-medium"
+                                                                            aria-label={`${a.name} 관련 링크 새 창으로 열림`}
+                                                                        >
+                                                                            {a.name}
+                                                                        </a>
+                                                                    ) : (
+                                                                        a.name
+                                                                    )}
+                                                                    {" : "}
+                                                                    {(
+                                                                        a.members ||
+                                                                        []
+                                                                    ).join(", ")}
                                                                 </span>
-                                                            )}
+                                                                {isLeader && (
+                                                                    <span className="flex shrink-0 gap-2">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() =>
+                                                                                openEditAssignment(
+                                                                                    a,
+                                                                                )
+                                                                            }
+                                                                            className="text-xs text-stone-400 hover:text-amber-600"
+                                                                        >
+                                                                            수정
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() =>
+                                                                                void deleteAssignment(
+                                                                                    a.id,
+                                                                                )
+                                                                            }
+                                                                            className="text-xs text-stone-400 hover:text-red-500"
+                                                                        >
+                                                                            삭제
+                                                                        </button>
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {a.period_note
+                                                                ? a.period_note
+                                                                      .split(
+                                                                          "\n",
+                                                                      )
+                                                                      .map(
+                                                                          (
+                                                                              line,
+                                                                              i,
+                                                                          ) =>
+                                                                              line.trim() ? (
+                                                                                  <p
+                                                                                      key={
+                                                                                          i
+                                                                                      }
+                                                                                      className="mt-1 pl-3 text-[13px] text-stone-500"
+                                                                                  >
+                                                                                      •{" "}
+                                                                                      {line.trim()}
+                                                                                  </p>
+                                                                              ) : null,
+                                                                      )
+                                                                : null}
                                                         </li>
                                                     ))}
                                                 </ul>
@@ -2065,7 +2090,7 @@ export default function ReportPage() {
                                                                                       key={
                                                                                           i
                                                                                       }
-                                                                                      className="mt-1 pl-3 text-xs text-stone-500"
+                                                                                      className="mt-1 pl-3 text-[13px] text-stone-500"
                                                                                   >
                                                                                       •{" "}
                                                                                       {line.trim()}
