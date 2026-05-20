@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { toLocalYmd } from "@/lib/toLocalYmd";
 
@@ -112,6 +112,7 @@ export default function AttendanceHeatmap({ member }: AttendanceHeatmapProps) {
         [today],
     );
 
+    const channelIdRef = useRef(Math.random().toString(36).slice(2));
     const [counts, setCounts] = useState<Record<string, number>>({});
     const [loading, setLoading] = useState(true);
 
@@ -155,7 +156,7 @@ export default function AttendanceHeatmap({ member }: AttendanceHeatmapProps) {
         void loadData();
 
         const channel = supabase
-            .channel(`attendance-heatmap-${member}`)
+            .channel(`attendance-heatmap-${member}-${channelIdRef.current}`)
             .on(
                 "postgres_changes",
                 {

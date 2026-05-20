@@ -623,6 +623,7 @@ export default function ReportPage() {
     const [mode, setMode] = useState<"weekly" | "monthly">("weekly");
     const [wOff, setWOff] = useState(0);
     const wOffRef = useRef(wOff);
+    const channelIdRef = useRef(Math.random().toString(36).slice(2, 8));
     useEffect(() => {
         wOffRef.current = wOff;
     }, [wOff]);
@@ -790,7 +791,7 @@ export default function ReportPage() {
 
     useEffect(() => {
         const channel = supabase
-            .channel("assignments-rt")
+            .channel(`assignments-rt-${channelIdRef.current}`)
             .on(
                 "postgres_changes",
                 { event: "*", schema: "public", table: "assignments" },
@@ -819,7 +820,7 @@ export default function ReportPage() {
 
     useEffect(() => {
         const channel = supabase
-            .channel("tasks-rt-report")
+            .channel(`tasks-rt-report-${channelIdRef.current}`)
             .on(
                 "postgres_changes",
                 { event: "*", schema: "public", table: "tasks" },
@@ -851,7 +852,7 @@ export default function ReportPage() {
 
     useEffect(() => {
         const channel = supabase
-            .channel("briefings-rt")
+            .channel(`briefings-rt-${channelIdRef.current}`)
             .on(
                 "postgres_changes",
                 { event: "*", schema: "public", table: "briefings" },
