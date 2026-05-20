@@ -659,7 +659,7 @@ export default function ProfilePage() {
                                 <div className="space-y-3">
                                     {MEMBERS.map((m) => {
                                         const mWL = weekTasks
-                                            .filter((t) => t.member === m)
+                                            .filter((t) => t.member === m && !t.is_plan)
                                             .reduce(
                                                 (s, t) => s + (t.workload || 0),
                                                 0,
@@ -668,7 +668,8 @@ export default function ProfilePage() {
                                             .filter(
                                                 (t) =>
                                                     t.member === m &&
-                                                    t.status === "완료",
+                                                    t.status === "완료" &&
+                                                    !t.is_plan,
                                             )
                                             .reduce(
                                                 (s, t) => s + (t.workload || 0),
@@ -678,7 +679,7 @@ export default function ProfilePage() {
                                             ...MEMBERS.map((mem) =>
                                                 weekTasks
                                                     .filter(
-                                                        (t) => t.member === mem,
+                                                        (t) => t.member === mem && !t.is_plan,
                                                     )
                                                     .reduce(
                                                         (s, t) =>
@@ -962,11 +963,13 @@ export default function ProfilePage() {
                                                 green: true,
                                             },
                                             {
-                                                n: historyTasks.reduce(
-                                                    (s, t) =>
-                                                        s + (t.workload || 0),
-                                                    0,
-                                                ),
+                                                n: historyTasks
+                                                    .filter((t) => !t.is_plan)
+                                                    .reduce(
+                                                        (s, t) =>
+                                                            s + (t.workload || 0),
+                                                        0,
+                                                    ),
                                                 l: "총 공수",
                                                 amber: true,
                                                 fmt: true,
