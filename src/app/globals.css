@@ -1,6 +1,60 @@
 @import "pretendard/dist/web/variable/pretendardvariable.css";
 @import "tailwindcss";
 
+/* 인증 화면 — 픽셀 스프라이트 애니메이션 */
+@keyframes auth-bob {
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-6px);
+    }
+}
+@keyframes auth-wobble {
+    0%,
+    100% {
+        transform: rotate(-3deg) translateY(0);
+    }
+    50% {
+        transform: rotate(3deg) translateY(-4px);
+    }
+}
+@keyframes auth-swing {
+    0%,
+    100% {
+        transform: rotate(-2deg);
+    }
+    50% {
+        transform: rotate(2deg);
+    }
+}
+@keyframes auth-sandfall {
+    0% {
+        transform: translate(-50%, 0);
+        opacity: 1;
+    }
+    100% {
+        transform: translate(-50%, 16px);
+        opacity: 0;
+    }
+}
+.auth-bob {
+    animation: auth-bob 2.4s ease-in-out infinite;
+}
+.auth-wobble {
+    animation: auth-wobble 3s ease-in-out infinite;
+}
+.auth-swing {
+    animation: auth-swing 4s ease-in-out infinite;
+}
+.auth-sandfall {
+    animation: auth-sandfall 0.8s linear infinite;
+}
+.font-mono-auth {
+    font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+}
+
 /* 메이플스토리 커서 */
 * {
     cursor: url('/cursors/point.cur') 0 0, auto;
