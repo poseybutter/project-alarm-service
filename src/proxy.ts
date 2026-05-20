@@ -1,6 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/signup", "/pending"];
+/**
+ * Supabase OAuth 콜백 처리 경로는 항상 통과시켜야 한다.
+ * (인증 직후 ?code= 쿼리로 돌아오는데, 막히면 세션 생성 자체가 불가능)
+ */
+const PUBLIC_PATHS = ["/login", "/signup", "/pending", "/auth/callback"];
 
 function isPublicPath(pathname: string): boolean {
     return PUBLIC_PATHS.some(
@@ -8,18 +12,31 @@ function isPublicPath(pathname: string): boolean {
     );
 }
 
+/** Supabase 세션 쿠키는 `sb-<projectRef>-auth-token` 또는 청크된 `.0`, `.1` 형태. */
+function hasSupabaseSession(req: NextRequest): boolean {
+    return req.cookies
+        .getAll()
+        .some(
+            (c) =>
+                c.name.startsWith("sb-") &&
+                c.name.includes("-auth-token") &&
+                Boolean(c.value),
+        );
+}
+
 export function proxy(req: NextRequest) {
     const { pathname } = req.nextUrl;
     const hasAccessToken = Boolean(req.cookies.get("accessToken")?.value);
+    const isAuthed = hasAccessToken || hasSupabaseSession(req);
 
-    if (hasAccessToken && pathname === "/login") {
+    if (isAuthed && pathname === "/login") {
         const url = req.nextUrl.clone();
         url.pathname = "/";
         url.search = "";
         return NextResponse.redirect(url);
     }
 
-    if (!hasAccessToken && !isPublicPath(pathname)) {
+    if (!isAuthed && !isPublicPath(pathname)) {
         const url = req.nextUrl.clone();
         url.pathname = "/login";
         url.search = "";

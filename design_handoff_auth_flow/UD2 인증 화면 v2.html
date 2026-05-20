@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>UD2 인증 화면 v2 — ZEP 픽셀 게임 UI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" />
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/sun-typeface/SUIT/fonts/variable/woff2/SUIT-Variable.css" />
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css" />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html, body { margin: 0; background: #fafaf9; font-family: 'SUIT Variable', 'Pretendard Variable', system-ui, sans-serif; color: #171717; }
+  *, *::before, *::after { box-sizing: border-box; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="v2/tokens.jsx"></script>
+<script type="text/babel" src="v2/primitives.jsx"></script>
+<script type="text/babel" src="v2/screens/login.jsx"></script>
+<script type="text/babel" src="v2/screens/signup.jsx"></script>
+<script type="text/babel" src="v2/screens/pending.jsx"></script>
+<script type="text/babel" src="v2/screens/admin.jsx"></script>
+<script type="text/babel" src="design-canvas.jsx"></script>
+
+<script type="text/babel" data-presets="env,react">
+function Brief() {
+  const Card = ({ title, body }) => (
+    <div className="p-5 rounded-xl bg-white border border-stone-200 border-t-[3px] border-t-amber-400">
+      <div className="text-[13px] font-extrabold tracking-tight mb-1.5">{title}</div>
+      <div className="text-[12px] leading-relaxed text-stone-600">{body}</div>
+    </div>
+  );
+  return (
+    <div className="w-[1440px] bg-white px-14 py-10" style={{ fontFamily: T2.font.sans }}>
+      <div className="flex items-center gap-3 mb-7">
+        <Logo size={36} withText={false} />
+        <div>
+          <div className="text-[11px] text-stone-400 font-bold tracking-wider" style={{ fontFamily: T2.font.mono }}>UD2 PUBLISHING · PRODUCT DESIGN</div>
+          <div className="text-[24px] font-black tracking-tight">인증 플로우 v2 — ZEP 픽셀 게임 UI</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-[1.4fr_1fr] gap-8 mb-7">
+        <div>
+          <div className="text-[11px] text-stone-400 font-bold mb-2.5" style={{ fontFamily: T2.font.mono }}>OVERVIEW</div>
+          <p className="text-[14px] leading-relaxed text-stone-600 max-w-[720px]">
+            ZEP 감성을 입힌 v2 — 기존 시스템(화이트 / SUIT / 앰버)은 그대로 두고
+            <b className="text-stone-900"> 픽셀 SVG 스프라이트 + 3D 게임 버튼 + 세그먼트 EXP 바 + 두꺼운 2px 보더</b>로 RPG 톤을 입혔습니다.
+            마스코트/모래시계/열쇠/방패는 모두 viewBox 1px 단위 픽셀로 그렸어요. 버튼은 하단 색 그림자로 입체감, 누르면 살짝 내려앉습니다.
+            카피는 게임어로 살짝 — "길드 입장", "비밀 열쇠", "관문 앞에서 대기", "입장 허가/거부" — 단, <b className="text-stone-900">에러/보안 메시지는 명확한 한국어 유지</b>.
+          </p>
+        </div>
+        <div>
+          <div className="text-[11px] text-stone-400 font-bold mb-2.5" style={{ fontFamily: T2.font.mono }}>COLOR TOKENS</div>
+          <div className="grid grid-cols-5 gap-2 mb-3">
+            {[
+              ["#ffffff", "bg", "border"],
+              ["#171717", "text", ""],
+              ["#44403c", "sub", ""],
+              ["#a8a29e", "mute", ""],
+              ["#f59e0b", "amber", ""],
+            ].map(([c, n, extra]) => (
+              <div key={c} className={`aspect-square rounded-lg flex items-end p-2 text-[10px] font-bold ${extra}`}
+                style={{ background: c, color: c === "#ffffff" ? "#171717" : "#fff", border: extra ? "1px solid #e7e5e4" : "none", fontFamily: T2.font.mono }}>
+                {n}
+              </div>
+            ))}
+          </div>
+          <div className="text-[12px] text-stone-600 space-y-1">
+            <div><b className="text-stone-900">Type</b> · SUIT Variable + Pretendard Variable + JetBrains Mono(코드/숫자)</div>
+            <div><b className="text-stone-900">Radius</b> · 8 / 10 / 12 / 20</div>
+            <div><b className="text-stone-900">Mode</b> · 라이트 고정 · 다크 X</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-4 gap-3">
+        <Card title="① 로그인 — '길드에 입장하기'"
+          body="좌측 폼 / 우측에 픽셀 마스코트 + 게임 상태창. EXP 바를 20세그먼트로 표현, 오늘의 퀘스트 3개를 게임 체크리스트로 노출. 버튼은 3D 입체감(하단 amber-700 그림자). 보안 메시지는 명확한 한국어 그대로." />
+        <Card title="② 회원가입 — '비밀 열쇠 입력'"
+          body="STEP 1: 'CHAPTER 01 · INVITATION' 큰 4+4 열쇠 입력 → '봉인 해제'. STEP 2: 'CHAPTER 02 · PROFILE' 정보 입력 + 가입 진척도 게임 바. 우측은 픽셀 두루마리/열쇠 + 게임 윈도우 톱니바 초대장." />
+        <Card title="③ 승인 대기 — '관문 앞에서 대기 중…'"
+          body="픽셀 모래시계 + 모래 떨어지는 애니메이션. 3단 진행도(📜 신청서 → 🔍 검토 → 🏰 입장)를 게임 퀘스트 단계처럼. 슬랙 알리기 액션 + 대기 중 +20 EXP 챌린지." />
+        <Card title="④ 관리자 — '모험가 심사'"
+          body="좌측 신청서 명부 / 중앙 캐릭터 카드 + 능력치 시트 스타일 자동 검증 / 우측 감사 로그 두루마리. 액션: '입장 허가' (emerald) / '입장 거부' (red). 모달은 게임 다이얼로그 톱니바." />
+      </div>
+
+      {/* 게임 UI 토큰 미리보기 */}
+      <div className="mt-8">
+        <div className="text-[11px] text-stone-400 font-bold mb-3" style={{ fontFamily: T2.font.mono }}>ZEP GAME UI TOKENS · 컴포넌트 미리보기</div>
+        <div className="flex flex-wrap items-center gap-5 p-5 rounded-xl bg-stone-50 border-2 border-stone-200">
+          <div className="flex items-center gap-2"><span className="text-[11px] text-stone-400 font-bold">Sprites</span>
+            <Hero scale={3} /><Hourglass scale={3} /><Key scale={3} /><Shield scale={3} /><Scroll scale={3} />
+          </div>
+          <div className="w-px h-12 bg-stone-200" />
+          <div className="flex items-center gap-1.5"><span className="text-[11px] text-stone-400 font-bold mr-1">Chips</span>
+            <ChipG tone="amber" icon="🛡️">던전 탐험가</ChipG>
+            <ChipG tone="red">D-1</ChipG>
+            <ChipG tone="green">입장</ChipG>
+          </div>
+          <div className="w-px h-12 bg-stone-200" />
+          <div className="flex items-center gap-2"><span className="text-[11px] text-stone-400 font-bold">Char</span>
+            <CharBox name="유" color="#f59e0b" size={36} level={12} />
+          </div>
+          <div className="w-px h-12 bg-stone-200" />
+          <div className="flex items-center gap-2"><span className="text-[11px] text-stone-400 font-bold">Buttons</span>
+            <Btn size="sm" variant="primary">길드 입장</Btn>
+            <Btn size="sm" variant="success">입장 허가</Btn>
+            <Btn size="sm" variant="danger">입장 거부</Btn>
+          </div>
+          <div className="w-full flex items-center gap-2">
+            <span className="text-[11px] text-stone-400 font-bold w-14">EXP Bar</span>
+            <div className="flex-1 max-w-[400px]"><GameBar value={82} max={100} segments={20} sub="1,240 / 1,500 EXP" /></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Snippets() {
+  const Block = ({ title, code, lang = "tsx" }) => (
+    <div className="rounded-xl bg-white border border-stone-200 overflow-hidden">
+      <div className="px-4 py-2.5 flex justify-between items-center border-b border-stone-100 bg-stone-50">
+        <span className="text-[12px] font-bold text-stone-900">{title}</span>
+        <span className="text-[10px] text-stone-400" style={{ fontFamily: T2.font.mono }}>{lang}</span>
+      </div>
+      <pre className="m-0 p-4 text-[11.5px] leading-relaxed overflow-auto" style={{ fontFamily: T2.font.mono, maxHeight: 380 }}>
+        <code className="text-stone-700">{code}</code>
+      </pre>
+    </div>
+  );
+  return (
+    <div className="w-[1440px] bg-stone-50 px-14 py-10" style={{ fontFamily: T2.font.sans }}>
+      <div className="mb-6">
+        <div className="text-[11px] text-stone-400 font-bold tracking-wider" style={{ fontFamily: T2.font.mono }}>HANDOFF</div>
+        <div className="text-[22px] font-black tracking-tight mt-1">Next.js + Tailwind 구현 스니펫</div>
+        <p className="text-[13px] text-stone-500 mt-1 max-w-[800px]">
+          Spring Boot가 JWT를 발급하고, status=pending 사용자는 보호 라우트 진입 시 /pending으로 라우팅되는 흐름.
+          Route Handler로 Spring을 프록시해서 토큰은 HttpOnly 쿠키로 격리합니다.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <Block title="app/(auth)/login/page.tsx — 로그인 클라이언트"
+code={`"use client";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+export default function LoginPage() {
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null); setLoading(true);
+    const r = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: pw }),
+    });
+    setLoading(false);
+    if (r.status === 403) return router.push("/pending");
+    if (!r.ok) return setErr("이메일 또는 비밀번호가 일치하지 않습니다.");
+    router.push("/quests");
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="w-[400px]">
+      {/* Input · Button · Checkbox 모두 v2 primitives 재사용 */}
+    </form>
+  );
+}`} />
+        <Block title="app/api/auth/login/route.ts — Spring 프록시"
+code={`import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+
+export async function POST(req: Request) {
+  const body = await req.json();
+
+  // 1) Spring Boot 인증 호출
+  const r = await fetch(\`\${process.env.SPRING_API}/auth/login\`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) return new NextResponse(null, { status: r.status });
+
+  // 2) JWT는 HttpOnly 쿠키로 — XSS로 토큰 탈취 방어
+  const { access, refresh, status } = await r.json();
+  cookies().set("ud2_at", access, {
+    httpOnly: true, secure: true, sameSite: "lax",
+    maxAge: 60 * 30, path: "/",
+  });
+  cookies().set("ud2_rt", refresh, {
+    httpOnly: true, secure: true, sameSite: "lax",
+    maxAge: 60 * 60 * 24 * 14, path: "/",
+  });
+
+  // 3) pending은 403 — 클라가 /pending으로 라우팅
+  if (status === "pending") return new NextResponse(null, { status: 403 });
+  return NextResponse.json({ ok: true });
+}`} />
+        <Block title="middleware.ts — 보호 라우트 + status 체크"
+code={`import { NextResponse, type NextRequest } from "next/server";
+import { jwtVerify } from "jose";
+
+const PUBLIC = ["/login", "/signup", "/pending"];
+
+export async function middleware(req: NextRequest) {
+  const { pathname } = req.nextUrl;
+  if (PUBLIC.some(p => pathname.startsWith(p))) return NextResponse.next();
+
+  const token = req.cookies.get("ud2_at")?.value;
+  if (!token) return NextResponse.redirect(new URL("/login", req.url));
+
+  try {
+    const { payload } = await jwtVerify(
+      token,
+      new TextEncoder().encode(process.env.JWT_SECRET!)
+    );
+    if (payload.status === "pending")
+      return NextResponse.redirect(new URL("/pending", req.url));
+    if (payload.role !== "admin" && pathname.startsWith("/admin"))
+      return NextResponse.redirect(new URL("/quests", req.url));
+    return NextResponse.next();
+  } catch {
+    return NextResponse.redirect(new URL("/login", req.url));
+  }
+}
+
+export const config = { matcher: ["/((?!_next|api|favicon).*)"] };`} />
+        <Block title="components/InviteCode.tsx — 4+4 입력"
+code={`"use client";
+import { useRef } from "react";
+
+export function InviteCode({ value, onChange, error }: {
+  value: [string, string];
+  onChange: (v: [string, string]) => void;
+  error?: string | null;
+}) {
+  const r0 = useRef<HTMLInputElement>(null);
+  const r1 = useRef<HTMLInputElement>(null);
+
+  const set = (i: 0 | 1, v: string) => {
+    const clean = v.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
+    const next: [string, string] = [...value]; next[i] = clean;
+    onChange(next);
+    if (clean.length === 4 && i === 0) r1.current?.focus();
+  };
+
+  const cls = (filled: boolean) =>
+    \`flex-1 h-16 text-center font-bold text-2xl tracking-[0.18em] uppercase
+     rounded-xl bg-white outline-none transition-all border font-mono
+     \${error ? "border-red-400 ring-4 ring-red-100"
+       : filled ? "border-amber-400 ring-4 ring-amber-100"
+       : "border-stone-200"}\`;
+
+  return (
+    <div className="flex items-center gap-3">
+      <input ref={r0} value={value[0]} onChange={e => set(0, e.target.value)}
+        maxLength={4} placeholder="XXXX" autoFocus className={cls(value[0].length === 4)} />
+      <span className="text-stone-300 font-bold text-xl">—</span>
+      <input ref={r1} value={value[1]} onChange={e => set(1, e.target.value)}
+        maxLength={4} placeholder="XXXX" className={cls(value[1].length === 4)} />
+    </div>
+  );
+}`} />
+        <Block title="app/(auth)/pending/page.tsx — 자동 폴링"
+code={`"use client";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+
+export default function PendingPage() {
+  const router = useRouter();
+  useEffect(() => {
+    const id = setInterval(async () => {
+      const r = await fetch("/api/auth/me");
+      const me = await r.json();
+      if (me.status === "active") router.push("/quests");
+      if (me.status === "rejected") router.push("/login?rejected=1");
+    }, 15000); // 15초 — 부하 vs UX 균형
+    return () => clearInterval(id);
+  }, []);
+
+  // 클라이언트에서 실시간으로 elapsed 시간 갱신
+  // PendingScreen 컴포넌트는 v2/screens/pending.jsx 재사용
+  return <PendingScreen />;
+}`} />
+        <Block title="app/api/admin/members/[id]/approve/route.ts"
+code={`import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+
+// POST /api/admin/members/:id/approve
+export async function POST(_: Request, { params }: { params: { id: string } }) {
+  const at = cookies().get("ud2_at")?.value;
+  if (!at) return new NextResponse(null, { status: 401 });
+
+  const r = await fetch(
+    \`\${process.env.SPRING_API}/admin/members/\${params.id}/approve\`,
+    { method: "POST", headers: { Authorization: \`Bearer \${at}\` } }
+  );
+  if (!r.ok) return new NextResponse(null, { status: r.status });
+
+  // Spring 측에서 audit_log에 자동 기록 (누가, 누구를, 언제, IP)
+  // + 새 멤버에게 알림(이메일/슬랙) 발송
+  return NextResponse.json(await r.json());
+}`} />
+      </div>
+
+      {/* 보안 UX 원칙 */}
+      <div className="mt-8">
+        <div className="text-[11px] text-stone-400 font-bold mb-3" style={{ fontFamily: T2.font.mono, letterSpacing: "0.05em" }}>
+          SECURITY UX · 보안 UX 원칙 9가지
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            ["에러 메시지는 모호하게", "'이메일 또는 비밀번호가 일치하지 않습니다' — 어느 쪽이 틀렸는지 절대 노출 X (계정 enumeration 방어)"],
+            ["JWT는 HttpOnly 쿠키", "localStorage 금지. XSS 시 토큰 탈취 차단. SameSite=lax + secure 필수, refresh도 동일"],
+            ["초대코드 4+4 분할", "8자 한 칸은 오타율 높음. 그룹 분리 + 자동 포커스. 1회 사용 + 5회 실패 IP 일시 차단"],
+            ["코드 검증을 정보 입력 전 분리", "잘못된 코드로 다른 폼 노출 X — STEP 1 통과 후에만 STEP 2 폼이 열림"],
+            ["pending은 403 → /pending", "로그인은 성공시키되 보호 라우트 차단. 신청자가 자기 상태를 명확히 인지"],
+            ["관리자 승인은 2-step", "리스트에서 바로 승인 X. 상세 → 모달 → 확정. 실수로 외부인 합류 방지"],
+            ["거절은 30일 락 + 알림", "신청자에게 결과 알림 발송. 동일 이메일 재신청 일시 제한"],
+            ["감사 로그를 의사결정 화면 옆에", "관리자가 결정할 때 컨텍스트(IP, 추천인, 코드 발급일)를 같은 화면에서 즉시 확인"],
+            ["외부 도메인은 시각적으로 명시", "@gmail.com 등은 빨간 '외부 도메인' 뱃지. 의식적 클릭 한 번 더"],
+          ].map(([h, b], i) => (
+            <div key={i} className="p-4 rounded-xl bg-amber-50/50 border border-amber-100">
+              <div className="flex gap-2 items-start mb-1.5">
+                <span className="text-[11px] font-bold text-amber-700 w-5" style={{ fontFamily: T2.font.mono }}>{String(i+1).padStart(2, "0")}</span>
+                <div className="text-[13px] font-extrabold text-stone-900">{h}</div>
+              </div>
+              <div className="text-[12px] text-stone-600 leading-relaxed pl-7">{b}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <DesignCanvas
+      title="UD2 인증 화면 v2 — ZEP 픽셀 게임 UI"
+      subtitle="픽셀 스프라이트 + 3D 버튼 + 세그먼트 EXP 바 (보안/기능 그대로)"
+    >
+      <DCSection id="brief" title="01 · 디자인 브리프 & 게이미피케이션 토큰">
+        <DCArtboard id="brief" label="개요 + 시스템 + 토큰" width={1440} height={700}>
+          <Brief />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="screens" title="02 · 화면 (1440 × 900)">
+        <DCArtboard id="login-v2" label="① 로그인" width={1440} height={900}>
+          <LoginV2 />
+        </DCArtboard>
+        <DCArtboard id="signup-v2" label="② 회원가입 (코드 우선 2-step)" width={1440} height={900}>
+          <SignupV2 />
+        </DCArtboard>
+        <DCArtboard id="pending-v2" label="③ 승인 대기" width={1440} height={900}>
+          <PendingV2 />
+        </DCArtboard>
+        <DCArtboard id="admin-v2" label="④ 관리자 멤버 승인" width={1440} height={900}>
+          <AdminV2 />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="handoff" title="03 · Next.js + Tailwind 구현 핸드오프">
+        <DCArtboard id="snippets" label="코드 스니펫 + 보안 UX 원칙" width={1440} height={1500}>
+          <Snippets />
+        </DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
