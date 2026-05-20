@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Nav from "@/components/Nav";
+import PageTransition from "@/components/PageTransition";
 import { AuthProvider } from "@/components/AuthProvider";
 
 /** 배포 후 아이콘이 폰에 안 바뀌면 숫자만 올려서 캐시 무효화 */
@@ -75,9 +76,9 @@ export default function RootLayout({
                     rel="stylesheet"
                 />
             </head>
-            <body className="bg-[#f7f6f3]">
+            <body className="bg-[#f7f6f3] overflow-x-hidden">
                 <AuthProvider>
-                    {children}
+                    <PageTransition>{children}</PageTransition>
                     <Nav />
                 </AuthProvider>
             </body>

@@ -509,7 +509,7 @@ export default function TasksPage() {
                     </div>
                 </div>
 
-                <div className="max-w-2xl mx-auto">
+                <div className="max-w-2xl mx-auto pb-24">
                     {/* 통계 */}
                     <div className="grid grid-cols-4 gap-2 px-4 py-3">
                         {[

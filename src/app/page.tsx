@@ -781,6 +781,7 @@ export default function HomePage() {
     const router = useRouter();
     const isGuest = member === "GUEST";
 
+    const channelIdRef = useRef(Math.random().toString(36).slice(2));
     const [player, setPlayer] = useState<Player | null>(null);
     const [quests, setQuests] = useState<Quest[]>([]);
     const [myTasks, setMyTasks] = useState<Task[]>([]);
@@ -929,7 +930,7 @@ export default function HomePage() {
 
             // Realtime 구독
             const channel = supabase
-                .channel("home-realtime")
+                .channel(`home-realtime-${channelIdRef.current}`)
                 .on(
                     "postgres_changes",
                     { event: "*", schema: "public", table: "quests" },
@@ -2194,7 +2195,8 @@ export default function HomePage() {
                                     </div>
                                     <div>
                                         <label className="mb-1.5 block text-xs font-medium text-stone-500">
-                                            프로젝트
+                                            프로젝트{" "}
+                                            <span className="text-red-500">*</span>
                                         </label>
                                         <div className="mb-2 flex rounded-lg bg-stone-100 p-0.5">
                                             <button
