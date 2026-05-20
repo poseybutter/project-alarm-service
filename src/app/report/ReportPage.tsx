@@ -1149,7 +1149,7 @@ export default function ReportPage() {
     const stats = {
         total: curTasks.length,
         done: curTasks.filter((t) => t.status === "완료").length,
-        workload: curTasks.reduce((s, t) => s + (t.workload || 0), 0),
+        workload: curTasks.filter((t) => !t.is_plan).reduce((s, t) => s + (t.workload || 0), 0),
     };
 
     function toggleExpand(member: string) {
