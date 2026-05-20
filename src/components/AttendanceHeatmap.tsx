@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { toLocalYmd } from "@/lib/toLocalYmd";
+import { TEAM_ID } from "@/lib/constants";
 
 type AttendanceHeatmapProps = {
     member: string;
@@ -129,6 +130,7 @@ export default function AttendanceHeatmap({ member }: AttendanceHeatmapProps) {
         const { data, error } = await supabase
             .from("attendance")
             .select("date, activity_count")
+            .eq("team_id", TEAM_ID)
             .eq("member", member)
             .gte("date", min)
             .lte("date", max);
