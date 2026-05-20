@@ -22,7 +22,7 @@ import "react-day-picker/dist/style.css";
 import { ko } from "date-fns/locale";
 import type { Player, Task, Quest } from "@/lib/types";
 import { formatWorkload } from "@/lib/utils";
-import { BAR_COLORS, MEMBERS, MEMBER_COLORS } from "@/lib/constants";
+import { BAR_COLORS, MEMBERS, MEMBER_COLORS, TEAM_ID } from "@/lib/constants";
 import { toLocalYmd } from "@/lib/toLocalYmd";
 import Select from "react-select";
 import { taskFilterProjectSelectStyles } from "@/lib/reactSelectStyles";
@@ -137,18 +137,20 @@ export default function ProfilePage() {
             { data: teamTaskData },
             { data: completedQuestData },
         ] = await Promise.all([
-            supabase.from("players").select("*"),
+            supabase.from("players").select("*").eq("team_id", TEAM_ID),
             supabase
                 .from("tasks")
                 .select("*")
+                .eq("team_id", TEAM_ID)
                 .eq("member", member)
                 .order("created_at", { ascending: false }),
-            supabase.from("tasks").select("*").in("member", MEMBERS),
+            supabase.from("tasks").select("*").eq("team_id", TEAM_ID).in("member", MEMBERS),
             isGuest
                 ? Promise.resolve({ data: [] as Quest[] })
                 : supabase
                       .from("quests")
                       .select("*")
+                      .eq("team_id", TEAM_ID)
                       .eq("member", member)
                       .eq("status", "완료")
                       .order("created_at", { ascending: false }),

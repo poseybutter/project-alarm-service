@@ -33,6 +33,7 @@ import {
     STATUS_COLORS,
     MEMBERS,
     WORKLOAD_PRESETS,
+    TEAM_ID,
 } from "@/lib/constants";
 import Avatar from "@/components/Avatar";
 import LevelUpOverlay from "@/components/LevelUpOverlay";
@@ -993,7 +994,8 @@ export default function HomePage() {
             try {
                 const { data: players, error: pErr } = await supabase
                     .from("players")
-                    .select("*");
+                    .select("*")
+                    .eq("team_id", TEAM_ID);
                 if (pErr || !players?.length) {
                     sessionStorage.removeItem(lockKey);
                     return;
@@ -1002,6 +1004,7 @@ export default function HomePage() {
                 const { data: tasks, error: tErr } = await supabase
                     .from("tasks")
                     .select("member, end_date")
+                    .eq("team_id", TEAM_ID)
                     .eq("status", "완료")
                     .not("end_date", "is", null)
                     .gte("end_date", startYmd)
@@ -1090,11 +1093,13 @@ export default function HomePage() {
             supabase
                 .from("players")
                 .select("*")
+                .eq("team_id", TEAM_ID)
                 .eq("name", member)
                 .maybeSingle(),
             supabase
                 .from("quests")
                 .select("*")
+                .eq("team_id", TEAM_ID)
                 .eq("member", member)
                 .neq("status", "완료")
                 .order("order_index", { ascending: true, nullsFirst: false })
@@ -1102,17 +1107,20 @@ export default function HomePage() {
             supabase
                 .from("tasks")
                 .select("*")
+                .eq("team_id", TEAM_ID)
                 .eq("member", member)
                 .order("end_date", { ascending: true }),
             isGuest
                 ? supabase
                       .from("tasks")
                       .select("*")
+                      .eq("team_id", TEAM_ID)
                       .order("end_date", { ascending: true })
                 : Promise.resolve({ data: [] as Task[] }),
             supabase
                 .from("projects")
                 .select("*")
+                .eq("team_id", TEAM_ID)
                 .order("name", { ascending: true }),
         ]);
         setPlayer(playerData);
@@ -1219,6 +1227,7 @@ export default function HomePage() {
                 task_id: null,
                 status: "대기",
                 order_index: maxOrder + 1,
+                team_id: TEAM_ID,
             },
         ]);
         setShowAddQuest(false);

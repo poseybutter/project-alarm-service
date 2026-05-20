@@ -13,7 +13,7 @@ import NotificationButton from "@/components/NotificationButton";
 import { useAuth } from "@/components/AuthProvider";
 import { PageSpinner } from "@/components/Spinner";
 import type { Task } from "@/lib/types";
-import { MEMBERS, LEADER, STATUS_COLORS } from "@/lib/constants";
+import { MEMBERS, LEADER, STATUS_COLORS, TEAM_ID } from "@/lib/constants";
 import { toLocalYmd } from "@/lib/toLocalYmd";
 import TiptapSectionEditor from "@/components/TiptapSectionEditor";
 import Select from "react-select";
@@ -705,6 +705,7 @@ export default function ReportPage() {
             .select(
                 "project, maintenance, etc, notice, checklist, okr, is_locked, edited_by, updated_at",
             )
+            .eq("team_id", TEAM_ID)
             .eq("week_start", weekStart)
             .maybeSingle();
 
@@ -736,6 +737,7 @@ export default function ReportPage() {
         const { data: prevData } = await supabase
             .from("briefings")
             .select("notice, checklist")
+            .eq("team_id", TEAM_ID)
             .eq("week_start", prevWeekStart)
             .maybeSingle();
 
@@ -780,6 +782,7 @@ export default function ReportPage() {
         const { data } = await supabase
             .from("assignments")
             .select("*")
+            .eq("team_id", TEAM_ID)
             .order("sort_order", { ascending: true })
             .order("created_at", { ascending: true });
         setAssignments((data as Assignment[]) || []);
@@ -809,6 +812,7 @@ export default function ReportPage() {
         const { data } = await supabase
             .from("tasks")
             .select("*")
+            .eq("team_id", TEAM_ID)
             .order("created_at", { ascending: false });
         setTasks(data || []);
     }, []);
@@ -989,6 +993,7 @@ export default function ReportPage() {
                     is_locked: briefing?.is_locked ?? false,
                     edited_by: currentMember ?? null,
                     updated_at: new Date().toISOString(),
+                    team_id: TEAM_ID,
                 },
                 { onConflict: "week_start" },
             );
@@ -1021,6 +1026,7 @@ export default function ReportPage() {
                     is_locked: briefing?.is_locked ?? false,
                     edited_by: currentMember ?? null,
                     updated_at: new Date().toISOString(),
+                    team_id: TEAM_ID,
                 },
                 { onConflict: "week_start" },
             );
@@ -1056,6 +1062,7 @@ export default function ReportPage() {
                     is_locked: briefing?.is_locked ?? false,
                     edited_by: currentMember ?? null,
                     updated_at: new Date().toISOString(),
+                    team_id: TEAM_ID,
                 },
                 { onConflict: "week_start" },
             );
@@ -1091,6 +1098,7 @@ export default function ReportPage() {
                     is_locked: briefing?.is_locked ?? false,
                     edited_by: currentMember ?? null,
                     updated_at: new Date().toISOString(),
+                    team_id: TEAM_ID,
                 },
                 { onConflict: "week_start" },
             );
@@ -1124,6 +1132,7 @@ export default function ReportPage() {
                     is_locked: briefing?.is_locked ?? false,
                     edited_by: currentMember ?? null,
                     updated_at: new Date().toISOString(),
+                    team_id: TEAM_ID,
                 },
                 { onConflict: "week_start" },
             );
@@ -1269,6 +1278,7 @@ export default function ReportPage() {
             const { error } = await supabase.from("assignments").insert({
                 ...payload,
                 sort_order: maxSort + 1,
+                team_id: TEAM_ID,
             });
             if (error) {
                 alert("추가 실패: " + error.message);

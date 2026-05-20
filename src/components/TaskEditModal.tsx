@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
 import type { Task, Project } from "@/lib/types";
 import { formatWorkload, normalizeProject } from "@/lib/utils";
-import { WORKLOAD_PRESETS } from "@/lib/constants";
+import { WORKLOAD_PRESETS, TEAM_ID } from "@/lib/constants";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { DayPicker, DateRange } from "react-day-picker";
 import { ko } from "date-fns/locale";
@@ -151,6 +151,7 @@ export default function TaskEditModal({
             const { data } = await supabase
                 .from("projects")
                 .select("*")
+                .eq("team_id", TEAM_ID)
                 .order("name");
             if (cancelled) return;
             setProjects(

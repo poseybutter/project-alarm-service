@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./AuthProvider";
 import { getDiff } from "@/lib/utils";
+import { TEAM_ID } from "@/lib/constants";
 
 type Notification = {
     id: string;
@@ -74,11 +75,13 @@ export default function NotificationDrawer({
             supabase
                 .from("tasks")
                 .select("*")
+                .eq("team_id", TEAM_ID)
                 .eq("member", member)
                 .neq("status", "완료"),
             supabase
                 .from("accessibility")
                 .select("*")
+                .eq("team_id", TEAM_ID)
                 .eq("member", member)
                 .eq("inspection_status", "신청필요"),
         ]);

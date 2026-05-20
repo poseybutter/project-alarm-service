@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { MEMBER_COLORS } from '@/lib/constants'
+import { MEMBER_COLORS, TEAM_ID } from '@/lib/constants'
 
 // 전역 캐시
 const avatarCache: Record<string, string | null> = {}
@@ -24,7 +24,7 @@ export default function Avatar({
       setUrl(avatarCache[name])
       return
     }
-    supabase.from('players').select('avatar_url').eq('name', name).single()
+    supabase.from('players').select('avatar_url').eq('team_id', TEAM_ID).eq('name', name).single()
       .then(({ data }) => {
         const u = data?.avatar_url || null
         avatarCache[name] = u

@@ -1,3 +1,5 @@
+export const TEAM_ID = 'ud2'
+
 export const MEMBERS = ['조현석', '조정연', '이헌희', '이지은']
 export const LEADER  = '조현석'
 
