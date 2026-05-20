@@ -1,0 +1,615 @@
+"use client";
+
+import { useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { GameButton } from "@/components/auth/GameButton";
+import { GameBar } from "@/components/auth/GameBar";
+import { AuthField } from "@/components/auth/AuthField";
+import { PixKey, Scroll, Shield } from "@/components/auth/Pix";
+import {
+    AuthLogo,
+    CharBox,
+    Chip,
+    Icons,
+} from "@/components/auth/atoms";
+
+const PW_LABELS = ["", "취약", "보통", "양호", "강함"];
+const PW_COLORS = ["#a8a29e", "#dc2626", "#f59e0b", "#0ea5e9", "#10b981"];
+
+export default function SignupPage() {
+    const router = useRouter();
+    const [step, setStep] = useState<0 | 1>(0);
+    const [code, setCode] = useState<[string, string]>(["", ""]);
+    const [codeErr, setCodeErr] = useState<string | null>(null);
+    const [verifying, setVerifying] = useState(false);
+
+    const [name, setName] = useState("");
+    const [email, setEmail] = useState("");
+    const [pw, setPw] = useState("");
+    const [showPw, setShowPw] = useState(false);
+    const [agree, setAgree] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const [submitErr, setSubmitErr] = useState<string | null>(null);
+
+    const r0 = useRef<HTMLInputElement>(null);
+    const r1 = useRef<HTMLInputElement>(null);
+
+    const codeJoined = code.join("");
+    const codeFull = codeJoined.length === 8;
+
+    function updateCode(i: 0 | 1, v: string) {
+        const cleaned = v
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, "")
+            .slice(0, 4);
+        const next: [string, string] = [...code] as [string, string];
+        next[i] = cleaned;
+        setCode(next);
+        setCodeErr(null);
+        if (cleaned.length === 4 && i === 0) r1.current?.focus();
+    }
+
+    function verifyCode() {
+        if (!codeFull) return;
+        setVerifying(true);
+        setCodeErr(null);
+        // 백엔드 검증은 최종 submit 단계에서 invitationCode 검증되지만,
+        // 디자인 의도대로 STEP1에서 형식 검증 후 다음 단계로 진입.
+        setTimeout(() => {
+            setVerifying(false);
+            setStep(1);
+        }, 400);
+    }
+
+    const pwStrength = useMemo(() => {
+        let s = 0;
+        if (pw.length >= 8) s++;
+        if (/[A-Z]/.test(pw)) s++;
+        if (/[0-9]/.test(pw)) s++;
+        if (/[^A-Za-z0-9]/.test(pw)) s++;
+        return s;
+    }, [pw]);
+
+    const pwLabel = PW_LABELS[pwStrength];
+    const pwColor = PW_COLORS[pwStrength];
+
+    const filled = [
+        name.length >= 2,
+        /\S+@\S+\.\S+/.test(email),
+        pwStrength >= 2,
+        agree,
+    ].filter(Boolean).length;
+    const formValid = filled === 4;
+
+    async function submit() {
+        if (!formValid || submitting) return;
+        setSubmitErr(null);
+        setSubmitting(true);
+        try {
+            const res = await fetch("/api/auth/signup", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    email,
+                    password: pw,
+                    name,
+                    invitationCode: codeJoined,
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                if (
+                    typeof data.message === "string" &&
+                    /열쇠|초대|invitation|code/i.test(data.message)
+                ) {
+                    setStep(0);
+                    setCodeErr(data.message);
+                    return;
+                }
+                setSubmitErr(
+                    data.message || "가입 신청에 실패했어요.",
+                );
+                return;
+            }
+            router.push("/pending");
+        } catch {
+            setSubmitErr(
+                "네트워크 오류가 발생했어요. 잠시 후 다시 시도해 주세요.",
+            );
+        } finally {
+            setSubmitting(false);
+        }
+    }
+
+    const codeBorderState = (segment: string) =>
+        codeErr
+            ? "border-red-400 shadow-[0_0_0_4px_rgba(248,113,113,0.18)]"
+            : segment.length === 4
+              ? "border-amber-400 bg-amber-50 shadow-[0_0_0_4px_rgba(245,158,11,0.2)]"
+              : "border-stone-300";
+
+    return (
+        <div
+            className="min-h-screen w-full bg-white text-stone-900 flex"
+            style={{
+                fontFamily:
+                    "'SUIT Variable', 'Pretendard Variable', system-ui, sans-serif",
+            }}
+        >
+            {/* LEFT — 폼 */}
+            <div className="w-full lg:w-[640px] flex flex-col justify-between px-8 lg:px-16 py-10 border-r-2 border-stone-200 min-h-screen">
+                <div className="flex items-center justify-between">
+                    <AuthLogo size={32} />
+                    <div className="flex items-center gap-1.5 text-[11px] text-stone-400 font-bold">
+                        <span
+                            className={step === 0 ? "text-amber-700" : ""}
+                        >
+                            STEP 01 · 열쇠
+                        </span>
+                        <span>›</span>
+                        <span
+                            className={step === 1 ? "text-amber-700" : ""}
+                        >
+                            STEP 02 · 모험가 정보
+                        </span>
+                    </div>
+                </div>
+
+                <div className="max-w-[460px] w-full">
+                    {step === 0 && (
+                        <div>
+                            <div className="text-[11px] text-amber-700 font-extrabold mb-2 tracking-widest">
+                                CHAPTER 01 · INVITATION
+                            </div>
+                            <h1 className="text-[30px] font-black tracking-tight leading-[1.15]">
+                                비밀 열쇠를 입력하세요.
+                            </h1>
+                            <p className="text-[14px] text-stone-500 mt-2 mb-7">
+                                길드장이 발급한{" "}
+                                <b className="text-stone-700">
+                                    8자리 열쇠 코드
+                                </b>
+                                로 잠긴 문을 열 수 있어요.
+                            </p>
+
+                            <div className="mb-2 flex justify-between items-baseline">
+                                <span className="text-[12px] font-extrabold text-stone-700 tracking-tight">
+                                    🔑 비밀 열쇠 코드
+                                </span>
+                                <span className="text-[11px] font-mono-auth font-bold text-stone-400">
+                                    4 + 4 · A-Z / 0-9
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                                <input
+                                    ref={r0}
+                                    value={code[0]}
+                                    onChange={(e) =>
+                                        updateCode(0, e.target.value)
+                                    }
+                                    onKeyDown={(e) =>
+                                        e.key === "Enter" &&
+                                        code[0].length === 4 &&
+                                        r1.current?.focus()
+                                    }
+                                    maxLength={4}
+                                    placeholder="XXXX"
+                                    autoFocus
+                                    aria-label="초대코드 앞 4자리"
+                                    className={`min-w-0 flex-1 h-16 text-center font-black text-[20px] sm:text-[26px] tracking-[0.12em] sm:tracking-[0.18em] uppercase rounded-lg bg-white outline-none transition-all border-[3px] font-mono-auth ${codeBorderState(code[0])}`}
+                                />
+                                <span className="text-stone-300 font-black text-2xl">
+                                    —
+                                </span>
+                                <input
+                                    ref={r1}
+                                    value={code[1]}
+                                    onChange={(e) =>
+                                        updateCode(1, e.target.value)
+                                    }
+                                    onKeyDown={(e) =>
+                                        e.key === "Enter" &&
+                                        codeFull &&
+                                        verifyCode()
+                                    }
+                                    maxLength={4}
+                                    placeholder="XXXX"
+                                    aria-label="초대코드 뒤 4자리"
+                                    className={`min-w-0 flex-1 h-16 text-center font-black text-[20px] sm:text-[26px] tracking-[0.12em] sm:tracking-[0.18em] uppercase rounded-lg bg-white outline-none transition-all border-[3px] font-mono-auth ${codeBorderState(code[1])}`}
+                                />
+                            </div>
+
+                            {codeErr && (
+                                <div className="mt-2 text-[12px] text-red-600 font-bold flex gap-1 items-center">
+                                    ⚠ {codeErr}
+                                </div>
+                            )}
+
+                            <div className="mt-3 text-[11px] font-bold text-stone-500 flex items-center gap-1.5">
+                                🛡️ 열쇠는 1회만 사용 가능 · 5회 실패 시 IP
+                                일시 차단
+                            </div>
+
+                            <div className="mt-6">
+                                <GameButton
+                                    variant="primary"
+                                    size="lg"
+                                    full
+                                    disabled={!codeFull || verifying}
+                                    onClick={verifyCode}
+                                    rightIcon={Icons.arrow()}
+                                >
+                                    {verifying ? "열쇠 확인 중…" : "🔓 봉인 해제"}
+                                </GameButton>
+                            </div>
+
+                            <div className="mt-7 p-4 rounded-lg bg-amber-50 border-2 border-amber-300">
+                                <div className="flex items-start gap-3">
+                                    <Scroll scale={3} />
+                                    <div className="text-[12px] text-amber-900 leading-relaxed">
+                                        <b className="text-stone-900">
+                                            열쇠가 없으신가요?
+                                        </b>
+                                        <br />
+                                        길드장(관리자)에게 열쇠 발급을 요청하세요.
+                                        슬랙{" "}
+                                        <span className="font-mono-auth font-bold">
+                                            #ud2-onboarding
+                                        </span>{" "}
+                                        채널에서도 받을 수 있어요.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {step === 1 && (
+                        <div>
+                            <div className="flex items-center gap-2 mb-2">
+                                <span className="text-[11px] text-amber-700 font-extrabold tracking-widest">
+                                    CHAPTER 02 · PROFILE
+                                </span>
+                                <Chip tone="green" icon={Icons.check(10)}>
+                                    봉인 해제됨
+                                </Chip>
+                            </div>
+                            <h1 className="text-[28px] font-black tracking-tight leading-[1.2]">
+                                모험가 정보 등록
+                            </h1>
+                            <p className="text-[13px] text-stone-500 mt-1 mb-4">
+                                길드장이 신청을 검토하고 승인하면 정식 길드원이
+                                돼요.
+                            </p>
+
+                            <div className="mb-5">
+                                <GameBar
+                                    value={filled}
+                                    max={4}
+                                    segments={12}
+                                    label="가입 진척도"
+                                    sub={`${filled} / 4`}
+                                />
+                            </div>
+
+                            <div className="flex flex-col gap-3">
+                                <AuthField
+                                    label="이름"
+                                    placeholder="홍길동"
+                                    icon={Icons.user()}
+                                    value={name}
+                                    onChange={setName}
+                                    autoFocus
+                                    name="name"
+                                    autoComplete="name"
+                                    hint={
+                                        name.length >= 2 ? (
+                                            <span className="text-emerald-600 font-bold">
+                                                ✓ 확인
+                                            </span>
+                                        ) : (
+                                            "2자 이상"
+                                        )
+                                    }
+                                />
+                                <AuthField
+                                    label="이메일"
+                                    placeholder="name@ud2.co"
+                                    icon={Icons.mail()}
+                                    value={email}
+                                    onChange={setEmail}
+                                    name="email"
+                                    autoComplete="email"
+                                    type="email"
+                                    hint={
+                                        /\S+@\S+\.\S+/.test(email) ? (
+                                            <span className="text-emerald-600 font-bold">
+                                                ✓ 확인
+                                            </span>
+                                        ) : (
+                                            "회사 이메일 권장"
+                                        )
+                                    }
+                                />
+                                <div>
+                                    <AuthField
+                                        label="비밀번호"
+                                        type={showPw ? "text" : "password"}
+                                        placeholder="8자 이상, 대문자/숫자 포함"
+                                        icon={Icons.lock()}
+                                        value={pw}
+                                        onChange={setPw}
+                                        name="password"
+                                        autoComplete="new-password"
+                                        right={
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowPw(!showPw)}
+                                                className="p-2 text-stone-400 hover:text-stone-600 flex"
+                                                aria-label={
+                                                    showPw
+                                                        ? "비밀번호 숨기기"
+                                                        : "비밀번호 보이기"
+                                                }
+                                            >
+                                                {showPw
+                                                    ? Icons.eyeOff()
+                                                    : Icons.eye()}
+                                            </button>
+                                        }
+                                    />
+                                    {pw && (
+                                        <div className="mt-2 flex gap-1 items-center">
+                                            {[0, 1, 2, 3].map((i) => (
+                                                <div
+                                                    key={i}
+                                                    className="flex-1 h-1.5 rounded-[1px] border"
+                                                    style={{
+                                                        background:
+                                                            i < pwStrength
+                                                                ? pwColor
+                                                                : "#e7e5e4",
+                                                        borderColor:
+                                                            i < pwStrength
+                                                                ? pwColor
+                                                                : "#d6d3d1",
+                                                    }}
+                                                />
+                                            ))}
+                                            <span
+                                                className="text-[11px] font-extrabold ml-2 w-12 text-right font-mono-auth"
+                                                style={{ color: pwColor }}
+                                            >
+                                                {pwLabel}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <label
+                                    className="flex items-start gap-2.5 mt-1 cursor-pointer select-none"
+                                    onClick={() => setAgree(!agree)}
+                                >
+                                    <span
+                                        className={`mt-0.5 w-[18px] h-[18px] grid place-items-center text-white flex-shrink-0 border-2 transition-colors ${agree ? "bg-amber-400 border-amber-700" : "bg-white border-stone-300"}`}
+                                    >
+                                        {agree && Icons.check(12)}
+                                    </span>
+                                    <span className="text-[12px] text-stone-600 leading-relaxed">
+                                        <b className="text-stone-900">
+                                            길드 행동 강령
+                                        </b>
+                                        과{" "}
+                                        <b className="text-stone-900">
+                                            개인정보 처리방침
+                                        </b>
+                                        에 동의하며, 내 작업 활동이 길드원에게
+                                        표시될 수 있다는 점에 동의합니다.
+                                    </span>
+                                </label>
+
+                                {submitErr && (
+                                    <div className="text-[12px] text-red-600 font-bold flex gap-1 items-center">
+                                        ⚠ {submitErr}
+                                    </div>
+                                )}
+
+                                <div className="flex gap-2 mt-2">
+                                    <GameButton
+                                        variant="ghost"
+                                        size="lg"
+                                        onClick={() => setStep(0)}
+                                    >
+                                        ← 이전
+                                    </GameButton>
+                                    <GameButton
+                                        variant="primary"
+                                        size="lg"
+                                        full
+                                        disabled={!formValid || submitting}
+                                        onClick={submit}
+                                        rightIcon={Icons.arrow()}
+                                    >
+                                        {submitting
+                                            ? "제출 중…"
+                                            : "📜 가입 신청서 제출"}
+                                    </GameButton>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex justify-between text-[12px] text-stone-400 font-bold">
+                    <span>
+                        이미 길드원?{" "}
+                        <a
+                            className="text-amber-700 cursor-pointer"
+                            onClick={() => router.push("/login")}
+                        >
+                            로그인
+                        </a>
+                    </span>
+                    <span>© 2026 UD2</span>
+                </div>
+            </div>
+
+            {/* RIGHT — 초대장 비주얼 */}
+            <div className="hidden lg:block flex-1 relative overflow-hidden bg-gradient-to-br from-amber-50 via-amber-100/40 to-stone-50">
+                <div
+                    className="absolute inset-0 opacity-40"
+                    style={{
+                        backgroundImage:
+                            "radial-gradient(circle at 1px 1px, #b45309 1px, transparent 0)",
+                        backgroundSize: "16px 16px",
+                        maskImage:
+                            "radial-gradient(700px 600px at 60% 40%, #000, transparent 75%)",
+                        WebkitMaskImage:
+                            "radial-gradient(700px 600px at 60% 40%, #000, transparent 75%)",
+                    }}
+                />
+
+                <div className="relative h-full flex flex-col justify-center items-center p-12 min-h-screen">
+                    <div className="mb-8 flex items-end gap-6">
+                        <div className="auth-wobble">
+                            {step === 0 ? (
+                                <PixKey scale={6} />
+                            ) : (
+                                <Scroll scale={6} />
+                            )}
+                        </div>
+                    </div>
+
+                    <div
+                        className="w-[440px] bg-white border-2 border-stone-800 rounded-xl overflow-hidden"
+                        style={{ boxShadow: "0 6px 0 0 #1c1917" }}
+                    >
+                        <div className="h-7 bg-amber-400 border-b-2 border-stone-800 grid place-items-center">
+                            <div className="text-[10px] font-extrabold text-amber-950 tracking-widest font-mono-auth">
+                                ★ INVITATION FROM GUILD MASTER ★
+                            </div>
+                        </div>
+
+                        <div className="p-6">
+                            <div className="flex items-start justify-between mb-5">
+                                <div>
+                                    <div className="text-[10px] text-amber-700 font-mono-auth font-extrabold tracking-widest">
+                                        WORKSPACE
+                                    </div>
+                                    <div className="text-[20px] font-black tracking-tight text-stone-900 mt-1">
+                                        UD2팀 길드
+                                    </div>
+                                    <div className="text-[12px] text-stone-500 mt-0.5">
+                                        Markup Story · 봄 시즌
+                                    </div>
+                                </div>
+                                <Shield scale={3} />
+                            </div>
+
+                            <div className="text-[10px] text-stone-400 font-mono-auth font-bold mb-1.5 tracking-widest">
+                                길드장
+                            </div>
+                            <div className="flex items-center gap-2 mb-5">
+                                <CharBox
+                                    name="유"
+                                    color="#f59e0b"
+                                    size={32}
+                                    level={12}
+                                />
+                                <div className="text-[13px]">
+                                    <b className="text-stone-900">주먹펴고 일어서</b>
+                                    <span className="text-stone-500">
+                                        {" "}
+                                        · 길드장 (Admin)
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="border-t-2 border-dashed border-stone-200 pt-4 grid grid-cols-3 gap-2.5">
+                                {[
+                                    { l: "VALID", v: "26.06.10" },
+                                    { l: "SLOTS", v: "3 / 5" },
+                                    { l: "START", v: "Lv. 1" },
+                                ].map((m) => (
+                                    <div
+                                        key={m.l}
+                                        className="bg-stone-50 border-2 border-stone-200 rounded-md p-2 text-center"
+                                    >
+                                        <div className="text-[9px] text-stone-400 font-mono-auth font-extrabold mb-1">
+                                            {m.l}
+                                        </div>
+                                        <div className="text-[12px] font-mono-auth font-extrabold text-stone-900">
+                                            {m.v}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="mt-5 pt-4 border-t-2 border-dashed border-stone-200">
+                                <div className="text-[10px] text-stone-400 font-mono-auth font-extrabold mb-2 tracking-widest">
+                                    {step === 0
+                                        ? "YOUR KEY · 좌측에 입력"
+                                        : "✓ KEY VERIFIED"}
+                                </div>
+                                <div className="flex items-center gap-1.5 justify-center">
+                                    {(code[0] + "----")
+                                        .slice(0, 4)
+                                        .split("")
+                                        .map((_, i) => (
+                                            <div
+                                                key={`a-${i}`}
+                                                className={`w-8 h-10 grid place-items-center font-black text-[18px] border-2 rounded font-mono-auth ${code[0][i] ? "bg-amber-100 border-amber-500 text-amber-900" : "bg-stone-50 border-stone-300 text-stone-300"}`}
+                                            >
+                                                {code[0][i] || "·"}
+                                            </div>
+                                        ))}
+                                    <span className="text-stone-400 font-black mx-0.5">
+                                        —
+                                    </span>
+                                    {(code[1] + "----")
+                                        .slice(0, 4)
+                                        .split("")
+                                        .map((_, i) => (
+                                            <div
+                                                key={`b-${i}`}
+                                                className={`w-8 h-10 grid place-items-center font-black text-[18px] border-2 rounded font-mono-auth ${code[1][i] ? "bg-amber-100 border-amber-500 text-amber-900" : "bg-stone-50 border-stone-300 text-stone-300"}`}
+                                            >
+                                                {code[1][i] || "·"}
+                                            </div>
+                                        ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="w-[440px] mt-6 flex items-center gap-3 text-[12px] text-stone-600">
+                        <div className="flex">
+                            {[
+                                { n: "석", c: "#f59e0b", lv: 12 },
+                                { n: "연", c: "#0ea5e9", lv: 9 },
+                                { n: "헌", c: "#10b981", lv: 7 },
+                                { n: "지", c: "#ef4444", lv: 6 },
+                            ].map((p, i) => (
+                                <div
+                                    key={i}
+                                    style={{ marginLeft: i ? -10 : 0 }}
+                                >
+                                    <CharBox
+                                        name={p.n}
+                                        color={p.c}
+                                        size={36}
+                                        level={p.lv}
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                        <div>
+                            <b className="text-stone-900">4명의 길드원</b>이 새
+                            동료를 기다려요
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
