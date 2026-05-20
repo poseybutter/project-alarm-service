@@ -417,7 +417,8 @@ export default function TaskEditModal({
                     </div>
                     <div>
                         <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                            프로젝트
+                            프로젝트{" "}
+                            <span className="text-red-500">*</span>
                         </label>
                         <div className="flex bg-stone-100 rounded-lg p-0.5 mb-2">
                             <button
