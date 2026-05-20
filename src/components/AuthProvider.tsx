@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { getMemberName } from "@/lib/auth";
+import { TEAM_ID } from "@/lib/constants";
 
 type AuthContextType = {
     user: User | null;
@@ -115,6 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data } = await supabase
             .from("players")
             .select("avatar_url, role")
+            .eq("team_id", TEAM_ID)
             .eq("name", memberName)
             .maybeSingle();
         setAvatarUrl(data?.avatar_url || null);

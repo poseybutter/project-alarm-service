@@ -7,6 +7,7 @@ import {
     badgeSelectStyles,
     modalFormSelectStyles,
 } from "@/lib/reactSelectStyles";
+import { TEAM_ID } from "@/lib/constants";
 
 const MEMBERS = ["조현석", "조정연", "이헌희", "이지은"];
 const INSPECTION_STATUS = ["갱신완료", "신청완료", "신청불필요"];
@@ -93,6 +94,7 @@ export default function AccessibilityPage() {
         const { data } = await supabase
             .from("accessibility")
             .select("*")
+            .eq("team_id", TEAM_ID)
             .order("end_date");
         setItems(
             (data || []).map((row) => ({
@@ -115,6 +117,7 @@ export default function AccessibilityPage() {
                 start_date: form.start_date || null,
                 end_date: form.end_date || null,
                 note: form.note || null,
+                team_id: TEAM_ID,
             },
         ]);
         setShowModal(false);

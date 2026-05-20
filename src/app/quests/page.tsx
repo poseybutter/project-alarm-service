@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { awardExp } from '@/lib/maple'
 import Select from 'react-select'
 import { modalFormSelectStyles } from '@/lib/reactSelectStyles'
+import { TEAM_ID } from '@/lib/constants'
 
 const MEMBERS = ['조현석', '조정연', '이헌희', '이지은']
 const MEMBER_COLORS: Record<string, string> = {
@@ -49,6 +50,7 @@ export default function QuestsPage() {
     const { data } = await supabase
       .from('quests')
       .select('*')
+      .eq('team_id', TEAM_ID)
       .order('created_at', { ascending: false })
     setQuests(data || [])
     setLoading(false)
@@ -67,6 +69,7 @@ export default function QuestsPage() {
       content : form.content,
       status  : '대기',
       end_date: form.end_date || null,
+      team_id : TEAM_ID,
     }])
     setShowModal(false)
     setForm({ member: filter, proj: '', content: '', end_date: '' })

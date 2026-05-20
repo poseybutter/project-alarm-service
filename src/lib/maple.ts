@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import { sendLevelUpMessage } from "./googleChat";
 import { toLocalYmd } from "@/lib/toLocalYmd";
+import { TEAM_ID } from "./constants";
 
 export const LEVELS = [
     { level: 1, name: "🌱 풋내기 모험가", exp: 0 },
@@ -46,6 +47,7 @@ async function bumpAttendanceActivity(member: string, delta: number = 1) {
     const { data: existing } = await supabase
         .from("attendance")
         .select("activity_count")
+        .eq("team_id", TEAM_ID)
         .eq("member", member)
         .eq("date", today)
         .maybeSingle();
@@ -56,6 +58,7 @@ async function bumpAttendanceActivity(member: string, delta: number = 1) {
             member,
             date: today,
             activity_count: newCount,
+            team_id: TEAM_ID,
         },
         { onConflict: "member,date" },
     );
@@ -71,6 +74,7 @@ export async function awardExp(
     const { data: player } = await supabase
         .from("players")
         .select("*")
+        .eq("team_id", TEAM_ID)
         .eq("name", member)
         .single();
 
@@ -130,6 +134,7 @@ export async function attendanceCheck(member: string) {
     const { data: player } = await supabase
         .from("players")
         .select("*")
+        .eq("team_id", TEAM_ID)
         .eq("name", member)
         .single();
 

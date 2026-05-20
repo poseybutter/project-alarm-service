@@ -15,7 +15,7 @@ import Avatar from "@/components/Avatar";
 import { PageSpinner } from "@/components/Spinner";
 import type { Accessibility, Project } from "@/lib/types";
 import { getDiff, normalizeProject, getProjectMembers } from "@/lib/utils";
-import { MEMBERS } from "@/lib/constants";
+import { MEMBERS, TEAM_ID } from "@/lib/constants";
 import Select from "react-select";
 import {
     selectStyles,
@@ -215,10 +215,12 @@ export default function ManagePage() {
             supabase
                 .from("projects")
                 .select("*")
+                .eq("team_id", TEAM_ID)
                 .order("name", { ascending: true }),
             supabase
                 .from("accessibility")
                 .select("*")
+                .eq("team_id", TEAM_ID)
                 .order("end_date", { ascending: true }),
         ]);
         setProjects(
@@ -333,7 +335,7 @@ export default function ManagePage() {
                 return;
             }
         } else {
-            const { error } = await supabase.from("projects").insert([payload]);
+            const { error } = await supabase.from("projects").insert([{ ...payload, team_id: TEAM_ID }]);
             if (error) {
                 alert("추가 실패: " + error.message);
                 return;
@@ -423,6 +425,7 @@ export default function ManagePage() {
                     note: accForm.note || null,
                     inspection_status: accForm.inspection_status || "신청필요",
                     is_new: accForm.is_new,
+                    team_id: TEAM_ID,
                 },
             ]);
             if (error) {
