@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { GameButton } from "@/components/auth/GameButton";
 import { Hourglass, Gem } from "@/components/auth/Pix";
+import { FallingLeaves } from "@/components/auth/FallingLeaves";
 import {
     AuthLogo,
     CharBox,
@@ -99,6 +100,7 @@ export default function PendingPage() {
                         "radial-gradient(900px 700px at 50% 50%, #000, transparent 80%)",
                 }}
             />
+            <FallingLeaves count={18} />
 
             <div className="relative h-16 px-10 flex items-center justify-between border-b-2 border-stone-200 bg-white/80 backdrop-blur">
                 <AuthLogo size={28} />

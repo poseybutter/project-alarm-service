@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { signInWithGoogle } from "@/lib/auth";
 import { GameButton } from "@/components/auth/GameButton";
 import { GameBar } from "@/components/auth/GameBar";
-import { Hero, Gem } from "@/components/auth/Pix";
+import { Hero } from "@/components/auth/Pix";
+import { FallingLeaves } from "@/components/auth/FallingLeaves";
 import { NotMemberModal } from "@/components/auth/NotMemberModal";
 import {
     AuthLogo,
@@ -31,103 +32,33 @@ function LoginContent() {
 
     return (
         <div
-            className="min-h-screen w-full bg-white text-stone-900 flex"
+            className="min-h-screen w-full text-stone-900 relative overflow-hidden bg-gradient-to-b from-amber-50 via-amber-100 to-amber-50"
             style={{
                 fontFamily:
                     "'SUIT Variable', 'Pretendard Variable', system-ui, sans-serif",
             }}
         >
-            <div className="w-full lg:w-[560px] flex flex-col justify-between px-8 lg:px-16 py-12 border-r-2 border-stone-200 bg-white min-h-screen">
-                <AuthLogo size={32} />
+            <div
+                className="absolute inset-0 opacity-50 pointer-events-none"
+                style={{
+                    backgroundImage:
+                        "radial-gradient(circle at 1px 1px, #b45309 1px, transparent 0)",
+                    backgroundSize: "16px 16px",
+                    maskImage:
+                        "radial-gradient(900px 700px at 50% 35%, #000, transparent 75%)",
+                    WebkitMaskImage:
+                        "radial-gradient(900px 700px at 50% 35%, #000, transparent 75%)",
+                }}
+            />
+            <FallingLeaves count={18} />
 
-                <div className="max-w-[400px] w-full">
-                    <div className="mb-7">
-                        <div className="inline-flex items-center gap-1.5 text-[11px] font-extrabold text-amber-800 bg-amber-50 border-2 border-amber-400 rounded-md px-2 py-0.5 mb-4">
-                            <span className="w-1.5 h-1.5 bg-amber-500" />
-                            CHAPTER 02 · 봄 시즌 진행 중
-                        </div>
-                        <h1 className="text-[30px] font-black tracking-tight leading-[1.15] text-stone-900">
-                            다시 만나서 반가워요.
-                        </h1>
-                        <p className="text-[14px] text-stone-500 mt-2">
-                            어제 작업으로{" "}
-                            <b className="text-amber-700">+240 EXP</b>를
-                            쌓았어요. 이어서 시작해 볼까요?
-                        </p>
-                    </div>
-
-                    <div className="flex flex-col gap-3">
-                        {errorMessage && (
-                            <div className="p-3 bg-red-50 border-2 border-red-300 rounded-md text-[13px] text-red-700 font-bold">
-                                {errorMessage}
-                            </div>
-                        )}
-
-                        <GameButton
-                            variant="primary"
-                            size="lg"
-                            full
-                            onClick={() => {
-                                void signInWithGoogle();
-                            }}
-                            leftIcon={<GoogleMark />}
-                            rightIcon={Icons.arrow()}
-                        >
-                            <span>Google 로그인</span>
-                        </GameButton>
-                    </div>
-
-                    {/* TODO: 초대코드 가입 플로우 재오픈 시 주석 해제
-                    <div className="flex items-center gap-3 my-6 text-[11px] font-bold text-stone-400 uppercase tracking-widest">
-                        <div className="flex-1 h-[2px] bg-stone-200" />
-                        아직 길드원이 아닌가요?
-                        <div className="flex-1 h-[2px] bg-stone-200" />
-                    </div>
-
-                    <GameButton
-                        variant="ghost"
-                        size="lg"
-                        full
-                        onClick={() => router.push("/signup")}
-                    >
-                        <span>🔑 초대코드로 길드 가입하기</span>
-                    </GameButton>
-                    */}
-
-                    <div className="mt-5 p-3 bg-stone-50 border-2 border-stone-200 rounded-md flex gap-2 text-[12px] text-stone-600">
-                        <div className="text-stone-400 pt-0.5">🛡️</div>
-                        <span>
-                            <b className="text-stone-900">UD2 내부 전용</b>{" "}
-                            워크스페이스 — 외부 접근은 감사 로그에 기록됩니다.
-                        </span>
-                    </div>
+            <div className="relative min-h-screen flex flex-col items-center px-6 sm:px-8 py-10">
+                <div className="w-full max-w-[480px] flex items-center">
+                    <AuthLogo size={32} />
                 </div>
 
-                <div className="flex gap-4 text-[11px] text-stone-400 font-bold mt-2">
-                    <span>© 2026 UD2 Publishing</span>
-                    <a className="hover:text-stone-600 cursor-pointer">
-                        도움말
-                    </a>
-                    <a className="hover:text-stone-600 cursor-pointer">상태</a>
-                </div>
-            </div>
-
-            {/* RIGHT — 게임 사이드 */}
-            <div className="hidden lg:block flex-1 relative overflow-hidden bg-gradient-to-b from-amber-50 via-amber-100 to-amber-50">
-                <div
-                    className="absolute inset-0 opacity-50"
-                    style={{
-                        backgroundImage:
-                            "radial-gradient(circle at 1px 1px, #b45309 1px, transparent 0)",
-                        backgroundSize: "16px 16px",
-                        maskImage:
-                            "radial-gradient(800px 600px at 50% 40%, #000, transparent 75%)",
-                        WebkitMaskImage:
-                            "radial-gradient(800px 600px at 50% 40%, #000, transparent 75%)",
-                    }}
-                />
-
-                <div className="relative h-full flex flex-col justify-center items-center p-12 min-h-screen">
+                <div className="flex-1 w-full flex flex-col items-center justify-center py-8">
+                    {/* Hero + 어서 와요! */}
                     <div className="mb-6 relative">
                         <div className="absolute inset-0 translate-y-2 bg-amber-300/60 rounded-full blur-xl" />
                         <div className="auth-bob">
@@ -142,8 +73,9 @@ function LoginContent() {
                         </div>
                     </div>
 
+                    {/* Welcome 게임 카드 — 로그인 폼 */}
                     <div
-                        className="w-[440px] bg-white border-2 border-stone-800 rounded-xl p-6"
+                        className="w-full max-w-[440px] bg-white border-2 border-stone-800 rounded-xl p-6"
                         style={{ boxShadow: "0 6px 0 0 #1c1917" }}
                     >
                         <div className="flex items-center justify-between mb-4 pb-4 border-b-2 border-dashed border-stone-200">
@@ -184,50 +116,59 @@ function LoginContent() {
                             segments={20}
                         />
 
+                        <p className="mt-4 text-[13px] text-stone-600 text-center">
+                            어제 작업으로{" "}
+                            <b className="text-amber-700">+240 EXP</b>를
+                            쌓았어요. 이어서 시작해 볼까요?
+                        </p>
+
+                        {errorMessage && (
+                            <div className="mt-4 p-3 bg-red-50 border-2 border-red-300 rounded-md text-[13px] text-red-700 font-bold">
+                                {errorMessage}
+                            </div>
+                        )}
+
                         <div className="mt-5">
-                            <div className="flex items-center justify-between mb-2">
-                                <div className="text-[11px] font-extrabold text-stone-700 tracking-widest uppercase">
-                                    📜 오늘의 퀘스트
-                                </div>
-                                <span className="text-[11px] font-mono-auth text-stone-500 font-bold">
-                                    0 / 3
-                                </span>
-                            </div>
-                            <div className="flex flex-col gap-1.5">
-                                {[
-                                    {
-                                        t: "메인 헤더 마크업 리뷰",
-                                        xp: 60,
-                                        urgent: true,
-                                    },
-                                    {
-                                        t: "상품 카드 컴포넌트 마무리",
-                                        xp: 120,
-                                    },
-                                    { t: "QA 피드백 3건 반영", xp: 80 },
-                                ].map((q) => (
-                                    <div
-                                        key={q.t}
-                                        className="flex items-center gap-2.5 px-2.5 py-2 rounded-md bg-stone-50 border-2 border-stone-200"
-                                    >
-                                        <div className="w-4 h-4 border-2 border-stone-400 bg-white flex-shrink-0" />
-                                        <div className="flex-1 text-[13px] text-stone-800 font-bold">
-                                            {q.t}
-                                        </div>
-                                        {q.urgent && (
-                                            <Chip tone="red">D-1</Chip>
-                                        )}
-                                        <span className="flex items-center gap-1 text-[11px] font-extrabold text-amber-700 font-mono-auth">
-                                            <Gem scale={2} tone="amber" />+
-                                            {q.xp}
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
+                            <GameButton
+                                variant="primary"
+                                size="lg"
+                                full
+                                onClick={() => {
+                                    void signInWithGoogle();
+                                }}
+                                leftIcon={<GoogleMark />}
+                                rightIcon={Icons.arrow()}
+                            >
+                                <span>Google 로그인</span>
+                            </GameButton>
+                        </div>
+
+                        <div className="flex items-center gap-3 my-5 text-[11px] font-bold text-stone-400 uppercase tracking-widest">
+                            <div className="flex-1 h-[2px] bg-stone-200" />
+                            아직 길드원이 아닌가요?
+                            <div className="flex-1 h-[2px] bg-stone-200" />
+                        </div>
+
+                        <GameButton
+                            variant="ghost"
+                            size="lg"
+                            full
+                            onClick={() => router.push("/signup")}
+                        >
+                            <span>🔑 초대코드로 길드 가입하기</span>
+                        </GameButton>
+
+                        <div className="mt-5 p-3 bg-stone-50 border-2 border-stone-200 rounded-md flex gap-2 text-[12px] text-stone-600">
+                            <div className="text-stone-400 pt-0.5">🛡️</div>
+                            <span>
+                                <b className="text-stone-900">UD2 내부 전용</b>{" "}
+                                워크스페이스 — 외부 접근은 감사 로그에
+                                기록됩니다.
+                            </span>
                         </div>
                     </div>
 
-                    <div className="mt-5 w-[440px] flex items-center gap-3 px-1">
+                    <div className="mt-5 w-full max-w-[440px] flex items-center gap-3 px-1">
                         <div className="flex">
                             {[
                                 { n: "석", c: "#0ea5e9" },
@@ -253,6 +194,14 @@ function LoginContent() {
                             <b className="text-amber-700">+820 EXP</b>
                         </div>
                     </div>
+                </div>
+
+                <div className="w-full max-w-[480px] flex gap-4 text-[11px] text-stone-500 font-bold">
+                    <span>© 2026 UD2 Publishing</span>
+                    <a className="hover:text-stone-700 cursor-pointer">
+                        도움말
+                    </a>
+                    <a className="hover:text-stone-700 cursor-pointer">상태</a>
                 </div>
             </div>
 

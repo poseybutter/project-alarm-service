@@ -26,7 +26,14 @@ export async function POST(req: Request) {
         );
     }
 
-    let payload: { name?: unknown; teamId?: unknown; bio?: unknown };
+    let payload: {
+        name?: unknown;
+        email?: unknown;
+        teamId?: unknown;
+        team_id?: unknown;
+        role?: unknown;
+        bio?: unknown;
+    };
     try {
         payload = await req.json();
     } catch {
@@ -37,7 +44,14 @@ export async function POST(req: Request) {
     }
 
     const name = String(payload.name ?? "").trim();
-    const teamId = String(payload.teamId ?? "").trim();
+    // team_id (snake) 와 teamId (camel) 둘 다 허용. 기존 /guild-join 페이지 호환.
+    const teamId = String(
+        payload.team_id ?? payload.teamId ?? "",
+    ).trim();
+    const submittedEmail = String(payload.email ?? "")
+        .trim()
+        .toLowerCase();
+    const jobRole = String(payload.role ?? "").trim();
     const bio = String(payload.bio ?? "").slice(0, 200);
     if (name.length < 2) {
         return NextResponse.json(
@@ -60,6 +74,29 @@ export async function POST(req: Request) {
         return NextResponse.json(
             { error: "UNAUTHENTICATED", message: "다시 로그인해 주세요." },
             { status: 401 },
+        );
+    }
+
+    // 도메인 검증 — Google OAuth 로 인증된 이메일이 @example.com 인지 확인.
+    // 폼에 제출된 이메일은 OAuth 이메일과 일치해야 한다(쿠키 위조 방어).
+    const authedEmail = user.email.toLowerCase();
+    if (!authedEmail.endsWith("@example.com")) {
+        return NextResponse.json(
+            {
+                error: "DOMAIN_NOT_ALLOWED",
+                message: "@example.com 도메인 계정만 가입할 수 있어요.",
+            },
+            { status: 403 },
+        );
+    }
+    if (submittedEmail && submittedEmail !== authedEmail) {
+        return NextResponse.json(
+            {
+                error: "EMAIL_MISMATCH",
+                message:
+                    "Google 로그인 계정과 입력한 이메일이 일치하지 않아요.",
+            },
+            { status: 400 },
         );
     }
 
@@ -88,14 +125,21 @@ export async function POST(req: Request) {
         name,
         team_id: teamId,
         bio: bio || null,
+        job_role: jobRole || null,
         status: "pending",
     });
     if (insertError) {
         console.error("[api/guild-join] players insert failed:", insertError);
+        const isDev = process.env.NODE_ENV !== "production";
         return NextResponse.json(
             {
                 error: "JOIN_FAILED",
                 message: "가입 신청에 실패했어요. 잠시 후 다시 시도해 주세요.",
+                ...(isDev && {
+                    detail: insertError.message,
+                    code: insertError.code,
+                    hint: insertError.hint,
+                }),
             },
             { status: 500 },
         );

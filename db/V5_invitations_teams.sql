@@ -50,9 +50,10 @@ CREATE INDEX IF NOT EXISTS idx_invitations_team       ON invitations (team_id);
 CREATE INDEX IF NOT EXISTS idx_invitations_code_lower ON invitations (LOWER(code));
 
 -- ── players.bio + 보장 컬럼 ────────────────────────────────────────
-ALTER TABLE players ADD COLUMN IF NOT EXISTS bio   TEXT;
-ALTER TABLE players ADD COLUMN IF NOT EXISTS role  TEXT NOT NULL DEFAULT 'member';
-ALTER TABLE players ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS bio      TEXT;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS role     TEXT NOT NULL DEFAULT 'member';
+ALTER TABLE players ADD COLUMN IF NOT EXISTS email    TEXT;
+ALTER TABLE players ADD COLUMN IF NOT EXISTS job_role TEXT;  -- 가입 시 선택한 직무/역할
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_players_email ON players (email);
 
 -- ── is_admin() helper ─────────────────────────────────────────────
@@ -78,11 +79,11 @@ GRANT  EXECUTE ON FUNCTION public.is_admin() TO authenticated;
 ALTER TABLE teams       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE invitations ENABLE ROW LEVEL SECURITY;
 
--- teams: 인증된 사용자는 누구나 SELECT (팀 선택 드롭다운용)
+-- teams: 마스터 데이터 — anon 도 SELECT 허용 (signup 페이지가 미인증 상태에서 팀 드롭다운을 채워야 함)
 DROP POLICY IF EXISTS "teams read" ON teams;
 CREATE POLICY "teams read"
     ON teams FOR SELECT
-    TO authenticated
+    TO anon, authenticated
     USING (TRUE);
 
 -- invitations: 인증된 사용자는 SELECT 가능 (verify에서 코드 조회 필요)
@@ -110,6 +111,13 @@ CREATE POLICY "invitations update admin or self-use"
         OR (used = FALSE AND expires_at > NOW())  -- 가입 흐름에서 본인 사용 처리
     )
     WITH CHECK (TRUE);
+
+-- DELETE 정책이 없으면 RLS 가 0 rows affected 로 거부 → 404 처럼 보임. admin 만 폐기 허용.
+DROP POLICY IF EXISTS "invitations delete admin" ON invitations;
+CREATE POLICY "invitations delete admin"
+    ON invitations FOR DELETE
+    TO authenticated
+    USING (public.is_admin());
 
 -- ── players RLS (bio 보호) ────────────────────────────────────────
 -- bio는 관리자만 SELECT 할 수 있어야 함.

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { GameButton } from "@/components/auth/GameButton";
 import { AuthField } from "@/components/auth/AuthField";
 import { Shield, PixKey } from "@/components/auth/Pix";
@@ -62,6 +63,7 @@ function isToday(iso: string): boolean {
 }
 
 export default function AdminMembersPage() {
+    const router = useRouter();
     const [players, setPlayers] = useState<PlayerRow[]>([]);
     const [teams, setTeams] = useState<Team[]>([]);
     const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -82,6 +84,12 @@ export default function AdminMembersPage() {
     const [issuing, setIssuing] = useState(false);
     const [newCode, setNewCode] = useState<Invitation | null>(null);
     const [codeFilter, setCodeFilter] = useState<CodeFilter>("active");
+
+    // 초대코드 폐기
+    const [confirmRevoke, setConfirmRevoke] = useState<Invitation | null>(
+        null,
+    );
+    const [revoking, setRevoking] = useState(false);
 
     const reload = useCallback(async () => {
         setLoadErr(null);
@@ -210,6 +218,29 @@ export default function AdminMembersPage() {
         }
     }
 
+    async function revokeInvitation(inv: Invitation) {
+        if (revoking) return;
+        setRevoking(true);
+        try {
+            const res = await fetch(`/api/admin/invitations/${inv.id}`, {
+                method: "DELETE",
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                alert(data.message ?? "초대코드 폐기에 실패했어요.");
+                return;
+            }
+            setInvitations((prev) => prev.filter((c) => c.id !== inv.id));
+            // 방금 발급한 코드를 그대로 폐기하면 상단 표시도 닫아준다
+            if (newCode?.id === inv.id) setNewCode(null);
+            setConfirmRevoke(null);
+        } catch {
+            alert("네트워크 오류가 발생했어요.");
+        } finally {
+            setRevoking(false);
+        }
+    }
+
     const nowIso = new Date().toISOString();
     const codeCounts = useMemo(
         () => ({
@@ -266,14 +297,24 @@ export default function AdminMembersPage() {
                     </div>
                     <div className="w-px h-6 bg-stone-300 ml-2" />
                     {[
-                        { t: "📊 대시보드", active: false },
-                        { t: "📜 퀘스트", active: false },
-                        { t: "🛡️ 길드원", active: true },
-                        { t: "⚙️ 설정", active: false },
+                        { t: "📊 대시보드", active: false, href: null },
+                        { t: "📜 퀘스트", active: false, href: null },
+                        {
+                            t: "🛡️ 길드원",
+                            active: true,
+                            href: "/admin/members",
+                        },
+                        {
+                            t: "⚙️ 설정",
+                            active: false,
+                            href: "/admin/settings",
+                        },
                     ].map((m) => (
                         <button
                             key={m.t}
-                            className={`text-[12px] px-2.5 py-1.5 rounded-md font-extrabold transition-colors border-2 ${m.active ? "bg-white border-stone-800 text-stone-900" : "border-transparent text-stone-500 hover:bg-amber-100"}`}
+                            onClick={() => m.href && router.push(m.href)}
+                            disabled={!m.href}
+                            className={`text-[12px] px-2.5 py-1.5 rounded-md font-extrabold transition-colors border-2 ${m.active ? "bg-white border-stone-800 text-stone-900" : "border-transparent text-stone-500 hover:bg-amber-100"} ${!m.href ? "cursor-not-allowed opacity-60" : ""}`}
                         >
                             {m.t}
                             {m.active && pendingCount > 0 && (
@@ -784,6 +825,17 @@ export default function AdminMembersPage() {
                                                     : `~${c.expires_at.slice(2, 10)}`}
                                             </span>
                                         </div>
+                                        <div className="mt-2 flex justify-end">
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setConfirmRevoke(c)
+                                                }
+                                                className="text-[10px] font-extrabold text-red-700 hover:text-red-900 bg-red-50 hover:bg-red-100 border-2 border-red-200 rounded px-2 py-1 transition-colors"
+                                            >
+                                                🗑 폐기
+                                            </button>
+                                        </div>
                                     </div>
                                 );
                             })}
@@ -796,6 +848,62 @@ export default function AdminMembersPage() {
                     </div>
                 </div>
             </div>
+
+            {/* 초대코드 폐기 확인 모달 */}
+            {confirmRevoke && (
+                <div
+                    className="fixed inset-0 z-50 bg-stone-900/40 backdrop-blur-sm grid place-items-center px-4"
+                    onClick={() => !revoking && setConfirmRevoke(null)}
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full max-w-md bg-white border-2 border-stone-800 rounded-xl overflow-hidden"
+                        style={{ boxShadow: "0 8px 0 0 #1c1917" }}
+                    >
+                        <div className="h-9 bg-red-400 border-b-2 border-stone-800 grid place-items-center">
+                            <div className="text-[11px] font-extrabold text-red-950 tracking-widest font-mono-auth">
+                                ★ REVOKE INVITATION ★
+                            </div>
+                        </div>
+                        <div className="p-6 text-center">
+                            <div className="text-[44px] leading-none mb-3">
+                                🗑
+                            </div>
+                            <h3 className="text-[18px] font-black tracking-tight mb-2">
+                                이 초대코드를 폐기할까요?
+                            </h3>
+                            <div className="text-[16px] font-black font-mono-auth tracking-[0.18em] text-stone-900 bg-stone-50 border-2 border-stone-200 rounded-md py-2 mb-3">
+                                {formatCode(confirmRevoke.code)}
+                            </div>
+                            <p className="text-[13px] text-stone-500 leading-relaxed mb-5">
+                                폐기된 코드로는 더 이상 가입할 수 없어요. 이미
+                                사용된 코드의 기록도 함께 사라지니 신중하게
+                                결정해 주세요.
+                            </p>
+                            <div className="flex gap-2 justify-end">
+                                <GameButton
+                                    variant="ghost"
+                                    size="md"
+                                    onClick={() => setConfirmRevoke(null)}
+                                    disabled={revoking}
+                                >
+                                    취소
+                                </GameButton>
+                                <GameButton
+                                    variant="danger"
+                                    size="md"
+                                    onClick={() =>
+                                        revokeInvitation(confirmRevoke)
+                                    }
+                                    disabled={revoking}
+                                >
+                                    {revoking ? "폐기 중…" : "🗑 폐기"}
+                                </GameButton>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

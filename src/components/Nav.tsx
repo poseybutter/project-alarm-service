@@ -25,7 +25,12 @@ export default function Nav() {
     }, [pathname]);
 
     if (loading || !member) return null;
-    if (pathname === "/login") return null;
+    if (
+        pathname === "/login" ||
+        pathname === "/signup" ||
+        pathname === "/pending"
+    )
+        return null;
     // 관리자 화면은 자체 레이아웃을 사용하므로 하단 네비 숨김
     if (pathname.startsWith("/admin")) return null;
 
