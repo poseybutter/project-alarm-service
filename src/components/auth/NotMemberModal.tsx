@@ -46,6 +46,13 @@ export function NotMemberModal({ onClose }: Props) {
                 body: JSON.stringify({ code: code.join("") }),
             });
             const data = await res.json().catch(() => ({}));
+            if (res.status === 429) {
+                setErr(
+                    data.message ??
+                        "⛔ 너무 많이 시도했어요. 10분 후 다시 시도해주세요.",
+                );
+                return;
+            }
             if (!res.ok || !data.valid) {
                 setErr(data.message ?? "유효하지 않은 초대코드입니다.");
                 return;
@@ -68,7 +75,7 @@ export function NotMemberModal({ onClose }: Props) {
     }
 
     const inputCls = (filled: boolean) =>
-        `flex-1 h-14 text-center font-black text-[22px] tracking-[0.18em] uppercase rounded-lg bg-white outline-none transition-all border-[3px] font-mono-auth ${
+        `flex-1 min-w-0 w-full h-14 text-center font-black text-[20px] sm:text-[22px] tracking-[0.14em] sm:tracking-[0.18em] uppercase rounded-lg bg-white outline-none transition-all border-[3px] font-mono-auth ${
             err
                 ? "border-red-400 shadow-[0_0_0_4px_rgba(248,113,113,0.18)]"
                 : filled
@@ -78,12 +85,12 @@ export function NotMemberModal({ onClose }: Props) {
 
     return (
         <div
-            className="fixed inset-0 z-50 bg-stone-900/40 backdrop-blur-sm grid place-items-center px-6"
+            className="fixed inset-0 z-50 bg-stone-900/40 backdrop-blur-sm grid place-items-center px-4 sm:px-6"
             onClick={onClose}
         >
             <div
                 onClick={(e) => e.stopPropagation()}
-                className="w-[480px] max-w-full bg-white border-2 border-stone-800 rounded-xl overflow-hidden"
+                className="w-full max-w-md bg-white border-2 border-stone-800 rounded-xl overflow-hidden"
                 style={{ boxShadow: "0 8px 0 0 #1c1917" }}
             >
                 {/* 타이틀 바 */}
@@ -101,7 +108,7 @@ export function NotMemberModal({ onClose }: Props) {
                     </button>
                 </div>
 
-                <div className="p-7">
+                <div className="p-5 sm:p-7">
                     <div className="flex justify-center mb-4 text-[48px] leading-none">
                         🔒
                     </div>
@@ -126,7 +133,7 @@ export function NotMemberModal({ onClose }: Props) {
                         </span>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 sm:gap-2 w-full overflow-hidden">
                         <input
                             value={code[0]}
                             onChange={(e) => updateCode(0, e.target.value)}
@@ -136,7 +143,7 @@ export function NotMemberModal({ onClose }: Props) {
                             autoFocus
                             className={inputCls(code[0].length === 4)}
                         />
-                        <span className="text-stone-300 font-black text-xl">
+                        <span className="text-stone-300 font-black text-xl flex-shrink-0">
                             —
                         </span>
                         <input
@@ -165,6 +172,7 @@ export function NotMemberModal({ onClose }: Props) {
                             variant="ghost"
                             size="md"
                             onClick={onClose}
+                            className="whitespace-nowrap flex-shrink-0"
                         >
                             닫기
                         </GameButton>
@@ -174,6 +182,7 @@ export function NotMemberModal({ onClose }: Props) {
                             full
                             disabled={!codeFull || verifying}
                             onClick={verify}
+                            className="whitespace-nowrap min-w-0"
                         >
                             {verifying ? "열쇠 확인 중…" : "🔓 봉인 해제"}
                         </GameButton>
@@ -186,10 +195,10 @@ export function NotMemberModal({ onClose }: Props) {
                                 초대코드가 없으신가요?
                             </b>
                             <br />
-                            팀 관리자에게 발급을 요청하거나, 슬랙{" "}
+                            팀 관리자에게 발급을 요청하거나, Google Chat{" "}
                             <span className="font-mono-auth font-bold text-stone-800">
-                                #ud2-onboarding
-                            </span>
+                                ud2 워크스페이스
+                            </span>{" "}
                             에서 도움을 받으세요.
                         </div>
                     </div>

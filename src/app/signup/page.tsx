@@ -253,11 +253,11 @@ export default function SignupPage() {
                                         </b>
                                         <br />
                                         길드장(관리자)에게 열쇠 발급을 요청하세요.
-                                        슬랙{" "}
+                                        Google Chat{" "}
                                         <span className="font-mono-auth font-bold">
-                                            #ud2-onboarding
+                                            ud2 
                                         </span>{" "}
-                                        채널에서도 받을 수 있어요.
+                                        스페이스에서도 받을 수 있어요.
                                     </div>
                                 </div>
                             </div>

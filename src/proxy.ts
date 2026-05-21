@@ -25,11 +25,16 @@ function hasSupabaseSession(req: NextRequest): boolean {
 }
 
 export function proxy(req: NextRequest) {
-    const { pathname } = req.nextUrl;
+    const { pathname, searchParams } = req.nextUrl;
     const hasAccessToken = Boolean(req.cookies.get("accessToken")?.value);
     const isAuthed = hasAccessToken || hasSupabaseSession(req);
 
-    if (isAuthed && pathname === "/login") {
+    // ?new=1 은 OAuth 직후 신규 사용자 (players 없음) 에게 초대코드 모달을 보여주는
+    // 진입점. sb-* 쿠키는 이미 있는 상태이므로 isAuthed 가 true 지만 / 로 보내면 안 된다.
+    const isNewUserEntry =
+        pathname === "/login" && searchParams.get("new") === "1";
+
+    if (isAuthed && pathname === "/login" && !isNewUserEntry) {
         const url = req.nextUrl.clone();
         url.pathname = "/";
         url.search = "";

@@ -209,7 +209,7 @@ export default function PendingPage() {
                                         </Chip>
                                     </div>
                                     <div className="text-[12px] text-stone-500 mt-0.5">
-                                        yujin@ud2.co
+                                        dungeon@maplestory.com
                                     </div>
                                 </div>
                                 <GameButton
@@ -217,7 +217,7 @@ export default function PendingPage() {
                                     size="sm"
                                     leftIcon={<span>📣</span>}
                                 >
-                                    슬랙으로 알리기
+                                    Google Chat으로 알리기
                                 </GameButton>
                             </div>
                         </div>
