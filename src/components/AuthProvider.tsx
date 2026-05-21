@@ -1,17 +1,23 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import {
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useState,
+} from "react";
 import { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
-import { getMemberName } from "@/lib/auth";
-import { TEAM_ID } from "@/lib/constants";
+
+type AuthRole = "admin" | "member" | "guest";
 
 type AuthContextType = {
     user: User | null;
     member: string | null;
     avatarUrl: string | null;
     loading: boolean;
-    role: "admin" | "member" | "guest";
+    role: AuthRole;
     refreshAvatar: () => void;
 };
 
@@ -44,11 +50,49 @@ function looksLikeInvalidRefreshOrJwt(message: string | undefined) {
     );
 }
 
+function normalizeRole(raw: string | null | undefined): AuthRole {
+    if (raw === "admin") return "admin";
+    if (raw === "guest") return "guest";
+    return "member";
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [member, setMember] = useState<string | null>(null);
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-    const [role, setRole] = useState<"admin" | "member" | "guest">("member");
+    const [role, setRole] = useState<AuthRole>("member");
+    const [loading, setLoading] = useState(true);
+
+    /**
+     * 이메일 기준으로 players 행을 읽어 member/role/avatar 를 갱신한다.
+     * - 행 없음 또는 status != 'active' → member=null (AuthGuard 가 진입 차단)
+     * - role='guest' 는 기존 호환으로 member='GUEST'
+     */
+    const loadPlayer = useCallback(async (email: string | undefined) => {
+        if (!email) {
+            setMember(null);
+            setAvatarUrl(null);
+            setRole("member");
+            return;
+        }
+        const { data } = await supabase
+            .from("players")
+            .select("name, role, avatar_url, status")
+            .eq("email", email)
+            .maybeSingle();
+
+        if (!data || data.status !== "active") {
+            setMember(null);
+            setAvatarUrl(null);
+            setRole(normalizeRole(data?.role));
+            return;
+        }
+
+        const r = normalizeRole(data.role);
+        setRole(r);
+        setMember(r === "guest" ? "GUEST" : data.name);
+        setAvatarUrl(data.avatar_url || null);
+    }, []);
 
     useEffect(() => {
         let cancelled = false;
@@ -68,7 +112,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     setUser(null);
                     return;
                 }
-                setUser(session?.user ?? null);
+                const u = session?.user ?? null;
+                setUser(u);
+                await loadPlayer(u?.email);
             } catch (e) {
                 if (cancelled) return;
                 console.warn(
@@ -86,15 +132,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         const {
             data: { subscription },
-        } = supabase.auth.onAuthStateChange((event, session) => {
+        } = supabase.auth.onAuthStateChange(async (event, session) => {
             if (event === "TOKEN_REFRESHED" || event === "SIGNED_IN") {
-                setUser(session?.user ?? null);
+                const u = session?.user ?? null;
+                setUser(u);
+                await loadPlayer(u?.email);
             }
             if (
                 event === "SIGNED_OUT" ||
                 (event as string) === "USER_DELETED"
             ) {
                 setUser(null);
+                setMember(null);
+                setAvatarUrl(null);
+                setRole("member");
             }
             setLoading(false);
         });
@@ -103,36 +154,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             cancelled = true;
             subscription.unsubscribe();
         };
-    }, []);
-
-    const member = getMemberName(user?.email || "");
-
-    async function loadAvatar(memberName: string) {
-        if (memberName === "GUEST") {
-            setAvatarUrl(null);
-            setRole("guest");
-            return;
-        }
-        const { data } = await supabase
-            .from("players")
-            .select("avatar_url, role")
-            .eq("team_id", TEAM_ID)
-            .eq("name", memberName)
-            .maybeSingle();
-        setAvatarUrl(data?.avatar_url || null);
-        setRole(data?.role === "admin" ? "admin" : "member");
-    }
-
-    useEffect(() => {
-        if (member) loadAvatar(member);
-        else {
-            setAvatarUrl(null);
-            setRole("member");
-        }
-    }, [member]);
+    }, [loadPlayer]);
 
     function refreshAvatar() {
-        if (member) loadAvatar(member);
+        void loadPlayer(user?.email);
     }
 
     return (

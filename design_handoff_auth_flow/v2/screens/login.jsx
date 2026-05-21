@@ -127,7 +127,7 @@ function LoginV2() {
                 <CharBox name="유" color="#f59e0b" level={12} size={44} />
                 <div>
                   <div className="text-[10px] text-stone-400 font-mono font-bold tracking-wider">WELCOME BACK</div>
-                  <div className="text-[15px] font-extrabold text-stone-900 leading-tight">주먹펴고 일어서</div>
+                  <div className="text-[15px] font-extrabold text-stone-900 leading-tight">김유정</div>
                   <ChipG tone="amber" icon="🛡️">던전 탐험가</ChipG>
                 </div>
               </div>
@@ -168,14 +168,14 @@ function LoginV2() {
           {/* 길드 활동 */}
           <div className="mt-5 w-[440px] flex items-center gap-3 px-1">
             <div className="flex">
-              {[{n:"조",c:"#0ea5e9"},{n:"조",c:"#10b981"},{n:"헌",c:"#f59e0b"},{n:"이",c:"#ef4444"}].map((p, i) => (
+              {[{n:"수",c:"#0ea5e9"},{n:"민",c:"#10b981"},{n:"지",c:"#f59e0b"}].map((p, i) => (
                 <div key={i} style={{ marginLeft: i ? -8 : 0 }}>
                   <CharBox name={p.n} color={p.c} size={30} />
                 </div>
               ))}
             </div>
             <div className="text-[12px] text-stone-600">
-              <b className="text-stone-900">4명</b>이 지금 길드 안에서 작업 중 · 오늘 누적 <b className="text-amber-700">+820 EXP</b>
+              <b className="text-stone-900">3명</b>이 지금 길드 안에서 작업 중 · 오늘 누적 <b className="text-amber-700">+820 EXP</b>
             </div>
           </div>
         </div>

@@ -109,7 +109,7 @@ function PendingV2() {
                 <div className="flex-1">
                   <div className="text-[10px] text-stone-400 font-mono font-extrabold tracking-widest">현재 담당 길드장</div>
                   <div className="text-[14px] font-extrabold mt-0.5">
-                    주먹펴고 일어서 <ChipG tone="amber" icon="🛡️">던전 탐험가</ChipG>
+                    김유정 <ChipG tone="amber" icon="🛡️">던전 탐험가</ChipG>
                   </div>
                   <div className="text-[12px] text-stone-500 mt-0.5">yujin@ud2.co</div>
                 </div>

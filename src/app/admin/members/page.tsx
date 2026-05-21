@@ -1,102 +1,142 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { GameButton } from "@/components/auth/GameButton";
 import { AuthField } from "@/components/auth/AuthField";
-import { Shield } from "@/components/auth/Pix";
-import {
-    AuthLogo,
-    CharBox,
-    Chip,
-    Icons,
-} from "@/components/auth/atoms";
+import { Shield, PixKey } from "@/components/auth/Pix";
+import { AuthLogo, CharBox, Chip, Icons } from "@/components/auth/atoms";
 
-type PendingMember = {
-    id: number | string;
+type PlayerRow = {
+    id: number;
     name: string;
     email: string;
-    invitedBy?: string;
-    role?: string;
-    appliedAt?: string;
-    elapsed?: string;
-    code?: string;
-    note?: string | null;
-    risk?: "low" | "high";
-    domain?: boolean;
-    status?: "pending" | "active" | "rejected";
+    team_id: string | null;
+    status: "pending" | "active" | "rejected";
+    role: "member" | "admin";
+    bio: string | null;
+    created_at: string;
+};
+
+type Team = { id: string; name: string; icon: string | null };
+
+type Invitation = {
+    id: number;
+    code: string;
+    team_id: string | null;
+    issued_by: string | null;
+    issued_at: string;
+    expires_at: string;
+    used: boolean;
+    used_by: string | null;
+    used_at: string | null;
 };
 
 type FilterKey = "all" | "today" | "risk";
+type CodeFilter = "active" | "used" | "expired";
 
-const SPRING_BASE =
-    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+function formatCode(code: string): string {
+    if (code.length !== 8) return code;
+    return `${code.slice(0, 4)}-${code.slice(4)}`;
+}
+
+function elapsedLabel(iso: string): string {
+    const ms = Date.now() - new Date(iso).getTime();
+    if (ms < 0) return "방금";
+    const min = Math.floor(ms / 60000);
+    if (min < 1) return "방금";
+    if (min < 60) return `${min}분 전`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}시간 전`;
+    const day = Math.floor(hr / 24);
+    return `${day}일 전`;
+}
+
+function isToday(iso: string): boolean {
+    const d = new Date(iso);
+    const n = new Date();
+    return (
+        d.getFullYear() === n.getFullYear() &&
+        d.getMonth() === n.getMonth() &&
+        d.getDate() === n.getDate()
+    );
+}
 
 export default function AdminMembersPage() {
-    const [members, setMembers] = useState<PendingMember[]>([]);
+    const [players, setPlayers] = useState<PlayerRow[]>([]);
+    const [teams, setTeams] = useState<Team[]>([]);
+    const [invitations, setInvitations] = useState<Invitation[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadErr, setLoadErr] = useState<string | null>(null);
 
     const [filter, setFilter] = useState<FilterKey>("all");
     const [search, setSearch] = useState("");
-    const [selected, setSelected] = useState<number | string | null>(null);
-    const [decided, setDecided] = useState<
-        Record<string, "approved" | "rejected">
-    >({});
+    const [selected, setSelected] = useState<number | null>(null);
     const [confirm, setConfirm] = useState<"approved" | "rejected" | null>(
         null,
     );
     const [acting, setActing] = useState(false);
 
-    useEffect(() => {
-        let cancelled = false;
-        async function load() {
-            setLoading(true);
-            setLoadErr(null);
-            try {
-                const res = await fetch(`${SPRING_BASE}/api/admin/players`, {
-                    credentials: "include",
-                });
-                if (!res.ok) throw new Error(`status ${res.status}`);
-                const data = await res.json();
-                const list: PendingMember[] = Array.isArray(data)
-                    ? data
-                    : Array.isArray(data?.members)
-                      ? data.members
-                      : [];
-                if (!cancelled) {
-                    setMembers(list);
-                    if (list.length > 0 && selected == null) {
-                        setSelected(list[0].id);
-                    }
-                }
-            } catch (err) {
-                if (!cancelled) {
-                    const message =
-                        err instanceof Error
-                            ? err.message
-                            : "신청자 목록을 불러오지 못했어요";
-                    setLoadErr(message);
-                }
-            } finally {
-                if (!cancelled) setLoading(false);
+    // 초대코드 발급
+    const [issueTeam, setIssueTeam] = useState("");
+    const [issueExpiry, setIssueExpiry] = useState<"1" | "7" | "30">("7");
+    const [issuing, setIssuing] = useState(false);
+    const [newCode, setNewCode] = useState<Invitation | null>(null);
+    const [codeFilter, setCodeFilter] = useState<CodeFilter>("active");
+
+    const reload = useCallback(async () => {
+        setLoadErr(null);
+        try {
+            const [pRes, tRes, iRes] = await Promise.all([
+                fetch("/api/admin/players?status=pending"),
+                fetch("/api/teams"),
+                fetch("/api/admin/invitations"),
+            ]);
+            if (pRes.status === 403) {
+                setLoadErr("관리자 권한이 필요해요.");
+                return;
             }
+            if (!pRes.ok || !tRes.ok || !iRes.ok) {
+                throw new Error("load failed");
+            }
+            const [pData, tData, iData] = (await Promise.all([
+                pRes.json(),
+                tRes.json(),
+                iRes.json(),
+            ])) as [PlayerRow[], Team[], Invitation[]];
+            setPlayers(Array.isArray(pData) ? pData : []);
+            setTeams(Array.isArray(tData) ? tData : []);
+            setInvitations(Array.isArray(iData) ? iData : []);
+            if (Array.isArray(tData) && tData[0] && !issueTeam) {
+                setIssueTeam(tData[0].id);
+            }
+            if (Array.isArray(pData) && pData[0] && selected == null) {
+                setSelected(pData[0].id);
+            }
+        } catch {
+            setLoadErr("데이터를 불러오지 못했어요.");
+        } finally {
+            setLoading(false);
         }
-        void load();
-        return () => {
-            cancelled = true;
-        };
-        // selected는 의도적으로 의존성에서 제외 (최초 1회 로딩만)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    useEffect(() => {
+        void reload();
+    }, [reload]);
+
+    const teamById = useMemo(() => {
+        const m = new Map<string, Team>();
+        teams.forEach((t) => m.set(t.id, t));
+        return m;
+    }, [teams]);
+
     const list = useMemo(() => {
-        return members.filter((p) => {
-            if (filter === "risk" && p.risk !== "high") return false;
-            if (
-                filter === "today" &&
-                !(p.appliedAt?.startsWith("오늘") ?? false)
-            )
-                return false;
+        return players.filter((p) => {
+            if (filter === "today" && !isToday(p.created_at)) return false;
+            if (filter === "risk") {
+                if (p.email.endsWith("@ud2.co") || p.email.endsWith("@example.com"))
+                    return false;
+            }
             if (search) {
                 const q = search.toLowerCase();
                 if (
@@ -107,31 +147,35 @@ export default function AdminMembersPage() {
             }
             return true;
         });
-    }, [members, filter, search]);
+    }, [players, filter, search]);
 
-    const cur = members.find((p) => p.id === selected) || null;
-    const curStatus = cur ? decided[String(cur.id)] : undefined;
+    const cur = useMemo(
+        () => players.find((p) => p.id === selected) ?? null,
+        [players, selected],
+    );
+    const curTeam = cur?.team_id ? teamById.get(cur.team_id) ?? null : null;
+    const isExternal =
+        cur != null &&
+        !cur.email.endsWith("@ud2.co") &&
+        !cur.email.endsWith("@example.com");
 
     async function decide(action: "approved" | "rejected") {
         if (!cur || acting) return;
         setActing(true);
         try {
+            const verb = action === "approved" ? "approve" : "reject";
             const res = await fetch(
-                `${SPRING_BASE}/api/admin/players/${cur.id}`,
-                {
-                    method: "PATCH",
-                    credentials: "include",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        status: action === "approved" ? "active" : "rejected",
-                    }),
-                },
+                `/api/admin/players/${cur.id}/${verb}`,
+                { method: "PATCH" },
             );
             if (!res.ok) {
-                alert("처리에 실패했어요. 잠시 후 다시 시도해주세요.");
+                alert("처리에 실패했어요. 잠시 후 다시 시도해 주세요.");
                 return;
             }
-            setDecided((d) => ({ ...d, [String(cur.id)]: action }));
+            // 결정된 항목은 pending 목록에서 빠짐 → 다음 항목 선택
+            setPlayers((prev) => prev.filter((p) => p.id !== cur.id));
+            const next = list.find((p) => p.id !== cur.id);
+            setSelected(next?.id ?? null);
             setConfirm(null);
         } catch {
             alert("네트워크 오류가 발생했어요.");
@@ -140,10 +184,62 @@ export default function AdminMembersPage() {
         }
     }
 
-    const pendingCount = members.filter(
-        (m) => !decided[String(m.id)],
+    async function issueNew() {
+        if (!issueTeam || issuing) return;
+        setIssuing(true);
+        try {
+            const res = await fetch("/api/admin/invitations", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    teamId: issueTeam,
+                    expiresInDays: Number(issueExpiry),
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                alert(data.message ?? "초대코드 발급에 실패했어요.");
+                return;
+            }
+            setNewCode(data as Invitation);
+            setInvitations((prev) => [data, ...prev]);
+        } catch {
+            alert("네트워크 오류가 발생했어요.");
+        } finally {
+            setIssuing(false);
+        }
+    }
+
+    const nowIso = new Date().toISOString();
+    const codeCounts = useMemo(
+        () => ({
+            active: invitations.filter(
+                (c) => !c.used && c.expires_at > nowIso,
+            ).length,
+            used: invitations.filter((c) => c.used).length,
+            expired: invitations.filter(
+                (c) => !c.used && c.expires_at <= nowIso,
+            ).length,
+        }),
+        [invitations, nowIso],
+    );
+
+    const filteredCodes = useMemo(() => {
+        return invitations.filter((c) => {
+            if (codeFilter === "active") return !c.used && c.expires_at > nowIso;
+            if (codeFilter === "used") return c.used;
+            if (codeFilter === "expired")
+                return !c.used && c.expires_at <= nowIso;
+            return true;
+        });
+    }, [invitations, codeFilter, nowIso]);
+
+    const pendingCount = players.length;
+    const riskCount = players.filter(
+        (p) =>
+            !p.email.endsWith("@ud2.co") &&
+            !p.email.endsWith("@example.com"),
     ).length;
-    const riskCount = members.filter((p) => p.risk === "high").length;
 
     return (
         <div
@@ -194,16 +290,16 @@ export default function AdminMembersPage() {
                     </Chip>
                     <CharBox name="유" color="#f59e0b" size={32} level={12} />
                     <div className="text-[12px] font-extrabold">
-                        김유정{" "}
+                        길드장{" "}
                         <span className="text-stone-500 font-normal">
-                            · 길드장
+                            · Admin
                         </span>
                     </div>
                 </div>
             </div>
 
-            <div className="grid grid-cols-[320px_1fr_360px] overflow-hidden">
-                {/* LEFT — 목록 */}
+            <div className="grid grid-cols-[300px_1fr_380px] overflow-hidden">
+                {/* LEFT — 신청자 목록 */}
                 <div className="border-r-2 border-stone-200 bg-stone-50 flex flex-col">
                     <div className="p-4 pb-2">
                         <div className="flex justify-between items-baseline mb-2">
@@ -211,7 +307,7 @@ export default function AdminMembersPage() {
                                 📜 가입 신청서
                             </h2>
                             <span className="text-[11px] font-mono-auth font-extrabold text-stone-500">
-                                {list.length} / {members.length}
+                                {list.length} / {players.length}
                             </span>
                         </div>
                         <AuthField
@@ -257,50 +353,52 @@ export default function AdminMembersPage() {
                                 ⚠ {loadErr}
                             </div>
                         )}
-                        {!loading && list.length === 0 && !loadErr && (
+                        {!loading && !loadErr && list.length === 0 && (
                             <div className="text-[12px] text-stone-400 px-2 py-3">
-                                조건에 맞는 신청자가 없어요.
+                                대기 중인 신청자가 없어요.
                             </div>
                         )}
                         {list.map((p) => {
-                            const st = decided[String(p.id)];
                             const isSel = selected === p.id;
+                            const team = p.team_id
+                                ? teamById.get(p.team_id)
+                                : null;
+                            const isRisk =
+                                !p.email.endsWith("@ud2.co") &&
+                                !p.email.endsWith("@example.com");
                             return (
                                 <div
                                     key={p.id}
                                     onClick={() => setSelected(p.id)}
-                                    className={`p-2.5 rounded-md cursor-pointer mb-1.5 flex gap-2.5 items-center transition-all border-2 ${isSel ? "bg-white border-amber-400 shadow-[0_2px_0_0_#b45309]" : "border-transparent hover:bg-white/70 hover:border-stone-200"} ${st ? "opacity-60" : ""}`}
+                                    className={`p-2.5 rounded-md cursor-pointer mb-1.5 flex gap-2.5 items-center transition-all border-2 ${isSel ? "bg-white border-amber-400 shadow-[0_2px_0_0_#b45309]" : "border-transparent hover:bg-white/70 hover:border-stone-200"}`}
                                 >
                                     <CharBox
                                         name={p.name}
                                         color={
-                                            p.risk === "high"
-                                                ? "#ef4444"
-                                                : "#0ea5e9"
+                                            isRisk ? "#ef4444" : "#0ea5e9"
                                         }
                                         size={36}
                                     />
                                     <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                        <div className="flex items-center gap-1 flex-wrap">
                                             <div className="text-[13px] font-extrabold text-stone-900 truncate">
                                                 {p.name}
                                             </div>
-                                            {p.risk === "high" && (
+                                            {isRisk && (
                                                 <Chip tone="red">주의</Chip>
                                             )}
-                                            {st === "approved" && (
-                                                <Chip tone="green">입장</Chip>
-                                            )}
-                                            {st === "rejected" && (
-                                                <Chip tone="gray">거부</Chip>
-                                            )}
                                         </div>
-                                        <div className="text-[10px] text-stone-500 font-mono-auth truncate">
-                                            {p.email}
+                                        <div className="text-[10px] text-stone-500 truncate flex items-center gap-1">
+                                            <span className="text-[11px]">
+                                                {team?.icon ?? "🏰"}
+                                            </span>
+                                            <span className="font-bold">
+                                                {team?.name ?? "—"}
+                                            </span>
                                         </div>
                                     </div>
                                     <div className="text-[10px] text-stone-400 font-mono-auth font-bold whitespace-nowrap">
-                                        {p.elapsed ?? "—"}
+                                        {elapsedLabel(p.created_at)}
                                     </div>
                                 </div>
                             );
@@ -310,6 +408,11 @@ export default function AdminMembersPage() {
 
                 {/* CENTER — 상세 */}
                 <div className="overflow-auto relative">
+                    {!cur && !loading && (
+                        <div className="p-12 text-center text-[13px] text-stone-400">
+                            왼쪽에서 신청자를 선택해주세요.
+                        </div>
+                    )}
                     {cur && (
                         <div className="p-7 pb-24">
                             <div className="flex items-center gap-2 mb-4 text-[11px] text-stone-400 font-mono-auth font-bold">
@@ -318,8 +421,7 @@ export default function AdminMembersPage() {
                                 </span>
                                 <span>·</span>
                                 <span>
-                                    {cur.appliedAt ?? "—"} 신청 (
-                                    {cur.elapsed ?? "—"})
+                                    {elapsedLabel(cur.created_at)} 신청
                                 </span>
                             </div>
 
@@ -333,7 +435,7 @@ export default function AdminMembersPage() {
                                             name={cur.name}
                                             size={84}
                                             color={
-                                                cur.risk === "high"
+                                                isExternal
                                                     ? "#ef4444"
                                                     : "#0ea5e9"
                                             }
@@ -350,72 +452,38 @@ export default function AdminMembersPage() {
                                             {cur.name}
                                         </div>
                                         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                            {curTeam && (
+                                                <Chip
+                                                    tone="amber"
+                                                    icon={curTeam.icon ?? "🏰"}
+                                                >
+                                                    {curTeam.name}
+                                                </Chip>
+                                            )}
                                             <Chip tone="gray" icon="🌱">
-                                                Lv. 0 모험가 지망생
+                                                Lv. 0 지망생
                                             </Chip>
-                                            <span className="text-[12px] text-stone-500 font-mono-auth font-bold">
-                                                {cur.email}
-                                            </span>
-                                            {cur.domain === false && (
+                                            {isExternal && (
                                                 <Chip tone="red">
                                                     외부 도메인
                                                 </Chip>
                                             )}
                                         </div>
-                                    </div>
-
-                                    {curStatus && (
-                                        <div
-                                            className={`px-3 py-1.5 rounded-md text-[12px] font-black border-2 ${curStatus === "approved" ? "bg-emerald-100 text-emerald-800 border-emerald-500" : "bg-stone-100 text-stone-600 border-stone-400"}`}
-                                        >
-                                            {curStatus === "approved"
-                                                ? "✓ 입장 허가됨"
-                                                : "✕ 입장 거부됨"}
+                                        <div className="text-[12px] text-stone-500 font-mono-auth font-bold mt-1.5">
+                                            {cur.email}
                                         </div>
-                                    )}
-                                </div>
-
-                                <div className="mt-5 pt-4 border-t-2 border-dashed border-stone-200 grid grid-cols-3 gap-4">
-                                    <Meta
-                                        label="희망 역할"
-                                        value={cur.role ?? "—"}
-                                    />
-                                    <Meta
-                                        label="추천인"
-                                        value={
-                                            <span className="flex items-center gap-1.5">
-                                                {cur.invitedBy && (
-                                                    <CharBox
-                                                        name={cur.invitedBy.slice(
-                                                            0,
-                                                            1,
-                                                        )}
-                                                        size={18}
-                                                        color="#f59e0b"
-                                                    />
-                                                )}
-                                                {cur.invitedBy ?? "—"}
-                                            </span>
-                                        }
-                                    />
-                                    <Meta
-                                        label="사용한 열쇠"
-                                        value={
-                                            <span className="font-mono-auth font-bold">
-                                                {cur.code ?? "—"}
-                                            </span>
-                                        }
-                                    />
+                                    </div>
                                 </div>
                             </div>
 
-                            {cur.note && (
+                            {cur.bio && (
                                 <div className="mb-5">
                                     <div className="text-[11px] text-stone-700 font-extrabold mb-2 tracking-widest flex items-center gap-1.5">
-                                        📜 신청 메시지
+                                        📝 각오 한마디
+                                        <Chip tone="gray">🛡️ 길드장 전용</Chip>
                                     </div>
                                     <div className="p-4 rounded-md bg-amber-50 border-2 border-amber-300 text-[14px] text-stone-800 leading-relaxed font-medium">
-                                        &ldquo;{cur.note}&rdquo;
+                                        &ldquo;{cur.bio}&rdquo;
                                     </div>
                                 </div>
                             )}
@@ -426,45 +494,33 @@ export default function AdminMembersPage() {
                                 </div>
                                 <div className="rounded-md bg-white border-2 border-stone-300 divide-y-2 divide-stone-100">
                                     <SecurityRow
-                                        ok={cur.domain !== false}
+                                        ok={!isExternal}
                                         label="회사 도메인 (@ud2.co)"
                                         detail={
-                                            cur.domain !== false
-                                                ? "확인됨"
-                                                : "외부 도메인 — 신중히 검토 필요"
+                                            isExternal
+                                                ? "외부 도메인 — 신중히 검토 필요"
+                                                : "확인됨"
                                         }
                                     />
                                     <SecurityRow
                                         ok
-                                        label="유효한 열쇠 코드"
-                                        detail={`${cur.invitedBy ?? "—"} 발급 · 만료 전`}
+                                        label="유효한 초대코드 사용"
+                                        detail="가입 시 1회용 코드 소진 확인됨"
                                     />
                                     <SecurityRow
                                         ok
-                                        label="신청 IP"
-                                        detail="한국, 서울 · 차단 이력 없음"
-                                    />
-                                    <SecurityRow
-                                        ok={cur.risk !== "high"}
-                                        label="중복 신청 없음"
-                                        detail={
-                                            cur.risk !== "high"
-                                                ? "확인됨"
-                                                : "동일 이메일 2회 시도 — 이전 거절 이력"
-                                        }
+                                        label="신청 시각"
+                                        detail={new Date(
+                                            cur.created_at,
+                                        ).toLocaleString("ko-KR")}
                                     />
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {!cur && !loading && (
-                        <div className="p-12 text-center text-[13px] text-stone-400">
-                            왼쪽에서 신청자를 선택해주세요.
-                        </div>
-                    )}
-
-                    {cur && !curStatus && (
+                    {/* 액션 바 */}
+                    {cur && (
                         <div className="absolute bottom-0 left-0 right-0 px-7 py-4 bg-white border-t-2 border-stone-300 flex items-center gap-2">
                             <GameButton
                                 variant="danger"
@@ -473,9 +529,6 @@ export default function AdminMembersPage() {
                                 leftIcon="🚫"
                             >
                                 입장 거부
-                            </GameButton>
-                            <GameButton variant="ghost" size="md">
-                                ⏰ 나중에
                             </GameButton>
                             <div className="flex-1" />
                             <span className="text-[11px] text-stone-400 mr-2 font-mono-auth font-bold">
@@ -488,28 +541,6 @@ export default function AdminMembersPage() {
                                 leftIcon="🎉"
                             >
                                 입장 허가
-                            </GameButton>
-                        </div>
-                    )}
-                    {cur && curStatus && (
-                        <div className="absolute bottom-0 left-0 right-0 px-7 py-4 bg-white border-t-2 border-stone-300 flex items-center justify-between">
-                            <div
-                                className={`text-[13px] font-extrabold ${curStatus === "approved" ? "text-emerald-700" : "text-stone-600"}`}
-                            >
-                                {curStatus === "approved"
-                                    ? `🎉 ${cur.name}님이 길드에 입장했어요. 환영 알림이 발송되었습니다.`
-                                    : `🚫 ${cur.name}님의 입장을 거부했어요. 신청자에게 알림이 발송됩니다.`}
-                            </div>
-                            <GameButton
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                    const d = { ...decided };
-                                    delete d[String(cur.id)];
-                                    setDecided(d);
-                                }}
-                            >
-                                ↩ 되돌리기
                             </GameButton>
                         </div>
                     )}
@@ -544,8 +575,8 @@ export default function AdminMembersPage() {
                                     </h3>
                                     <p className="text-[13px] text-stone-500 leading-relaxed mb-5 text-center">
                                         {confirm === "approved"
-                                            ? "승인 즉시 워크스페이스에 입장하고, 모든 길드원에게 합류 알림이 갑니다."
-                                            : "신청자에게 거부 알림이 발송되며, 같은 이메일로는 30일 동안 재신청할 수 없어요."}
+                                            ? "승인 즉시 워크스페이스에 입장할 수 있어요."
+                                            : "신청자에게는 ‘이전 가입 신청이 거부되었습니다.’ 메시지가 보여집니다."}
                                     </p>
                                     <div className="flex gap-2 justify-end">
                                         <GameButton
@@ -578,98 +609,193 @@ export default function AdminMembersPage() {
                     )}
                 </div>
 
-                {/* RIGHT — 감사 로그 */}
-                <div className="border-l-2 border-stone-200 bg-stone-50 p-5 overflow-auto">
-                    <div className="text-[11px] text-stone-700 font-extrabold mb-4 tracking-widest flex items-center gap-1.5">
-                        📋 감사 로그 · TIMELINE
-                    </div>
-                    {!cur && (
-                        <div className="text-[12px] text-stone-400">
-                            신청자를 선택하면 감사 로그가 표시됩니다.
-                        </div>
-                    )}
-                    {cur && (
-                        <>
-                            <div className="relative pl-5">
-                                <div className="absolute top-2 bottom-2 left-[5px] w-0.5 bg-stone-300" />
-                                {[
-                                    {
-                                        t: "가입 신청서 접수",
-                                        d: `${cur.appliedAt ?? "—"} · IP 218.55.x.x`,
-                                        n: `${cur.name}님이 비밀 열쇠로 가입 신청`,
-                                    },
-                                    {
-                                        t: "초대장 열람",
-                                        d: "오늘 14:08",
-                                        n: "신청자가 초대 링크 클릭 — 6분 후 가입 시도",
-                                    },
-                                    {
-                                        t: "초대 이메일 발송",
-                                        d: "어제 09:15",
-                                        n: `${cur.email}로 자동 발송됨`,
-                                    },
-                                    {
-                                        t: "열쇠 발급",
-                                        d: "어제 09:14",
-                                        n: `${cur.invitedBy ?? "—"} · 5회 사용 가능 · ${cur.code ?? "—"}`,
-                                    },
-                                ].map((ev) => (
-                                    <div
-                                        key={ev.t}
-                                        className="mb-4 relative"
-                                    >
-                                        <div className="absolute -left-5 top-1 w-3 h-3 bg-white border-2 border-amber-500" />
-                                        <div className="text-[13px] font-extrabold text-stone-900">
-                                            {ev.t}
-                                        </div>
-                                        <div className="text-[10px] text-stone-500 font-mono-auth font-bold mt-0.5">
-                                            {ev.d}
-                                        </div>
-                                        <div className="text-[12px] text-stone-600 mt-1 leading-relaxed">
-                                            {ev.n}
-                                        </div>
-                                    </div>
-                                ))}
+                {/* RIGHT — 초대코드 패널 */}
+                <div className="border-l-2 border-stone-200 bg-stone-50 flex flex-col overflow-hidden">
+                    <div className="p-5 border-b-2 border-stone-200 bg-white">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="text-[13px] font-extrabold flex items-center gap-1.5">
+                                <PixKey scale={2} /> 새 열쇠 발급
                             </div>
+                            <Chip tone="amber">길드장 권한</Chip>
+                        </div>
 
-                            <div className="mt-2 p-4 rounded-md bg-amber-50 border-2 border-amber-400">
-                                <div className="text-[11px] text-amber-700 font-extrabold mb-2 tracking-widest">
-                                    💡 추천 판정
+                        {newCode ? (
+                            <div className="mb-1">
+                                <div className="text-[10px] text-stone-400 font-mono-auth font-extrabold tracking-widest mb-1.5">
+                                    ✓ NEW KEY ISSUED
                                 </div>
-                                <div className="text-[13px] text-stone-800 leading-relaxed mb-3 font-medium">
-                                    {cur.domain !== false
-                                        ? "회사 도메인 + 길드장 직접 발급 열쇠 → 일반적으로 입장 허가 권장"
-                                        : "외부 도메인 신청 → 추천인에게 1차 확인 후 결정 권장"}
-                                </div>
-                                <GameButton
-                                    variant="soft"
-                                    size="sm"
-                                    full
+                                <div
+                                    className="p-3 bg-amber-50 border-2 border-amber-400 rounded-md flex items-center justify-between gap-2"
+                                    style={{
+                                        boxShadow: "0 3px 0 0 #b45309",
+                                    }}
                                 >
-                                    📣 {cur.invitedBy ?? "추천인"}에게 슬랙 확인
+                                    <div className="text-[18px] font-black font-mono-auth tracking-[0.18em] text-amber-950">
+                                        {formatCode(newCode.code)}
+                                    </div>
+                                    <button
+                                        onClick={() =>
+                                            void navigator.clipboard?.writeText(
+                                                formatCode(newCode.code),
+                                            )
+                                        }
+                                        className="text-[11px] font-extrabold text-amber-700 hover:text-amber-900 px-2 py-1 rounded border-2 border-amber-400 bg-white"
+                                    >
+                                        📋 복사
+                                    </button>
+                                </div>
+                                <button
+                                    onClick={() => setNewCode(null)}
+                                    className="mt-2 text-[11px] font-bold text-stone-500 hover:text-stone-700"
+                                >
+                                    ↺ 다시 발급
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="space-y-2.5">
+                                <div>
+                                    <div className="text-[11px] font-extrabold text-stone-600 mb-1">
+                                        대상 팀
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-1.5">
+                                        {teams.map((t) => (
+                                            <button
+                                                key={t.id}
+                                                onClick={() =>
+                                                    setIssueTeam(t.id)
+                                                }
+                                                className={`px-2 py-1.5 rounded-md text-[11.5px] font-extrabold border-2 transition-all flex items-center justify-center gap-1 ${issueTeam === t.id ? "bg-amber-100 border-amber-500 text-amber-900 shadow-[0_2px_0_0_#b45309]" : "bg-white border-stone-200 text-stone-600 hover:border-stone-300"}`}
+                                            >
+                                                <span>{t.icon ?? "🏰"}</span>
+                                                {t.name.replace("팀", "")}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <div className="text-[11px] font-extrabold text-stone-600 mb-1">
+                                        유효 기간
+                                    </div>
+                                    <div className="flex gap-1.5">
+                                        {(
+                                            [
+                                                { k: "1", l: "1일" },
+                                                { k: "7", l: "7일" },
+                                                { k: "30", l: "30일" },
+                                            ] as const
+                                        ).map((o) => (
+                                            <button
+                                                key={o.k}
+                                                onClick={() =>
+                                                    setIssueExpiry(o.k)
+                                                }
+                                                className={`flex-1 px-2 py-1.5 rounded-md text-[12px] font-extrabold border-2 transition-all ${issueExpiry === o.k ? "bg-amber-100 border-amber-500 text-amber-900 shadow-[0_2px_0_0_#b45309]" : "bg-white border-stone-200 text-stone-600 hover:border-stone-300"}`}
+                                            >
+                                                {o.l}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <GameButton
+                                    variant="primary"
+                                    size="md"
+                                    full
+                                    disabled={!issueTeam || issuing}
+                                    onClick={issueNew}
+                                >
+                                    {issuing
+                                        ? "발급 중…"
+                                        : "✨ 새 열쇠 만들기"}
                                 </GameButton>
                             </div>
-                        </>
-                    )}
+                        )}
+                    </div>
+
+                    <div className="flex-1 overflow-auto px-4 pb-4">
+                        <div className="sticky top-0 bg-stone-50 pt-4 pb-2 z-[1]">
+                            <div className="text-[11px] text-stone-700 font-extrabold mb-2 tracking-widest flex items-center justify-between">
+                                <span>📜 발급된 열쇠</span>
+                                <span className="font-mono-auth text-stone-400">
+                                    {invitations.length}건
+                                </span>
+                            </div>
+                            <div className="flex gap-1 p-1 bg-white rounded-md border-2 border-stone-200">
+                                {(
+                                    [
+                                        { k: "active", l: "사용 가능" },
+                                        { k: "used", l: "사용됨" },
+                                        { k: "expired", l: "만료" },
+                                    ] as const
+                                ).map((f) => (
+                                    <button
+                                        key={f.k}
+                                        onClick={() => setCodeFilter(f.k)}
+                                        className={`flex-1 px-1.5 py-1 text-[11px] font-extrabold rounded-sm transition-colors flex items-center justify-center gap-1 ${codeFilter === f.k ? "bg-amber-400 text-amber-950 border border-amber-700" : "text-stone-500 hover:text-stone-700 border border-transparent"}`}
+                                    >
+                                        {f.l}{" "}
+                                        <span className="text-[9px] font-mono-auth opacity-70">
+                                            {codeCounts[f.k]}
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                            {filteredCodes.map((c) => {
+                                const team = c.team_id
+                                    ? teamById.get(c.team_id)
+                                    : null;
+                                const expired =
+                                    !c.used && c.expires_at <= nowIso;
+                                return (
+                                    <div
+                                        key={c.id}
+                                        className={`p-2.5 rounded-md bg-white border-2 transition-all ${c.used ? "border-emerald-200 opacity-70" : expired ? "border-stone-200 opacity-60" : "border-stone-300 hover:border-amber-400"}`}
+                                    >
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <div className="text-[13px] font-black font-mono-auth tracking-[0.15em] text-stone-900">
+                                                {formatCode(c.code)}
+                                            </div>
+                                            {c.used ? (
+                                                <Chip tone="green">
+                                                    사용됨
+                                                </Chip>
+                                            ) : expired ? (
+                                                <Chip tone="gray">만료</Chip>
+                                            ) : (
+                                                <Chip tone="amber">대기</Chip>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center justify-between text-[10px] text-stone-500 font-mono-auth font-bold">
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-[12px] leading-none">
+                                                    {team?.icon ?? "🏰"}
+                                                </span>
+                                                <span>
+                                                    {team?.name ?? "—"}
+                                                </span>
+                                            </div>
+                                            <span>
+                                                {c.used && c.used_by
+                                                    ? `← ${c.used_by}`
+                                                    : `~${c.expires_at.slice(2, 10)}`}
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {filteredCodes.length === 0 && (
+                                <div className="py-8 text-center text-[12px] text-stone-400 font-bold">
+                                    해당 상태의 열쇠가 없어요
+                                </div>
+                            )}
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
-    );
-}
-
-function Meta({
-    label,
-    value,
-}: {
-    label: string;
-    value: React.ReactNode;
-}) {
-    return (
-        <div>
-            <div className="text-[10px] text-stone-400 font-mono-auth font-extrabold mb-1 tracking-widest">
-                {label}
-            </div>
-            <div className="text-[13px] font-extrabold">{value}</div>
         </div>
     );
 }

@@ -1,11 +1,12 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signInWithGoogle } from "@/lib/auth";
 import { GameButton } from "@/components/auth/GameButton";
 import { GameBar } from "@/components/auth/GameBar";
 import { Hero, Gem } from "@/components/auth/Pix";
+import { NotMemberModal } from "@/components/auth/NotMemberModal";
 import {
     AuthLogo,
     CharBox,
@@ -22,6 +23,11 @@ function LoginContent() {
     const errorMessage = rejected
         ? "이전 가입 신청이 거부되었습니다."
         : null;
+
+    // 구글 OAuth 콜백에서 players 미존재 → /login?new=1 로 보내면 모달 노출
+    const [showModal, setShowModal] = useState(
+        searchParams.get("new") === "1",
+    );
 
     return (
         <div
@@ -249,6 +255,16 @@ function LoginContent() {
                     </div>
                 </div>
             </div>
+
+            {showModal && (
+                <NotMemberModal
+                    onClose={() => {
+                        setShowModal(false);
+                        // ?new=1 쿼리는 새로고침 시 모달이 다시 뜨지 않도록 정리
+                        router.replace("/login");
+                    }}
+                />
+            )}
         </div>
     );
 }

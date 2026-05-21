@@ -33,17 +33,3 @@ export async function getCurrentUser() {
     } = await supabase.auth.getUser();
     return user;
 }
-
-// 이메일 → 팀원명 매핑 (환경변수 기반)
-export function getMemberName(email: string | undefined) {
-    if (!email) return null;
-    const map = Object.fromEntries(
-        (process.env.NEXT_PUBLIC_MEMBER_EMAILS || "")
-            .split(",")
-            .filter(Boolean)
-            .map((pair) => pair.split(":")),
-    );
-    if (map[email]) return map[email];
-    if (email.endsWith("@example.com")) return "GUEST";
-    return null;
-}

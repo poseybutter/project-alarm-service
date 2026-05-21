@@ -4,11 +4,23 @@
 UD2 퍼블리싱팀 내부 업무관리 SaaS의 인증 화면 4종 디자인 핸드오프입니다.
 멀티 테넌시 확장(30명+)을 앞두고 기존 4명 사용 환경에서 새로 도입하는 이메일+비밀번호+초대코드 인증 + 관리자 승인 플로우를 다룹니다.
 
-**대상 화면 4종**
-1. 로그인
+**대상 화면 7종**
+1. 로그인 (이메일+비밀번호)
 2. 회원가입 (초대코드 4+4 분할 입력, 2-step)
 3. 승인 대기
-4. 관리자 멤버 승인
+4. 관리자 멤버 승인 + **초대코드 발급 패널** (개편)
+5. **"길드원이 아니에요!" 모달** (구글 OAuth 후 코드 미보유)
+6. **길드 가입 폼 `/guild-join`** (팀 선택 + 각오 한마디)
+7. (4와 동일) 관리자 화면 — 코드 발급 + 코드 목록 + 각오 한마디 노출 추가
+
+**추가된 API 명세** (v2/snippets-extra.jsx 참조):
+- `POST /api/invitations/verify` — 초대코드 검증 (5분 유효 임시 쿠키 발급)
+- `POST /api/guild-join` — 가입 신청 제출 (임시 쿠키 검증 후 1회 사용 폐기)
+- `GET /callback/google` — 구글 OAuth 콜백 (status에 따라 분기: new/pending/active)
+- `POST /api/admin/invitations` — 코드 발급
+- `GET /api/admin/invitations?status=active|used|expired` — 코드 목록
+- `PATCH /api/admin/players/[id]/approve|reject` — 승인/거절
+- `GET /api/teams` — 팀 목록
 
 **스택**
 - Frontend: Next.js + Tailwind CSS
@@ -595,14 +607,17 @@ boxShadow: "0 0 0 3px rgba(245, 158, 11, 0.22)"
 ## Files
 
 이 폴더에 포함된 파일:
-- `UD2 인증 화면 v2.html` — 메인 진입점, 4개 화면을 design canvas에 모아둠
+- `UD2 인증 화면 v2.html` — 메인 진입점, **7개 화면 + TS 핸드오프 코드**를 design canvas에 모아둠
 - `v2/tokens.jsx` — 디자인 토큰
-- `v2/primitives.jsx` — 픽셀 엔진 + 모든 공통 컴포넌트 (Pix, Hero, Hourglass, Key, Shield, Scroll, Gem, Logo, Btn, Field, GameBar, ChipG, CharBox, I)
-- `v2/screens/login.jsx`
-- `v2/screens/signup.jsx`
-- `v2/screens/pending.jsx`
-- `v2/screens/admin.jsx`
-- `design-canvas.jsx` — 4개 화면을 한 페이지에 모아 보여주는 캔버스 (실제 구현에선 불필요)
+- `v2/primitives.jsx` — 픽셀 엔진 + 모든 공통 컴포넌트 (Pix, Hero, Hourglass, Key, Shield, Scroll, Locked, Gem, Logo, Btn, Field, GameBar, ChipG, CharBox, I)
+- `v2/screens/login.jsx` — ① 로그인
+- `v2/screens/signup.jsx` — ② 회원가입 (4+4 분할, 2-step)
+- `v2/screens/pending.jsx` — ③ 승인 대기 ("관문 앞에서 대기 중…")
+- `v2/screens/admin.jsx` — ④ 관리자 멤버 승인 + 초대코드 발급 패널 (개편)
+- `v2/screens/not-member-modal.jsx` — ⑤ "길드원이 아니에요!" 모달
+- `v2/screens/guild-join.jsx` — ⑥ 길드 가입 폼 `/guild-join`
+- `v2/snippets-extra.jsx` — **TypeScript 핸드오프 코드** (API 명세 + DB 스키마 + 플로우 다이어그램)
+- `design-canvas.jsx` — 화면들을 한 페이지에 모아 보여주는 캔버스 (실제 구현에선 불필요)
 
 브라우저에서 `UD2 인증 화면 v2.html`을 직접 열어 동작/픽셀 디테일을 확인하면서 작업하세요.
 

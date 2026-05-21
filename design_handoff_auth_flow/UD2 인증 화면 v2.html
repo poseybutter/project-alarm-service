@@ -27,6 +27,9 @@
 <script type="text/babel" src="v2/screens/signup.jsx"></script>
 <script type="text/babel" src="v2/screens/pending.jsx"></script>
 <script type="text/babel" src="v2/screens/admin.jsx"></script>
+<script type="text/babel" src="v2/screens/not-member-modal.jsx"></script>
+<script type="text/babel" src="v2/screens/guild-join.jsx"></script>
+<script type="text/babel" src="v2/snippets-extra.jsx"></script>
 <script type="text/babel" src="design-canvas.jsx"></script>
 
 <script type="text/babel" data-presets="env,react">
@@ -361,7 +364,7 @@ function App() {
         </DCArtboard>
       </DCSection>
 
-      <DCSection id="screens" title="02 · 화면 (1440 × 900)">
+      <DCSection id="screens" title="02 · 핵심 화면 (1440 × 900)">
         <DCArtboard id="login-v2" label="① 로그인" width={1440} height={900}>
           <LoginV2 />
         </DCArtboard>
@@ -371,14 +374,29 @@ function App() {
         <DCArtboard id="pending-v2" label="③ 승인 대기" width={1440} height={900}>
           <PendingV2 />
         </DCArtboard>
-        <DCArtboard id="admin-v2" label="④ 관리자 멤버 승인" width={1440} height={900}>
+      </DCSection>
+
+      <DCSection id="new-flows" title="03 · 추가 화면 — 구글 로그인 통합 + 코드 발급">
+        <DCArtboard id="not-member" label="⑤ '길드원이 아니에요!' 모달 — 구글 로그인 후 코드 없음" width={1440} height={900}>
+          <NotMemberModal />
+        </DCArtboard>
+        <DCArtboard id="guild-join" label="⑥ 길드 가입 폼 (/guild-join) — 팀 선택 + 각오 한마디" width={1440} height={900}>
+          <GuildJoin />
+        </DCArtboard>
+        <DCArtboard id="admin-v2" label="⑦ 관리자 — 멤버 승인 + 초대코드 발급 패널 (개편)" width={1440} height={900}>
           <AdminV2 />
         </DCArtboard>
       </DCSection>
 
-      <DCSection id="handoff" title="03 · Next.js + Tailwind 구현 핸드오프">
+      <DCSection id="handoff" title="04 · Next.js + Tailwind 구현 핸드오프 (기초)">
         <DCArtboard id="snippets" label="코드 스니펫 + 보안 UX 원칙" width={1440} height={1500}>
           <Snippets />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="handoff-extra" title="05 · 추가 화면 핸드오프 — OAuth + 가입 폼 + 코드 발급 (TypeScript)">
+        <DCArtboard id="snippets-extra" label="API 명세 + 라우트 핸드러 + DB 스키마 + 플로우 다이어그램" width={1440} height={1700}>
+          <SnippetsExtra />
         </DCArtboard>
       </DCSection>
     </DesignCanvas>

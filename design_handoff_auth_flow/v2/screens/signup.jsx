@@ -242,7 +242,7 @@ function SignupV2() {
               <div className="flex items-start justify-between mb-5">
                 <div>
                   <div className="text-[10px] text-amber-700 font-mono font-extrabold tracking-widest">UD2 WORKSPACE</div>
-                  <div className="text-[20px] font-black tracking-tight text-stone-900 mt-1">UD2팀 길드</div>
+                  <div className="text-[20px] font-black tracking-tight text-stone-900 mt-1">퍼블리싱팀 길드</div>
                   <div className="text-[12px] text-stone-500 mt-0.5">Markup Story · 봄 시즌</div>
                 </div>
                 <Shield scale={3} />
@@ -252,7 +252,7 @@ function SignupV2() {
               <div className="flex items-center gap-2 mb-5">
                 <CharBox name="유" color="#f59e0b" size={32} level={12} />
                 <div className="text-[13px]">
-                  <b className="text-stone-900">주먹펴고 일어서</b>
+                  <b className="text-stone-900">김유정</b>
                   <span className="text-stone-500"> · 길드장 (Admin)</span>
                 </div>
               </div>
