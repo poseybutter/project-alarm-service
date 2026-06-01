@@ -128,6 +128,25 @@ export async function awardExp(
     return { amount, newExp, levelUp, prevLv, newLv };
 }
 
+/**
+ * 두 날짜(YYYY-MM-DD) 사이에 끼어 있는 "평일(월~금)" 수.
+ * 양 끝(start, end)은 제외하고 그 사이만 센다.
+ * 0이면 마지막 출석일 이후 빠뜨린 평일이 없다는 뜻 → 출석 연속 유지.
+ * 주말(토·일)은 세지 않으므로 건너뛰어도 연속이 끊기지 않는다.
+ */
+function countWeekdaysBetween(startYmd: string, endYmd: string): number {
+    const end = new Date(`${endYmd}T00:00:00`);
+    const cursor = new Date(`${startYmd}T00:00:00`);
+    cursor.setDate(cursor.getDate() + 1);
+    let count = 0;
+    while (cursor < end) {
+        const day = cursor.getDay();
+        if (day !== 0 && day !== 6) count++;
+        cursor.setDate(cursor.getDate() + 1);
+    }
+    return count;
+}
+
 export async function attendanceCheck(member: string) {
     const today = toLocalYmd(new Date());
 
@@ -143,17 +162,15 @@ export async function attendanceCheck(member: string) {
     if (player.attend_last === today)
         return { success: false, message: "오늘은 이미 출석했어요!" };
 
-    const now = new Date();
-    const dayOfWeek = now.getDay();
-    const prevDate = new Date(now);
-    if (dayOfWeek === 1) {
-        prevDate.setDate(now.getDate() - 3);
-    } else {
-        prevDate.setDate(now.getDate() - 1);
-    }
-    const prevStr = toLocalYmd(prevDate);
+    // 마지막 출석일과 오늘 사이에 빠뜨린 평일이 없으면 연속 유지.
+    //   금 출석 → 월 출석            → 연속 유지 (토·일은 평일 아님)
+    //   토 출석 → 일 스킵 → 월 출석   → 연속 유지
+    //   월 출석 → 수 출석(화 빠짐)    → 연속 초기화
     const streak =
-        player.attend_last === prevStr ? (player.attend_streak || 0) + 1 : 1;
+        player.attend_last &&
+        countWeekdaysBetween(player.attend_last, today) === 0
+            ? (player.attend_streak || 0) + 1
+            : 1;
 
     await supabase
         .from("players")
