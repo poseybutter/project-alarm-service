@@ -19,3 +19,15 @@ export function toLocalYmd(date: Date): string {
     const d2 = String(date.getDate()).padStart(2, "0");
     return `${y2}-${m2}-${d2}`;
 }
+
+/**
+ * 해당 주(월요일 시작) 월요일의 로컬 YYYY-MM-DD.
+ * 일요일은 직전 월요일(-6일)로, 그 외에는 (1 - 요일)만큼 당겨서 계산.
+ */
+export function getThisMonday(date: Date = new Date()): string {
+    const d = new Date(date);
+    const day = d.getDay(); // 0=일 ~ 6=토
+    const diff = day === 0 ? -6 : 1 - day;
+    d.setDate(d.getDate() + diff);
+    return toLocalYmd(d);
+}
