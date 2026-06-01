@@ -66,7 +66,7 @@ import {
     modalFormSelectStyles,
     badgeSelectStyles,
 } from "@/lib/reactSelectStyles";
-import { toLocalYmd } from "@/lib/toLocalYmd";
+import { toLocalYmd, getThisMonday } from "@/lib/toLocalYmd";
 import TiptapQuestContentEditor from "@/components/TiptapQuestContentEditor";
 
 function QuestCardContent({
@@ -968,10 +968,12 @@ export default function HomePage() {
         const today = new Date();
         if (today.getDay() !== 1) return;
 
-        const shownKey = `mvp_shown_${toLocalYmd(today)}`;
-        if (localStorage.getItem(shownKey)) return;
+        // 이번 주 월요일에 이미 닫았으면 다시 띄우지 않음
+        const thisMonday = getThisMonday(today);
+        if (localStorage.getItem("mvp_popup_dismissed_week") === thisMonday)
+            return;
 
-        const lockKey = `mvp_lock_${shownKey}`;
+        const lockKey = `mvp_lock_${thisMonday}`;
         if (sessionStorage.getItem(lockKey)) return;
         sessionStorage.setItem(lockKey, "1");
 
@@ -981,14 +983,6 @@ export default function HomePage() {
         lastSunday.setDate(today.getDate() - 1);
         const startYmd = toLocalYmd(lastMonday);
         const endYmd = toLocalYmd(lastSunday);
-
-        const markShown = () => {
-            try {
-                localStorage.setItem(shownKey, "1");
-            } catch {
-                /* ignore */
-            }
-        };
 
         void (async () => {
             try {
@@ -1054,7 +1048,6 @@ export default function HomePage() {
                     weekExp: best.weekExp,
                     taskCount: best.taskCount,
                 });
-                markShown();
             } catch {
                 sessionStorage.removeItem(lockKey);
             }
@@ -2420,7 +2413,17 @@ export default function HomePage() {
                             mvpName={mvpInfo.name}
                             weekExp={mvpInfo.weekExp}
                             taskCount={mvpInfo.taskCount}
-                            onClose={() => setMvpInfo(null)}
+                            onClose={() => {
+                                try {
+                                    localStorage.setItem(
+                                        "mvp_popup_dismissed_week",
+                                        getThisMonday(),
+                                    );
+                                } catch {
+                                    /* ignore */
+                                }
+                                setMvpInfo(null);
+                            }}
                         />
                     )}
                     {expPopups.map((p) => (
