@@ -1,0 +1,63 @@
+name: Notify on deploy
+
+# main 브랜치에 push 되면 package.json 버전 + 커밋 메시지로
+# Supabase notifications 테이블에 업데이트 알림을 한 건 INSERT 한다.
+on:
+  push:
+    branches: [main]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 커밋 범위 비교를 위해 전체 히스토리 필요
+
+      - name: Read version from package.json
+        id: version
+        run: echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Collect commit messages
+        id: commits
+        run: |
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.sha }}"
+          # 새 브랜치/force push 등으로 before 커밋이 없으면 최신 커밋만 사용
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE" 2>/dev/null; then
+            MESSAGES="$(git log -1 --pretty=format:'- %s' "$AFTER")"
+          else
+            MESSAGES="$(git log --pretty=format:'- %s' "$BEFORE..$AFTER")"
+          fi
+          # 범위가 비어 있으면(예: merge 후) 최신 커밋으로 폴백
+          if [ -z "$MESSAGES" ]; then
+            MESSAGES="$(git log -1 --pretty=format:'- %s' "$AFTER")"
+          fi
+          {
+            echo "body<<COMMIT_MSG_EOF"
+            echo "$MESSAGES"
+            echo "COMMIT_MSG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Insert notification into Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VERSION: ${{ steps.version.outputs.version }}
+          BODY: ${{ steps.commits.outputs.body }}
+          SHA: ${{ github.sha }}
+        run: |
+          PAYLOAD="$(jq -n \
+            --arg version "v$VERSION" \
+            --arg title "v$VERSION 업데이트" \
+            --arg body "$BODY" \
+            --arg commit_sha "$SHA" \
+            '{version: $version, title: $title, body: $body, commit_sha: $commit_sha}')"
+
+          curl -sf -X POST "$SUPABASE_URL/rest/v1/notifications" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            -d "$PAYLOAD"
