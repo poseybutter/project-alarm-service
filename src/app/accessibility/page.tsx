@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import Tooltip from "@/components/Tooltip";
 import Select from "react-select";
 import {
     badgeSelectStyles,
@@ -283,14 +284,20 @@ export default function AccessibilityPage() {
                                                         )
                                                     }
                                                 />
-                                                <button
-                                                    onClick={() =>
-                                                        deleteItem(item.id)
-                                                    }
-                                                    className="text-xs text-stone-300 hover:text-red-400 transition-colors"
-                                                >
-                                                    삭제
-                                                </button>
+                                                <Tooltip label="삭제">
+                                                    <button
+                                                        onClick={() =>
+                                                            deleteItem(item.id)
+                                                        }
+                                                        aria-label="삭제"
+                                                        className="text-base text-stone-300 hover:text-red-400 transition-colors"
+                                                    >
+                                                        <i
+                                                            className="ri-delete-bin-line"
+                                                            aria-hidden
+                                                        />
+                                                    </button>
+                                                </Tooltip>
                                             </div>
                                         </div>
                                     </div>

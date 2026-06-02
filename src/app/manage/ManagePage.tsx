@@ -12,6 +12,7 @@ import UserMenu from "@/components/UserMenu";
 import NotificationButton from "@/components/NotificationButton";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import Avatar from "@/components/Avatar";
+import Tooltip from "@/components/Tooltip";
 import { PageSpinner } from "@/components/Spinner";
 import type { Accessibility, Project } from "@/lib/types";
 import { getDiff, normalizeProject, getProjectMembers } from "@/lib/utils";
@@ -806,46 +807,76 @@ export default function ManagePage() {
                                                                 e.stopPropagation()
                                                             }
                                                         >
-                                                            <button
-                                                                type="button"
-                                                                onClick={() =>
-                                                                    openProjModalForEdit(
-                                                                        p,
-                                                                    )
+                                                            <Tooltip label="수정">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        openProjModalForEdit(
+                                                                            p,
+                                                                        )
+                                                                    }
+                                                                    aria-label="수정"
+                                                                    className="text-base text-stone-400 hover:text-amber-600 font-medium"
+                                                                >
+                                                                    <i
+                                                                        className="ri-edit-line"
+                                                                        aria-hidden
+                                                                    />
+                                                                </button>
+                                                            </Tooltip>
+                                                            <Tooltip label="삭제">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        void deleteProject(
+                                                                            p.id,
+                                                                        )
+                                                                    }
+                                                                    aria-label="삭제"
+                                                                    className="text-base text-stone-400 hover:text-red-500"
+                                                                >
+                                                                    <i
+                                                                        className="ri-delete-bin-line"
+                                                                        aria-hidden
+                                                                    />
+                                                                </button>
+                                                            </Tooltip>
+                                                            <Tooltip
+                                                                label={
+                                                                    p.is_archived
+                                                                        ? "복원"
+                                                                        : "보관"
                                                                 }
-                                                                className="text-xs text-amber-600 hover:text-amber-700 font-medium"
                                                             >
-                                                                수정
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() =>
-                                                                    void deleteProject(
-                                                                        p.id,
-                                                                    )
-                                                                }
-                                                                className="text-xs text-stone-400 hover:text-red-500"
-                                                            >
-                                                                삭제
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={(
-                                                                    e,
-                                                                ) => {
-                                                                    e.stopPropagation();
-                                                                    void toggleArchive(
-                                                                        p.id,
-                                                                        p.is_archived ??
-                                                                            false,
-                                                                    );
-                                                                }}
-                                                                className="text-xs text-stone-400 hover:text-stone-600"
-                                                            >
-                                                                {p.is_archived
-                                                                    ? "복원"
-                                                                    : "보관"}
-                                                            </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(
+                                                                        e,
+                                                                    ) => {
+                                                                        e.stopPropagation();
+                                                                        void toggleArchive(
+                                                                            p.id,
+                                                                            p.is_archived ??
+                                                                                false,
+                                                                        );
+                                                                    }}
+                                                                    aria-label={
+                                                                        p.is_archived
+                                                                            ? "복원"
+                                                                            : "보관"
+                                                                    }
+                                                                    className="text-base text-stone-400 hover:text-stone-600"
+                                                                >
+                                                                    <i
+                                                                        className={
+                                                                            p.is_archived
+                                                                                ? "ri-inbox-unarchive-line"
+                                                                                : "ri-archive-line"
+                                                                        }
+                                                                        aria-hidden
+                                                                    />
+                                                                </button>
+                                                            </Tooltip>
                                                         </div>
                                                     )}
                                                     {isOpen ? (
@@ -1197,28 +1228,40 @@ export default function ManagePage() {
                                                     />
                                                     {canRow && (
                                                         <>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() =>
-                                                                    openAccModalForEdit(
-                                                                        a,
-                                                                    )
-                                                                }
-                                                                className="text-xs text-amber-600 hover:text-amber-700 font-medium whitespace-nowrap"
-                                                            >
-                                                                수정
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() =>
-                                                                    void deleteAcc(
-                                                                        a.id,
-                                                                    )
-                                                                }
-                                                                className="text-xs text-stone-400 hover:text-red-500 whitespace-nowrap"
-                                                            >
-                                                                삭제
-                                                            </button>
+                                                            <Tooltip label="수정">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        openAccModalForEdit(
+                                                                            a,
+                                                                        )
+                                                                    }
+                                                                    aria-label="수정"
+                                                                    className="text-base text-stone-400 hover:text-amber-600 font-medium whitespace-nowrap"
+                                                                >
+                                                                    <i
+                                                                        className="ri-edit-line"
+                                                                        aria-hidden
+                                                                    />
+                                                                </button>
+                                                            </Tooltip>
+                                                            <Tooltip label="삭제">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        void deleteAcc(
+                                                                            a.id,
+                                                                        )
+                                                                    }
+                                                                    aria-label="삭제"
+                                                                    className="text-base text-stone-400 hover:text-red-500 whitespace-nowrap"
+                                                                >
+                                                                    <i
+                                                                        className="ri-delete-bin-line"
+                                                                        aria-hidden
+                                                                    />
+                                                                </button>
+                                                            </Tooltip>
                                                         </>
                                                     )}
                                                 </div>

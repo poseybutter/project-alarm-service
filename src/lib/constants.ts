@@ -23,7 +23,18 @@ export const STATUS_COLORS: Record<string, string> = {
   '진행중':       'bg-blue-100 text-blue-700',
   '대기':         'bg-gray-100 text-gray-600',
   '시작 전':      'bg-gray-100 text-gray-600',
-  '이슈 및 대기': 'bg-red-100 text-red-700',
+  '지연/보류':    'bg-red-100 text-red-700',
+  '이슈 및 대기': 'bg-red-100 text-red-700', // 레거시 값 하위호환 (색상)
+}
+
+// 레거시 상태값 하위호환: 예전 '이슈 및 대기'는 '지연/보류'와 동일하게 취급.
+// DB에 저장된 옛 값을 그대로 두고도 색상·그룹핑·표시가 정상 동작하도록 정규화한다.
+const LEGACY_STATUS_ALIAS: Record<string, string> = {
+  '이슈 및 대기': '지연/보류',
+}
+
+export function normalizeStatus(status: string): string {
+  return LEGACY_STATUS_ALIAS[status] ?? status
 }
 
 export const WORKLOAD_PRESETS = [

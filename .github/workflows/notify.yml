@@ -1,10 +1,15 @@
 name: Notify on deploy
 
-# main 브랜치에 push 되면 package.json 버전 + 커밋 메시지로
-# Supabase notifications 테이블에 업데이트 알림을 한 건 INSERT 한다.
+# main 브랜치에 push 되면:
+#  1) (항상) Supabase notifications 테이블에 업데이트 알림을 한 건 INSERT
+#  2) package.json version이 이전 커밋과 다를 때만 → git tag + GitHub Release 생성
 on:
   push:
     branches: [main]
+
+# git tag push + GitHub Release 생성에 필요 (GITHUB_TOKEN 자동 제공)
+permissions:
+  contents: write
 
 jobs:
   notify:
@@ -40,6 +45,23 @@ jobs:
             echo "COMMIT_MSG_EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Detect version change
+        id: changed
+        run: |
+          BEFORE="${{ github.event.before }}"
+          CURRENT="${{ steps.version.outputs.version }}"
+          # 이전 커밋의 package.json version 읽기 (없으면 빈 값 → 변경으로 간주)
+          PREV=""
+          if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BEFORE:package.json" 2>/dev/null; then
+            PREV="$(git show "$BEFORE:package.json" | jq -r .version)"
+          fi
+          echo "이전 버전: '$PREV' / 현재 버전: '$CURRENT'"
+          if [ "$PREV" != "$CURRENT" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Insert notification into Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -61,3 +83,26 @@ jobs:
             -H "Content-Type: application/json" \
             -H "Prefer: return=minimal" \
             -d "$PAYLOAD"
+
+      # 버전이 바뀐 경우에만 태그 + 릴리즈 생성
+      - name: Create tag and GitHub Release
+        if: steps.changed.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          BODY: ${{ steps.commits.outputs.body }}
+        run: |
+          TAG="v$VERSION"
+          # 태그가 이미 있으면 생성/푸시 생략
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "태그 $TAG 가 이미 존재 → 생성 생략"
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+          # 릴리즈가 이미 있으면 생성 생략
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "릴리즈 $TAG 가 이미 존재 → 생성 생략"
+          else
+            gh release create "$TAG" --title "$TAG" --notes "$BODY"
+          fi
