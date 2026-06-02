@@ -16,6 +16,7 @@ import {
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import Header from "@/components/Header";
+import Tooltip from "@/components/Tooltip";
 import type { Quest, Player, Task, Project } from "@/lib/types";
 import {
     getDiff,
@@ -466,7 +467,7 @@ function HomeMyTaskRow({
                                 "대기",
                                 "시작 전",
                                 "진행중",
-                                "이슈 및 대기",
+                                "지연/보류",
                                 "완료",
                             ].map((s) => ({ value: s, label: s }))}
                             value={{ value: t.status, label: t.status }}
@@ -496,22 +497,34 @@ function HomeMyTaskRow({
                     {(onEdit || onDelete) && (
                         <div className="flex items-center gap-2">
                             {onEdit && (
-                                <button
-                                    type="button"
-                                    onClick={() => onEdit(t)}
-                                    className="text-xs text-stone-300 transition-colors hover:text-amber-500"
-                                >
-                                    수정
-                                </button>
+                                <Tooltip label="수정">
+                                    <button
+                                        type="button"
+                                        onClick={() => onEdit(t)}
+                                        aria-label="수정"
+                                        className="text-base text-stone-300 transition-colors hover:text-amber-500"
+                                    >
+                                        <i
+                                            className="ri-edit-line"
+                                            aria-hidden
+                                        />
+                                    </button>
+                                </Tooltip>
                             )}
                             {onDelete && (
-                                <button
-                                    type="button"
-                                    onClick={() => onDelete(t.id)}
-                                    className="text-xs text-stone-300 transition-colors hover:text-red-400"
-                                >
-                                    삭제
-                                </button>
+                                <Tooltip label="삭제">
+                                    <button
+                                        type="button"
+                                        onClick={() => onDelete(t.id)}
+                                        aria-label="삭제"
+                                        className="text-base text-stone-300 transition-colors hover:text-red-400"
+                                    >
+                                        <i
+                                            className="ri-delete-bin-line"
+                                            aria-hidden
+                                        />
+                                    </button>
+                                </Tooltip>
                             )}
                         </div>
                     )}
@@ -757,20 +770,26 @@ function SortableQuestItem({
                     </span>
                 )}
                 {!isCompleting && (
-                    <button
-                        onClick={() => onEdit(q)}
-                        className="text-xs text-stone-300 transition-colors hover:text-amber-500"
-                    >
-                        수정
-                    </button>
+                    <Tooltip label="수정">
+                        <button
+                            onClick={() => onEdit(q)}
+                            aria-label="수정"
+                            className="text-base text-stone-300 transition-colors hover:text-amber-500"
+                        >
+                            <i className="ri-edit-line" aria-hidden />
+                        </button>
+                    </Tooltip>
                 )}
                 {!isCompleting && (
-                    <button
-                        onClick={() => onDelete(q.id)}
-                        className="text-xs text-stone-300 transition-colors hover:text-red-400"
-                    >
-                        삭제
-                    </button>
+                    <Tooltip label="삭제">
+                        <button
+                            onClick={() => onDelete(q.id)}
+                            aria-label="삭제"
+                            className="text-base text-stone-300 transition-colors hover:text-red-400"
+                        >
+                            <i className="ri-delete-bin-line" aria-hidden />
+                        </button>
+                    </Tooltip>
                 )}
             </div>
         </div>
@@ -2034,7 +2053,7 @@ export default function HomePage() {
                                                 "대기",
                                                 "시작 전",
                                                 "진행중",
-                                                "이슈 및 대기",
+                                                "지연/보류",
                                                 "완료",
                                             ].map((s) => ({
                                                 value: s,

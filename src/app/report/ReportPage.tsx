@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+    useCallback,
+    useEffect,
+    useId,
+    useMemo,
+    useRef,
+    useState,
+} from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -13,9 +20,10 @@ import NotificationButton from "@/components/NotificationButton";
 import { useAuth } from "@/components/AuthProvider";
 import { PageSpinner } from "@/components/Spinner";
 import type { Task } from "@/lib/types";
-import { MEMBERS, LEADER, STATUS_COLORS, TEAM_ID } from "@/lib/constants";
+import { MEMBERS, TEAM_ID, normalizeStatus } from "@/lib/constants";
 import { toLocalYmd } from "@/lib/toLocalYmd";
 import TiptapSectionEditor from "@/components/TiptapSectionEditor";
+import Tooltip from "@/components/Tooltip";
 import Select from "react-select";
 import { modalFormSelectStyles } from "@/lib/reactSelectStyles";
 
@@ -29,59 +37,9 @@ function noticeHtmlHasText(html: string | null | undefined): boolean {
     return text.length > 0;
 }
 
-/** 자동 브리핑 플레인을 문단 단위로 분리 (빈 줄 / 줄바꿈+** / 공백+** 경계) */
-function splitBriefingPlainIntoChunks(raw: string): string[] {
-    const t = (raw || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
-    if (!t) return [];
-    let chunks = t
-        .split(/\n\n+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-    chunks = chunks.flatMap((chunk) => {
-        const aster = chunk.match(/\*\*/g)?.length ?? 0;
-        if (aster < 4) return [chunk];
-        const parts = chunk
-            .split(/\s+(?=\*\*)|\n(?=\*\*)/)
-            .map((s) => s.trim())
-            .filter(Boolean);
-        return parts.length > 1 ? parts : [chunk];
-    });
-    return chunks;
-}
-
 /** 이스케이프된 브리핑 조각에서 `**굵게**` → `<strong>` (자동문만 사용) */
 function briefingEscapedToHtmlWithBold(escapedWithBr: string): string {
     return escapedWithBr.replace(/\*\*([\s\S]+?)\*\*/g, "<strong>$1</strong>");
-}
-
-/** 자동 생성 브리핑(플레인) → Tiptap·미리보기용 HTML (`**` → 굵게) */
-function plainBriefingToInitialHtml(plain: string): string {
-    const chunks = splitBriefingPlainIntoChunks(plain);
-    if (!chunks.length) return "<p></p>";
-    return chunks
-        .map((block) => {
-            const esc = block
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;");
-            const withBr = esc.replace(/\n/g, "<br>");
-            const inner = briefingEscapedToHtmlWithBold(withBr);
-            return `<p>${inner}</p>`;
-        })
-        .join("");
-}
-
-/** 보기 모드: DB에 저장된 브리핑 HTML (Tiptap 저장본) */
-function BriefingSavedHtmlPreview({ html }: { html: string }) {
-    const inner = html?.trim() ? html : "<p></p>";
-    return (
-        <div className="notice-editor overflow-x-auto rounded-lg border border-stone-200 bg-stone-50">
-            <div
-                className="ProseMirror tiptap px-3 py-3 text-stone-700"
-                dangerouslySetInnerHTML={{ __html: inner }}
-            />
-        </div>
-    );
 }
 
 const PROSE_CLASSES =
@@ -118,23 +76,6 @@ function SectionHtmlReadView({
     );
 }
 
-/** 복사용: HTML → 줄바꿈 유지한 플레인 텍스트 */
-function htmlToPlainText(html: string): string {
-    if (!html?.trim()) return "";
-    return html
-        .replace(/<\/p>\s*<p>/gi, "\n\n")
-        .replace(/<br\s*\/?>/gi, "\n")
-        .replace(/<[^>]+>/g, "")
-        .replace(/\u00a0/g, " ")
-        .trim();
-}
-
-/** 노션 등: 굵게 유지하려면 text/html + text/plain 동시 제공 */
-function wrapClipboardBriefingDocument(bodyHtml: string): string {
-    const body = bodyHtml.trim() ? bodyHtml : "<p></p>";
-    return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${body}</body></html>`;
-}
-
 /** HTML → 마크다운 변환 (Copy 버튼용) */
 function htmlToMarkdown(html: string): string {
     if (!html?.trim()) return "";
@@ -164,53 +105,6 @@ function htmlToMarkdown(html: string): string {
         .replace(/\u00a0/g, " ")
         .replace(/\n{3,}/g, "\n\n") // 3줄 이상 연속 줄바꿈 → 2줄로 축약
         .trim();
-}
-
-async function copyBriefingRichToClipboard(
-    bodyHtml: string,
-    plainText: string,
-    setCopied: (v: boolean) => void,
-): Promise<void> {
-    const html = wrapClipboardBriefingDocument(bodyHtml);
-    const plain =
-        plainText.trim() || htmlToPlainText(bodyHtml).trim() || "(내용 없음)";
-    try {
-        if (
-            typeof ClipboardItem !== "undefined" &&
-            navigator.clipboard?.write
-        ) {
-            await navigator.clipboard.write([
-                new ClipboardItem({
-                    "text/html": new Blob([html], { type: "text/html" }),
-                    "text/plain": new Blob([plain], { type: "text/plain" }),
-                }),
-            ]);
-        } else {
-            await navigator.clipboard.writeText(plain);
-        }
-    } catch {
-        try {
-            await navigator.clipboard.writeText(plain);
-        } catch {
-            /* ignore */
-        }
-    }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-}
-
-async function copyBriefingMarkdown(
-    bodyHtml: string,
-    setCopied: (v: boolean) => void,
-): Promise<void> {
-    const markdown = htmlToMarkdown(bodyHtml) || "(내용 없음)";
-    try {
-        await navigator.clipboard.writeText(markdown);
-    } catch {
-        /* ignore */
-    }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
 }
 
 type TiptapNoticeEditorProps = {
@@ -380,114 +274,6 @@ function TiptapNoticeEditor({
     );
 }
 
-type BriefSection = "project" | "maintenance" | "etc";
-
-/** 주간 브리핑 자동문: proj 그룹, 제목에 담당(@), 업무는 ⇒ … — 상태, 이슈는 ⚠️ 이슈: … — 상태 (⇒와 구분) */
-function formatBriefingSection(tasks: Task[], section: BriefSection): string {
-    if (!tasks.length) return "";
-
-    const groupKey = (t: Task) =>
-        section === "etc" ? `${t.type || "기타"}::${t.proj}` : t.proj;
-
-    const groups = new Map<string, Task[]>();
-    for (const t of tasks) {
-        const k = groupKey(t);
-        if (!groups.has(k)) groups.set(k, []);
-        groups.get(k)!.push(t);
-    }
-
-    const orderedKeys = [...groups.keys()].sort((a, b) => {
-        const ta = groups.get(a)![0];
-        const tb = groups.get(b)![0];
-        const pa = `${ta.type || ""} ${ta.proj}`;
-        const pb = `${tb.type || ""} ${tb.proj}`;
-        return pa.localeCompare(pb, "ko");
-    });
-
-    const blocks: string[] = [];
-
-    for (const key of orderedKeys) {
-        const groupTasks = [...groups.get(key)!].sort((a, b) => a.id - b.id);
-        const first = groupTasks[0];
-
-        const typePrefix =
-            section === "etc" && first.type
-                ? `[${first.type}] `
-                : section === "etc"
-                  ? "[기타] "
-                  : "";
-
-        const highlight = groupTasks.some((t) => t.is_starred);
-        const titleProj = `${typePrefix}${first.proj}`.trim();
-        const uniqMembers = [...new Set(groupTasks.map((t) => t.member))];
-        const memberPart =
-            uniqMembers.length === 0
-                ? ""
-                : uniqMembers.length === 1
-                  ? ` @${uniqMembers[0]}`
-                  : ` (${uniqMembers.map((m) => `@${m}`).join(" · ")})`;
-        const titleLine = `**${highlight ? "⭐ " : ""}${titleProj}${memberPart}**`;
-
-        const multiMember = uniqMembers.length > 1;
-
-        const bodyLines: string[] = [];
-        const normalTasks = groupTasks.filter((t) => !t.is_plan);
-        for (const t of normalTasks) {
-            const raw = (t.content || "").trim();
-            if (raw) {
-                for (const line of raw.split("\n")) {
-                    const s = line.trim();
-                    if (s) {
-                        bodyLines.push(
-                            multiMember
-                                ? `⇒ @${t.member} ${s} — ${t.status}`
-                                : `⇒ ${s} — ${t.status}`,
-                        );
-                    }
-                }
-            }
-            if (t.issue && String(t.issue).trim()) {
-                const issueText = String(t.issue).trim();
-                bodyLines.push(
-                    multiMember
-                        ? `⚠️ @${t.member} · ${issueText}`
-                        : `⚠️ ${issueText}`,
-                );
-            }
-        }
-
-        const planTasks = groupTasks.filter(
-            (t) => t.is_plan && t.status !== "완료",
-        );
-        for (const t of planTasks) {
-            const startStr = t.start_date
-                ? t.start_date.slice(5).replace("-", "/")
-                : "";
-            const endStr = t.end_date
-                ? t.end_date.slice(5).replace("-", "/")
-                : "";
-            const dateStr =
-                startStr && endStr
-                    ? `${startStr}~${endStr} `
-                    : endStr
-                      ? `~${endStr} `
-                      : "";
-            const raw = (t.content || "").replace(/\n{2,}/g, "\n").trim();
-            if (raw) {
-                bodyLines.push(`⇒ ${dateStr}${raw}`);
-            }
-        }
-
-        // 제목·본문을 \n으로 연결해 한 <p> 안에 <br>로 묶이도록 함
-        // (빈 줄 없이 → splitBriefingPlainIntoChunks가 하나의 청크로 유지)
-        const blockParts = [titleLine, ...bodyLines];
-        const block = blockParts.join("\n").replace(/\n+$/, "");
-        blocks.push(block);
-    }
-
-    return blocks.join("\n\n").trimEnd();
-}
-
 /** 브리핑 편집 허용 윈도우: 목요일 00:00 ~ 18:00 (KST 가정). */
 function isEditableWindow(now: Date = new Date()): boolean {
     const day = now.getDay();
@@ -538,13 +324,6 @@ function getMonthWin(offset: number) {
     };
 }
 
-function fmtMin(min: number) {
-    if (!min) return "-";
-    if (min >= 480) return `${(min / 480).toFixed(1).replace(".0", "")}일`;
-    if (min >= 60) return `${(min / 60).toFixed(1).replace(".0", "")}h`;
-    return `${min}분`;
-}
-
 type BriefingRow = {
     project: string;
     maintenance: string;
@@ -553,10 +332,151 @@ type BriefingRow = {
     notice: string | null;
     checklist: string | null;
     okr: string | null;
+    /** 상태별 아코디언 브리핑 (Tiptap HTML) */
+    in_progress: string | null;
+    waiting: string | null;
+    not_started: string | null;
+    delayed: string | null;
+    done: string | null;
     is_locked: boolean;
     edited_by: string | null;
     updated_at: string | null;
 };
+
+/** 상태별 주간 브리핑 아코디언 정의 (status → briefings 컬럼) */
+type StatusBriefCol =
+    | "in_progress"
+    | "waiting"
+    | "not_started"
+    | "delayed"
+    | "done";
+const STATUS_BRIEF_GROUPS: {
+    key: string;
+    emoji: string;
+    col: StatusBriefCol;
+}[] = [
+    { key: "진행중", emoji: "🔵", col: "in_progress" },
+    { key: "시작 전", emoji: "⚪", col: "not_started" },
+    { key: "대기", emoji: "🟡", col: "waiting" },
+    { key: "지연/보류", emoji: "🔴", col: "delayed" },
+    { key: "완료", emoji: "✅", col: "done" },
+];
+
+/** 업무 카드 정렬용 타입 우선순위 (목록에 없는 타입은 맨 뒤) */
+const TYPE_SORT_ORDER = [
+    "프로젝트",
+    "유지보수",
+    "접근성",
+    "고도화",
+    "업무지원",
+];
+function typeRank(type: string | null | undefined): number {
+    const i = TYPE_SORT_ORDER.indexOf(type ?? "");
+    return i === -1 ? TYPE_SORT_ORDER.length : i;
+}
+
+/** 카드 헤더 [타입] 인라인 텍스트 색상 (타입별) */
+// 업무(tasks) 페이지 TYPE_COLORS와 동일 팔레트로 통일 (text 색만 사용)
+const TYPE_TEXT_COLOR: Record<string, string> = {
+    프로젝트: "text-violet-700",
+    유지보수: "text-red-700",
+    고도화: "text-green-700",
+    접근성: "text-sky-700",
+    업무지원: "text-blue-700",
+};
+
+/** 담당 배정 "구분" 배지 색상 (bg+text). 구분: 프로젝트/개편/고도화/유지보수/기타 */
+const ASSIGN_TYPE_BADGE: Record<string, string> = {
+    프로젝트: "bg-violet-100 text-violet-700",
+    개편: "bg-sky-100 text-sky-700",
+    고도화: "bg-green-100 text-green-700",
+    유지보수: "bg-red-100 text-red-700",
+    기타: "bg-stone-100 text-stone-500",
+};
+
+/** 담당 배정 정렬 순서 (구분별로 같은 종류끼리 모음) */
+const ASSIGN_TYPE_ORDER = ["프로젝트", "개편", "고도화", "유지보수", "기타"];
+function assignTypeRank(type: string): number {
+    const i = ASSIGN_TYPE_ORDER.indexOf(type);
+    return i === -1 ? ASSIGN_TYPE_ORDER.length : i; // 목록에 없으면 맨 뒤
+}
+
+function escapeHtml(s: string): string {
+    return s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+}
+
+/**
+ * tasks.content(plain text) → 카드 Tiptap 에디터 초기 HTML.
+ * 첫 줄: "⇒ 내용", 이후 줄: 들여쓰기(⇒ 없이 non-breaking space 2칸).
+ * (ProseMirror가 선행 일반 공백은 접으므로   사용)
+ */
+/** 계획 항목 기간 접두: "5/27~6/2 " (구 브리핑 형식, MM/DD~MM/DD) */
+function planDatePrefix(t: Task): string {
+    const s = t.start_date ? t.start_date.slice(5).replace("-", "/") : "";
+    const e = t.end_date ? t.end_date.slice(5).replace("-", "/") : "";
+    return s && e ? `${s}~${e} ` : e ? `~${e} ` : "";
+}
+
+function contentToCardHtml(t: Task): string {
+    // 계획 항목(미완료)만 기간 접두 — 구 브리핑 형식과 동일
+    const datePrefix =
+        t.is_plan && t.status !== "완료" ? planDatePrefix(t) : "";
+    const lines = (t.content || "").split("\n");
+    const out: string[] = [];
+    let firstDone = false;
+    for (const raw of lines) {
+        const s = raw.trim();
+        if (!firstDone) {
+            if (!s) continue;
+            out.push(
+                `⇒ ${datePrefix}${briefingEscapedToHtmlWithBold(escapeHtml(s))}`,
+            );
+            firstDone = true;
+        } else {
+            out.push(s ? `  ${briefingEscapedToHtmlWithBold(escapeHtml(s))}` : "");
+        }
+    }
+    // 내용이 비어도 계획 기간이 있으면 한 줄 표시
+    if (!firstDone && datePrefix) {
+        out.push(`⇒ ${datePrefix.trim()}`);
+    }
+    // 이슈/비고 (구 형식: ⚠️ {이슈}) — ⇒ 보다 한 단계 안쪽으로 들여쓰기
+    if (t.issue && String(t.issue).trim()) {
+        out.push(
+            `  ⚠️ ${briefingEscapedToHtmlWithBold(escapeHtml(String(t.issue).trim()))}`,
+        );
+    }
+    if (!out.length) return "<p></p>";
+    return `<p>${out.join("<br>")}</p>`;
+}
+
+/**
+ * 카드/복사 머리줄: "**⭐[타입] 프로젝트명 @담당자**"
+ * 노션 등에 붙여넣을 때 굵게 보이도록 마크다운 볼드(**)로 감싼다. (핵심 프로젝트면 ⭐ 접두)
+ */
+function cardHeaderLine(t: Task): string {
+    const star = t.is_starred ? "⭐ " : "";
+    const typePart = t.type ? `[${t.type}] ` : "";
+    return `**${star}${typePart}${t.proj} @${t.member}**`;
+}
+
+/**
+ * 카드 복사 텍스트:
+ *   [타입] 프로젝트명 @담당자
+ *   ⇒ 첫 번째 내용
+ *     두 번째 내용 (들여쓰기)
+ */
+function briefTaskCopyText(t: Task, html: string): string {
+    // htmlToMarkdown은 들여쓰기용 nbsp를 일반 공백으로 바꾸는데, 노션은 줄 앞 일반 공백을 무시한다.
+    // → 변환 후 줄 앞 공백을 다시 nbsp로 되돌려 들여쓰기를 보존한다.
+    const body = htmlToMarkdown(html).replace(/^ +/gm, (m) =>
+        " ".repeat(m.length),
+    );
+    return body ? `${cardHeaderLine(t)}\n${body}` : cardHeaderLine(t);
+}
 
 type Assignment = {
     id: number;
@@ -601,6 +521,22 @@ function formatAssignments(list: Assignment[]): string {
     return lines.join("\n");
 }
 
+/** 담당 배정 단건 복사 텍스트 (formatAssignments와 동일 형식) */
+function assignmentCopyText(a: Assignment): string {
+    const namePart = a.url ? `[${a.name}](${a.url})` : a.name;
+    const head =
+        a.status === "배정대기"
+            ? `⇒ **[배정대기]** ${namePart}`
+            : `⇒ **[${a.type}]** ${namePart} : ${(a.members || []).join(", ")}`;
+    const lines = [head];
+    if (a.period_note) {
+        a.period_note.split("\n").forEach((l) => {
+            if (l.trim()) lines.push(`  • ${l.trim()}`);
+        });
+    }
+    return lines.join("\n");
+}
+
 const EMPTY_ASSIGN_FORM: {
     type: string;
     name: string;
@@ -621,9 +557,12 @@ export default function ReportPage() {
     const { member: currentMember, role } = useAuth();
     const isGuest = currentMember === "GUEST" || role === "guest";
     const [mode, setMode] = useState<"weekly" | "monthly">("weekly");
+    // 콘텐츠 탭: 현황 보드(브리핑+배정) / 공지(확인·OKR·전달사항)
+    const [reportTab, setReportTab] = useState<"board" | "notice">("board");
     const [wOff, setWOff] = useState(0);
     const wOffRef = useRef(wOff);
-    const channelIdRef = useRef(Math.random().toString(36).slice(2, 8));
+    // 컴포넌트 인스턴스별 고유 realtime 채널 suffix (렌더 순수성 위해 useId 사용)
+    const channelId = useId().replace(/[^a-zA-Z0-9]/g, "");
     useEffect(() => {
         wOffRef.current = wOff;
     }, [wOff]);
@@ -633,12 +572,9 @@ export default function ReportPage() {
     const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
     const [briefing, setBriefing] = useState<BriefingRow | null>(null);
-    const [editing, setEditing] = useState(false);
-    const [editProject, setEditProject] = useState("");
-    const [editMaintenance, setEditMaintenance] = useState("");
-    const [editEtc, setEditEtc] = useState("");
+    const [, setEditing] = useState(false);
     const [briefingEditorKey, setBriefingEditorKey] = useState(0);
-    const [saving, setSaving] = useState(false);
+    const [saving] = useState(false);
     const savingBriefingRef = useRef(false);
     const [editNotice, setEditNotice] = useState("");
     /** 저장 클릭 시점에 state 배치보다 앞선 값이 쓰이지 않도록 최신 HTML 유지 */
@@ -672,9 +608,24 @@ export default function ReportPage() {
     const savingOkrRef = useRef(false);
     const [okrEditorNonce, setOkrEditorNonce] = useState(0);
     const [okrExpanded, setOkrExpanded] = useState(false);
-    const [copiedProject, setCopiedProject] = useState(false);
-    const [copiedMaintenance, setCopiedMaintenance] = useState(false);
-    const [copiedEtc, setCopiedEtc] = useState(false);
+    // 확인해주세요·전달사항 접이식 (기본 접힘 — 핵심인 브리핑/배정을 위에서 한눈에)
+    const [checklistOpen, setChecklistOpen] = useState(false);
+    const [noticeOpen, setNoticeOpen] = useState(false);
+    // 담당 배정: 항목별 아코디언 펼침 상태 (관리 페이지 프로젝트와 동일 패턴)
+    const [expandedAssign, setExpandedAssign] = useState<
+        Record<number, boolean>
+    >({});
+    const [copiedAssignId, setCopiedAssignId] = useState<number | null>(null);
+    const [copiedStatusCol, setCopiedStatusCol] = useState<StatusBriefCol | null>(
+        null,
+    );
+    // 업무별 브리핑 카드: 저장된 내용(task_id→HTML), 편집 드래프트, 저장중/복사 표시
+    const [savedBriefTasks, setSavedBriefTasks] = useState<
+        Record<number, string>
+    >({});
+    const briefTaskDraftRef = useRef<Record<number, string>>({});
+    const [savingTaskId, setSavingTaskId] = useState<number | null>(null);
+    const [copiedTaskId, setCopiedTaskId] = useState<number | null>(null);
 
     const [assignments, setAssignments] = useState<Assignment[]>([]);
     const [showAssignModal, setShowAssignModal] = useState(false);
@@ -689,10 +640,13 @@ export default function ReportPage() {
     const [showOtherInput, setShowOtherInput] = useState(false);
     const [copiedAssign, setCopiedAssign] = useState(false);
 
-    savingBriefingRef.current = saving;
-    savingNoticeRef.current = savingNotice;
-    savingChecklistRef.current = savingChecklist;
-    savingOkrRef.current = savingOkr;
+    // 최신 저장 상태를 비동기 콜백에서 참조하기 위한 ref 동기화 (렌더 중 대입 금지 → effect)
+    useEffect(() => {
+        savingBriefingRef.current = saving;
+        savingNoticeRef.current = savingNotice;
+        savingChecklistRef.current = savingChecklist;
+        savingOkrRef.current = savingOkr;
+    }, [saving, savingNotice, savingChecklist, savingOkr]);
 
     const wk = getWeekWin(wOff);
     const mn = getMonthWin(mOff);
@@ -703,7 +657,7 @@ export default function ReportPage() {
         const { data, error } = await supabase
             .from("briefings")
             .select(
-                "project, maintenance, etc, notice, checklist, okr, is_locked, edited_by, updated_at",
+                "project, maintenance, etc, notice, checklist, okr, in_progress, waiting, not_started, delayed, done, is_locked, edited_by, updated_at",
             )
             .eq("team_id", TEAM_ID)
             .eq("week_start", weekStart)
@@ -726,6 +680,11 @@ export default function ReportPage() {
                 notice: data.notice ?? null,
                 checklist: data.checklist ?? null,
                 okr: data.okr ?? null,
+                in_progress: data.in_progress ?? null,
+                waiting: data.waiting ?? null,
+                not_started: data.not_started ?? null,
+                delayed: data.delayed ?? null,
+                done: data.done ?? null,
                 is_locked: data.is_locked ?? false,
                 edited_by: data.edited_by ?? null,
                 updated_at: data.updated_at ?? null,
@@ -758,6 +717,11 @@ export default function ReportPage() {
                 notice: carriedNotice,
                 checklist: data.checklist ?? carriedChecklist,
                 okr: data.okr ?? null,
+                in_progress: data.in_progress ?? null,
+                waiting: data.waiting ?? null,
+                not_started: data.not_started ?? null,
+                delayed: data.delayed ?? null,
+                done: data.done ?? null,
                 is_locked: data.is_locked ?? false,
                 edited_by: data.edited_by ?? null,
                 updated_at: data.updated_at ?? null,
@@ -772,6 +736,11 @@ export default function ReportPage() {
             notice: carriedNotice,
             checklist: carriedChecklist,
             okr: null,
+            in_progress: null,
+            waiting: null,
+            not_started: null,
+            delayed: null,
+            done: null,
             is_locked: false,
             edited_by: null,
             updated_at: null,
@@ -794,7 +763,7 @@ export default function ReportPage() {
 
     useEffect(() => {
         const channel = supabase
-            .channel(`assignments-rt-${channelIdRef.current}`)
+            .channel(`assignments-rt-${channelId}`)
             .on(
                 "postgres_changes",
                 { event: "*", schema: "public", table: "assignments" },
@@ -806,7 +775,7 @@ export default function ReportPage() {
         return () => {
             supabase.removeChannel(channel).catch(console.error);
         };
-    }, [loadAssignments]);
+    }, [loadAssignments, channelId]);
 
     const loadTasks = useCallback(async () => {
         const { data } = await supabase
@@ -824,7 +793,7 @@ export default function ReportPage() {
 
     useEffect(() => {
         const channel = supabase
-            .channel(`tasks-rt-report-${channelIdRef.current}`)
+            .channel(`tasks-rt-report-${channelId}`)
             .on(
                 "postgres_changes",
                 { event: "*", schema: "public", table: "tasks" },
@@ -836,7 +805,7 @@ export default function ReportPage() {
         return () => {
             supabase.removeChannel(channel).catch(console.error);
         };
-    }, [loadTasks]);
+    }, [loadTasks, channelId]);
 
     useEffect(() => {
         setEditing(false);
@@ -854,9 +823,39 @@ export default function ReportPage() {
         void loadBriefing();
     }, [mode, wOff, loadBriefing]);
 
+    // 업무별 브리핑 카드 저장 내용 로드 (GET /api/briefing-tasks?week=week_start)
+    const loadBriefingTasks = useCallback(async () => {
+        const week = getWeekWin(wOffRef.current).from;
+        try {
+            const res = await fetch(
+                `/api/briefing-tasks?week=${encodeURIComponent(week)}`,
+            );
+            if (!res.ok) return;
+            const json = (await res.json()) as {
+                tasks?: { task_id: number; edited_content: string | null }[];
+            };
+            if (wOffRef.current !== wOff) return; // 주차가 바뀌었으면 폐기
+            const map: Record<number, string> = {};
+            for (const r of json.tasks ?? []) {
+                if (r.edited_content != null)
+                    map[r.task_id] = r.edited_content;
+            }
+            setSavedBriefTasks(map);
+        } catch (e) {
+            console.error("[loadBriefingTasks]", e);
+        }
+    }, [wOff]);
+
+    useEffect(() => {
+        if (mode !== "weekly") return;
+        briefTaskDraftRef.current = {};
+        setSavedBriefTasks({});
+        void loadBriefingTasks();
+    }, [mode, wOff, loadBriefingTasks]);
+
     useEffect(() => {
         const channel = supabase
-            .channel(`briefings-rt-${channelIdRef.current}`)
+            .channel(`briefings-rt-${channelId}`)
             .on(
                 "postgres_changes",
                 { event: "*", schema: "public", table: "briefings" },
@@ -871,7 +870,7 @@ export default function ReportPage() {
         return () => {
             supabase.removeChannel(channel).catch(console.error);
         };
-    }, [loadBriefing]);
+    }, [loadBriefing, channelId]);
 
     const wTasks = useMemo(
         () =>
@@ -898,148 +897,36 @@ export default function ReportPage() {
 
     const curTasks = mode === "weekly" ? wTasks : mTasks;
 
-    const autoProject = useMemo(
-        () =>
-            formatBriefingSection(
-                wTasks.filter((t) => t.type === "프로젝트"),
-                "project",
-            ),
-        [wTasks],
-    );
-    const autoMaintenance = useMemo(
-        () =>
-            formatBriefingSection(
-                wTasks.filter((t) => t.type === "유지보수"),
-                "maintenance",
-            ),
-        [wTasks],
-    );
-    const autoEtc = useMemo(
-        () =>
-            formatBriefingSection(
-                wTasks.filter((t) =>
-                    ["접근성", "고도화", "업무지원", "기타"].includes(
-                        t.type || "",
-                    ),
-                ),
-                "etc",
-            ),
-        [wTasks],
-    );
-
     const editAllowed = !isGuest && isEditableWindow();
 
-    const isEditedBriefing =
-        noticeHtmlHasText(briefing?.project) ||
-        noticeHtmlHasText(briefing?.maintenance) ||
-        noticeHtmlHasText(briefing?.etc);
-
-    const displayProjectHtml = noticeHtmlHasText(briefing?.project)
-        ? briefing?.project ?? ""
-        : plainBriefingToInitialHtml(autoProject);
-    const displayMaintenanceHtml = noticeHtmlHasText(briefing?.maintenance)
-        ? briefing?.maintenance ?? ""
-        : plainBriefingToInitialHtml(autoMaintenance);
-    const displayEtcHtml = noticeHtmlHasText(briefing?.etc)
-        ? briefing?.etc ?? ""
-        : plainBriefingToInitialHtml(autoEtc);
-
-    function startEditing() {
-        setEditProject(displayProjectHtml);
-        setEditMaintenance(displayMaintenanceHtml);
-        setEditEtc(displayEtcHtml);
-        setBriefingEditorKey((k) => k + 1);
-        setEditing(true);
-    }
-
-    function cancelEditing() {
-        setEditing(false);
-        setBriefingEditorKey((k) => k + 1);
-    }
-
-    function restoreBriefingSection(which: "project" | "maintenance" | "etc") {
-        const html = plainBriefingToInitialHtml(
-            which === "project"
-                ? autoProject
-                : which === "maintenance"
-                  ? autoMaintenance
-                  : autoEtc,
-        );
-        if (which === "project") setEditProject(html);
-        else if (which === "maintenance") setEditMaintenance(html);
-        else setEditEtc(html);
-        setBriefingEditorKey((k) => k + 1);
-    }
-
-    async function restoreAutoBriefing() {
-        if (
-            !confirm(
-                "편집된 내용을 지우고 업무 데이터로부터 자동 취합을 다시 시작할까요?",
-            )
-        )
-            return;
-        setSaving(true);
+    /** 업무별 브리핑 카드 저장 (POST /api/briefing-tasks upsert) */
+    async function saveBriefingTask(taskId: number, html: string) {
+        setSavingTaskId(taskId);
         try {
-            const weekStart = wk.from;
-            const { error } = await supabase.from("briefings").upsert(
-                {
-                    week_start: weekStart,
-                    project: null,
-                    maintenance: null,
-                    etc: null,
-                    notice: briefing?.notice ?? null,
-                    checklist: briefing?.checklist ?? null,
-                    okr: briefing?.okr ?? null,
-                    is_locked: briefing?.is_locked ?? false,
-                    edited_by: currentMember ?? null,
-                    updated_at: new Date().toISOString(),
-                    team_id: TEAM_ID,
-                },
-                { onConflict: "week_start" },
-            );
-            if (error) {
-                console.error(error);
-                alert("복원에 실패했어요: " + error.message);
+            const week = wk.from;
+            const content = noticeHtmlHasText(html) ? html.trim() : null;
+            const res = await fetch("/api/briefing-tasks", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    week,
+                    task_id: taskId,
+                    edited_content: content,
+                }),
+            });
+            if (!res.ok) {
+                const j = (await res.json().catch(() => ({}))) as {
+                    message?: string;
+                };
+                alert("저장에 실패했어요: " + (j.message ?? res.status));
                 return;
             }
-            setEditing(false);
-            await loadBriefing();
+            setSavedBriefTasks((prev) => ({
+                ...prev,
+                [taskId]: content ?? "",
+            }));
         } finally {
-            setSaving(false);
-        }
-    }
-
-    async function saveBriefing() {
-        setSaving(true);
-        try {
-            const weekStart = wk.from;
-            console.log("[saveBriefing] weekStart:", weekStart);
-            const { error } = await supabase.from("briefings").upsert(
-                {
-                    week_start: weekStart,
-                    project: editProject,
-                    maintenance: editMaintenance,
-                    etc: editEtc,
-                    notice: briefing?.notice ?? null,
-                    checklist: briefing?.checklist ?? null,
-                    okr: briefing?.okr ?? null,
-                    is_locked: briefing?.is_locked ?? false,
-                    edited_by: currentMember ?? null,
-                    updated_at: new Date().toISOString(),
-                    team_id: TEAM_ID,
-                },
-                { onConflict: "week_start" },
-            );
-            console.log("[saveBriefing] error:", error);
-            if (error) {
-                console.error(error);
-                alert("저장에 실패했어요: " + error.message);
-                return;
-            }
-            setEditing(false);
-            await loadBriefing();
-        } finally {
-            setSaving(false);
+            setSavingTaskId(null);
         }
     }
 
@@ -1156,22 +1043,190 @@ export default function ReportPage() {
         });
     }
 
-    const stats = {
-        total: curTasks.length,
-        done: curTasks.filter((t) => t.status === "완료").length,
-        workload: curTasks.filter((t) => !t.is_plan).reduce((s, t) => s + (t.workload || 0), 0),
-    };
-
     function toggleExpand(member: string) {
         setExpanded((e) => ({ ...e, [member]: !e[member] }));
     }
 
+    /** 담당 배정 항목을 아코디언 카드로 렌더 (관리 페이지 프로젝트 패턴) */
+    function renderAssignCard(a: Assignment) {
+        const isOpen = !!expandedAssign[a.id];
+        const members = a.members ?? [];
+        return (
+            <div
+                key={a.id}
+                className="bg-white rounded-xl border border-stone-200 overflow-hidden"
+            >
+                <div
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isOpen}
+                    onClick={() =>
+                        setExpandedAssign((e) => ({ ...e, [a.id]: !e[a.id] }))
+                    }
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setExpandedAssign((p) => ({
+                                ...p,
+                                [a.id]: !p[a.id],
+                            }));
+                        }
+                    }}
+                    className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-stone-50/80"
+                >
+                    <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span
+                                className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium ${ASSIGN_TYPE_BADGE[a.type] ?? "bg-stone-100 text-stone-500"}`}
+                            >
+                                {a.type}
+                            </span>
+                            <span className="truncate text-sm font-medium text-stone-800">
+                                {a.name}
+                            </span>
+                        </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                        {members.slice(0, 3).map((m) => (
+                            <Avatar key={m} name={m} size={20} />
+                        ))}
+                        {isLeader && (
+                            <div
+                                className="flex gap-1.5"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <Tooltip label="수정">
+                                    <button
+                                        type="button"
+                                        onClick={() => openEditAssignment(a)}
+                                        aria-label="수정"
+                                        className="text-base text-stone-400 hover:text-amber-600"
+                                    >
+                                        <i
+                                            className="ri-edit-line"
+                                            aria-hidden
+                                        />
+                                    </button>
+                                </Tooltip>
+                                <Tooltip label="삭제">
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            void deleteAssignment(a.id)
+                                        }
+                                        aria-label="삭제"
+                                        className="text-base text-stone-400 hover:text-red-500"
+                                    >
+                                        <i
+                                            className="ri-delete-bin-line"
+                                            aria-hidden
+                                        />
+                                    </button>
+                                </Tooltip>
+                            </div>
+                        )}
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                void copySection(
+                                    assignmentCopyText(a),
+                                    (v) =>
+                                        setCopiedAssignId(v ? a.id : null),
+                                );
+                            }}
+                            className={`shrink-0 rounded-md p-1 transition-colors ${copiedAssignId === a.id ? "text-green-600" : "text-stone-400 hover:bg-stone-100 hover:text-stone-700"}`}
+                            title={copiedAssignId === a.id ? "복사됨" : "복사"}
+                            aria-label="복사"
+                        >
+                            <i
+                                className={`text-base ${copiedAssignId === a.id ? "ri-check-line" : "ri-file-copy-line"}`}
+                                aria-hidden
+                            />
+                        </button>
+                        <i
+                            className={`${isOpen ? "ri-arrow-up-s-line" : "ri-arrow-down-s-line"} text-stone-400`}
+                            aria-hidden
+                        />
+                    </div>
+                </div>
+                {isOpen && (
+                    <div className="space-y-1.5 px-4 pb-4 pt-1">
+                        {members.length > 0 && (
+                            <div className="flex items-start gap-2">
+                                <span className="w-12 shrink-0 text-xs text-stone-400">
+                                    담당자
+                                </span>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                    {members.map((m) => (
+                                        <div
+                                            key={m}
+                                            className="flex items-center gap-1"
+                                        >
+                                            <Avatar name={m} size={16} />
+                                            <span className="text-xs text-stone-600">
+                                                {m}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {a.url && (
+                            <div className="flex items-start gap-2">
+                                <span className="w-12 shrink-0 text-xs text-stone-400">
+                                    URL
+                                </span>
+                                <a
+                                    href={a.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="break-all text-xs text-amber-600 hover:underline"
+                                >
+                                    {a.url}
+                                </a>
+                            </div>
+                        )}
+                        {a.period_note && a.period_note.trim() && (
+                            <div className="flex items-start gap-2">
+                                <span className="w-12 shrink-0 text-xs text-stone-400">
+                                    메모
+                                </span>
+                                <div className="min-w-0">
+                                    {a.period_note
+                                        .split("\n")
+                                        .map((line, i) =>
+                                            line.trim() ? (
+                                                <p
+                                                    key={i}
+                                                    className="text-xs text-stone-600"
+                                                >
+                                                    • {line.trim()}
+                                                </p>
+                                            ) : null,
+                                        )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        );
+    }
+
     const assignActive = useMemo(
-        () => assignments.filter((a) => a.status === "진행중"),
+        () =>
+            assignments
+                .filter((a) => a.status === "진행중")
+                // 구분별로 같은 종류끼리 모음 (같은 구분 내에서는 기존 sort_order 유지 — 안정 정렬)
+                .sort((a, b) => assignTypeRank(a.type) - assignTypeRank(b.type)),
         [assignments],
     );
     const assignWaiting = useMemo(
-        () => assignments.filter((a) => a.status === "배정대기"),
+        () =>
+            assignments
+                .filter((a) => a.status === "배정대기")
+                .sort((a, b) => assignTypeRank(a.type) - assignTypeRank(b.type)),
         [assignments],
     );
     const assignCopyText = useMemo(
@@ -1389,73 +1444,426 @@ export default function ReportPage() {
                     </div>
                 </div>
 
-                <div className="max-w-2xl mx-auto px-4 pt-3 pb-24">
+                {/* 콘텐츠 탭: 현황 보드 / 공지 (주간에서만) — 상위 주간/월간(알약)과 구분되도록 밑줄 탭 */}
+                {mode === "weekly" && (
+                    <div className="border-b border-stone-200 px-4">
+                        <div className="max-w-2xl mx-auto flex gap-5">
+                            {[
+                                { key: "board", label: "현황 보드" },
+                                { key: "notice", label: "공지" },
+                            ].map((t) => {
+                                const active = reportTab === t.key;
+                                return (
+                                    <button
+                                        type="button"
+                                        key={t.key}
+                                        onClick={() =>
+                                            setReportTab(
+                                                t.key as "board" | "notice",
+                                            )
+                                        }
+                                        className={`relative -mb-px border-b-2 px-1.5 py-2.5 text-sm font-semibold transition-colors ${
+                                            active
+                                                ? "border-stone-900 text-stone-900"
+                                                : "border-transparent text-stone-400 hover:text-stone-600"
+                                        }`}
+                                    >
+                                        {t.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                <div className="max-w-2xl mx-auto px-4 pt-10 pb-24">
                     {loading ? (
                         <PageSpinner />
                     ) : (
                         <>
-                            {/* 통계 */}
-                            <div className="grid grid-cols-3 gap-2 mb-3">
-                                {[
-                                    {
-                                        n: stats.total,
-                                        l: "업무 수",
-                                        color: "text-stone-800",
-                                    },
-                                    {
-                                        n: stats.done,
-                                        l: "완료",
-                                        color: "text-green-600",
-                                    },
-                                    {
-                                        n: fmtMin(stats.workload),
-                                        l: "총 공수",
-                                        color: "text-amber-600",
-                                    },
-                                ].map((s) => (
-                                    <div
-                                        key={s.l}
-                                        className="bg-white rounded-xl border border-stone-200 p-3 text-center"
-                                    >
+                            {/* 주간 브리핑 (상태별 아코디언) */}
+                            {(mode === "monthly" ||
+                                reportTab === "board") && (
+                            <div className="mb-5">
+                                <div className="mb-2 flex items-center gap-2">
+                                    <span className="h-4 w-1 rounded bg-amber-500" />
+                                    <p className="text-base font-bold text-stone-800">
+                                        주간 브리핑
+                                    </p>
+                                </div>
+                                {/* 모바일 1열, sm 이상에서 한 줄에 2개씩 (스크롤 절감) */}
+                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:items-start">
+                                {STATUS_BRIEF_GROUPS.map((g) => {
+                                    const gt = curTasks
+                                        .filter(
+                                            (t) =>
+                                                normalizeStatus(t.status) ===
+                                                g.key,
+                                        )
+                                        // 타입 순(프로젝트→유지보수→접근성→고도화→업무지원→기타) 정렬
+                                        .sort((a, b) => {
+                                            const r =
+                                                typeRank(a.type) -
+                                                typeRank(b.type);
+                                            return r !== 0 ? r : a.id - b.id;
+                                        });
+                                    if (!gt.length) return null;
+                                    const isExp = expanded[g.key];
+                                    const canEdit = editAllowed;
+                                    return (
                                         <div
-                                            className={`text-xl font-bold ${s.color}`}
+                                            key={g.key}
+                                            className="bg-white rounded-xl border border-stone-200 overflow-hidden"
                                         >
-                                            {s.n}
+                                            {/* 헤더: 토글 + 전체 복사 + 화살표 */}
+                                            <div className="w-full flex items-center gap-3 px-4 py-3 text-left">
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        toggleExpand(g.key)
+                                                    }
+                                                    className="flex flex-1 items-center gap-3 text-left"
+                                                >
+                                                    <span className="text-base shrink-0">
+                                                        {g.emoji}
+                                                    </span>
+                                                    <div className="flex-1 flex items-center gap-2">
+                                                        <span className="text-sm font-bold text-stone-800">
+                                                            {g.key}
+                                                        </span>
+                                                        <p className="text-[13px] text-stone-400">
+                                                            {gt.length}건
+                                                        </p>
+                                                    </div>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const text = gt
+                                                            .map((t) => {
+                                                                const html =
+                                                                    briefTaskDraftRef
+                                                                        .current[
+                                                                        t.id
+                                                                    ] ??
+                                                                    savedBriefTasks[
+                                                                        t.id
+                                                                    ] ??
+                                                                    contentToCardHtml(
+                                                                        t,
+                                                                    );
+                                                                return briefTaskCopyText(
+                                                                    t,
+                                                                    html,
+                                                                );
+                                                            })
+                                                            .join("\n\n");
+                                                        void copySection(
+                                                            text,
+                                                            (v) =>
+                                                                setCopiedStatusCol(
+                                                                    v
+                                                                        ? g.col
+                                                                        : null,
+                                                                ),
+                                                        );
+                                                    }}
+                                                    className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${copiedStatusCol === g.col ? "bg-green-500 text-white" : "bg-stone-800 text-white"}`}
+                                                >
+                                                    {copiedStatusCol === g.col
+                                                        ? "복사됨!"
+                                                        : "전체 복사"}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        toggleExpand(g.key)
+                                                    }
+                                                    className="shrink-0"
+                                                    aria-label={
+                                                        isExp ? "접기" : "펼치기"
+                                                    }
+                                                >
+                                                    {isExp ? (
+                                                        <i
+                                                            className="ri-arrow-up-s-line text-stone-400"
+                                                            aria-hidden
+                                                        />
+                                                    ) : (
+                                                        <i
+                                                            className="ri-arrow-down-s-line text-stone-400"
+                                                            aria-hidden
+                                                        />
+                                                    )}
+                                                </button>
+                                            </div>
+
+                                            {/* 상세: 업무별 카드 (헤더 + Tiptap 에디터 + 저장/복사) */}
+                                            {isExp && (
+                                                <div className="border-t border-stone-100 divide-y divide-stone-100">
+                                                    {gt.map((t) => {
+                                                        const savedHtml =
+                                                            savedBriefTasks[
+                                                                t.id
+                                                            ];
+                                                        // 저장된 편집 내용이 있으면 사용, 없으면 tasks.content로 초기화
+                                                        const cardInitial =
+                                                            noticeHtmlHasText(
+                                                                savedHtml,
+                                                            )
+                                                                ? savedHtml
+                                                                : contentToCardHtml(
+                                                                      t,
+                                                                  );
+                                                        return (
+                                                            <div
+                                                                key={t.id}
+                                                                className="p-4 space-y-2"
+                                                            >
+                                                                {/* 카드 헤더: [타입] 프로젝트명 @담당자 + 우상단 복사 아이콘 */}
+                                                                <div className="flex items-start justify-between gap-2">
+                                                                    <p className="text-[13px] font-bold text-stone-800">
+                                                                        {t.is_starred && (
+                                                                            <span
+                                                                                className="mr-1"
+                                                                                title="핵심 프로젝트"
+                                                                            >
+                                                                                ⭐
+                                                                            </span>
+                                                                        )}
+                                                                        {t.type && (
+                                                                            <span
+                                                                                className={
+                                                                                    TYPE_TEXT_COLOR[
+                                                                                        t
+                                                                                            .type
+                                                                                    ] ??
+                                                                                    "text-stone-500"
+                                                                                }
+                                                                            >
+                                                                                [
+                                                                                {
+                                                                                    t.type
+                                                                                }
+                                                                                ]{" "}
+                                                                            </span>
+                                                                        )}
+                                                                        {t.proj}
+                                                                        <span className="ml-1 font-medium text-stone-400">
+                                                                            @
+                                                                            {
+                                                                                t.member
+                                                                            }
+                                                                        </span>
+                                                                    </p>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() =>
+                                                                            void copySection(
+                                                                                briefTaskCopyText(
+                                                                                    t,
+                                                                                    briefTaskDraftRef
+                                                                                        .current[
+                                                                                        t
+                                                                                            .id
+                                                                                    ] ??
+                                                                                        cardInitial,
+                                                                                ),
+                                                                                (
+                                                                                    v,
+                                                                                ) =>
+                                                                                    setCopiedTaskId(
+                                                                                        v
+                                                                                            ? t.id
+                                                                                            : null,
+                                                                                    ),
+                                                                            )
+                                                                        }
+                                                                        className={`shrink-0 rounded-md p-1 transition-colors ${copiedTaskId === t.id ? "text-green-600" : "text-stone-400 hover:bg-stone-100 hover:text-stone-700"}`}
+                                                                        title={
+                                                                            copiedTaskId ===
+                                                                            t.id
+                                                                                ? "복사됨"
+                                                                                : "복사"
+                                                                        }
+                                                                        aria-label="복사"
+                                                                    >
+                                                                        <i
+                                                                            className={`text-base ${copiedTaskId === t.id ? "ri-check-line" : "ri-file-copy-line"}`}
+                                                                            aria-hidden
+                                                                        />
+                                                                    </button>
+                                                                </div>
+                                                                <TiptapSectionEditor
+                                                                    key={`btask-${t.id}-${wOff}-${briefingEditorKey}`}
+                                                                    content={
+                                                                        cardInitial
+                                                                    }
+                                                                    onChange={(
+                                                                        html,
+                                                                    ) => {
+                                                                        briefTaskDraftRef.current[
+                                                                            t.id
+                                                                        ] = html;
+                                                                    }}
+                                                                    editable={
+                                                                        canEdit
+                                                                    }
+                                                                    showToolbar={
+                                                                        canEdit
+                                                                    }
+                                                                    placeholder="업무 내용을 입력하세요..."
+                                                                />
+                                                                {canEdit && (
+                                                                    <button
+                                                                        type="button"
+                                                                        disabled={
+                                                                            savingTaskId ===
+                                                                            t.id
+                                                                        }
+                                                                        onClick={(
+                                                                            e,
+                                                                        ) => {
+                                                                            e.preventDefault();
+                                                                            e.stopPropagation();
+                                                                            void saveBriefingTask(
+                                                                                t.id,
+                                                                                briefTaskDraftRef
+                                                                                    .current[
+                                                                                    t
+                                                                                        .id
+                                                                                ] ??
+                                                                                    cardInitial,
+                                                                            );
+                                                                        }}
+                                                                        className="w-full rounded-xl bg-amber-500 py-2.5 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50"
+                                                                    >
+                                                                        {savingTaskId ===
+                                                                        t.id
+                                                                            ? "저장 중…"
+                                                                            : "저장"}
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
-                                        <div className="text-[13px] text-stone-400 mt-0.5">
-                                            {s.l}
-                                        </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
+                                </div>
                             </div>
+                            )}
+
+                            {/* 담당 배정 (항목별 아코디언) */}
+                            {mode === "weekly" && reportTab === "board" && (
+                                <div className="mb-5 mt-8">
+                                    <div className="mb-4 flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <span className="h-4 w-1 rounded bg-amber-500" />
+                                            <p className="text-base font-bold text-stone-800">
+                                                담당 배정
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={copyAssignmentsBlock}
+                                            className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all
+                        ${copiedAssign ? "bg-green-500 text-white" : "bg-stone-800 text-white"}`}
+                                        >
+                                            {copiedAssign ? "복사됨!" : "전체 복사"}
+                                        </button>
+                                    </div>
+
+                                    <p className="mb-3 flex items-center gap-1.5 text-sm font-bold text-stone-700">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                        배정현황
+                                    </p>
+                                    {assignActive.length === 0 ? (
+                                        <p className="mb-2 text-[13px] text-stone-400">
+                                            등록된 항목이 없어요
+                                        </p>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {assignActive.map(renderAssignCard)}
+                                        </div>
+                                    )}
+
+                                    <p className="mb-3 mt-6 flex items-center gap-1.5 text-sm font-bold text-stone-700">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                                        배정대기
+                                    </p>
+                                    {assignWaiting.length === 0 ? (
+                                        <p className="mb-2 text-[13px] text-stone-400">
+                                            등록된 항목이 없어요
+                                        </p>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {assignWaiting.map(renderAssignCard)}
+                                        </div>
+                                    )}
+
+                                    {isLeader && (
+                                        <button
+                                            type="button"
+                                            onClick={openAddAssignment}
+                                            className="mt-3 w-full rounded-lg border border-dashed border-stone-300 py-2.5 text-xs font-medium text-stone-500 hover:border-amber-400 hover:text-amber-700 hover:bg-amber-50/50"
+                                        >
+                                            + 항목 추가
+                                        </button>
+                                    )}
+                                </div>
+                            )}
 
                             {/* 확인해주세요 */}
-                            {mode === "weekly" && (
+                            {mode === "weekly" && reportTab === "notice" && (
                                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-3">
-                                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-stone-100">
+                                    <div
+                                        className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-stone-100 cursor-pointer"
+                                        onClick={() =>
+                                            setChecklistOpen((v) => !v)
+                                        }
+                                        role="button"
+                                        tabIndex={0}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" || e.key === " ")
+                                                setChecklistOpen((v) => !v);
+                                        }}
+                                    >
                                         <p className="text-sm font-bold text-stone-400 uppercase tracking-wide">
                                             📌 확인해주세요
                                         </p>
-                                        {isLeader && !editingChecklist && (
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    const initial =
-                                                        briefing?.checklist ?? "";
-                                                    editChecklistDraftRef.current =
-                                                        initial;
-                                                    setEditChecklist(initial);
-                                                    setEditingChecklist(true);
-                                                    setChecklistEditorNonce(
-                                                        (n) => n + 1,
-                                                    );
-                                                }}
-                                                className="text-xs px-2.5 py-1 rounded-lg font-medium border border-stone-200 bg-stone-100 text-stone-600 hover:bg-stone-50"
-                                            >
-                                                편집
-                                            </button>
-                                        )}
+                                        <div className="flex items-center gap-2">
+                                            {isLeader && !editingChecklist && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const initial =
+                                                            briefing?.checklist ??
+                                                            "";
+                                                        editChecklistDraftRef.current =
+                                                            initial;
+                                                        setEditChecklist(initial);
+                                                        setEditingChecklist(true);
+                                                        setChecklistOpen(true);
+                                                        setChecklistEditorNonce(
+                                                            (n) => n + 1,
+                                                        );
+                                                    }}
+                                                    className="text-xs px-2.5 py-1 rounded-lg font-medium border border-stone-200 bg-stone-100 text-stone-600 hover:bg-stone-50"
+                                                >
+                                                    편집
+                                                </button>
+                                            )}
+                                            <i
+                                                className={`${checklistOpen ? "ri-arrow-up-s-line" : "ri-arrow-down-s-line"} text-stone-400`}
+                                                aria-hidden
+                                            />
+                                        </div>
                                     </div>
+                                    {checklistOpen && (
                                     <div className="p-4 space-y-3">
                                         {!editingChecklist ? (
                                             noticeHtmlHasText(briefing?.checklist) ? (
@@ -1514,11 +1922,12 @@ export default function ReportPage() {
                                             </div>
                                         )}
                                     </div>
+                                    )}
                                 </div>
                             )}
 
                             {/* OKR */}
-                            {mode === "weekly" && (
+                            {mode === "weekly" && reportTab === "notice" && (
                                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-3">
                                     <div
                                         className="flex items-center justify-between px-4 py-3 border-b border-stone-100 cursor-pointer"
@@ -1624,32 +2033,51 @@ export default function ReportPage() {
                             )}
 
                             {/* 주간 전달사항 */}
-                            {mode === "weekly" && (
+                            {mode === "weekly" && reportTab === "notice" && (
                                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-3">
-                                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-stone-100">
+                                    <div
+                                        className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-stone-100 cursor-pointer"
+                                        onClick={() => setNoticeOpen((v) => !v)}
+                                        role="button"
+                                        tabIndex={0}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" || e.key === " ")
+                                                setNoticeOpen((v) => !v);
+                                        }}
+                                    >
                                         <p className="text-sm font-bold text-stone-400 uppercase tracking-wide">
                                             주간 전달사항
                                         </p>
-                                        {isLeader && !editingNotice && (
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    const initial =
-                                                        briefing?.notice ?? "";
-                                                    editNoticeDraftRef.current =
-                                                        initial;
-                                                    setEditNotice(initial);
-                                                    setEditingNotice(true);
-                                                    setNoticeEditorNonce(
-                                                        (n) => n + 1,
-                                                    );
-                                                }}
-                                                className="text-xs px-2.5 py-1 rounded-lg font-medium border border-stone-200 bg-stone-100 text-stone-600 hover:bg-stone-50"
-                                            >
-                                                편집
-                                            </button>
-                                        )}
+                                        <div className="flex items-center gap-2">
+                                            {isLeader && !editingNotice && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const initial =
+                                                            briefing?.notice ??
+                                                            "";
+                                                        editNoticeDraftRef.current =
+                                                            initial;
+                                                        setEditNotice(initial);
+                                                        setEditingNotice(true);
+                                                        setNoticeOpen(true);
+                                                        setNoticeEditorNonce(
+                                                            (n) => n + 1,
+                                                        );
+                                                    }}
+                                                    className="text-xs px-2.5 py-1 rounded-lg font-medium border border-stone-200 bg-stone-100 text-stone-600 hover:bg-stone-50"
+                                                >
+                                                    편집
+                                                </button>
+                                            )}
+                                            <i
+                                                className={`${noticeOpen ? "ri-arrow-up-s-line" : "ri-arrow-down-s-line"} text-stone-400`}
+                                                aria-hidden
+                                            />
+                                        </div>
                                     </div>
+                                    {noticeOpen && (
                                     <div className="p-4 space-y-3">
                                         {!editingNotice ? (
                                             noticeHtmlHasText(briefing?.notice) ? (
@@ -1708,540 +2136,10 @@ export default function ReportPage() {
                                             </div>
                                         )}
                                     </div>
+                                    )}
                                 </div>
                             )}
 
-                            {/* 주간 브리핑 */}
-                            {mode === "weekly" && (
-                                <div className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-3">
-                                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-stone-100">
-                                        <div className="flex items-center gap-2">
-                                            <p className="text-sm font-bold text-stone-400 uppercase tracking-wide">
-                                                주간 브리핑
-                                            </p>
-                                            {isEditedBriefing && (
-                                                <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-medium">
-                                                    편집됨
-                                                </span>
-                                            )}
-                                        </div>
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            {!editAllowed && (
-                                                <span className="text-[13px] text-stone-400">
-                                                    {isGuest
-                                                        ? "✏️ 게스트는 편집할 수 없어요"
-                                                        : "✏️ 브리핑 편집은 매주 목요일에만 가능합니다"}
-                                                </span>
-                                            )}
-                                            {!isGuest && !editing && isEditedBriefing && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        void restoreAutoBriefing()
-                                                    }
-                                                    disabled={saving}
-                                                    className="text-xs px-2.5 py-1 rounded-lg font-medium border border-stone-200 bg-stone-100 text-stone-600 hover:bg-stone-50 disabled:opacity-50"
-                                                >
-                                                    복원
-                                                </button>
-                                            )}
-                                            {editAllowed && !editing && (
-                                                <button
-                                                    type="button"
-                                                    onClick={startEditing}
-                                                    className="text-xs px-2.5 py-1 rounded-lg font-medium border border-stone-200 bg-stone-100 text-stone-600 hover:bg-stone-50"
-                                                >
-                                                    편집
-                                                </button>
-                                            )}
-                                            {editAllowed && editing && (
-                                                <button
-                                                    type="button"
-                                                    onClick={cancelEditing}
-                                                    className="text-xs px-2.5 py-1 rounded-lg font-medium border border-stone-200 text-stone-600 hover:bg-stone-50"
-                                                >
-                                                    취소
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="p-4 space-y-5">
-                                        {/* 프로젝트 */}
-                                        <div>
-                                            <div className="mb-2 flex items-center justify-between gap-2">
-                                                <p className="text-sm font-bold text-stone-600">
-                                                    [ 프로젝트 ]
-                                                </p>
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        void copyBriefingMarkdown(
-                                                            editing
-                                                                ? editProject
-                                                                : displayProjectHtml,
-                                                            setCopiedProject,
-                                                        )
-                                                    }
-                                                    className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all
-                              ${copiedProject ? "bg-green-500 text-white" : "bg-stone-800 text-white"}`}
-                                                >
-                                                    {copiedProject
-                                                        ? "Copied!"
-                                                        : "Copy"}
-                                                </button>
-                                            </div>
-                                            {editing ? (
-                                                <TiptapSectionEditor
-                                                    key={`briefing-project-${wOff}-${briefingEditorKey}`}
-                                                    content={editProject}
-                                                    onChange={setEditProject}
-                                                    editable
-                                                    showToolbar
-                                                    placeholder="프로젝트 브리핑을 입력하세요..."
-                                                />
-                                            ) : (
-                                                <BriefingSavedHtmlPreview
-                                                    html={displayProjectHtml}
-                                                />
-                                            )}
-                                        </div>
-                                        {/* 유지보수 */}
-                                        <div>
-                                            <div className="mb-2 flex items-center justify-between gap-2">
-                                                <p className="text-sm font-bold text-stone-600">
-                                                    [ 유지보수 ]
-                                                </p>
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        void copyBriefingMarkdown(
-                                                            editing
-                                                                ? editMaintenance
-                                                                : displayMaintenanceHtml,
-                                                            setCopiedMaintenance,
-                                                        )
-                                                    }
-                                                    className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all
-                              ${copiedMaintenance ? "bg-green-500 text-white" : "bg-stone-800 text-white"}`}
-                                                >
-                                                    {copiedMaintenance
-                                                        ? "Copied!"
-                                                        : "Copy"}
-                                                </button>
-                                            </div>
-                                            {editing ? (
-                                                <TiptapSectionEditor
-                                                    key={`briefing-maintenance-${wOff}-${briefingEditorKey}`}
-                                                    content={editMaintenance}
-                                                    onChange={setEditMaintenance}
-                                                    editable
-                                                    showToolbar
-                                                    placeholder="유지보수 브리핑을 입력하세요..."
-                                                />
-                                            ) : (
-                                                <BriefingSavedHtmlPreview
-                                                    html={
-                                                        displayMaintenanceHtml
-                                                    }
-                                                />
-                                            )}
-                                        </div>
-                                        {/* 기타 */}
-                                        <div>
-                                            <div className="mb-2 flex items-center justify-between gap-2">
-                                                <p className="text-sm font-bold text-stone-600">
-                                                    [ 기타 ]
-                                                </p>
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        void copyBriefingMarkdown(
-                                                            editing
-                                                                ? editEtc
-                                                                : displayEtcHtml,
-                                                            setCopiedEtc,
-                                                        )
-                                                    }
-                                                    className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all
-                              ${copiedEtc ? "bg-green-500 text-white" : "bg-stone-800 text-white"}`}
-                                                >
-                                                    {copiedEtc
-                                                        ? "Copied!"
-                                                        : "Copy"}
-                                                </button>
-                                            </div>
-                                            {editing ? (
-                                                <TiptapSectionEditor
-                                                    key={`briefing-etc-${wOff}-${briefingEditorKey}`}
-                                                    content={editEtc}
-                                                    onChange={setEditEtc}
-                                                    editable
-                                                    showToolbar
-                                                    placeholder="기타 브리핑을 입력하세요..."
-                                                />
-                                            ) : (
-                                                <BriefingSavedHtmlPreview
-                                                    html={displayEtcHtml}
-                                                />
-                                            )}
-                                        </div>
-                                        {editAllowed && editing && (
-                                            <div className="flex flex-col gap-2 pt-1">
-                                                <button
-                                                    type="button"
-                                                    disabled={saving}
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        void saveBriefing();
-                                                    }}
-                                                    className="w-full rounded-xl bg-amber-500 py-3 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50"
-                                                >
-                                                    {saving
-                                                        ? "저장 중…"
-                                                        : "저장하기"}
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* 배정현황 / 배정대기 */}
-                            {mode === "weekly" && (
-                                <div className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-3">
-                                    <div className="flex items-center justify-between px-4 py-3 border-b border-stone-100">
-                                        <p className="text-sm font-bold text-stone-400 uppercase tracking-wide">
-                                            담당 배정
-                                        </p>
-                                        <button
-                                            type="button"
-                                            onClick={copyAssignmentsBlock}
-                                            className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all shrink-0
-                        ${copiedAssign ? "bg-green-500 text-white" : "bg-stone-800 text-white"}`}
-                                        >
-                                            {copiedAssign ? "Copied!" : "Copy"}
-                                        </button>
-                                    </div>
-                                    <div className="p-4 space-y-4">
-                                        <div>
-                                            <p className="text-sm font-extrabold text-stone-600 mb-2">
-                                                [배정현황]
-                                            </p>
-                                            {assignActive.length === 0 ? (
-                                                <p className="text-[13px] text-stone-400">
-                                                    등록된 항목이 없어요
-                                                </p>
-                                            ) : (
-                                                <ul className="space-y-2">
-                                                    {assignActive.map((a) => (
-                                                        <li
-                                                            key={a.id}
-                                                            className="text-[13px] text-stone-800"
-                                                        >
-                                                            <div className="flex items-start gap-3">
-                                                                <span className="flex-1 min-w-0 leading-relaxed break-words">
-                                                                    <span className="font-extrabold text-stone-700">
-                                                                        ⇒ [{a.type}]
-                                                                    </span>{" "}
-                                                                    {a.url ? (
-                                                                        <a
-                                                                            href={
-                                                                                a.url
-                                                                            }
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                            className="text-amber-600 hover:underline font-medium"
-                                                                            aria-label={`${a.name} 관련 링크 새 창으로 열림`}
-                                                                        >
-                                                                            {a.name}
-                                                                        </a>
-                                                                    ) : (
-                                                                        a.name
-                                                                    )}
-                                                                    {" : "}
-                                                                    {(
-                                                                        a.members ||
-                                                                        []
-                                                                    ).join(", ")}
-                                                                </span>
-                                                                {isLeader && (
-                                                                    <span className="flex shrink-0 gap-2">
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() =>
-                                                                                openEditAssignment(
-                                                                                    a,
-                                                                                )
-                                                                            }
-                                                                            className="text-xs text-stone-400 hover:text-amber-600"
-                                                                        >
-                                                                            수정
-                                                                        </button>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() =>
-                                                                                void deleteAssignment(
-                                                                                    a.id,
-                                                                                )
-                                                                            }
-                                                                            className="text-xs text-stone-400 hover:text-red-500"
-                                                                        >
-                                                                            삭제
-                                                                        </button>
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                            {a.period_note
-                                                                ? a.period_note
-                                                                      .split(
-                                                                          "\n",
-                                                                      )
-                                                                      .map(
-                                                                          (
-                                                                              line,
-                                                                              i,
-                                                                          ) =>
-                                                                              line.trim() ? (
-                                                                                  <p
-                                                                                      key={
-                                                                                          i
-                                                                                      }
-                                                                                      className="mt-1 pl-3 text-[13px] text-stone-500"
-                                                                                  >
-                                                                                      •{" "}
-                                                                                      {line.trim()}
-                                                                                  </p>
-                                                                              ) : null,
-                                                                      )
-                                                                : null}
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            )}
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-extrabold text-stone-600 mb-2">
-                                                [배정대기]
-                                            </p>
-                                            {assignWaiting.length === 0 ? (
-                                                <p className="text-[13px] text-stone-400">
-                                                    등록된 항목이 없어요
-                                                </p>
-                                            ) : (
-                                                <ul className="space-y-3">
-                                                    {assignWaiting.map((a) => (
-                                                        <li
-                                                            key={a.id}
-                                                            className="text-[13px] text-stone-800"
-                                                        >
-                                                            <div className="flex items-start gap-3">
-                                                                <span className="flex-1 min-w-0 leading-relaxed break-words">
-                                                                    <span className="font-extrabold text-stone-700">
-                                                                        ⇒
-                                                                        [배정대기]
-                                                                    </span>{" "}
-                                                                    {a.url ? (
-                                                                        <a
-                                                                            href={
-                                                                                a.url
-                                                                            }
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                            className="text-amber-600 hover:underline font-medium"
-                                                                            aria-label={`${a.name} 관련 링크 새 창으로 열림`}
-                                                                        >
-                                                                            {
-                                                                                a.name
-                                                                            }
-                                                                        </a>
-                                                                    ) : (
-                                                                        a.name
-                                                                    )}
-                                                                </span>
-                                                                {isLeader && (
-                                                                    <span className="flex shrink-0 gap-2">
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() =>
-                                                                                openEditAssignment(
-                                                                                    a,
-                                                                                )
-                                                                            }
-                                                                            className="text-xs text-stone-400 hover:text-amber-600"
-                                                                        >
-                                                                            수정
-                                                                        </button>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() =>
-                                                                                void deleteAssignment(
-                                                                                    a.id,
-                                                                                )
-                                                                            }
-                                                                            className="text-xs text-stone-400 hover:text-red-500"
-                                                                        >
-                                                                            삭제
-                                                                        </button>
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                            {a.period_note
-                                                                ? a.period_note
-                                                                      .split(
-                                                                          "\n",
-                                                                      )
-                                                                      .map(
-                                                                          (
-                                                                              line,
-                                                                              i,
-                                                                          ) =>
-                                                                              line.trim() ? (
-                                                                                  <p
-                                                                                      key={
-                                                                                          i
-                                                                                      }
-                                                                                      className="mt-1 pl-3 text-[13px] text-stone-500"
-                                                                                  >
-                                                                                      •{" "}
-                                                                                      {line.trim()}
-                                                                                  </p>
-                                                                              ) : null,
-                                                                      )
-                                                                : null}
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            )}
-                                        </div>
-                                        {isLeader && (
-                                            <button
-                                                type="button"
-                                                onClick={openAddAssignment}
-                                                className="w-full rounded-lg border border-dashed border-stone-300 py-2.5 text-xs font-medium text-stone-500 hover:border-amber-400 hover:text-amber-700 hover:bg-amber-50/50"
-                                            >
-                                                + 항목 추가
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* 팀원별 상세 (아코디언) */}
-                            <div>
-                                <p className="text-sm font-bold text-stone-400 uppercase tracking-wide mb-2">
-                                    팀원별 상세
-                                </p>
-                                {MEMBERS.map((m) => {
-                                    const mt = curTasks.filter(
-                                        (t) => t.member === m,
-                                    );
-                                    if (!mt.length) return null;
-                                    const isExp = expanded[m];
-                                    return (
-                                        <div
-                                            key={m}
-                                            className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-2"
-                                        >
-                                            {/* 헤더 */}
-                                            <button
-                                                type="button"
-                                                onClick={() => toggleExpand(m)}
-                                                className="w-full flex items-center gap-3 px-4 py-3 text-left"
-                                            >
-                                                <div className="relative shrink-0">
-                                                    <Avatar
-                                                        name={m}
-                                                        size={28}
-                                                    />
-                                                    {m === LEADER && (
-                                                        <div className="absolute -top-2 left-1/2 -translate-x-1/2 text-xs">
-                                                            👑
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <div className="flex-1">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <span className="text-sm font-bold text-stone-800">
-                                                            {m}
-                                                        </span>
-                                                        {m === LEADER && (
-                                                            <span className="text-xs px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded font-medium border border-yellow-200">
-                                                                리더
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <p className="text-[13px] text-stone-400">
-                                                        {mt.length}건 ·{" "}
-                                                        {
-                                                            mt.filter(
-                                                                (t) =>
-                                                                    t.status ===
-                                                                    "완료",
-                                                            ).length
-                                                        }
-                                                        건 완료
-                                                    </p>
-                                                </div>
-                                                {isExp ? (
-                                                    <i
-                                                        className="ri-arrow-up-s-line text-stone-400"
-                                                        aria-hidden
-                                                    />
-                                                ) : (
-                                                    <i
-                                                        className="ri-arrow-down-s-line text-stone-400"
-                                                        aria-hidden
-                                                    />
-                                                )}
-                                            </button>
-
-                                            {/* 상세 */}
-                                            {isExp &&
-                                                mt.map((t) => (
-                                                    <div
-                                                        key={t.id}
-                                                        className={`flex items-start gap-2 px-4 py-2.5 border-t border-stone-100
-                            ${t.priority === "긴급" || t.status === "이슈 및 대기" ? "bg-amber-50" : ""}`}
-                                                    >
-                                                        {t.is_starred && (
-                                                            <span
-                                                                className="text-xs shrink-0 mt-1"
-                                                                title="핵심 프로젝트"
-                                                            >
-                                                                ⭐
-                                                            </span>
-                                                        )}
-                                                        <span
-                                                            className={`text-xs px-2 py-0.5 rounded-lg font-medium shrink-0 mt-0.5 ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}
-                                                        >
-                                                            {t.status}
-                                                        </span>
-                                                        <div className="flex-1 min-w-0">
-                                                            <p className="text-[13px] font-bold text-stone-800">
-                                                                {t.proj}
-                                                            </p>
-                                                            {t.content && (
-                                                                <p className="text-[13px] text-stone-400 truncate">
-                                                                    {t.content}
-                                                                </p>
-                                                            )}
-                                                            {t.issue && (
-                                                                <div className="text-[13px] bg-amber-100 text-amber-700 px-2 py-1 rounded mt-1">
-                                                                    이슈:{" "}
-                                                                    {t.issue}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                        <span className="text-[13px] font-bold text-amber-600 shrink-0">
-                                                            {fmtMin(t.workload)}
-                                                        </span>
-                                                    </div>
-                                                ))}
-                                        </div>
-                                    );
-                                })}
-                            </div>
                         </>
                     )}
                 </div>
