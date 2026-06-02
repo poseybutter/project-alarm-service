@@ -270,7 +270,7 @@ export default function TaskEditModal({
                                 "대기",
                                 "시작 전",
                                 "진행중",
-                                "이슈 및 대기",
+                                "지연/보류",
                                 "완료",
                             ].map((s) => ({ value: s, label: s }))}
                             value={

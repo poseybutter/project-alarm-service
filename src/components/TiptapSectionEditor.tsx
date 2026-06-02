@@ -44,7 +44,7 @@ export default function TiptapSectionEditor({
         editable,
         editorProps: {
             attributes: {
-                class: "tiptap notice-editor-prose min-h-[120px] px-2 py-2 focus:outline-none",
+                class: "tiptap notice-editor-prose px-2 py-2 focus:outline-none",
             },
         },
         onUpdate: ({ editor: ed }) => {
