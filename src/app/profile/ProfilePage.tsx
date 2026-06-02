@@ -12,6 +12,7 @@ import {
 } from "@/lib/maple";
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
+import Tooltip from "@/components/Tooltip";
 import UserMenu from "@/components/UserMenu";
 import NotificationButton from "@/components/NotificationButton";
 import Avatar from "@/components/Avatar";
@@ -22,7 +23,13 @@ import "react-day-picker/dist/style.css";
 import { ko } from "date-fns/locale";
 import type { Player, Task, Quest } from "@/lib/types";
 import { formatWorkload } from "@/lib/utils";
-import { BAR_COLORS, MEMBERS, MEMBER_COLORS, TEAM_ID } from "@/lib/constants";
+import {
+    BAR_COLORS,
+    MEMBERS,
+    MEMBER_COLORS,
+    TEAM_ID,
+    normalizeStatus,
+} from "@/lib/constants";
 import { toLocalYmd } from "@/lib/toLocalYmd";
 import Select from "react-select";
 import { taskFilterProjectSelectStyles } from "@/lib/reactSelectStyles";
@@ -313,7 +320,10 @@ export default function ProfilePage() {
             const d = new Date(t.created_at);
             if (d < start || d > end) return false;
             if (historyProjFilter && t.proj !== historyProjFilter) return false;
-            if (historyStatusFilter && t.status !== historyStatusFilter)
+            if (
+                historyStatusFilter &&
+                normalizeStatus(t.status) !== historyStatusFilter
+            )
                 return false;
             return true;
         });
@@ -915,7 +925,7 @@ export default function ProfilePage() {
                                                     "대기",
                                                     "시작 전",
                                                     "진행중",
-                                                    "이슈 및 대기",
+                                                    "지연/보류",
                                                     "완료",
                                                 ].map((s) => ({
                                                     value: s,
@@ -1101,47 +1111,63 @@ export default function ProfilePage() {
                                                                     {
                                                                         완료: "bg-green-100 text-green-700",
                                                                         진행중: "bg-blue-100 text-blue-700",
-                                                                        "이슈 및 대기":
+                                                                        "지연/보류":
                                                                             "bg-red-100 text-red-700",
                                                                     }[
-                                                                        t.status
+                                                                        normalizeStatus(
+                                                                            t.status,
+                                                                        )
                                                                     ] ||
                                                                     "bg-gray-100 text-gray-600"
                                                                 }`}
                                                             >
-                                                                {t.status}
+                                                                {normalizeStatus(
+                                                                    t.status,
+                                                                )}
                                                             </span>
                                                             {canEditHistoryTask(
                                                                 t.member ?? "",
                                                             ) && (
                                                                 <div className="flex items-center gap-2">
-                                                                    <button
-                                                                        type="button"
-                                                                        className="text-xs text-amber-600 hover:text-amber-700 font-medium whitespace-nowrap"
-                                                                        onClick={() =>
-                                                                            setHistoryEditTask(
-                                                                                t,
-                                                                            )
-                                                                        }
-                                                                    >
-                                                                        수정
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        className="text-xs text-stone-400 hover:text-red-500 whitespace-nowrap"
-                                                                        onClick={() => {
-                                                                            if (
-                                                                                typeof t.id ===
-                                                                                "number"
-                                                                            ) {
-                                                                                void deleteHistoryTask(
-                                                                                    t.id,
-                                                                                );
+                                                                    <Tooltip label="수정">
+                                                                        <button
+                                                                            type="button"
+                                                                            aria-label="수정"
+                                                                            className="text-base text-stone-400 hover:text-amber-600 font-medium whitespace-nowrap"
+                                                                            onClick={() =>
+                                                                                setHistoryEditTask(
+                                                                                    t,
+                                                                                )
                                                                             }
-                                                                        }}
-                                                                    >
-                                                                        삭제
-                                                                    </button>
+                                                                        >
+                                                                            <i
+                                                                                className="ri-edit-line"
+                                                                                aria-hidden
+                                                                            />
+                                                                        </button>
+                                                                    </Tooltip>
+                                                                    <Tooltip label="삭제">
+                                                                        <button
+                                                                            type="button"
+                                                                            aria-label="삭제"
+                                                                            className="text-base text-stone-400 hover:text-red-500 whitespace-nowrap"
+                                                                            onClick={() => {
+                                                                                if (
+                                                                                    typeof t.id ===
+                                                                                    "number"
+                                                                                ) {
+                                                                                    void deleteHistoryTask(
+                                                                                        t.id,
+                                                                                    );
+                                                                                }
+                                                                            }}
+                                                                        >
+                                                                            <i
+                                                                                className="ri-delete-bin-line"
+                                                                                aria-hidden
+                                                                            />
+                                                                        </button>
+                                                                    </Tooltip>
                                                                 </div>
                                                             )}
                                                         </div>
