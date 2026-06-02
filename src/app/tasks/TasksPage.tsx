@@ -10,13 +10,13 @@ import {
     TYPE_COLORS,
     STATUS_COLORS,
     WORKLOAD_PRESETS,
-    LEADER,
     TEAM_ID,
+    normalizeStatus,
 } from "@/lib/constants";
 import { awardExp } from "@/lib/maple";
 import AuthGuard from "@/components/AuthGuard";
 import { useAuth } from "@/components/AuthProvider";
-import Header from "@/components/Header";
+import Tooltip from "@/components/Tooltip";
 import UserMenu from "@/components/UserMenu";
 import Avatar from "@/components/Avatar";
 import LevelUpOverlay from "@/components/LevelUpOverlay";
@@ -133,7 +133,7 @@ const STATUS_OPTIONS = [
     "대기",
     "시작 전",
     "진행중",
-    "이슈 및 대기",
+    "지연/보류",
     "완료",
 ].map((s) => ({ value: s, label: s }));
 
@@ -665,7 +665,7 @@ export default function TasksPage() {
                                                 className={`px-4 py-3
                           ${i < memberTasks.length - 1 ? "border-b border-stone-100" : ""}
                           ${isDone ? "opacity-50" : ""}
-                          ${t.priority === "긴급" || t.status === "이슈 및 대기" ? "bg-amber-50" : ""}`}
+                          ${t.priority === "긴급" || normalizeStatus(t.status) === "지연/보류" ? "bg-amber-50" : ""}`}
                                             >
                                                 <div className="flex gap-3">
                                                     <div className="flex-1 min-w-0">
@@ -701,8 +701,10 @@ export default function TasksPage() {
                                                                 className={`text-xs px-2 py-1 rounded-lg mb-1 border ${
                                                                     t.priority ===
                                                                         "긴급" ||
-                                                                    t.status ===
-                                                                        "이슈 및 대기"
+                                                                    normalizeStatus(
+                                                                        t.status,
+                                                                    ) ===
+                                                                        "지연/보류"
                                                                         ? "bg-amber-200 text-amber-900 border-amber-300"
                                                                         : "bg-amber-50 text-amber-700 border-amber-100"
                                                                 }`}
@@ -802,26 +804,38 @@ export default function TasksPage() {
                                                             t.member,
                                                         ) && (
                                                             <div className="flex items-center gap-2">
-                                                                <button
-                                                                    onClick={() =>
-                                                                        openEdit(
-                                                                            t,
-                                                                        )
-                                                                    }
-                                                                    className="text-xs text-stone-300 hover:text-amber-500 transition-colors"
-                                                                >
-                                                                    수정
-                                                                </button>
-                                                                <button
-                                                                    onClick={() =>
-                                                                        deleteTask(
-                                                                            t.id,
-                                                                        )
-                                                                    }
-                                                                    className="text-xs text-stone-300 hover:text-red-400 transition-colors"
-                                                                >
-                                                                    삭제
-                                                                </button>
+                                                                <Tooltip label="수정">
+                                                                    <button
+                                                                        onClick={() =>
+                                                                            openEdit(
+                                                                                t,
+                                                                            )
+                                                                        }
+                                                                        aria-label="수정"
+                                                                        className="text-base text-stone-300 hover:text-amber-500 transition-colors"
+                                                                    >
+                                                                        <i
+                                                                            className="ri-edit-line"
+                                                                            aria-hidden
+                                                                        />
+                                                                    </button>
+                                                                </Tooltip>
+                                                                <Tooltip label="삭제">
+                                                                    <button
+                                                                        onClick={() =>
+                                                                            deleteTask(
+                                                                                t.id,
+                                                                            )
+                                                                        }
+                                                                        aria-label="삭제"
+                                                                        className="text-base text-stone-300 hover:text-red-400 transition-colors"
+                                                                    >
+                                                                        <i
+                                                                            className="ri-delete-bin-line"
+                                                                            aria-hidden
+                                                                        />
+                                                                    </button>
+                                                                </Tooltip>
                                                             </div>
                                                         )}
                                                     </div>

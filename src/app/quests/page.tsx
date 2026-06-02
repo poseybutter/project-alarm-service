@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { awardExp } from '@/lib/maple'
+import Tooltip from '@/components/Tooltip'
 import Select from 'react-select'
 import { modalFormSelectStyles } from '@/lib/reactSelectStyles'
 import { TEAM_ID } from '@/lib/constants'
@@ -201,10 +202,13 @@ export default function QuestsPage() {
                           {diff !== null && diff >= 0 && diff <= 7 && ` D-${diff}`}
                         </span>
                       )}
-                      <button
-                        onClick={() => deleteQuest(q.id)}
-                        className="text-xs text-stone-300 hover:text-red-400 transition-colors"
-                      >삭제</button>
+                      <Tooltip label="삭제">
+                        <button
+                          onClick={() => deleteQuest(q.id)}
+                          aria-label="삭제"
+                          className="text-base text-stone-300 hover:text-red-400 transition-colors"
+                        ><i className="ri-delete-bin-line" aria-hidden /></button>
+                      </Tooltip>
                     </div>
                   </div>
                 )
