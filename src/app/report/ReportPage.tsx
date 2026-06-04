@@ -284,18 +284,18 @@ function isEditableWindow(now: Date = new Date()): boolean {
 
 function getWeekWin(offset: number) {
     const now = new Date();
-    // 수(3)~화(2) 한 주: 주 시작은 수요일. 목~화는 직전 수요일.
+    // 목(4)~수(3) 한 주: 주 시작은 목요일.
     const y = now.getFullYear();
     const mon = now.getMonth();
     const dom = now.getDate();
     const dow = now.getDay();
-    const daysFromWeekStart = (dow - 3 + 7) % 7;
-    const wed = new Date(y, mon, dom - daysFromWeekStart + offset * 7);
-    wed.setHours(0, 0, 0, 0);
+    const daysFromWeekStart = (dow - 4 + 7) % 7;
+    const thu = new Date(y, mon, dom - daysFromWeekStart + offset * 7);
+    thu.setHours(0, 0, 0, 0);
     const nextWed = new Date(
-        wed.getFullYear(),
-        wed.getMonth(),
-        wed.getDate() + 7,
+        thu.getFullYear(),
+        thu.getMonth(),
+        thu.getDate() + 6,
         23,
         59,
         59,
@@ -305,9 +305,9 @@ function getWeekWin(offset: number) {
     const fmt = (d: Date) =>
         `${d.getMonth() + 1}/${d.getDate()}(${["일", "월", "화", "수", "목", "금", "토"][d.getDay()]})`;
     return {
-        from: toLocalYmd(wed),
+        from: toLocalYmd(thu),
         to: toLocalYmd(nextWed),
-        label: `${fmt(wed)} ~ ${fmt(nextWed)}`,
+        label: `${fmt(thu)} ~ ${fmt(nextWed)}`,
     };
 }
 
@@ -565,11 +565,34 @@ export default function ReportPage() {
     const channelId = useId().replace(/[^a-zA-Z0-9]/g, "");
     useEffect(() => {
         wOffRef.current = wOff;
+        setEditMode(false);
     }, [wOff]);
     const [mOff, setMOff] = useState(0);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+    const [briefTab, setBriefTab] = useState<string>("진행중");
+    const [editMode, setEditMode] = useState(false);
+    const [assignTab, setAssignTab] = useState<"active" | "waiting">("active");
+    const assignTabBarRef = useRef<HTMLDivElement>(null);
+    const briefTabBarRef = useRef<HTMLDivElement>(null);
+    const briefTabDragRef = useRef({ dragging: false, startX: 0, scrollLeft: 0 });
+
+    useEffect(() => {
+        const bar = briefTabBarRef.current;
+        if (!bar) return;
+        const active = bar.querySelector<HTMLElement>("[data-brief-tab-active]");
+        if (!active) return;
+        const barLeft = bar.scrollLeft;
+        const barRight = barLeft + bar.clientWidth;
+        const btnLeft = active.offsetLeft;
+        const btnRight = btnLeft + active.offsetWidth;
+        if (btnLeft < barLeft) {
+            bar.scrollTo({ left: btnLeft - 8, behavior: "smooth" });
+        } else if (btnRight > barRight) {
+            bar.scrollTo({ left: btnRight - bar.clientWidth + 8, behavior: "smooth" });
+        }
+    }, [briefTab]);
 
     const [briefing, setBriefing] = useState<BriefingRow | null>(null);
     const [, setEditing] = useState(false);
@@ -695,7 +718,7 @@ export default function ReportPage() {
         const prevWeekStart = getWeekWin(offsetAtStart - 1).from;
         const { data: prevData } = await supabase
             .from("briefings")
-            .select("notice, checklist")
+            .select("notice, checklist, okr")
             .eq("team_id", TEAM_ID)
             .eq("week_start", prevWeekStart)
             .maybeSingle();
@@ -708,6 +731,8 @@ export default function ReportPage() {
         const carriedNotice = noticeHtmlHasText(rawPrev) ? rawPrev : null;
         const rawPrevChecklist = prevData?.checklist ?? null;
         const carriedChecklist = noticeHtmlHasText(rawPrevChecklist) ? rawPrevChecklist : null;
+        const rawPrevOkr = prevData?.okr ?? null;
+        const carriedOkr = noticeHtmlHasText(rawPrevOkr) ? rawPrevOkr : null;
 
         if (data) {
             setBriefing({
@@ -735,7 +760,7 @@ export default function ReportPage() {
             etc: "",
             notice: carriedNotice,
             checklist: carriedChecklist,
-            okr: null,
+            okr: carriedOkr,
             in_progress: null,
             waiting: null,
             not_started: null,
@@ -897,7 +922,8 @@ export default function ReportPage() {
 
     const curTasks = mode === "weekly" ? wTasks : mTasks;
 
-    const editAllowed = !isGuest && isEditableWindow();
+    const canOpenEdit = !isGuest && isEditableWindow();
+    const editAllowed = canOpenEdit && editMode;
 
     /** 업무별 브리핑 카드 저장 (POST /api/briefing-tasks upsert) */
     async function saveBriefingTask(taskId: number, html: string) {
@@ -1485,57 +1511,100 @@ export default function ReportPage() {
                             {(mode === "monthly" ||
                                 reportTab === "board") && (
                             <div className="mb-5">
-                                <div className="mb-2 flex items-center gap-2">
-                                    <span className="h-4 w-1 rounded bg-amber-500" />
-                                    <p className="text-base font-bold text-stone-800">
-                                        주간 브리핑
-                                    </p>
+                                <div className="mb-2 flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                        <span className="h-4 w-1 rounded bg-amber-500" />
+                                        <p className="text-base font-bold text-stone-800">
+                                            주간 브리핑
+                                        </p>
+                                    </div>
+                                    {canOpenEdit && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditMode((v) => !v)}
+                                            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${editMode ? "bg-stone-800 text-white" : "border border-stone-300 text-stone-500 hover:border-stone-400 hover:text-stone-700"}`}
+                                        >
+                                            <i className={`text-sm ${editMode ? "ri-lock-unlock-line" : "ri-edit-line"}`} aria-hidden />
+                                            {editMode ? "편집 중" : "편집"}
+                                        </button>
+                                    )}
                                 </div>
-                                {/* 모바일 1열, sm 이상에서 한 줄에 2개씩 (스크롤 절감) */}
-                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:items-start">
+                                {/* 탭 바 */}
+                                <div
+                                    ref={briefTabBarRef}
+                                    className="flex gap-1 border-b border-stone-200 mb-3 overflow-x-auto scrollbar-none select-none cursor-grab active:cursor-grabbing"
+                                    onMouseDown={(e) => {
+                                        const el = briefTabBarRef.current;
+                                        if (!el) return;
+                                        briefTabDragRef.current = { dragging: true, startX: e.pageX - el.offsetLeft, scrollLeft: el.scrollLeft };
+                                    }}
+                                    onMouseMove={(e) => {
+                                        const drag = briefTabDragRef.current;
+                                        if (!drag.dragging) return;
+                                        const el = briefTabBarRef.current;
+                                        if (!el) return;
+                                        e.preventDefault();
+                                        el.scrollLeft = drag.scrollLeft - (e.pageX - el.offsetLeft - drag.startX);
+                                    }}
+                                    onMouseUp={() => { briefTabDragRef.current.dragging = false; }}
+                                    onMouseLeave={() => { briefTabDragRef.current.dragging = false; }}
+                                >
+                                    {STATUS_BRIEF_GROUPS.map((g) => {
+                                        const count = curTasks.filter(
+                                            (t) => normalizeStatus(t.status) === g.key,
+                                        ).length;
+                                        const isActive = briefTab === g.key;
+                                        return (
+                                            <button
+                                                key={g.key}
+                                                type="button"
+                                                onClick={() => setBriefTab(g.key)}
+                                                {...(isActive ? { "data-brief-tab-active": "" } : {})}
+                                                className={`shrink-0 flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                                                    isActive
+                                                        ? "border-stone-700 text-stone-800"
+                                                        : "border-transparent text-stone-400 hover:text-stone-600"
+                                                } ${count === 0 ? "opacity-40" : ""}`}
+                                            >
+                                                <span>{g.emoji}</span>
+                                                <span>{g.key}</span>
+                                                {count > 0 && (
+                                                    <span className={`text-xs rounded-full px-1.5 py-0.5 ${isActive ? "bg-stone-800 text-white" : "bg-stone-100 text-stone-500"}`}>
+                                                        {count}
+                                                    </span>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                {/* 탭 콘텐츠 */}
                                 {STATUS_BRIEF_GROUPS.map((g) => {
+                                    if (briefTab !== g.key) return null;
                                     const gt = curTasks
                                         .filter(
                                             (t) =>
                                                 normalizeStatus(t.status) ===
                                                 g.key,
                                         )
-                                        // 타입 순(프로젝트→유지보수→접근성→고도화→업무지원→기타) 정렬
                                         .sort((a, b) => {
                                             const r =
                                                 typeRank(a.type) -
                                                 typeRank(b.type);
                                             return r !== 0 ? r : a.id - b.id;
                                         });
-                                    if (!gt.length) return null;
-                                    const isExp = expanded[g.key];
+                                    if (!gt.length) return (
+                                        <p key={g.key} className="py-8 text-center text-sm text-stone-400">
+                                            {g.emoji} 해당 항목이 없습니다.
+                                        </p>
+                                    );
                                     const canEdit = editAllowed;
                                     return (
-                                        <div
-                                            key={g.key}
-                                            className="bg-white rounded-xl border border-stone-200 overflow-hidden"
-                                        >
-                                            {/* 헤더: 토글 + 전체 복사 + 화살표 */}
-                                            <div className="w-full flex items-center gap-3 px-4 py-3 text-left">
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        toggleExpand(g.key)
-                                                    }
-                                                    className="flex flex-1 items-center gap-3 text-left"
-                                                >
-                                                    <span className="text-base shrink-0">
-                                                        {g.emoji}
-                                                    </span>
-                                                    <div className="flex-1 flex items-center gap-2">
-                                                        <span className="text-sm font-bold text-stone-800">
-                                                            {g.key}
-                                                        </span>
-                                                        <p className="text-[13px] text-stone-400">
-                                                            {gt.length}건
-                                                        </p>
-                                                    </div>
-                                                </button>
+                                        <div key={g.key} className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+                                            {/* 탭 콘텐츠 헤더: 건수 + 전체 복사 */}
+                                            <div className="flex items-center justify-between px-4 py-3 border-b border-stone-100">
+                                                <p className="text-sm text-stone-500">
+                                                    총 <span className="font-bold text-stone-800">{gt.length}</span>건
+                                                </p>
                                                 <button
                                                     type="button"
                                                     onClick={() => {
@@ -1570,43 +1639,16 @@ export default function ReportPage() {
                                                     }}
                                                     className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${copiedStatusCol === g.col ? "bg-green-500 text-white" : "bg-stone-800 text-white"}`}
                                                 >
-                                                    {copiedStatusCol === g.col
-                                                        ? "복사됨!"
-                                                        : "전체 복사"}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        toggleExpand(g.key)
-                                                    }
-                                                    className="shrink-0"
-                                                    aria-label={
-                                                        isExp ? "접기" : "펼치기"
-                                                    }
-                                                >
-                                                    {isExp ? (
-                                                        <i
-                                                            className="ri-arrow-up-s-line text-stone-400"
-                                                            aria-hidden
-                                                        />
-                                                    ) : (
-                                                        <i
-                                                            className="ri-arrow-down-s-line text-stone-400"
-                                                            aria-hidden
-                                                        />
-                                                    )}
+                                                    {copiedStatusCol === g.col ? "복사됨!" : "전체 복사"}
                                                 </button>
                                             </div>
-
-                                            {/* 상세: 업무별 카드 (헤더 + Tiptap 에디터 + 저장/복사) */}
-                                            {isExp && (
-                                                <div className="border-t border-stone-100 divide-y divide-stone-100">
+                                            {/* 업무별 카드 목록 */}
+                                            <div className="divide-y divide-stone-100">
                                                     {gt.map((t) => {
                                                         const savedHtml =
                                                             savedBriefTasks[
                                                                 t.id
                                                             ];
-                                                        // 저장된 편집 내용이 있으면 사용, 없으면 tasks.content로 초기화
                                                         const cardInitial =
                                                             noticeHtmlHasText(
                                                                 savedHtml,
@@ -1748,18 +1790,16 @@ export default function ReportPage() {
                                                         );
                                                     })}
                                                 </div>
-                                            )}
                                         </div>
                                     );
                                 })}
-                                </div>
                             </div>
                             )}
 
-                            {/* 담당 배정 (항목별 아코디언) */}
+                            {/* 담당 배정 */}
                             {mode === "weekly" && reportTab === "board" && (
                                 <div className="mb-5 mt-8">
-                                    <div className="mb-4 flex items-center justify-between">
+                                    <div className="mb-2 flex items-center justify-between gap-2">
                                         <div className="flex items-center gap-2">
                                             <span className="h-4 w-1 rounded bg-amber-500" />
                                             <p className="text-base font-bold text-stone-800">
@@ -1769,46 +1809,70 @@ export default function ReportPage() {
                                         <button
                                             type="button"
                                             onClick={copyAssignmentsBlock}
-                                            className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all
-                        ${copiedAssign ? "bg-green-500 text-white" : "bg-stone-800 text-white"}`}
+                                            className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${copiedAssign ? "bg-green-500 text-white" : "bg-stone-800 text-white"}`}
                                         >
                                             {copiedAssign ? "복사됨!" : "전체 복사"}
                                         </button>
                                     </div>
 
-                                    <p className="mb-3 flex items-center gap-1.5 text-sm font-bold text-stone-700">
-                                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                                        배정현황
-                                    </p>
-                                    {assignActive.length === 0 ? (
-                                        <p className="mb-2 text-[13px] text-stone-400">
-                                            등록된 항목이 없어요
-                                        </p>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            {assignActive.map(renderAssignCard)}
-                                        </div>
-                                    )}
+                                    {/* 탭 바 */}
+                                    <div
+                                        ref={assignTabBarRef}
+                                        className="flex gap-1 border-b border-stone-200 mb-3 overflow-x-auto scrollbar-none select-none cursor-grab active:cursor-grabbing"
+                                    >
+                                        {([
+                                            { key: "active" as const, label: "배정현황", emoji: "🟢", count: assignActive.length },
+                                            { key: "waiting" as const, label: "배정대기", emoji: "🟡", count: assignWaiting.length },
+                                        ] as const).map((t) => {
+                                            const isActive = assignTab === t.key;
+                                            return (
+                                                <button
+                                                    key={t.key}
+                                                    type="button"
+                                                    onClick={() => setAssignTab(t.key)}
+                                                    className={`shrink-0 flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                                                        isActive
+                                                            ? "border-stone-700 text-stone-800"
+                                                            : "border-transparent text-stone-400 hover:text-stone-600"
+                                                    } ${t.count === 0 ? "opacity-40" : ""}`}
+                                                >
+                                                    <span>{t.emoji}</span>
+                                                    <span>{t.label}</span>
+                                                    {t.count > 0 && (
+                                                        <span className={`text-xs rounded-full px-1.5 py-0.5 ${isActive ? "bg-stone-800 text-white" : "bg-stone-100 text-stone-500"}`}>
+                                                            {t.count}
+                                                        </span>
+                                                    )}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
 
-                                    <p className="mb-3 mt-6 flex items-center gap-1.5 text-sm font-bold text-stone-700">
-                                        <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                                        배정대기
-                                    </p>
-                                    {assignWaiting.length === 0 ? (
-                                        <p className="mb-2 text-[13px] text-stone-400">
-                                            등록된 항목이 없어요
-                                        </p>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            {assignWaiting.map(renderAssignCard)}
-                                        </div>
+                                    {/* 탭 콘텐츠 */}
+                                    {assignTab === "active" && (
+                                        assignActive.length === 0 ? (
+                                            <p className="py-8 text-center text-sm text-stone-400">🟢 배정된 항목이 없습니다.</p>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                {assignActive.map(renderAssignCard)}
+                                            </div>
+                                        )
+                                    )}
+                                    {assignTab === "waiting" && (
+                                        assignWaiting.length === 0 ? (
+                                            <p className="py-8 text-center text-sm text-stone-400">🟡 대기 중인 항목이 없습니다.</p>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                {assignWaiting.map(renderAssignCard)}
+                                            </div>
+                                        )
                                     )}
 
                                     {isLeader && (
                                         <button
                                             type="button"
                                             onClick={openAddAssignment}
-                                            className="mt-3 w-full rounded-lg border border-dashed border-stone-300 py-2.5 text-xs font-medium text-stone-500 hover:border-amber-400 hover:text-amber-700 hover:bg-amber-50/50"
+                                            className="mt-3 w-full rounded-lg border border-dashed border-stone-300 py-2.5 text-xs font-medium text-stone-500 hover:border-stone-400 hover:text-stone-700"
                                         >
                                             + 항목 추가
                                         </button>

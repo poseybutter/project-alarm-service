@@ -305,3 +305,11 @@ textarea {
     background-color: #f5f5f4 !important;
     border-radius: 50% !important;
 }
+
+.scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+    display: none;
+}
