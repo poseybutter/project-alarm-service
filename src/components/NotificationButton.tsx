@@ -74,9 +74,7 @@ export default function NotificationButton() {
             >
                 <span className="text-xl text-stone-400">🔔</span>
                 {unreadCount > 0 && (
-                    <span className="absolute top-0 right-0 min-w-[16px] h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold px-1 leading-none">
-                        {unreadCount > 9 ? "9+" : unreadCount}
-                    </span>
+                    <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-red-500 rounded-full" />
                 )}
             </button>
 
@@ -109,14 +107,8 @@ export default function NotificationButton() {
                                             setOpen(false);
                                             router.push("/changelog");
                                         }}
-                                        className="w-full flex items-start gap-2.5 px-4 py-2.5 text-left hover:bg-stone-50 transition-colors"
+                                        className={`w-full flex items-start gap-2.5 px-4 py-2.5 text-left transition-colors ${isUnread ? "bg-amber-50 hover:bg-amber-100/70" : "hover:bg-stone-50"}`}
                                     >
-                                        {/* 읽지 않음 amber 점 */}
-                                        <span className="shrink-0 mt-1.5 w-2 flex justify-center">
-                                            {isUnread && (
-                                                <span className="w-2 h-2 rounded-full bg-amber-500" />
-                                            )}
-                                        </span>
                                         <div className="min-w-0 flex-1">
                                             <div className="flex items-center gap-1.5 mb-0.5">
                                                 <span className="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-full font-bold leading-none">
