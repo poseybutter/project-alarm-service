@@ -715,12 +715,15 @@ export default function ReportPage() {
             return;
         }
 
-        const prevWeekStart = getWeekWin(offsetAtStart - 1).from;
+        // 주간 기준 변경(수→목) 이후 기존 수요일 데이터도 이월 가능하도록
+        // 정확한 이전 주 날짜 대신 현재 week_start 이전의 가장 최근 행을 가져온다.
         const { data: prevData } = await supabase
             .from("briefings")
             .select("notice, checklist, okr")
             .eq("team_id", TEAM_ID)
-            .eq("week_start", prevWeekStart)
+            .lt("week_start", weekStart)
+            .order("week_start", { ascending: false })
+            .limit(1)
             .maybeSingle();
 
         if (wOffRef.current !== offsetAtStart) {
