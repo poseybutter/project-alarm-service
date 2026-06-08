@@ -71,6 +71,7 @@ jobs:
           fi
 
       - name: Insert notification into Supabase
+        if: steps.changed.outputs.changed == 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
