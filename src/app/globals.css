@@ -311,5 +311,7 @@ textarea {
     -ms-overflow-style: none;
 }
 .scrollbar-none::-webkit-scrollbar {
-    display: none;
+    width: 0 !important;
+    height: 0 !important;
+    display: none !important;
 }

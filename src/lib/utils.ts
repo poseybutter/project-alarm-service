@@ -33,6 +33,33 @@ export function getDiff(dateStr: string | null) {
     return Math.round((d.getTime() - n.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+/** 작성 시점 기준 상대 시간 (방금/몇 분/시간/일 전, 7일 이상은 날짜). 실제 일시는 GitHub에 있음 */
+export function timeAgo(iso: string) {
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return "";
+    const now = new Date();
+    // "일" 단위는 자정 기준 날짜 차이로 계산 (6/8 → 6/10 = 2일 전)
+    const startOfDay = (d: Date) => {
+        const x = new Date(d);
+        x.setHours(0, 0, 0, 0);
+        return x.getTime();
+    };
+    const dayDiff = Math.round(
+        (startOfDay(now) - startOfDay(date)) / 86400000,
+    );
+    if (dayDiff <= 0) {
+        // 같은 날(또는 미래/시계 오차): 경과 시간으로 표시
+        const sec = Math.floor((now.getTime() - date.getTime()) / 1000);
+        if (sec < 60) return "방금 전";
+        const min = Math.floor(sec / 60);
+        if (min < 60) return `${min}분 전`;
+        return `${Math.floor(min / 60)}시간 전`;
+    }
+    if (dayDiff < 7) return `${dayDiff}일 전`;
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())}`;
+}
+
 export function formatWorkload(min: number) {
     if (!min) return "";
     if (min < 60) return `${min}분`;
