@@ -3,23 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useNotifications } from "@/hooks/useNotifications";
-
-/** 작성 시점 기준 상대 시간 (몇 분/시간/일 전) */
-function timeAgo(iso: string) {
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return "";
-    const diffMs = Date.now() - date.getTime();
-    const sec = Math.floor(diffMs / 1000);
-    if (sec < 60) return "방금 전";
-    const min = Math.floor(sec / 60);
-    if (min < 60) return `${min}분 전`;
-    const hour = Math.floor(min / 60);
-    if (hour < 24) return `${hour}시간 전`;
-    const day = Math.floor(hour / 24);
-    if (day < 7) return `${day}일 전`;
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${date.getFullYear()}.${pad(date.getMonth() + 1)}.${pad(date.getDate())}`;
-}
+import { timeAgo } from "@/lib/utils";
 
 export default function NotificationButton() {
     const router = useRouter();

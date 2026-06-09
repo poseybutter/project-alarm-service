@@ -80,8 +80,9 @@ function SectionHtmlReadView({
 function htmlToMarkdown(html: string): string {
     if (!html?.trim()) return "";
     return html
-        .replace(/<strong>([\s\S]*?)<\/strong>/gi, "**$1**")
-        .replace(/<em>([\s\S]*?)<\/em>/gi, "*$1*")
+        // 노션 붙여넣기 시 마크다운 기호(**, *)가 그대로 노출되어 굵게/기울임 표시는 제거하고 텍스트만 유지
+        .replace(/<strong>([\s\S]*?)<\/strong>/gi, "$1")
+        .replace(/<em>([\s\S]*?)<\/em>/gi, "$1")
         .replace(/<br\s*\/?>/gi, "\n")
         .replace(/<\/p>\s*<p>/gi, "\n\n")
         .replace(/<\/li>\s*<li>/gi, "\n")
@@ -284,7 +285,7 @@ function isEditableWindow(now: Date = new Date()): boolean {
 
 function getWeekWin(offset: number) {
     const now = new Date();
-    // 목(4)~수(3) 한 주: 주 시작은 목요일.
+    // 목~목 한 주: 주 시작은 목요일, 끝은 다음 목요일(끝 포함).
     const y = now.getFullYear();
     const mon = now.getMonth();
     const dom = now.getDate();
@@ -292,10 +293,10 @@ function getWeekWin(offset: number) {
     const daysFromWeekStart = (dow - 4 + 7) % 7;
     const thu = new Date(y, mon, dom - daysFromWeekStart + offset * 7);
     thu.setHours(0, 0, 0, 0);
-    const nextWed = new Date(
+    const nextThu = new Date(
         thu.getFullYear(),
         thu.getMonth(),
-        thu.getDate() + 6,
+        thu.getDate() + 7,
         23,
         59,
         59,
@@ -306,8 +307,8 @@ function getWeekWin(offset: number) {
         `${d.getMonth() + 1}/${d.getDate()}(${["일", "월", "화", "수", "목", "금", "토"][d.getDay()]})`;
     return {
         from: toLocalYmd(thu),
-        to: toLocalYmd(nextWed),
-        label: `${fmt(thu)} ~ ${fmt(nextWed)}`,
+        to: toLocalYmd(nextThu),
+        label: `${fmt(thu)} ~ ${fmt(nextThu)}`,
     };
 }
 
@@ -362,7 +363,7 @@ const STATUS_BRIEF_GROUPS: {
     { key: "완료", emoji: "✅", col: "done" },
 ];
 
-/** 업무 카드 정렬용 타입 우선순위 (목록에 없는 타입은 맨 뒤) */
+/** 구분(업무 유형)별 카드 정렬 순서 (목록에 없는 타입은 "기타"로 묶어 맨 뒤) */
 const TYPE_SORT_ORDER = [
     "프로젝트",
     "유지보수",
@@ -370,10 +371,6 @@ const TYPE_SORT_ORDER = [
     "고도화",
     "업무지원",
 ];
-function typeRank(type: string | null | undefined): number {
-    const i = TYPE_SORT_ORDER.indexOf(type ?? "");
-    return i === -1 ? TYPE_SORT_ORDER.length : i;
-}
 
 /** 카드 헤더 [타입] 인라인 텍스트 색상 (타입별) */
 // 업무(tasks) 페이지 TYPE_COLORS와 동일 팔레트로 통일 (text 색만 사용)
@@ -453,29 +450,76 @@ function contentToCardHtml(t: Task): string {
     return `<p>${out.join("<br>")}</p>`;
 }
 
+/** 상태 우선순위 (낮을수록 활성). STATUS_BRIEF_GROUPS 순서 = 진행중 > 시작 전 > 대기 > 지연/보류 > 완료 */
+function statusRank(t: Task): number {
+    const i = STATUS_BRIEF_GROUPS.findIndex(
+        (s) => s.key === normalizeStatus(t.status),
+    );
+    return i === -1 ? STATUS_BRIEF_GROUPS.length : i;
+}
+const DONE_RANK = STATUS_BRIEF_GROUPS.findIndex((s) => s.key === "완료");
+
 /**
- * 카드/복사 머리줄: "**⭐[타입] 프로젝트명 @담당자**"
- * 노션 등에 붙여넣을 때 굵게 보이도록 마크다운 볼드(**)로 감싼다. (핵심 프로젝트면 ⭐ 접두)
+ * 같은 프로젝트 업무를 하나로 묶는다.
+ * bucket = 그 프로젝트 업무들 중 가장 활성인 상태(진행중 우선). 모두 완료면 완료.
+ * 업무는 활성 → 완료 순으로 정렬. 같은 상태(bucket) 안에서는 ⭐ 핵심 프로젝트를 맨 위로.
  */
-function cardHeaderLine(t: Task): string {
-    const star = t.is_starred ? "⭐ " : "";
-    const typePart = t.type ? `[${t.type}] ` : "";
-    return `**${star}${typePart}${t.proj} @${t.member}**`;
+function buildBriefProjects(tasks: Task[]) {
+    const map = new Map<string, Task[]>();
+    tasks.forEach((t) => {
+        const arr = map.get(t.proj) ?? [];
+        arr.push(t);
+        map.set(t.proj, arr);
+    });
+    return [...map.entries()]
+        .map(([proj, ts]) => {
+            const sorted = [...ts].sort(
+                (a, b) => statusRank(a) - statusRank(b) || a.id - b.id,
+            );
+            return {
+                proj,
+                tasks: sorted,
+                bucket: Math.min(...ts.map(statusRank)),
+                starred: ts.some((t) => t.is_starred),
+                type: sorted[0]?.type ?? null,
+                // 담당자: 중복 제거해 헤더에 한 번만 표기 (업무 등장 순서 유지)
+                members: [...new Set(sorted.map((t) => t.member))],
+            };
+        })
+        .sort(
+            (a, b) =>
+                a.bucket - b.bucket ||
+                Number(b.starred) - Number(a.starred) ||
+                a.tasks[0].id - b.tasks[0].id,
+        );
+}
+type BriefProject = ReturnType<typeof buildBriefProjects>[number];
+
+/** 활성 프로젝트 카드 안에서 완료 업무를 "완료"로 표시할지 (프로젝트 전체가 완료면 굳이 표시 안 함) */
+function isDoneTagged(p: BriefProject, t: Task): boolean {
+    return normalizeStatus(t.status) === "완료" && p.bucket !== DONE_RANK;
 }
 
 /**
- * 카드 복사 텍스트:
+ * 병합된 프로젝트 복사 텍스트:
  *   [타입] 프로젝트명 @담당자
- *   ⇒ 첫 번째 내용
- *     두 번째 내용 (들여쓰기)
+ *   ⇒ 내용
+ *   ⇒ 내용 — 완료
  */
-function briefTaskCopyText(t: Task, html: string): string {
-    // htmlToMarkdown은 들여쓰기용 nbsp를 일반 공백으로 바꾸는데, 노션은 줄 앞 일반 공백을 무시한다.
-    // → 변환 후 줄 앞 공백을 다시 nbsp로 되돌려 들여쓰기를 보존한다.
-    const body = htmlToMarkdown(html).replace(/^ +/gm, (m) =>
-        " ".repeat(m.length),
-    );
-    return body ? `${cardHeaderLine(t)}\n${body}` : cardHeaderLine(t);
+function projectCopyText(p: BriefProject, htmlFor: (t: Task) => string): string {
+    const members = p.members.join(", ");
+    const head = `${p.starred ? "⭐ " : ""}${p.type ? `[${p.type}] ` : ""}${p.proj}${members ? ` @${members}` : ""}`;
+    const blocks = p.tasks
+        .map((t) => {
+            const body = htmlToMarkdown(htmlFor(t)).replace(/^ +/gm, (m) =>
+                " ".repeat(m.length),
+            );
+            const done = isDoneTagged(p, t) ? " — 완료" : "";
+            if (!body) return done ? `⇒ 완료` : "";
+            return `${body}${done}`;
+        })
+        .filter(Boolean);
+    return [head, ...blocks].join("\n");
 }
 
 type Assignment = {
@@ -495,21 +539,21 @@ function formatAssignments(list: Assignment[]): string {
     const lines: string[] = [];
 
     if (active.length > 0) {
-        lines.push("**[배정현황]**");
+        lines.push("[배정현황]");
         active.forEach((a) => {
             const memberStr = (a.members || []).join(", ");
             // Notion 등에 붙일 때 프로젝트명이 하이퍼링크로 인식되도록 Markdown 링크 사용
             const namePart = a.url ? `[${a.name}](${a.url})` : a.name;
-            lines.push(`⇒ **[${a.type}]** ${namePart} : ${memberStr}`);
+            lines.push(`⇒ [${a.type}] ${namePart} : ${memberStr}`);
         });
     }
 
     if (waiting.length > 0) {
         if (lines.length > 0) lines.push("");
-        lines.push("**[배정대기]**");
+        lines.push("[배정대기]");
         waiting.forEach((a) => {
             const namePart = a.url ? `[${a.name}](${a.url})` : a.name;
-            lines.push(`⇒ **[배정대기]** ${namePart}`);
+            lines.push(`⇒ [배정대기] ${namePart}`);
             if (a.period_note) {
                 a.period_note.split("\n").forEach((l) => {
                     if (l.trim()) lines.push(`  • ${l.trim()}`);
@@ -526,8 +570,8 @@ function assignmentCopyText(a: Assignment): string {
     const namePart = a.url ? `[${a.name}](${a.url})` : a.name;
     const head =
         a.status === "배정대기"
-            ? `⇒ **[배정대기]** ${namePart}`
-            : `⇒ **[${a.type}]** ${namePart} : ${(a.members || []).join(", ")}`;
+            ? `⇒ [배정대기] ${namePart}`
+            : `⇒ [${a.type}] ${namePart} : ${(a.members || []).join(", ")}`;
     const lines = [head];
     if (a.period_note) {
         a.period_note.split("\n").forEach((l) => {
@@ -571,28 +615,16 @@ export default function ReportPage() {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-    const [briefTab, setBriefTab] = useState<string>("진행중");
     const [editMode, setEditMode] = useState(false);
     const [assignTab, setAssignTab] = useState<"active" | "waiting">("active");
     const assignTabBarRef = useRef<HTMLDivElement>(null);
+    // 구분(업무 유형) 탭바 드래그 스크롤
     const briefTabBarRef = useRef<HTMLDivElement>(null);
-    const briefTabDragRef = useRef({ dragging: false, startX: 0, scrollLeft: 0 });
-
-    useEffect(() => {
-        const bar = briefTabBarRef.current;
-        if (!bar) return;
-        const active = bar.querySelector<HTMLElement>("[data-brief-tab-active]");
-        if (!active) return;
-        const barLeft = bar.scrollLeft;
-        const barRight = barLeft + bar.clientWidth;
-        const btnLeft = active.offsetLeft;
-        const btnRight = btnLeft + active.offsetWidth;
-        if (btnLeft < barLeft) {
-            bar.scrollTo({ left: btnLeft - 8, behavior: "smooth" });
-        } else if (btnRight > barRight) {
-            bar.scrollTo({ left: btnRight - bar.clientWidth + 8, behavior: "smooth" });
-        }
-    }, [briefTab]);
+    const briefTabDragRef = useRef({
+        dragging: false,
+        startX: 0,
+        scrollLeft: 0,
+    });
 
     const [briefing, setBriefing] = useState<BriefingRow | null>(null);
     const [, setEditing] = useState(false);
@@ -639,16 +671,18 @@ export default function ReportPage() {
         Record<number, boolean>
     >({});
     const [copiedAssignId, setCopiedAssignId] = useState<number | null>(null);
-    const [copiedStatusCol, setCopiedStatusCol] = useState<StatusBriefCol | null>(
-        null,
-    );
+    // 구분(업무 유형)별 카드 "전체 복사" 표시
+    const [copiedTypeGroup, setCopiedTypeGroup] = useState<string | null>(null);
+    // 프로젝트 카드 단건 복사 표시 (프로젝트명)
+    const [copiedProj, setCopiedProj] = useState<string | null>(null);
+    // 주간 브리핑: 선택된 구분(업무 유형) 탭
+    const [briefTypeTab, setBriefTypeTab] = useState<string>("프로젝트");
     // 업무별 브리핑 카드: 저장된 내용(task_id→HTML), 편집 드래프트, 저장중/복사 표시
     const [savedBriefTasks, setSavedBriefTasks] = useState<
         Record<number, string>
     >({});
     const briefTaskDraftRef = useRef<Record<number, string>>({});
     const [savingTaskId, setSavingTaskId] = useState<number | null>(null);
-    const [copiedTaskId, setCopiedTaskId] = useState<number | null>(null);
 
     const [assignments, setAssignments] = useState<Assignment[]>([]);
     const [showAssignModal, setShowAssignModal] = useState(false);
@@ -1532,88 +1566,137 @@ export default function ReportPage() {
                                         </button>
                                     )}
                                 </div>
-                                {/* 탭 바 */}
-                                <div
-                                    ref={briefTabBarRef}
-                                    className="flex gap-1 border-b border-stone-200 mb-3 overflow-x-auto scrollbar-none select-none cursor-grab active:cursor-grabbing"
-                                    onMouseDown={(e) => {
-                                        const el = briefTabBarRef.current;
-                                        if (!el) return;
-                                        briefTabDragRef.current = { dragging: true, startX: e.pageX - el.offsetLeft, scrollLeft: el.scrollLeft };
-                                    }}
-                                    onMouseMove={(e) => {
-                                        const drag = briefTabDragRef.current;
-                                        if (!drag.dragging) return;
-                                        const el = briefTabBarRef.current;
-                                        if (!el) return;
-                                        e.preventDefault();
-                                        el.scrollLeft = drag.scrollLeft - (e.pageX - el.offsetLeft - drag.startX);
-                                    }}
-                                    onMouseUp={() => { briefTabDragRef.current.dragging = false; }}
-                                    onMouseLeave={() => { briefTabDragRef.current.dragging = false; }}
-                                >
-                                    {STATUS_BRIEF_GROUPS.map((g) => {
-                                        const count = curTasks.filter(
-                                            (t) => normalizeStatus(t.status) === g.key,
-                                        ).length;
-                                        const isActive = briefTab === g.key;
+                                {/* 구분(업무 유형) 탭 → 선택된 구분의 업무를 상태별로 나열 */}
+                                {(() => {
+                                    const typeOf = (t: Task) =>
+                                        TYPE_SORT_ORDER.includes(t.type ?? "")
+                                            ? (t.type as string)
+                                            : "기타";
+                                    const typeGroups = [...TYPE_SORT_ORDER, "기타"]
+                                        .map((type) => ({
+                                            type,
+                                            tasks: curTasks.filter(
+                                                (t) => typeOf(t) === type,
+                                            ),
+                                        }))
+                                        .filter((grp) => grp.tasks.length > 0);
+                                    if (!typeGroups.length)
                                         return (
-                                            <button
-                                                key={g.key}
-                                                type="button"
-                                                onClick={() => setBriefTab(g.key)}
-                                                {...(isActive ? { "data-brief-tab-active": "" } : {})}
-                                                className={`shrink-0 flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
-                                                    isActive
-                                                        ? "border-stone-700 text-stone-800"
-                                                        : "border-transparent text-stone-400 hover:text-stone-600"
-                                                } ${count === 0 ? "opacity-40" : ""}`}
-                                            >
-                                                <span>{g.emoji}</span>
-                                                <span>{g.key}</span>
-                                                {count > 0 && (
-                                                    <span className={`text-xs rounded-full px-1.5 py-0.5 ${isActive ? "bg-stone-800 text-white" : "bg-stone-100 text-stone-500"}`}>
-                                                        {count}
-                                                    </span>
-                                                )}
-                                            </button>
+                                            <p className="py-8 text-center text-sm text-stone-400">
+                                                브리핑할 업무가 없습니다.
+                                            </p>
                                         );
-                                    })}
-                                </div>
-                                {/* 탭 콘텐츠 */}
-                                {STATUS_BRIEF_GROUPS.map((g) => {
-                                    if (briefTab !== g.key) return null;
-                                    const gt = curTasks
-                                        .filter(
-                                            (t) =>
-                                                normalizeStatus(t.status) ===
-                                                g.key,
-                                        )
-                                        .sort((a, b) => {
-                                            const r =
-                                                typeRank(a.type) -
-                                                typeRank(b.type);
-                                            return r !== 0 ? r : a.id - b.id;
-                                        });
-                                    if (!gt.length) return (
-                                        <p key={g.key} className="py-8 text-center text-sm text-stone-400">
-                                            {g.emoji} 해당 항목이 없습니다.
-                                        </p>
-                                    );
                                     const canEdit = editAllowed;
+                                    const activeType = typeGroups.some(
+                                        (grp) => grp.type === briefTypeTab,
+                                    )
+                                        ? briefTypeTab
+                                        : typeGroups[0].type;
+                                    const activeGroup =
+                                        typeGroups.find(
+                                            (grp) => grp.type === activeType,
+                                        ) ?? typeGroups[0];
                                     return (
-                                        <div key={g.key} className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                                            {/* 탭 콘텐츠 헤더: 건수 + 전체 복사 */}
-                                            <div className="flex items-center justify-between px-4 py-3 border-b border-stone-100">
-                                                <p className="text-sm text-stone-500">
-                                                    총 <span className="font-bold text-stone-800">{gt.length}</span>건
-                                                </p>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        const text = gt
-                                                            .map((t) => {
-                                                                const html =
+                                        <>
+                                            {/* 구분(업무 유형) 탭 바 */}
+                                            <div
+                                                ref={briefTabBarRef}
+                                                className="flex gap-1 border-b border-stone-200 mb-3 overflow-x-auto overflow-y-hidden scrollbar-none select-none cursor-grab active:cursor-grabbing"
+                                                onMouseDown={(e) => {
+                                                    const el =
+                                                        briefTabBarRef.current;
+                                                    if (!el) return;
+                                                    briefTabDragRef.current = {
+                                                        dragging: true,
+                                                        startX:
+                                                            e.pageX -
+                                                            el.offsetLeft,
+                                                        scrollLeft:
+                                                            el.scrollLeft,
+                                                    };
+                                                }}
+                                                onMouseMove={(e) => {
+                                                    const drag =
+                                                        briefTabDragRef.current;
+                                                    if (!drag.dragging) return;
+                                                    const el =
+                                                        briefTabBarRef.current;
+                                                    if (!el) return;
+                                                    e.preventDefault();
+                                                    el.scrollLeft =
+                                                        drag.scrollLeft -
+                                                        (e.pageX -
+                                                            el.offsetLeft -
+                                                            drag.startX);
+                                                }}
+                                                onMouseUp={() => {
+                                                    briefTabDragRef.current.dragging =
+                                                        false;
+                                                }}
+                                                onMouseLeave={() => {
+                                                    briefTabDragRef.current.dragging =
+                                                        false;
+                                                }}
+                                            >
+                                                {typeGroups.map((grp) => {
+                                                    const isActive =
+                                                        grp.type === activeType;
+                                                    return (
+                                                        <button
+                                                            key={grp.type}
+                                                            type="button"
+                                                            onClick={() =>
+                                                                setBriefTypeTab(
+                                                                    grp.type,
+                                                                )
+                                                            }
+                                                            className={`shrink-0 flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
+                                                                isActive
+                                                                    ? "border-stone-700 text-stone-800"
+                                                                    : "border-transparent text-stone-400 hover:text-stone-600"
+                                                            }`}
+                                                        >
+                                                            <span
+                                                                className={
+                                                                    isActive
+                                                                        ? TYPE_TEXT_COLOR[
+                                                                              grp
+                                                                                  .type
+                                                                          ] ?? ""
+                                                                        : ""
+                                                                }
+                                                            >
+                                                                {grp.type}
+                                                            </span>
+                                                            <span
+                                                                className={`text-xs rounded-full px-1.5 py-0.5 ${isActive ? "bg-stone-800 text-white" : "bg-stone-100 text-stone-500"}`}
+                                                            >
+                                                                {grp.tasks.length}
+                                                            </span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                            {[activeGroup].map((grp) => (
+                                                <div
+                                                    key={grp.type}
+                                                    className="bg-white rounded-xl border border-stone-200 overflow-hidden"
+                                                >
+                                                    {/* 카드 헤더: 건수 + 전체 복사 */}
+                                                    <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-stone-100">
+                                                        <p className="text-sm text-stone-500">
+                                                            총{" "}
+                                                            <span className="font-bold text-stone-800">
+                                                                {grp.tasks.length}
+                                                            </span>
+                                                            건
+                                                        </p>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const html = (
+                                                                    t: Task,
+                                                                ) =>
                                                                     briefTaskDraftRef
                                                                         .current[
                                                                         t.id
@@ -1624,178 +1707,261 @@ export default function ReportPage() {
                                                                     contentToCardHtml(
                                                                         t,
                                                                     );
-                                                                return briefTaskCopyText(
-                                                                    t,
-                                                                    html,
+                                                                const text =
+                                                                    buildBriefProjects(
+                                                                        grp.tasks,
+                                                                    )
+                                                                        .map(
+                                                                            (p) =>
+                                                                                projectCopyText(
+                                                                                    p,
+                                                                                    html,
+                                                                                ),
+                                                                        )
+                                                                        .join(
+                                                                            "\n\n",
+                                                                        );
+                                                                void copySection(
+                                                                    text,
+                                                                    (v) =>
+                                                                        setCopiedTypeGroup(
+                                                                            v ? grp.type : null,
+                                                                        ),
                                                                 );
-                                                            })
-                                                            .join("\n\n");
-                                                        void copySection(
-                                                            text,
-                                                            (v) =>
-                                                                setCopiedStatusCol(
-                                                                    v
-                                                                        ? g.col
-                                                                        : null,
-                                                                ),
-                                                        );
-                                                    }}
-                                                    className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${copiedStatusCol === g.col ? "bg-green-500 text-white" : "bg-stone-800 text-white"}`}
-                                                >
-                                                    {copiedStatusCol === g.col ? "복사됨!" : "전체 복사"}
-                                                </button>
-                                            </div>
-                                            {/* 업무별 카드 목록 */}
-                                            <div className="divide-y divide-stone-100">
-                                                    {gt.map((t) => {
-                                                        const savedHtml =
+                                                            }}
+                                                            className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${copiedTypeGroup === grp.type ? "bg-green-500 text-white" : "bg-stone-800 text-white"}`}
+                                                        >
+                                                            {copiedTypeGroup === grp.type
+                                                                ? "복사됨!"
+                                                                : "전체 복사"}
+                                                        </button>
+                                                    </div>
+                                                    {/* 카드 안: 상태별 그룹 — 같은 프로젝트는 하나로 병합, 활성 상태에 배치 */}
+                                                    {(() => {
+                                                        const taskHtml = (
+                                                            t: Task,
+                                                        ) =>
+                                                            briefTaskDraftRef
+                                                                .current[t.id] ??
                                                             savedBriefTasks[
                                                                 t.id
-                                                            ];
-                                                        const cardInitial =
-                                                            noticeHtmlHasText(
-                                                                savedHtml,
-                                                            )
-                                                                ? savedHtml
-                                                                : contentToCardHtml(
-                                                                      t,
-                                                                  );
-                                                        return (
-                                                            <div
-                                                                key={t.id}
-                                                                className="p-4 space-y-2"
-                                                            >
-                                                                {/* 카드 헤더: [타입] 프로젝트명 @담당자 + 우상단 복사 아이콘 */}
-                                                                <div className="flex items-start justify-between gap-2">
-                                                                    <p className="text-[13px] font-bold text-stone-800">
-                                                                        {t.is_starred && (
-                                                                            <span
-                                                                                className="mr-1"
-                                                                                title="핵심 프로젝트"
-                                                                            >
-                                                                                ⭐
-                                                                            </span>
-                                                                        )}
-                                                                        {t.type && (
-                                                                            <span
-                                                                                className={
-                                                                                    TYPE_TEXT_COLOR[
-                                                                                        t
-                                                                                            .type
-                                                                                    ] ??
-                                                                                    "text-stone-500"
-                                                                                }
-                                                                            >
-                                                                                [
+                                                            ] ??
+                                                            contentToCardHtml(t);
+                                                        const projects =
+                                                            buildBriefProjects(
+                                                                grp.tasks,
+                                                            );
+                                                        return STATUS_BRIEF_GROUPS.map(
+                                                            (g, r) => {
+                                                                const projs =
+                                                                    projects.filter(
+                                                                        (p) =>
+                                                                            p.bucket ===
+                                                                            r,
+                                                                    );
+                                                                if (!projs.length)
+                                                                    return null;
+                                                                return (
+                                                                    <div
+                                                                        key={
+                                                                            g.key
+                                                                        }
+                                                                    >
+                                                                        {/* 상태 서브헤더 */}
+                                                                        <div className="flex items-center gap-1.5 px-4 pt-3 pb-1">
+                                                                            <span className="text-base">
                                                                                 {
-                                                                                    t.type
+                                                                                    g.emoji
                                                                                 }
-                                                                                ]{" "}
                                                                             </span>
-                                                                        )}
-                                                                        {t.proj}
-                                                                        <span className="ml-1 font-medium text-stone-400">
-                                                                            @
-                                                                            {
-                                                                                t.member
-                                                                            }
-                                                                        </span>
-                                                                    </p>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() =>
-                                                                            void copySection(
-                                                                                briefTaskCopyText(
-                                                                                    t,
-                                                                                    briefTaskDraftRef
-                                                                                        .current[
-                                                                                        t
-                                                                                            .id
-                                                                                    ] ??
-                                                                                        cardInitial,
-                                                                                ),
+                                                                            <span className="text-sm font-semibold text-stone-600">
+                                                                                {
+                                                                                    g.key
+                                                                                }
+                                                                            </span>
+                                                                            <span className="text-sm text-stone-400">
+                                                                                {
+                                                                                    projs.length
+                                                                                }
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="divide-y divide-stone-100">
+                                                                            {projs.map(
                                                                                 (
-                                                                                    v,
-                                                                                ) =>
-                                                                                    setCopiedTaskId(
-                                                                                        v
-                                                                                            ? t.id
-                                                                                            : null,
-                                                                                    ),
-                                                                            )
-                                                                        }
-                                                                        className={`shrink-0 rounded-md p-1 transition-colors ${copiedTaskId === t.id ? "text-green-600" : "text-stone-400 hover:bg-stone-100 hover:text-stone-700"}`}
-                                                                        title={
-                                                                            copiedTaskId ===
-                                                                            t.id
-                                                                                ? "복사됨"
-                                                                                : "복사"
-                                                                        }
-                                                                        aria-label="복사"
-                                                                    >
-                                                                        <i
-                                                                            className={`text-base ${copiedTaskId === t.id ? "ri-check-line" : "ri-file-copy-line"}`}
-                                                                            aria-hidden
-                                                                        />
-                                                                    </button>
-                                                                </div>
-                                                                <TiptapSectionEditor
-                                                                    key={`btask-${t.id}-${wOff}-${briefingEditorKey}`}
-                                                                    content={
-                                                                        cardInitial
-                                                                    }
-                                                                    onChange={(
-                                                                        html,
-                                                                    ) => {
-                                                                        briefTaskDraftRef.current[
-                                                                            t.id
-                                                                        ] = html;
-                                                                    }}
-                                                                    editable={
-                                                                        canEdit
-                                                                    }
-                                                                    showToolbar={
-                                                                        canEdit
-                                                                    }
-                                                                    placeholder="업무 내용을 입력하세요..."
-                                                                />
-                                                                {canEdit && (
-                                                                    <button
-                                                                        type="button"
-                                                                        disabled={
-                                                                            savingTaskId ===
-                                                                            t.id
-                                                                        }
-                                                                        onClick={(
-                                                                            e,
-                                                                        ) => {
-                                                                            e.preventDefault();
-                                                                            e.stopPropagation();
-                                                                            void saveBriefingTask(
-                                                                                t.id,
-                                                                                briefTaskDraftRef
-                                                                                    .current[
-                                                                                    t
-                                                                                        .id
-                                                                                ] ??
-                                                                                    cardInitial,
-                                                                            );
-                                                                        }}
-                                                                        className="w-full rounded-xl bg-amber-500 py-2.5 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50"
-                                                                    >
-                                                                        {savingTaskId ===
-                                                                        t.id
-                                                                            ? "저장 중…"
-                                                                            : "저장"}
-                                                                    </button>
-                                                                )}
-                                                            </div>
+                                                                                    p,
+                                                                                ) => (
+                                                                                    <div
+                                                                                        key={
+                                                                                            p.proj
+                                                                                        }
+                                                                                        className="p-4 space-y-3"
+                                                                                    >
+                                                                                        {/* 프로젝트 헤더: ⭐ [타입] 프로젝트명 + 복사 */}
+                                                                                        <div className="flex items-start justify-between gap-2">
+                                                                                            <p className="text-[13px] font-bold text-stone-800">
+                                                                                                {p.starred && (
+                                                                                                    <span
+                                                                                                        className="mr-1"
+                                                                                                        title="핵심 프로젝트"
+                                                                                                    >
+                                                                                                        ⭐
+                                                                                                    </span>
+                                                                                                )}
+                                                                                                {p.type && (
+                                                                                                    <span
+                                                                                                        className={
+                                                                                                            TYPE_TEXT_COLOR[
+                                                                                                                p
+                                                                                                                    .type
+                                                                                                            ] ??
+                                                                                                            "text-stone-500"
+                                                                                                        }
+                                                                                                    >
+                                                                                                        [{p.type}]{" "}
+                                                                                                    </span>
+                                                                                                )}
+                                                                                                {p.proj}
+                                                                                                {p.members.length > 0 && (
+                                                                                                    <span className="ml-1 font-medium text-stone-400">
+                                                                                                        @{p.members.join(", ")}
+                                                                                                    </span>
+                                                                                                )}
+                                                                                            </p>
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={() =>
+                                                                                                    void copySection(
+                                                                                                        projectCopyText(
+                                                                                                            p,
+                                                                                                            taskHtml,
+                                                                                                        ),
+                                                                                                        (
+                                                                                                            v,
+                                                                                                        ) =>
+                                                                                                            setCopiedProj(
+                                                                                                                v
+                                                                                                                    ? p.proj
+                                                                                                                    : null,
+                                                                                                            ),
+                                                                                                    )
+                                                                                                }
+                                                                                                className={`shrink-0 rounded-md p-1 transition-colors ${copiedProj === p.proj ? "text-green-600" : "text-stone-400 hover:bg-stone-100 hover:text-stone-700"}`}
+                                                                                                title={
+                                                                                                    copiedProj ===
+                                                                                                    p.proj
+                                                                                                        ? "복사됨"
+                                                                                                        : "복사"
+                                                                                                }
+                                                                                                aria-label="복사"
+                                                                                            >
+                                                                                                <i
+                                                                                                    className={`text-base ${copiedProj === p.proj ? "ri-check-line" : "ri-file-copy-line"}`}
+                                                                                                    aria-hidden
+                                                                                                />
+                                                                                            </button>
+                                                                                        </div>
+                                                                                        {/* 업무별 블록: @담당자 + 완료 태그 + 에디터 + 저장 */}
+                                                                                        {p.tasks.map(
+                                                                                            (
+                                                                                                t,
+                                                                                            ) => {
+                                                                                                const savedHtml =
+                                                                                                    savedBriefTasks[
+                                                                                                        t
+                                                                                                            .id
+                                                                                                    ];
+                                                                                                const cardInitial =
+                                                                                                    noticeHtmlHasText(
+                                                                                                        savedHtml,
+                                                                                                    )
+                                                                                                        ? savedHtml
+                                                                                                        : contentToCardHtml(
+                                                                                                              t,
+                                                                                                          );
+                                                                                                return (
+                                                                                                    <div
+                                                                                                        key={
+                                                                                                            t.id
+                                                                                                        }
+                                                                                                        className="space-y-2"
+                                                                                                    >
+                                                                                                        {isDoneTagged(
+                                                                                                            p,
+                                                                                                            t,
+                                                                                                        ) && (
+                                                                                                            <span className="inline-block rounded bg-stone-100 px-1.5 py-0.5 text-[11px] font-medium text-stone-500">
+                                                                                                                완료
+                                                                                                            </span>
+                                                                                                        )}
+                                                                                                        <TiptapSectionEditor
+                                                                                                            key={`btask-${t.id}-${wOff}-${briefingEditorKey}`}
+                                                                                                            content={
+                                                                                                                cardInitial
+                                                                                                            }
+                                                                                                            onChange={(
+                                                                                                                html,
+                                                                                                            ) => {
+                                                                                                                briefTaskDraftRef.current[
+                                                                                                                    t.id
+                                                                                                                ] =
+                                                                                                                    html;
+                                                                                                            }}
+                                                                                                            editable={
+                                                                                                                canEdit
+                                                                                                            }
+                                                                                                            showToolbar={
+                                                                                                                canEdit
+                                                                                                            }
+                                                                                                            placeholder="업무 내용을 입력하세요..."
+                                                                                                        />
+                                                                                                        {canEdit && (
+                                                                                                            <button
+                                                                                                                type="button"
+                                                                                                                disabled={
+                                                                                                                    savingTaskId ===
+                                                                                                                    t.id
+                                                                                                                }
+                                                                                                                onClick={(
+                                                                                                                    e,
+                                                                                                                ) => {
+                                                                                                                    e.preventDefault();
+                                                                                                                    e.stopPropagation();
+                                                                                                                    void saveBriefingTask(
+                                                                                                                        t.id,
+                                                                                                                        briefTaskDraftRef
+                                                                                                                            .current[
+                                                                                                                            t
+                                                                                                                                .id
+                                                                                                                        ] ??
+                                                                                                                            cardInitial,
+                                                                                                                    );
+                                                                                                                }}
+                                                                                                                className="w-full rounded-xl bg-amber-500 py-2.5 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50"
+                                                                                                            >
+                                                                                                                {savingTaskId ===
+                                                                                                                t.id
+                                                                                                                    ? "저장 중…"
+                                                                                                                    : "저장"}
+                                                                                                            </button>
+                                                                                                        )}
+                                                                                                    </div>
+                                                                                                );
+                                                                                            },
+                                                                                        )}
+                                                                                    </div>
+                                                                                ),
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            },
                                                         );
-                                                    })}
+                                                    })()}
                                                 </div>
-                                        </div>
+                                            ))}
+                                        </>
                                     );
-                                })}
+                                })()}
                             </div>
                             )}
 
