@@ -4,13 +4,7 @@ import { useEffect } from "react";
 import AuthGuard from "@/components/AuthGuard";
 import Header from "@/components/Header";
 import { useNotifications } from "@/hooks/useNotifications";
-
-function formatDate(iso: string) {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+import { timeAgo } from "@/lib/utils";
 
 export default function ChangelogPage() {
     const { notifications, markAllRead } = useNotifications();
@@ -48,7 +42,7 @@ export default function ChangelogPage() {
                                             {n.version}
                                         </span>
                                         <span className="text-xs text-stone-400">
-                                            {formatDate(n.created_at)}
+                                            {timeAgo(n.created_at)}
                                         </span>
                                     </div>
                                     <h2 className="text-sm font-bold text-stone-900 mb-1.5">

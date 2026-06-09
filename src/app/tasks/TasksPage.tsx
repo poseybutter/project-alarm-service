@@ -58,17 +58,30 @@ function periodButtonLabel(range: DateRange | undefined): {
 
 function getWeekWin(offset: number = 0) {
     const now = new Date();
-    const day = now.getDay();
-    const wed = new Date(now);
-    wed.setDate(now.getDate() - ((day + 4) % 7) + offset * 7);
-    wed.setHours(0, 0, 0, 0);
-    const nextWed = new Date(wed);
-    nextWed.setDate(wed.getDate() + 7);
-    nextWed.setHours(23, 59, 59, 999);
+    // 리포트(ReportPage.getWeekWin)와 동일: 목~목 한 주, 주 시작은 목요일, 끝은 다음 목요일(끝 포함).
+    const y = now.getFullYear();
+    const mon = now.getMonth();
+    const dom = now.getDate();
+    const dow = now.getDay();
+    const daysFromWeekStart = (dow - 4 + 7) % 7;
+    const thu = new Date(y, mon, dom - daysFromWeekStart + offset * 7);
+    thu.setHours(0, 0, 0, 0);
+    const nextThu = new Date(
+        thu.getFullYear(),
+        thu.getMonth(),
+        thu.getDate() + 7,
+        23,
+        59,
+        59,
+        999,
+    );
+    const DOW = ["일", "월", "화", "수", "목", "금", "토"];
+    const fmt = (d: Date) =>
+        `${d.getMonth() + 1}/${d.getDate()}(${DOW[d.getDay()]})`;
     return {
-        from: toLocalYmd(wed),
-        to: toLocalYmd(nextWed),
-        label: `${wed.getFullYear()}년 ${wed.getMonth() + 1}월 · ${wed.getMonth() + 1}/${wed.getDate()}(수)~${nextWed.getMonth() + 1}/${nextWed.getDate()}(수)`,
+        from: toLocalYmd(thu),
+        to: toLocalYmd(nextThu),
+        label: `${thu.getFullYear()}년 ${thu.getMonth() + 1}월 · ${fmt(thu)}~${fmt(nextThu)}`,
     };
 }
 
