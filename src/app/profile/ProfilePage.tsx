@@ -6,9 +6,9 @@ import {
     calcLevel,
     getNextLevel,
     expBar,
-    attendanceCheck,
+    rpcAttendanceCheck,
     LEVELS,
-    awardExp,
+    rpcSetQuestDone,
 } from "@/lib/maple";
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
@@ -192,11 +192,8 @@ export default function ProfilePage() {
     }
 
     async function undoCompletedQuest(id: number) {
-        await supabase
-            .from("quests")
-            .update({ status: "대기" })
-            .eq("id", id);
-        if (member) await awardExp(member, "QUEST", false); // -10 EXP
+        // 완료 취소 → 서버 RPC 가 상태 되돌림 + 점수 차감(-10).
+        if (member) await rpcSetQuestDone(id, false, member).catch(() => null);
         await loadAll();
     }
 
@@ -264,7 +261,7 @@ export default function ProfilePage() {
 
     async function handleAttend() {
         if (!member) return;
-        const result = await attendanceCheck(member);
+        const result = await rpcAttendanceCheck(member);
         if (!result.success) {
             showToastMsg(result.message || "오류");
             return;
