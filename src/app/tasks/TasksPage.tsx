@@ -13,7 +13,7 @@ import {
     TEAM_ID,
     normalizeStatus,
 } from "@/lib/constants";
-import { awardExp } from "@/lib/maple";
+import { rpcSetTaskStatus } from "@/lib/maple";
 import AuthGuard from "@/components/AuthGuard";
 import { useAuth } from "@/components/AuthProvider";
 import Tooltip from "@/components/Tooltip";
@@ -398,31 +398,18 @@ export default function TasksPage() {
         task: Task,
         anchor?: { x: number; y: number },
     ) {
-        const prev = task.status;
-        const { data, error } = await supabase
-            .from("tasks")
-            .update({ status })
-            .eq("id", id)
-            .select();
-        // RLS로 막히면 에러 없이 0건만 수정됨 → data 비어 있음. 권한 없음으로 처리.
-        if (error || !data || data.length === 0) {
+        // 상태 변경 + 점수는 서버 RPC 가 원자적으로 처리(완료/긴급/정시 판정 모두 서버측).
+        // 권한 없으면 RPC 가 throw → 토스트.
+        const result = await rpcSetTaskStatus(id, status, task.member).catch(
+            () => null,
+        );
+        if (!result) {
             showToastMsg("권한이 없어 상태를 변경할 수 없어요");
             return;
         }
-        if (status === "완료" && prev !== "완료") {
-            const type = task.priority === "긴급" ? "URGENT" : "COMPLETE";
-            const isUrgent = task.priority === "긴급";
-            // 마감일 전에 완료했으면 onTime
-            const diff = getDiff(task.end_date);
-            const isOnTime = diff !== null && diff >= 0;
-            const result = await awardExp(
-                task.member,
-                type,
-                true,
-                isUrgent,
-                isOnTime,
-            );
-            if (result?.amount != null && anchor) {
+        // 완료 "진입"(sign>0)일 때만 EXP 팝업/레벨업 연출.
+        if (result.scored && result.sign > 0) {
+            if (anchor) {
                 pushExpPopup(
                     result.amount,
                     anchor.x,
@@ -430,22 +417,13 @@ export default function TasksPage() {
                     task.priority === "긴급" ? "urgent" : "complete",
                 );
             }
-            if (result?.levelUp && result.newLv) {
+            if (result.levelUp && result.newLv) {
                 setLevelUpInfo({
                     show: true,
                     level: result.newLv.level,
                     levelName: result.newLv.name,
                 });
             }
-        }
-        if (prev === "완료" && status !== "완료") {
-            const isUrgent = task.priority === "긴급";
-            await awardExp(
-                task.member,
-                task.priority === "긴급" ? "URGENT" : "COMPLETE",
-                false,
-                isUrgent,
-            );
         }
         loadTasks();
     }
