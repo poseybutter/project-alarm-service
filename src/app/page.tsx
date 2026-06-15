@@ -8,9 +8,10 @@ import {
     calcLevel,
     getNextLevel,
     expBar,
-    attendanceCheck,
+    rpcAttendanceCheck,
     LEVELS,
-    awardExp,
+    rpcSetTaskStatus,
+    rpcSetQuestDone,
     EXP_REWARDS,
 } from "@/lib/maple";
 import { useAuth } from "@/components/AuthProvider";
@@ -1159,7 +1160,7 @@ export default function HomePage() {
             showToastMsg("오늘은 이미 출석했어요!");
             return;
         }
-        const result = await attendanceCheck(member);
+        const result = await rpcAttendanceCheck(member);
         if (!result.success) {
             showToastMsg(result.message || "오류");
             return;
@@ -1193,13 +1194,11 @@ export default function HomePage() {
         setCompletingQuestIds((prev) => new Set([...prev, quest.id]));
         await new Promise<void>((resolve) => setTimeout(resolve, 650));
 
-        // DB 업데이트 + EXP 지급
-        await supabase
-            .from("quests")
-            .update({ status: "완료" })
-            .eq("id", quest.id);
-        const result = await awardExp(member, "QUEST");
-        if (result?.amount != null) {
+        // DB 업데이트 + EXP 지급 (서버 RPC 가 원자적으로)
+        const result = await rpcSetQuestDone(quest.id, true, member).catch(
+            () => null,
+        );
+        if (result?.scored) {
             pushExpPopup(result.amount, clientX, clientY, "quest");
         }
         if (result?.levelUp && result.newLv) {
@@ -1209,7 +1208,7 @@ export default function HomePage() {
                 levelName: result.newLv.name,
             });
         } else {
-            showToastMsg(`⚔️ 완료! +${result?.amount} EXP`);
+            showToastMsg(`⚔️ 완료! +${result?.amount ?? 0} EXP`);
         }
 
         // 애니메이션 종료 + 완료 목록 이동
@@ -1258,11 +1257,8 @@ export default function HomePage() {
     }
 
     async function undoQuest(quest: Quest) {
-        await supabase
-            .from("quests")
-            .update({ status: "대기" })
-            .eq("id", quest.id);
-        await awardExp(member!, "QUEST", false); // -10 EXP
+        // 완료 취소 → 서버 RPC 가 상태 되돌림 + 점수 차감(-10).
+        await rpcSetQuestDone(quest.id, false, member!).catch(() => null);
         setCompletedQuestsThisSession((prev) =>
             prev.filter((q) => q.id !== quest.id),
         );
@@ -1326,21 +1322,16 @@ export default function HomePage() {
         task: Task,
         anchor?: { x: number; y: number },
     ) {
-        const prev = task.status;
-        await supabase.from("tasks").update({ status }).eq("id", id);
-        if (status === "완료" && prev !== "완료") {
-            const type = task.priority === "긴급" ? "URGENT" : "COMPLETE";
-            const isUrgent = task.priority === "긴급";
-            const diff = getDiff(task.end_date);
-            const isOnTime = diff !== null && diff >= 0;
-            const result = await awardExp(
-                task.member,
-                type,
-                true,
-                isUrgent,
-                isOnTime,
-            );
-            if (result?.amount != null && anchor) {
+        // 상태 변경 + 점수는 서버 RPC 가 원자적으로 처리.
+        const result = await rpcSetTaskStatus(id, status, task.member).catch(
+            () => null,
+        );
+        if (!result) {
+            showToastMsg("권한이 없어 상태를 변경할 수 없어요");
+            return;
+        }
+        if (result.scored && result.sign > 0) {
+            if (anchor) {
                 pushExpPopup(
                     result.amount,
                     anchor.x,
@@ -1348,22 +1339,13 @@ export default function HomePage() {
                     task.priority === "긴급" ? "urgent" : "complete",
                 );
             }
-            if (result?.levelUp && result.newLv) {
+            if (result.levelUp && result.newLv) {
                 setLevelUpInfo({
                     show: true,
                     level: result.newLv.level,
                     levelName: result.newLv.name,
                 });
             }
-        }
-        if (prev === "완료" && status !== "완료") {
-            const isUrgent = task.priority === "긴급";
-            await awardExp(
-                task.member,
-                task.priority === "긴급" ? "URGENT" : "COMPLETE",
-                false,
-                isUrgent,
-            );
         }
         loadData();
     }
