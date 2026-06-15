@@ -203,6 +203,11 @@ export default function TasksPage() {
         role === "admin" ? MEMBERS : [currentMember || ""];
 
     const [tasks, setTasks] = useState<Task[]>([]);
+    const [toast, setToast] = useState("");
+    function showToastMsg(msg: string) {
+        setToast(msg);
+        setTimeout(() => setToast(""), 3000);
+    }
     const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
@@ -394,7 +399,16 @@ export default function TasksPage() {
         anchor?: { x: number; y: number },
     ) {
         const prev = task.status;
-        await supabase.from("tasks").update({ status }).eq("id", id);
+        const { data, error } = await supabase
+            .from("tasks")
+            .update({ status })
+            .eq("id", id)
+            .select();
+        // RLS로 막히면 에러 없이 0건만 수정됨 → data 비어 있음. 권한 없음으로 처리.
+        if (error || !data || data.length === 0) {
+            showToastMsg("권한이 없어 상태를 변경할 수 없어요");
+            return;
+        }
         if (status === "완료" && prev !== "완료") {
             const type = task.priority === "긴급" ? "URGENT" : "COMPLETE";
             const isUrgent = task.priority === "긴급";
@@ -438,7 +452,15 @@ export default function TasksPage() {
 
     async function deleteTask(id: number) {
         if (!confirm("삭제할까요?")) return;
-        await supabase.from("tasks").delete().eq("id", id);
+        const { data, error } = await supabase
+            .from("tasks")
+            .delete()
+            .eq("id", id)
+            .select();
+        if (error || !data || data.length === 0) {
+            showToastMsg("권한이 없어 삭제할 수 없어요");
+            return;
+        }
         loadTasks();
     }
 
@@ -798,7 +820,12 @@ export default function TasksPage() {
                                                     <div className="flex flex-col justify-between items-end gap-1.5 shrink-0">
                                                         <TaskStatusBadgeSelect
                                                             task={t}
-                                                            disabled={isGuest}
+                                                            disabled={
+                                                                isGuest ||
+                                                                !canEditOrDelete(
+                                                                    t.member,
+                                                                )
+                                                            }
                                                             onChange={(
                                                                 id,
                                                                 status,
@@ -1280,6 +1307,13 @@ export default function TasksPage() {
                     />
                 ))}
             </div>
+
+            {/* 토스트 */}
+            {toast && (
+                <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-stone-800 text-white text-sm px-5 py-2.5 rounded-full shadow-lg z-50 whitespace-nowrap">
+                    {toast}
+                </div>
+            )}
         </AuthGuard>
     );
 }
