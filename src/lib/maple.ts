@@ -1,7 +1,5 @@
 import { supabase } from "./supabase";
 import { sendLevelUpMessage } from "./googleChat";
-import { toLocalYmd } from "@/lib/toLocalYmd";
-import { TEAM_ID } from "./constants";
 
 export const LEVELS = [
     { level: 1, name: "🌱 풋내기 모험가", exp: 0 },
@@ -41,155 +39,147 @@ export function expBar(exp: number) {
     return Math.round(((exp - lv.exp) / (next.exp - lv.exp)) * 100);
 }
 
-/** 출석·업무·퀘스트 합산용 attendance.activity_count 조정 (로컬 YYYY-MM-DD) */
-async function bumpAttendanceActivity(member: string, delta: number = 1) {
-    const today = toLocalYmd(new Date());
-    const { data: existing } = await supabase
-        .from("attendance")
-        .select("activity_count")
-        .eq("team_id", TEAM_ID)
-        .eq("member", member)
-        .eq("date", today)
-        .maybeSingle();
+// =============================================================================
+// 점수(EXP/레벨/잔디/출석)는 DB 의 SECURITY DEFINER RPC 가 단일 출처다(V12).
+// 클라이언트는 아래 래퍼로 RPC 만 호출하고, players 점수 컬럼을 직접 쓰지 않는다.
+// 레벨 임계값(LEVELS)·EXP_REWARDS 는 서버와 동일하지만 여기서는 "표시용"으로만 쓴다.
+// =============================================================================
 
-    const newCount = Math.max(0, (existing?.activity_count ?? 0) + delta);
-    await supabase.from("attendance").upsert(
-        {
-            member,
-            date: today,
-            activity_count: newCount,
-            team_id: TEAM_ID,
-        },
-        { onConflict: "member,date" },
-    );
-}
+export type ScoreOutcome = {
+    changed: boolean;
+    scored: boolean;
+    amount: number;
+    sign: number;
+    levelUp: boolean;
+    newLv: { level: number; name: string } | null;
+    prevLv: { level: number; name: string } | null;
+    newExp: number;
+};
 
-export async function awardExp(
-    member: string,
-    type: "COMPLETE" | "URGENT" | "ATTEND" | "QUEST",
-    isAdding: boolean = true,
-    isUrgent: boolean = false,
-    isOnTime: boolean = false,
-) {
-    const { data: player } = await supabase
-        .from("players")
-        .select("*")
-        .eq("team_id", TEAM_ID)
-        .eq("name", member)
-        .single();
-
-    if (!player) return null;
-
-    const amount = EXP_REWARDS[type];
-    const change = isAdding ? amount : -amount;
-    const prevLv = calcLevel(player.exp);
-    const newExp = Math.max(0, player.exp + change);
-    const newMonthExp = Math.max(0, player.month_exp + change);
-    const newWeekExp = Math.max(
-        0,
-        (player.week_exp || 0) + (isAdding ? amount : -amount),
-    );
-    const newLv = calcLevel(newExp);
-    const levelUp = isAdding && newLv.level > prevLv.level;
-
-    // 통계 업데이트
-    const updates: Record<string, number> = {
-        exp: newExp,
-        month_exp: newMonthExp,
-        week_exp: newWeekExp,
-        level: newLv.level,
+function normalizeScore(data: unknown): ScoreOutcome {
+    const d = (data ?? {}) as Record<string, unknown>;
+    const newLevel = typeof d.newLevel === "number" ? d.newLevel : null;
+    const prevLevel = typeof d.prevLevel === "number" ? d.prevLevel : null;
+    return {
+        changed: !!d.changed,
+        scored: !!d.scored,
+        amount: typeof d.amount === "number" ? d.amount : 0,
+        sign: typeof d.sign === "number" ? d.sign : 0,
+        levelUp: !!d.levelUp,
+        newLv: newLevel
+            ? {
+                  level: newLevel,
+                  name:
+                      (d.levelName as string) ||
+                      LEVELS[newLevel - 1]?.name ||
+                      "",
+              }
+            : null,
+        prevLv: prevLevel
+            ? { level: prevLevel, name: LEVELS[prevLevel - 1]?.name || "" }
+            : null,
+        newExp: typeof d.newExp === "number" ? d.newExp : 0,
     };
-
-    if (isAdding && (type === "COMPLETE" || type === "URGENT")) {
-        updates.total_done = Math.max(0, (player.total_done || 0) + 1);
-        if (isUrgent)
-            updates.urgent_done = Math.max(0, (player.urgent_done || 0) + 1);
-        if (isOnTime)
-            updates.on_time_done = Math.max(0, (player.on_time_done || 0) + 1);
-    }
-    if (!isAdding && (type === "COMPLETE" || type === "URGENT")) {
-        updates.total_done = Math.max(0, (player.total_done || 0) - 1);
-        if (isUrgent)
-            updates.urgent_done = Math.max(0, (player.urgent_done || 0) - 1);
-    }
-
-    await supabase.from("players").update(updates).eq("name", member);
-
-    if (type === "COMPLETE" || type === "URGENT" || type === "QUEST") {
-        if (isAdding) await bumpAttendanceActivity(member, 1);
-        else await bumpAttendanceActivity(member, -1);
-    }
-
-    // 레벨업 시 구글챗 알림
-    if (levelUp) {
-        sendLevelUpMessage(member, newLv.name).catch(console.error);
-    }
-
-    return { amount, newExp, levelUp, prevLv, newLv };
 }
 
 /**
- * 두 날짜(YYYY-MM-DD) 사이에 끼어 있는 "평일(월~금)" 수.
- * 양 끝(start, end)은 제외하고 그 사이만 센다.
- * 0이면 마지막 출석일 이후 빠뜨린 평일이 없다는 뜻 → 출석 연속 유지.
- * 주말(토·일)은 세지 않으므로 건너뛰어도 연속이 끊기지 않는다.
+ * 업무 상태 변경 + (완료 진입/이탈 시) 점수 — 서버에서 원자적으로 처리.
+ * 권한이 없으면(본인 업무·관리자 아님) RPC 가 에러를 던지므로 throw 된다.
  */
-function countWeekdaysBetween(startYmd: string, endYmd: string): number {
-    const end = new Date(`${endYmd}T00:00:00`);
-    const cursor = new Date(`${startYmd}T00:00:00`);
-    cursor.setDate(cursor.getDate() + 1);
-    let count = 0;
-    while (cursor < end) {
-        const day = cursor.getDay();
-        if (day !== 0 && day !== 6) count++;
-        cursor.setDate(cursor.getDate() + 1);
+export async function rpcSetTaskStatus(
+    taskId: number,
+    status: string,
+    member: string,
+): Promise<ScoreOutcome> {
+    const { data, error } = await supabase.rpc("set_task_status", {
+        p_task_id: taskId,
+        p_status: status,
+    });
+    if (error) throw error;
+    const out = normalizeScore(data);
+    if (out.levelUp && out.newLv) {
+        sendLevelUpMessage(member, out.newLv.name).catch(console.error);
     }
-    return count;
+    return out;
 }
 
-export async function attendanceCheck(member: string) {
-    const today = toLocalYmd(new Date());
+/**
+ * 퀘스트 완료 토글(done=true 완료 / false 대기) + 점수.
+ * 권한 없으면 throw.
+ */
+export async function rpcSetQuestDone(
+    questId: number,
+    done: boolean,
+    member: string,
+): Promise<ScoreOutcome> {
+    const { data, error } = await supabase.rpc("set_quest_done", {
+        p_quest_id: questId,
+        p_done: done,
+    });
+    if (error) throw error;
+    const out = normalizeScore(data);
+    if (out.levelUp && out.newLv) {
+        sendLevelUpMessage(member, out.newLv.name).catch(console.error);
+    }
+    return out;
+}
 
-    const { data: player } = await supabase
-        .from("players")
-        .select("*")
-        .eq("team_id", TEAM_ID)
-        .eq("name", member)
-        .single();
+export type AttendanceOutcome = {
+    success: boolean;
+    message?: string;
+    streak: number;
+    exp: number;
+    levelUp: boolean;
+    newLv: { level: number; name: string } | null;
+};
 
-    if (!player)
-        return { success: false, message: "플레이어를 찾을 수 없어요." };
-    if (player.attend_last === today)
-        return { success: false, message: "오늘은 이미 출석했어요!" };
-
-    // 마지막 출석일과 오늘 사이에 빠뜨린 평일이 없으면 연속 유지.
-    //   금 출석 → 월 출석            → 연속 유지 (토·일은 평일 아님)
-    //   토 출석 → 일 스킵 → 월 출석   → 연속 유지
-    //   월 출석 → 수 출석(화 빠짐)    → 연속 초기화
-    const streak =
-        player.attend_last &&
-        countWeekdaysBetween(player.attend_last, today) === 0
-            ? (player.attend_streak || 0) + 1
-            : 1;
-
-    await supabase
-        .from("players")
-        .update({
-            attend_last: today,
-            attend_streak: streak,
-        })
-        .eq("name", member);
-
-    await bumpAttendanceActivity(member, 1);
-
-    const result = await awardExp(member, "ATTEND");
-
-    return {
+/**
+ * 출석 체크(본인) — 서버가 jwt 이메일로 본인 식별 후 연속·점수 처리.
+ * member 인자는 레벨업 구글챗 알림 문구에만 사용.
+ */
+export async function rpcAttendanceCheck(
+    member: string,
+): Promise<AttendanceOutcome> {
+    const { data, error } = await supabase.rpc("attendance_check");
+    if (error) {
+        return {
+            success: false,
+            message: "출석 처리 중 오류가 발생했어요.",
+            streak: 0,
+            exp: 0,
+            levelUp: false,
+            newLv: null,
+        };
+    }
+    const d = (data ?? {}) as Record<string, unknown>;
+    if (!d.success) {
+        return {
+            success: false,
+            message: (d.message as string) || "오류",
+            streak: 0,
+            exp: 0,
+            levelUp: false,
+            newLv: null,
+        };
+    }
+    const newLevel = typeof d.newLevel === "number" ? d.newLevel : null;
+    const out: AttendanceOutcome = {
         success: true,
-        streak,
-        exp: result?.amount || 0,
-        levelUp: result?.levelUp || false,
-        newLv: result?.newLv,
-        prevLv: result?.prevLv,
+        streak: typeof d.streak === "number" ? d.streak : 0,
+        exp: typeof d.exp === "number" ? d.exp : 0,
+        levelUp: !!d.levelUp,
+        newLv: newLevel
+            ? {
+                  level: newLevel,
+                  name:
+                      (d.levelName as string) ||
+                      LEVELS[newLevel - 1]?.name ||
+                      "",
+              }
+            : null,
     };
+    if (out.levelUp && out.newLv) {
+        sendLevelUpMessage(member, out.newLv.name).catch(console.error);
+    }
+    return out;
 }

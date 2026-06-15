@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { awardExp } from '@/lib/maple'
+import { rpcSetQuestDone } from '@/lib/maple'
 import Tooltip from '@/components/Tooltip'
 import Select from 'react-select'
 import { modalFormSelectStyles } from '@/lib/reactSelectStyles'
@@ -78,17 +78,18 @@ export default function QuestsPage() {
   }
 
   async function updateQuestStatus(quest: Quest, status: string) {
-    const prev = quest.status
-    await supabase.from('quests').update({ status }).eq('id', quest.id)
-
-    if (status === '완료' && prev !== '완료') {
-      const result = await awardExp(quest.member, 'QUEST')
-      showToastMsg(`📝 퀘스트 완료! +${result?.amount} EXP`)
+    const done = status === '완료'
+    // 상태 변경 + 점수는 서버 RPC 가 처리. 권한 없으면 throw → 토스트.
+    const result = await rpcSetQuestDone(quest.id, done, quest.member).catch(
+      () => null,
+    )
+    if (!result) {
+      showToastMsg('권한이 없어요')
+      return
     }
-    if (prev === '완료' && status !== '완료') {
-      await awardExp(quest.member, 'QUEST', false)
+    if (done && result.scored) {
+      showToastMsg(`📝 퀘스트 완료! +${result.amount} EXP`)
     }
-
     loadQuests()
   }
 
