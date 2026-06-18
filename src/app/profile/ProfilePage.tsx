@@ -126,6 +126,7 @@ export default function ProfilePage() {
     const [historyStatusFilter, setHistoryStatusFilter] = useState("");
     const [dateRange, setDateRange] = useState<DateRange | undefined>();
     const [showDatePicker, setShowDatePicker] = useState(false);
+    const [isAttending, setIsAttending] = useState(false);
     const [showAvatarMenu, setShowAvatarMenu] = useState(false);
     const [historyEditTask, setHistoryEditTask] = useState<Task | null>(null);
     const [completedQuests, setCompletedQuests] = useState<Quest[]>([]);
@@ -260,18 +261,23 @@ export default function ProfilePage() {
     }
 
     async function handleAttend() {
-        if (!member) return;
-        const result = await rpcAttendanceCheck(member);
-        if (!result.success) {
-            showToastMsg(result.message || "오류");
-            return;
+        if (!member || isAttending) return;
+        setIsAttending(true);
+        try {
+            const result = await rpcAttendanceCheck(member);
+            if (!result.success) {
+                showToastMsg(result.message || "오류");
+                return;
+            }
+            showToastMsg(
+                result.levelUp
+                    ? `🎊 레벨업! ${result.newLv?.name}`
+                    : `☀️ +${result.exp} EXP · ${result.streak}일 연속`,
+            );
+            await loadAll();
+        } finally {
+            setIsAttending(false);
         }
-        showToastMsg(
-            result.levelUp
-                ? `🎊 레벨업! ${result.newLv?.name}`
-                : `☀️ +${result.exp} EXP · ${result.streak}일 연속`,
-        );
-        loadAll();
     }
 
     const player = players.find((p) => p.name === member);
@@ -484,12 +490,16 @@ export default function ProfilePage() {
                                     </div>
                                 )}
                                 <button
-                                    onClick={handleAttend}
-                                    disabled={attended}
+                                    onClick={() => void handleAttend()}
+                                    disabled={attended || isAttending}
                                     className={`block mx-auto text-xs px-4 py-1.5 rounded-full font-medium mb-4 transition-all
                 ${attended ? "bg-green-100 text-green-700" : "bg-amber-500 text-white"}`}
                                 >
-                                    {attended ? "✅ 출석완료" : "☀️ 출석 체크"}
+                                    {attended
+                                        ? "✅ 출석완료"
+                                        : isAttending
+                                          ? "⏳ 처리 중..."
+                                          : "☀️ 출석 체크"}
                                 </button>
                             </>
                         )}
