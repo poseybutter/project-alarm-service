@@ -810,6 +810,7 @@ export default function HomePage() {
     const [guestTeamTasks, setGuestTeamTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
     const [toast, setToast] = useState("");
+    const [isAttending, setIsAttending] = useState(false);
     const [showAddQuest, setShowAddQuest] = useState(false);
     const [completingQuestIds, setCompletingQuestIds] = useState<Set<number>>(new Set());
     const [completedQuestsThisSession, setCompletedQuestsThisSession] = useState<Quest[]>([]);
@@ -1154,35 +1155,40 @@ export default function HomePage() {
     }
 
     async function handleAttend(e: React.MouseEvent) {
-        if (!player || !member) return;
+        if (!player || !member || isAttending) return;
         const today = toLocalYmd(new Date());
         if (player.attend_last === today) {
             showToastMsg("오늘은 이미 출석했어요!");
             return;
         }
-        const result = await rpcAttendanceCheck(member);
-        if (!result.success) {
-            showToastMsg(result.message || "오류");
-            return;
-        }
-        pushExpPopup(
-            result.exp ?? EXP_REWARDS.ATTEND,
-            e.clientX,
-            e.clientY,
-            "attend",
-        );
-        if (result.levelUp && result.newLv) {
-            setLevelUpInfo({
-                show: true,
-                level: result.newLv.level,
-                levelName: result.newLv.name,
-            });
-        } else {
-            showToastMsg(
-                `☀️ 출석 완료! +${result.exp} EXP · ${result.streak}일 연속`,
+        setIsAttending(true);
+        try {
+            const result = await rpcAttendanceCheck(member);
+            if (!result.success) {
+                showToastMsg(result.message || "오류");
+                return;
+            }
+            pushExpPopup(
+                result.exp ?? EXP_REWARDS.ATTEND,
+                e.clientX,
+                e.clientY,
+                "attend",
             );
+            if (result.levelUp && result.newLv) {
+                setLevelUpInfo({
+                    show: true,
+                    level: result.newLv.level,
+                    levelName: result.newLv.name,
+                });
+            } else {
+                showToastMsg(
+                    `☀️ 출석 완료! +${result.exp} EXP · ${result.streak}일 연속`,
+                );
+            }
+            await loadData();
+        } finally {
+            setIsAttending(false);
         }
-        loadData();
     }
 
     async function completeQuest(quest: Quest, e: React.MouseEvent) {
@@ -1533,13 +1539,15 @@ export default function HomePage() {
                                             onClick={(e) =>
                                                 void handleAttend(e)
                                             }
-                                            disabled={attended}
+                                            disabled={attended || isAttending}
                                             className={`text-xs mt-1 px-2 py-0.5 rounded-full font-medium transition-all
                     ${attended ? "bg-green-100 text-green-700" : "bg-amber-500 text-white"}`}
                                         >
                                             {attended
                                                 ? "✅ 출석완료"
-                                                : "☀️ 출석 체크"}
+                                                : isAttending
+                                                  ? "⏳ 처리 중..."
+                                                  : "☀️ 출석 체크"}
                                         </button>
                                     )}
                                 </div>
