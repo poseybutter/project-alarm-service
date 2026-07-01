@@ -31,15 +31,18 @@ export function proxy(req: NextRequest) {
 
     if (isAuthed && pathname === "/login") {
         const url = req.nextUrl.clone();
-        url.pathname = "/";
+        const next = req.nextUrl.searchParams.get("next");
+        url.pathname = next?.startsWith("/") ? next : "/home";
         url.search = "";
         return NextResponse.redirect(url);
     }
 
     if (!isAuthed && !isPublicPath(pathname)) {
         const url = req.nextUrl.clone();
+        const next = `${pathname}${req.nextUrl.search}`;
         url.pathname = "/login";
         url.search = "";
+        url.searchParams.set("next", next);
         return NextResponse.redirect(url);
     }
 
@@ -52,6 +55,6 @@ export const config = {
      * /api/* 도 우회 — 인증은 각 Route Handler에서 별도로 처리.
      */
     matcher: [
-        "/((?!api|_next/static|_next/image|favicon.ico|icons|cursors|manifest.json|sw.js|workbox-).*)",
+        "/((?!api|_next|favicon.ico|icons|cursors|manifest.json|sw.js|workbox-|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff|woff2|ttf|otf)$).*)",
     ],
 };

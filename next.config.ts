@@ -1,4 +1,8 @@
 import type { NextConfig } from "next";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const projectRoot = dirname(fileURLToPath(import.meta.url));
 
 /**
  * 보안 응답 헤더.
@@ -26,7 +30,24 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+    allowedDevOrigins: ["localhost:3000", "127.0.0.1:3000"],
+    turbopack: {
+        root: projectRoot,
+    },
+    async redirects() {
+        return [
+            {
+                source: "/",
+                destination: "/home",
+                permanent: false,
+            },
+        ];
+    },
     async headers() {
+        if (process.env.NODE_ENV !== "production") {
+            return [];
+        }
+
         return [
             {
                 source: "/:path*",
