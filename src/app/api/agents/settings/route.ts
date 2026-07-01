@@ -3,6 +3,7 @@ import { TEAM_ID } from "@/lib/constants";
 import { getServerUserRole } from "@/lib/serverSupabase";
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+const DEFAULT_MORNING_SEND_TIME = "08:30";
 
 async function getCurrentPlayer(
     supabase: Awaited<ReturnType<typeof getServerUserRole>>["supabase"],
@@ -43,7 +44,7 @@ export async function GET() {
 
         return NextResponse.json({
             settings: data ?? {
-                morning_send_time: "09:00:00",
+                morning_send_time: `${DEFAULT_MORNING_SEND_TIME}:00`,
                 morning_enabled: true,
             },
         });
@@ -70,7 +71,7 @@ export async function PUT(req: NextRequest) {
         return NextResponse.json({ message: "Invalid JSON" }, { status: 400 });
     }
 
-    const morningSendTime = body.morningSendTime ?? "09:00";
+    const morningSendTime = body.morningSendTime ?? DEFAULT_MORNING_SEND_TIME;
     if (!TIME_PATTERN.test(morningSendTime)) {
         return NextResponse.json(
             { message: "morningSendTime must be HH:mm" },

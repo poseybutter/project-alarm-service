@@ -15,7 +15,15 @@ type NotificationSetting = {
     member: string;
     email: string;
     morning_send_time: string;
+    morning_enabled: boolean;
 };
+
+type PlayerNotificationTarget = {
+    name: string;
+    email: string | null;
+};
+
+const DEFAULT_MORNING_SEND_TIME = "08:30:00";
 
 function isAuthorized(req: NextRequest) {
     const secret = process.env.CRON_SECRET;
@@ -124,12 +132,26 @@ async function handleMorningBriefings(req: NextRequest) {
     }
 
     const supabase = createServiceSupabaseClient();
-    const { data: settings, error: settingsError } = await supabase
-        .from("agent_member_notification_settings")
-        .select("member, email, morning_send_time")
-        .eq("team_id", TEAM_ID)
-        .eq("morning_enabled", true);
+    const [
+        { data: players, error: playersError },
+        { data: settings, error: settingsError },
+    ] = await Promise.all([
+        supabase
+            .from("players")
+            .select("name, email")
+            .eq("team_id", TEAM_ID),
+        supabase
+            .from("agent_member_notification_settings")
+            .select("member, email, morning_send_time, morning_enabled")
+            .eq("team_id", TEAM_ID),
+    ]);
 
+    if (playersError) {
+        return NextResponse.json(
+            { message: playersError.message },
+            { status: 500 },
+        );
+    }
     if (settingsError) {
         return NextResponse.json(
             { message: settingsError.message },
@@ -141,8 +163,27 @@ async function handleMorningBriefings(req: NextRequest) {
         const today = todayKstYmd();
         const sent: Array<{ member: string; title: string }> = [];
         const skipped: Array<{ member: string; reason: string }> = [];
+        const settingsByEmail = new Map(
+            ((settings ?? []) as NotificationSetting[]).map((setting) => [
+                setting.email,
+                setting,
+            ]),
+        );
+        const targets = ((players ?? []) as PlayerNotificationTarget[])
+            .filter((player) => Boolean(player.email))
+            .map((player) => {
+                const setting = settingsByEmail.get(player.email as string);
+                return {
+                    member: setting?.member ?? player.name,
+                    email: player.email as string,
+                    morning_send_time:
+                        setting?.morning_send_time ?? DEFAULT_MORNING_SEND_TIME,
+                    morning_enabled: setting?.morning_enabled ?? true,
+                };
+            })
+            .filter((setting) => setting.morning_enabled);
 
-        for (const setting of (settings ?? []) as NotificationSetting[]) {
+        for (const setting of targets) {
             if (!isDueNow(setting.morning_send_time)) {
                 skipped.push({ member: setting.member, reason: "not_due" });
                 continue;
