@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
 
@@ -38,10 +38,6 @@ export function useNotifications() {
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [readIds, setReadIds] = useState<Set<number>>(new Set());
 
-    // 최신 값을 realtime 콜백에서 참조하기 위한 ref
-    const playerIdRef = useRef<number | null>(null);
-    playerIdRef.current = playerId;
-
     // 1. 이메일 → player id
     useEffect(() => {
         let cancelled = false;
@@ -70,19 +66,18 @@ export function useNotifications() {
             .order("created_at", { ascending: false });
         setNotifications((notifs as Notification[]) ?? []);
 
-        const pid = playerIdRef.current;
-        if (pid == null) {
+        if (playerId == null) {
             setReadIds(new Set());
             return;
         }
         const { data: reads } = await supabase
             .from("notification_reads")
             .select("notification_id")
-            .eq("player_id", pid);
+            .eq("player_id", playerId);
         setReadIds(
             new Set((reads ?? []).map((r) => r.notification_id as number)),
         );
-    }, []);
+    }, [playerId]);
 
     useEffect(() => {
         void load();
@@ -115,8 +110,7 @@ export function useNotifications() {
 
     // 4. 모든 알림 읽음 처리
     const markAllRead = useCallback(async () => {
-        const pid = playerIdRef.current;
-        if (pid == null) return;
+        if (playerId == null) return;
         const unread = notifications.filter((n) => !readIds.has(n.id));
         if (unread.length === 0) return;
 
@@ -128,14 +122,14 @@ export function useNotifications() {
         });
 
         const { error } = await supabase.from("notification_reads").upsert(
-            unread.map((n) => ({ player_id: pid, notification_id: n.id })),
+            unread.map((n) => ({ player_id: playerId, notification_id: n.id })),
             { onConflict: "player_id,notification_id", ignoreDuplicates: true },
         );
         if (error) {
             console.error("[markAllRead]", error.message);
             void load(); // 실패 시 서버 상태로 복구
         }
-    }, [notifications, readIds, load]);
+    }, [playerId, notifications, readIds, load]);
 
     const unreadCount = notifications.filter((n) => !readIds.has(n.id)).length;
 

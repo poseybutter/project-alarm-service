@@ -3,11 +3,22 @@ import { supabase } from "./supabase";
 // 구글 로그인
 export async function signInWithGoogle() {
     const siteUrl =
-        process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+        typeof window === "undefined"
+            ? process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"
+            : window.location.origin;
+    const next =
+        typeof window === "undefined"
+            ? null
+            : new URLSearchParams(window.location.search).get("next");
+    const callbackUrl = new URL(`${siteUrl}/auth/callback`);
+    if (next?.startsWith("/")) {
+        callbackUrl.searchParams.set("next", next);
+    }
+
     const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-            redirectTo: `${siteUrl}/auth/callback`,
+            redirectTo: callbackUrl.toString(),
         },
     });
     if (error) console.error(error);

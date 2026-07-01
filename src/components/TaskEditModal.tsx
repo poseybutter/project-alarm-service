@@ -90,18 +90,6 @@ function WorkloadInput({
     );
 }
 
-function getNextWeekRange() {
-    const now = new Date();
-    const day = now.getDay();
-    const wed = new Date(now);
-    wed.setDate(now.getDate() - ((day + 4) % 7) + 7);
-    wed.setHours(0, 0, 0, 0);
-    const nextWed = new Date(wed);
-    nextWed.setDate(wed.getDate() + 7);
-    nextWed.setHours(23, 59, 59, 999);
-    return { from: wed, to: nextWed };
-}
-
 export type TaskEditModalProps = {
     task: Task | null;
     onClose: () => void;
@@ -197,12 +185,7 @@ export default function TaskEditModal({
     const editPeriodLabel = periodButtonLabel(editDateRange);
 
     function toggleEditIsPlan() {
-        const newVal = !editForm.is_plan;
-        if (newVal) {
-            const range = getNextWeekRange();
-            setEditDateRange({ from: range.from, to: range.to });
-        }
-        setEditForm((f) => ({ ...f, is_plan: newVal }));
+        setEditForm((f) => ({ ...f, is_plan: !f.is_plan }));
     }
 
     function handleClose() {

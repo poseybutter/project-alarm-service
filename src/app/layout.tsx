@@ -5,6 +5,7 @@ import "./globals.css";
 import Nav from "@/components/Nav";
 import PageTransition from "@/components/PageTransition";
 import { AuthProvider } from "@/components/AuthProvider";
+import AccessibilityMissionPopup from "@/components/AccessibilityMissionPopup";
 
 const jetbrainsMono = JetBrains_Mono({
     subsets: ["latin"],
@@ -88,6 +89,7 @@ export default function RootLayout({
             <body className="bg-[#f7f6f3] overflow-x-hidden">
                 <AuthProvider>
                     <PageTransition>{children}</PageTransition>
+                    <AccessibilityMissionPopup />
                     <Nav />
                 </AuthProvider>
             </body>

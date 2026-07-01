@@ -16,6 +16,9 @@ import { createServerClient } from "@supabase/ssr";
 export async function GET(req: NextRequest) {
     const { searchParams, origin } = new URL(req.url);
     const code = searchParams.get("code");
+    const rawNext = searchParams.get("next");
+    const nextPath =
+        rawNext?.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
 
     if (!code) {
         return NextResponse.redirect(`${origin}/login?error=missing_code`);
@@ -93,7 +96,7 @@ export async function GET(req: NextRequest) {
     if (existing) {
         switch (existing.status) {
             case "active":
-                return NextResponse.redirect(`${origin}/`);
+                return NextResponse.redirect(`${origin}${nextPath}`);
             case "rejected":
                 await supabase.auth.signOut();
                 return NextResponse.redirect(`${origin}/login?error=rejected`);

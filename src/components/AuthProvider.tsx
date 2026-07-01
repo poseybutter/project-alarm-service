@@ -31,6 +31,11 @@ async function clearInvalidLocalSession() {
     } catch {
         /* ignore */
     }
+    try {
+        await fetch("/api/auth/clear-session", { method: "POST" });
+    } catch {
+        /* ignore */
+    }
 }
 
 function looksLikeInvalidRefreshOrJwt(message: string | undefined) {
@@ -87,14 +92,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const {
             data: { subscription },
         } = supabase.auth.onAuthStateChange((event, session) => {
-            if (event === "TOKEN_REFRESHED" || event === "SIGNED_IN") {
-                setUser(session?.user ?? null);
-            }
             if (
                 event === "SIGNED_OUT" ||
                 (event as string) === "USER_DELETED"
             ) {
                 setUser(null);
+                setLoading(false);
+                return;
+            }
+
+            if (!session) {
+                setUser(null);
+                setLoading(false);
+                return;
+            }
+
+            if (event === "TOKEN_REFRESHED" || event === "SIGNED_IN") {
+                setUser(session.user);
             }
             setLoading(false);
         });
@@ -124,11 +138,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     useEffect(() => {
-        if (member) loadAvatar(member);
-        else {
-            setAvatarUrl(null);
-            setRole("member");
-        }
+        const timer = window.setTimeout(() => {
+            if (member) loadAvatar(member);
+            else {
+                setAvatarUrl(null);
+                setRole("member");
+            }
+        }, 0);
+        return () => window.clearTimeout(timer);
     }, [member]);
 
     function refreshAvatar() {
