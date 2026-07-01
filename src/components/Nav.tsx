@@ -9,7 +9,7 @@ import { useAuth } from "./AuthProvider";
 const navStyle = { "--nav-height": "67px" } as CSSProperties;
 
 const NAV_ITEMS = [
-    { href: "/", icon: "🏠", label: "홈" },
+    { href: "/home", icon: "🏠", label: "홈" },
     { href: "/tasks", icon: "📋", label: "업무" },
     { href: "/report", icon: "✏️", label: "리포트" },
     { href: "/manage", icon: "🗂️", label: "관리" },

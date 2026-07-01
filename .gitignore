@@ -29,6 +29,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+dev-server*.log
+dev-server*.err
+.next-dev.*.log
+.wa-fix/
 
 # env files (can opt-in for committing if needed)
 .env*
@@ -45,4 +49,11 @@ next-env.d.ts
 CLAUDE.md
 claude.md
 .claude/
-db/
+
+# DB migrations are tracked. Keep local dumps and private SQL out of Git.
+db/*.dump
+db/*.backup
+db/*.bak
+db/*.local.sql
+db/*secret*.sql
+db/*private*.sql

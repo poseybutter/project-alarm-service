@@ -1,23 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { sendGoogleChatMessage } from '@/lib/server/googleChat'
 
 export async function POST(request: NextRequest) {
   const { text } = await request.json()
-  const webhook = process.env.GOOGLE_CHAT_WEBHOOK
-
-  if (!webhook) {
-    return NextResponse.json({ error: 'webhook not configured' }, { status: 500 })
-  }
 
   try {
-    const res = await fetch(webhook, {
-      method : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body   : JSON.stringify({ text }),
-    })
-
-    if (!res.ok) throw new Error('webhook failed')
+    await sendGoogleChatMessage({ text, channel: 'team_room' })
     return NextResponse.json({ success: true })
-  } catch (e) {
+  } catch {
     return NextResponse.json({ error: 'failed' }, { status: 500 })
   }
 }
