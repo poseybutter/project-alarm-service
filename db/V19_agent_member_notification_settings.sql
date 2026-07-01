@@ -5,7 +5,7 @@ create table if not exists public.agent_member_notification_settings (
     team_id text not null default 'ud2',
     member text not null,
     email text not null,
-    morning_send_time time not null default '09:00',
+    morning_send_time time not null default '08:30',
     calendar_reminder_minutes integer not null default 15,
     morning_enabled boolean not null default true,
     calendar_reminder_enabled boolean not null default true,

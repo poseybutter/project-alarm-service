@@ -88,7 +88,7 @@ export default function AgentsPage() {
     const [calendarLoading, setCalendarLoading] = useState(true);
     const [calendarSyncing, setCalendarSyncing] = useState(false);
     const [settings, setSettings] = useState<NotificationSettings>({
-        morning_send_time: "09:00:00",
+        morning_send_time: "08:30:00",
         morning_enabled: true,
     });
     const [settingsLoading, setSettingsLoading] = useState(true);
