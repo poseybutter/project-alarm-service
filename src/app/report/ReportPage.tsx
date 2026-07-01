@@ -607,15 +607,15 @@ export default function ReportPage() {
     const wOffRef = useRef(wOff);
     // 컴포넌트 인스턴스별 고유 realtime 채널 suffix (렌더 순수성 위해 useId 사용)
     const channelId = useId().replace(/[^a-zA-Z0-9]/g, "");
-    useEffect(() => {
-        wOffRef.current = wOff;
-        setEditMode(false);
-    }, [wOff]);
     const [mOff, setMOff] = useState(0);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState<Record<string, boolean>>({});
     const [editMode, setEditMode] = useState(false);
+    useEffect(() => {
+        wOffRef.current = wOff;
+        setEditMode(false);
+    }, [wOff]);
     const [assignTab, setAssignTab] = useState<"active" | "waiting">("active");
     const assignTabBarRef = useRef<HTMLDivElement>(null);
     // 구분(업무 유형) 탭바 드래그 스크롤

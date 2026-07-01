@@ -332,29 +332,8 @@ export default function TasksPage() {
     const formProjOptions =
         formProjTab === "mine" ? formMyProjOptions : allProjOptions;
 
-    function getNextWeekRange() {
-        const now = new Date();
-        const day = now.getDay();
-        // 다음 주 수요일 (로컬 기준)
-        const wed = new Date(now);
-        wed.setDate(now.getDate() - ((day + 4) % 7) + 7);
-        wed.setHours(0, 0, 0, 0);
-        const nextWed = new Date(wed);
-        nextWed.setDate(wed.getDate() + 7);
-        nextWed.setHours(23, 59, 59, 999);
-        return {
-            from: wed,
-            to: nextWed,
-        };
-    }
-
     function toggleIsPlan() {
-        const newVal = !form.is_plan;
-        if (newVal) {
-            const range = getNextWeekRange();
-            setFormDateRange({ from: range.from, to: range.to });
-        }
-        setForm((f) => ({ ...f, is_plan: newVal }));
+        setForm((f) => ({ ...f, is_plan: !f.is_plan }));
     }
 
     async function addTask() {

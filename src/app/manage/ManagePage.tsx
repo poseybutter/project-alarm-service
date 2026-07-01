@@ -100,7 +100,12 @@ export default function ManagePage() {
     const isAdmin = role === "admin";
 
     const [manageTab, setManageTab] = useState<"project" | "accessibility">(
-        "project",
+        () =>
+            typeof window !== "undefined" &&
+            new URLSearchParams(window.location.search).get("tab") ===
+                "accessibility"
+                ? "accessibility"
+                : "project",
     );
     const [projects, setProjects] = useState<Project[]>([]);
     const [accessibility, setAccessibility] = useState<Accessibility[]>([]);
@@ -150,7 +155,27 @@ export default function ManagePage() {
 
     useEffect(() => {
         if (member) void loadData();
+        // loadData is intentionally defined as a local page action.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [member]);
+
+    useEffect(() => {
+        function handleAccessibilityChanged() {
+            void loadData();
+        }
+
+        window.addEventListener(
+            "accessibility:changed",
+            handleAccessibilityChanged,
+        );
+        return () =>
+            window.removeEventListener(
+                "accessibility:changed",
+                handleAccessibilityChanged,
+            );
+        // loadData is intentionally defined as a local page action.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const projNameOptions = useMemo(
         () =>
@@ -229,8 +254,7 @@ export default function ManagePage() {
                 normalizeProject(row as Record<string, unknown>),
             ),
         );
-        setAccessibility(
-            (accData || []).map((row) => ({
+        const normalizedAccessibility = (accData || []).map((row) => ({
                 ...row,
                 inspection_status:
                     row.inspection_status === "미신청"
@@ -239,9 +263,26 @@ export default function ManagePage() {
                           ? "취득·갱신완료"
                           : row.inspection_status,
                 is_new: row.is_new ?? false,
-            })),
-        );
+            })) as Accessibility[];
+        setAccessibility(normalizedAccessibility);
         setLoading(false);
+
+        if (typeof window !== "undefined") {
+            const params = new URLSearchParams(window.location.search);
+            const accId = Number(params.get("accId"));
+            const row = normalizedAccessibility.find((item) => item.id === accId);
+            if (row) {
+                setManageTab("accessibility");
+                openAccModalForEdit(row);
+                params.delete("accId");
+                const query = params.toString();
+                window.history.replaceState(
+                    {},
+                    "",
+                    query ? `/manage?${query}` : "/manage",
+                );
+            }
+        }
     }
 
     function showToastMsg(msg: string) {
@@ -521,7 +562,7 @@ export default function ManagePage() {
             return (a.proj || "").localeCompare(b.proj || "", "ko");
         });
 
-    const canEditRowAcc = (_a: Accessibility) => !isGuest;
+    const canEditRowAcc = () => !isGuest;
 
     return (
         <AuthGuard>
@@ -1160,7 +1201,7 @@ export default function ManagePage() {
                                             diff > 14 &&
                                             diff <= 45 &&
                                             a.inspection_status === "신청필요";
-                                        const canRow = canEditRowAcc(a);
+                                        const canRow = canEditRowAcc();
                                         return (
                                             <div
                                                 key={a.id}

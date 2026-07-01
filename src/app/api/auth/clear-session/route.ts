@@ -1,0 +1,45 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { cookies } from "next/headers";
+import { createServerClient } from "@supabase/ssr";
+
+const SPRING_AUTH_COOKIES = ["accessToken", "refreshToken"];
+
+export async function POST(req: NextRequest) {
+    const store = await cookies();
+
+    try {
+        const supabase = createServerClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
+            {
+                cookies: {
+                    getAll() {
+                        return store.getAll();
+                    },
+                    setAll(cookiesToSet) {
+                        cookiesToSet.forEach(({ name, value, options }) => {
+                            store.set(name, value, options);
+                        });
+                    },
+                },
+            },
+        );
+        await supabase.auth.signOut({ scope: "local" });
+    } catch {
+        // Invalid refresh token cleanup must continue even if Supabase signOut fails.
+    }
+
+    const res = NextResponse.json({ ok: true });
+    const requestCookieNames = req.cookies.getAll().map((cookie) => cookie.name);
+    const authCookieNames = requestCookieNames.filter(
+        (name) =>
+            SPRING_AUTH_COOKIES.includes(name) ||
+            (name.startsWith("sb-") && name.includes("-auth-token")),
+    );
+
+    for (const name of authCookieNames) {
+        res.cookies.set(name, "", { path: "/", maxAge: 0 });
+    }
+
+    return res;
+}
