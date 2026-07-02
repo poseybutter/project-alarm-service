@@ -21,6 +21,7 @@ import UserMenu from "@/components/UserMenu";
 import Avatar from "@/components/Avatar";
 import LevelUpOverlay from "@/components/LevelUpOverlay";
 import ExpPopup, { type ExpPopupType } from "@/components/ExpPopup";
+import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import TaskEditModal from "@/components/TaskEditModal";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
@@ -500,6 +501,7 @@ export default function TasksPage() {
                                 </button>
                             )}
                             {/* 알림 + 유저메뉴는 Header 컴포넌트 없이 직접 */}
+                            <AgentButton />
                             <NotificationButton />
                             <UserMenu />
                         </div>

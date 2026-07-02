@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import AuthGuard from "@/components/AuthGuard";
 import NotificationButton from "@/components/NotificationButton";
 import UserMenu from "@/components/UserMenu";
+import AgentButton from "@/components/AgentButton";
 import { useAuth } from "@/components/AuthProvider";
 import type {
     AgentSuggestion,
@@ -448,6 +449,7 @@ export default function AgentsPage() {
                             >
                                 <i className="ri-settings-3-line text-lg" />
                             </button>
+                            <AgentButton />
                             <NotificationButton />
                             <UserMenu />
                         </div>
