@@ -30,17 +30,20 @@ flowchart TD
     Home --> H3["EXP · 레벨 · 활동잔디"]
 
     Home -.-> Nav{{"하단 5탭 네비게이션"}}
+    Home -.-> AgentBtn{{"상단 에이전트 버튼"}}
     Nav --> Tasks["📋 업무관리"]
     Nav --> Report["📊 리포트"]
     Nav --> Profile["👤 프로필"]
     Nav --> Manage["🗂️ 관리"]
+    AgentBtn --> Agents["🤖 알림 에이전트"]
 
-    Tasks --> T1["업무 등록·수정·완료 (작업계획 토글)"]
+    Tasks --> T1["업무 등록·수정·완료 (이번주 리포트 포함 토글)"]
     T1 ==>|"완료 시"| Exp[("💰 EXP 자동 지급 · 활동잔디 반영<br/>레벨업 시 구글챗 알림")]
     Report --> R1["주간 브리핑 자동 취합"]
     Report --> R2["담당 배정 · 전달사항"]
     Profile --> P1["레벨·칭호·랭킹·지난업무"]
     Manage --> M1["프로젝트 · 접근성 관리"]
+    Agents --> A1["모닝 브리핑·웹훅·캘린더 설정"]
 
     classDef entry fill:#e0f2fe,stroke:#0284c7,color:#0c4a6e,stroke-width:2px;
     classDef auth fill:#fef9c3,stroke:#ca8a04,color:#713f12,stroke-width:2px;
@@ -52,9 +55,9 @@ flowchart TD
     class Start entry;
     class Login,Authed auth;
     class Home,H1,H2,H3 home;
-    class Nav,Tasks,Report,Profile,Manage tab;
+    class Nav,AgentBtn,Tasks,Report,Profile,Manage,Agents tab;
     class Exp reward;
-    class T1,R1,R2,P1,M1 feat;
+    class T1,R1,R2,P1,M1,A1 feat;
 ```
 
 ---
@@ -76,11 +79,11 @@ flowchart TD
 ### 📋 업무 관리
 - 업무 추가 / 수정 / 삭제
 - 담당자 / 구분 / 우선순위 / 기간 / 공수 설정
-- **작업 계획 토글** — 다음 주 예정 업무 등록, 주간 브리핑에 자동 포함
+- **이번주 리포트 포함 토글** — 업무 노출 조건이 아니라 주간 리포트 포함 여부를 관리
 - DayPicker로 기간 선택 (연/월 드롭다운 지원)
 - 상태 변경 (대기 → 시작 전 → 진행중 → 지연/보류 → 완료)
 - 완료 시 EXP 자동 지급 + 활동 잔디 반영
-- **이번 주(목~목) 기준** 필터링 (작업 계획 타입은 항상 표시)
+- **미완료 업무 전체 기준** 표시 (지난 업무라도 완료되지 않았으면 계속 표시)
 - Realtime 동기화
 - **권한:** 본인 업무만 수정/삭제 (관리자는 전체)
 
@@ -88,7 +91,7 @@ flowchart TD
 - 주간 / 월간 탭 전환
 - **주간 전달사항** — 관리자가 Tiptap 에디터로 작성 (B/I/H1/H2/목록 지원)
 - **주간 브리핑** — 등록된 업무 기반 자동 생성
-  - 프로젝트 / 유지보수 / 기타 / 작업 계획 섹션 자동 취합
+  - 프로젝트 / 유지보수 / 기타 / 이번주 리포트 포함 업무 섹션 자동 취합
   - **목요일 00:00~18:00** 에만 편집 가능 (편집 버튼으로 토글)
   - 섹션별 Copy 버튼 (노션 붙여넣기 지원)
 - **담당 배정** — 배정현황 / 배정대기 관리
@@ -117,81 +120,93 @@ flowchart TD
   - D-14 이내 빨간 강조, D-15~45 주황 강조
   - 신규 프로젝트 NEW 배지
   - pg_cron으로 만료 D-60에 자동 신청필요 변경
-  - GAS 알림: 신청필요 상태 D-45 이내 개인 DM 발송
+  - 알림 에이전트: 신청필요/신청완료/갱신 필요 상태를 담당자 기준으로 브리핑과 미션 팝업에 반영
+
+### 🤖 알림 에이전트
+- 개인 Google Chat DM webhook 등록
+- 관리자의 팀원별 webhook 대리 등록
+- Google Calendar 연결 및 오늘 일정 동기화
+- 개인 모닝 브리핑 미리보기와 테스트 발송
+- Vercel Cron 기반 자동 모닝 브리핑 발송
 
 ---
 
 ## 🎮 게이미피케이션
 
-업무를 재미있게! 메이플스토리에서 영감받은 레벨 시스템이에요.
+업무 완료, 출석, 퀘스트 완료를 활동 기록으로 반영합니다.  
+점수 계산은 클라이언트에서 직접 처리하지 않고 서버 RPC를 통해 반영합니다.
 
-### ⚔️ 레벨 시스템
+### 레벨 시스템
 
 | 레벨 | 이름 | 필요 EXP |
 |------|------|----------|
-| Lv.1 | 🌱 풋내기 모험가 | 0 |
-| Lv.2 | 🗡️ 수련 중인 검사 | 500 |
-| Lv.3 | 🛡️ 던전 탐험가 | 1,500 |
-| Lv.4 | ✨ 이름난 용병 | 3,000 |
-| Lv.5 | 🔥 보스 사냥꾼 | 7,000 |
-| Lv.6 | 💎 아케인 리버 개척자 | 15,000 |
-| Lv.7 | 🌟 메이플 월드의 전설 | 35,000 |
-| Lv.8 | 👑 검은 마법사의 숙적 | 70,000 |
+| Lv.1 | 풋내기 모험가 | 0 |
+| Lv.2 | 수련 중인 검사 | 500 |
+| Lv.3 | 던전 탐험가 | 1,500 |
+| Lv.4 | 이름난 용병 | 3,000 |
+| Lv.5 | 보스 사냥꾼 | 7,000 |
+| Lv.6 | 아케인 리버 개척자 | 15,000 |
+| Lv.7 | 메이플 월드의 전설 | 35,000 |
+| Lv.8 | 검은 마법사의 숙적 | 70,000 |
 
-### 💰 EXP 획득 방법
+### EXP 반영 기준
 
-| 행동 | 획득 EXP |
-|------|----------|
-| 업무 완료 | +50 EXP |
-| 긴급 업무 완료 | +100 EXP |
-| 출석 체크 | +20 EXP |
-| 퀘스트 완료 | +10 EXP |
+| 행동 | 반영 |
+|------|------|
+| 업무 완료 | EXP 지급 및 활동 기록 반영 |
+| 긴급 업무 완료 | 추가 EXP 지급 |
+| 출석 체크 | EXP 지급 및 출석 기록 반영 |
+| 퀘스트 완료 | EXP 지급 및 활동 기록 반영 |
 
-> 레벨업 시 confetti 애니메이션 + 구글챗 팀 전체 축하 알림! 🎊
-
-### 🏆 칭호 시스템
+### 칭호 시스템
 
 | 칭호 | 조건 |
 |------|------|
-| 🌱 첫 완료 | 첫 번째 업무 완료 |
-| 🔥 꾸준러 | 3일 연속 출석 |
-| ⚡ 주간 챔피언 | 7일 연속 출석 |
-| ⏰ 마감지킴이 | D-day 전 완료 5건 |
-| 💪 업무 달인 | 완료 10건 |
-| 🏆 베테랑 | 완료 30건 |
-| 🚨 긴급 해결사 | 긴급 업무 5건 완료 |
-| ⭐ 중급 탐험가 | 레벨 5 달성 |
+| 첫 완료 | 첫 번째 업무 완료 |
+| 꾸준러 | 3일 연속 출석 |
+| 주간 챔피언 | 7일 연속 출석 |
+| 마감지킴이 | D-day 전 완료 5건 |
+| 업무 달인 | 완료 10건 |
+| 베테랑 | 완료 30건 |
+| 긴급 해결사 | 긴급 업무 5건 완료 |
+| 중급 탐험가 | 레벨 5 달성 |
 
-### 🌿 활동 잔디
-- 출석 체크 / 업무 완료 / 퀘스트 완료 합산
-- GitHub 잔디처럼 16주 히트맵으로 시각화
-- 활동량에 따라 색상이 진해짐 (연초록 → 진초록)
-- Realtime 반영
+### 활동 히트맵
+- 출석 체크, 업무 완료, 퀘스트 완료를 합산해 활동량을 기록
+- 최근 16주 기준으로 시각화
+- Supabase Realtime으로 변경 사항 반영
 
-### 🏆 주간 MVP
-- 매주 월요일 앱 접속 시 지난주 MVP 자동 선정
-- 주간 EXP + 완료 업무 수 합산 기준
-- confetti 오버레이로 축하 표시
+### 주간 MVP
+- 주간 EXP와 완료 업무 수를 기준으로 선정
+- 앱 접속 시 지난주 결과를 확인
+- 축하 오버레이로 결과 표시
 
 ---
 
-## 🤖 자동화 (GAS)
+## 🤖 자동화 (알림 에이전트)
 
-Google Apps Script로 구글챗 자동 알림을 운영해요.
+Google Apps Script 중심 알림은 앱 내부 알림 에이전트로 전환 중입니다. 현재 모닝 브리핑은 Next.js Route Handler, Vercel Cron, Google Calendar OAuth, 팀원별 Google Chat 개인 webhook을 기준으로 운영합니다.
 
-### 📨 아침 알림 (평일 오전 8-9시)
+### 📨 모닝 브리핑
 - **개인 DM**으로 발송
-- 오늘의 퀘스트 목록 (마감일 포함)
-- 진행중인 업무 목록 (🚨 D-day / ⚠️ D-3 이내 강조)
-- 주말 / 한국 공휴일 자동 제외
+- 개인별 브리핑 발송 시간 설정
+- Google Calendar 오늘 일정 자동 동기화
+- 오늘의 퀘스트와 미완료 업무 포함
+- 접근성 인증 만료/갱신 필요 항목 포함
+- 발송 이력 저장 및 중복 발송 방지
 
-### 🌐 접근성 만료 알림
-- **개인 DM**으로 발송
-- 신청필요 상태 + D-45 이내 자동 발송
-- D-day 또는 기한 초과 🚨, D-3 이내 ⚠️
+### 🌐 접근성 인증 미션
+- 담당자 본인 항목만 미션 팝업으로 표시
+- 신청필요, 신청완료, 취득·갱신완료 상태에 따라 후속 액션 유도
+- 상태/만료일 업데이트가 필요한 경우 접근성 관리 화면으로 이동
 
 ### 🎊 레벨업 알림
-- 레벨업 시 **팀 전체 채팅**으로 자동 발송
+- 레벨업 시 Google Chat 알림 발송
+
+### 배포/버전 업데이트 알림
+- `main` push 시 GitHub Actions가 업데이트 소식을 생성
+- 커밋 메시지의 `(vX.Y.Z)` 패턴을 기준으로 버전 추출
+- 신규 버전이면 Git tag, GitHub Release, `notifications` 테이블 업데이트를 자동 처리
 
 ---
 
@@ -206,14 +221,14 @@ Google Apps Script로 구글챗 자동 알림을 운영해요.
 ```mermaid
 graph TB
     subgraph Client["🖥️ 클라이언트 · Next.js 16 (Vercel · PWA)"]
-        UI["페이지 5탭<br/>홈·업무·리포트·프로필·관리"]
+        UI["페이지 5탭 + 에이전트<br/>홈·업무·리포트·프로필·관리·알림"]
         MW["proxy 미들웨어<br/>쿠키 기반 인증 게이트"]
         AP["AuthProvider<br/>세션·역할 컨텍스트"]
     end
 
     subgraph Supa["🟢 Supabase · PostgreSQL"]
         SAuth["Supabase Auth<br/>구글 OAuth ✅ 현재 운영"]
-        DB[("테이블 13종 · RLS")]
+        DB[("업무·리포트·알림 테이블 · RLS")]
         RT["Realtime 구독"]
         Store["Storage · avatars"]
     end
@@ -221,6 +236,7 @@ graph TB
     subgraph NextAPI["⚙️ Next.js Route Handlers · /api"]
         Notify["/api/notify · 구글챗 프록시"]
         AuthAPI["/api/auth/* · 인증 프록시"]
+        AgentAPI["/api/agents/* · 알림 에이전트"]
     end
 
     subgraph Spring["☕ Spring Boot :8080 — 🚧 개발 진행중"]
@@ -228,7 +244,8 @@ graph TB
     end
 
     subgraph Ext["🤖 외부 자동화"]
-        GAS["Google Apps Script<br/>아침·접근성 알림"]
+        VercelCron["Vercel Cron<br/>모닝 브리핑"]
+        Calendar["Google Calendar<br/>오늘 일정"]
         Cron["pg_cron<br/>접근성 만료 갱신"]
         Chat["Google Chat"]
     end
@@ -239,10 +256,13 @@ graph TB
     UI -->|"이미지 업로드"| Store
     UI --> MW
     UI -->|"레벨업 알림"| Notify --> Chat
+    UI -->|"브리핑·웹훅 설정"| AgentAPI
     UI -.->|"🚧 가입·로그인"| AuthAPI
     AuthAPI -.->|"🚧 프록시"| JWT
-    GAS -->|"service_role · RLS 우회"| DB
-    GAS --> Chat
+    VercelCron --> AgentAPI
+    AgentAPI -->|"service_role · 서버 전용"| DB
+    AgentAPI --> Calendar
+    AgentAPI --> Chat
     Cron --> DB
 
     classDef client fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:1.5px;
@@ -252,10 +272,10 @@ graph TB
     classDef ext fill:#fbcfe8,stroke:#db2777,color:#831843,stroke-width:1.5px;
 
     class UI,MW,AP client;
-    class AuthAPI,Notify api;
+    class AuthAPI,Notify,AgentAPI api;
     class JWT wip;
     class SAuth,DB,RT,Store data;
-    class GAS,Cron,Chat ext;
+    class VercelCron,Calendar,Cron,Chat ext;
 
     style Client fill:#eff6ff,stroke:#2563eb;
     style Supa fill:#f0fdf4,stroke:#16a34a;
@@ -321,8 +341,12 @@ erDiagram
     players ||..o{ tasks : "member(이름)"
     players ||..o{ quests : "member(이름)"
     players ||..o{ attendance : "member(이름)"
+    players ||..o{ agent_member_webhooks : "email"
+    players ||..o{ agent_calendar_connections : "email"
+    players ||..o{ agent_calendar_events : "email"
     projects ||..o{ tasks : "proj(이름)"
     projects ||..o{ accessibility : "proj(이름)"
+    agent_suggestions ||..o{ agent_notification_deliveries : "suggestion_id"
 
     players {
         bigint id PK
@@ -342,7 +366,7 @@ erDiagram
         text proj
         text status
         text priority
-        bool is_plan "작업계획"
+        bool is_plan "이번주 리포트 포함"
         date start_date
         date end_date
     }
@@ -411,6 +435,54 @@ erDiagram
         bigint player_id FK
         bigint notification_id FK
     }
+    agent_suggestions {
+        bigint id PK
+        text team_id
+        text agent_type
+        text status
+        text dedupe_key
+        text payload
+    }
+    agent_notification_deliveries {
+        bigint id PK
+        bigint suggestion_id
+        text team_id
+        text dedupe_key
+        text channel
+        text recipient_member
+        text payload
+    }
+    agent_member_webhooks {
+        bigint id PK
+        text team_id
+        text member
+        text email
+        text webhook_url
+    }
+    agent_calendar_connections {
+        bigint id PK
+        text team_id
+        text member
+        text email
+        text google_email
+    }
+    agent_calendar_events {
+        bigint id PK
+        text team_id
+        text member
+        text email
+        text google_event_id
+        text title
+        datetime starts_at
+    }
+    agent_member_notification_settings {
+        bigint id PK
+        text team_id
+        text member
+        text email
+        text morning_send_time
+        bool morning_enabled
+    }
     audit_logs {
         bigint id PK
         text email
@@ -434,7 +506,7 @@ erDiagram
 | 인증 (🚧 개발중) | Spring Boot JWT · 초대코드 가입/승인 + Route Handler 프록시 |
 | 실시간 | Supabase Realtime |
 | 배포 | Vercel (프론트) |
-| 자동화 | Google Apps Script |
+| 자동화 | Vercel Cron, Next.js Route Handler, GitHub Actions |
 | 에디터 | Tiptap |
 | 날짜 선택 | React DayPicker |
 | 검색 Select | react-select |
@@ -452,16 +524,18 @@ src/
 ├── proxy.ts                  # 미들웨어: 쿠키 기반 인증 게이트 (로그인 안 하면 /login)
 ├── app/
 │   ├── page.tsx              # 홈 (퀘스트, 내 업무, EXP, 잔디)
-│   ├── tasks/                # 업무 관리 (수~수 기준 필터)
+│   ├── tasks/                # 업무 관리 (미완료 업무 전체 + 리포트 포함 여부)
 │   ├── report/               # 리포트 (브리핑, 배정현황, 전달사항)
 │   ├── profile/              # 프로필 (내정보, 지난업무, 성장)
 │   ├── manage/               # 관리 (프로젝트, 접근성)
+│   ├── agents/               # 알림 에이전트 (브리핑, 웹훅, 캘린더)
 │   ├── changelog/            # 배포/버전 업데이트 소식
 │   ├── login/ · signup/      # 로그인 / 초대코드 회원가입
 │   ├── pending/page.tsx      # 승인 대기 (15초 폴링 → /api/auth/me)
 │   ├── auth/callback/route.ts
 │   └── api/
 │       ├── auth/             # login·signup·me·refresh·logout → Spring Boot 프록시
+│       ├── agents/           # 알림 에이전트, Google Calendar, webhook API
 │       ├── notify/route.ts   # 구글챗 웹훅 프록시
 │       └── briefing-tasks/route.ts
 ├── components/
@@ -470,6 +544,7 @@ src/
 │   ├── auth/                                      # 로그인·가입 픽셀 UI 위젯
 │   ├── Avatar.tsx · AttendanceHeatmap.tsx        # 아바타/활동 잔디
 │   ├── LevelUpOverlay.tsx · MvpOverlay.tsx · ExpPopup.tsx  # 게이미피케이션 연출
+│   ├── AccessibilityMissionPopup.tsx · AgentButton.tsx     # 접근성 미션/에이전트 바로가기
 │   ├── TaskEditModal.tsx                          # 업무 편집 모달 (DragQuestModal.tsx는 현재 미사용)
 │   └── Tiptap*Editor.tsx · NotificationButton.tsx
 ├── hooks/useNotifications.ts # 배포 알림 구독/읽음
@@ -480,6 +555,8 @@ src/
     ├── maple.ts              # EXP/레벨/잔디 로직
     ├── types.ts · constants.ts · utils.ts
     ├── reactSelectStyles.ts  # react-select 공통 스타일
+    ├── agents/               # 알림 에이전트 후보/브리핑/발송 이력 로직
+    ├── server/               # Google Calendar · Google Chat 서버 유틸
     └── googleChat.ts         # 구글챗 웹훅
 ```
 
@@ -489,7 +566,7 @@ src/
 
 | 테이블 | 설명 |
 |--------|------|
-| `tasks` | 업무 목록 (is_plan 작업계획 포함) |
+| `tasks` | 업무 목록 (`is_plan`은 이번주 리포트 포함 여부) |
 | `players` | 팀원 EXP / 레벨 / 칭호 / 주간 EXP |
 | `projects` | 프로젝트 목록 (멀티 담당자, 메타데이터) |
 | `accessibility` | 웹 접근성 인증 관리 (is_new, 상태 4종) |
@@ -499,9 +576,15 @@ src/
 | `attendance` | 활동 잔디 기록 (activity_count) |
 | `briefing_tasks` | 업무별 브리핑 카드 편집본 (Tiptap HTML) |
 | `notifications` / `notification_reads` | 배포·버전 업데이트 알림 + 읽음 처리 |
+| `agent_suggestions` | 알림 에이전트 후보 |
+| `agent_notification_deliveries` | 알림 발송 이력과 중복 방지 |
+| `agent_member_webhooks` | 팀원별 Google Chat 개인 webhook |
+| `agent_calendar_connections` | 팀원별 Google Calendar OAuth 연결 |
+| `agent_calendar_events` | 동기화된 오늘 일정 |
+| `agent_member_notification_settings` | 개인 브리핑 발송 시간과 설정 |
 | `audit_logs` | 로그인 감사 로그 (login_success / failed / logout) |
 
-모든 테이블 RLS 활성화. GAS는 `service_role key`로 RLS 우회.
+모든 테이블 RLS 활성화. 서버 Route Handler와 자동화 경로에서만 `service_role key`를 사용합니다.
 > ER 다이어그램은 위 [🗄 DB ER 다이어그램](#-db-er-다이어그램) 참고.
 
 ---
@@ -532,7 +615,7 @@ src/
 - ✅ **역할 기반 접근 제어 (admin / member / guest)** — 본인 업무·퀘스트만 수정, 관리자만 전체 편집·브리핑 잠금 (`AuthProvider`, `AuthGuard`)
 - ✅ **Supabase RLS(Row Level Security) 활성화** — 모든 테이블에 적용, 클라이언트는 `anon key`만 사용
 - ✅ **`auth.jwt()` 기반 본인 데이터 정책** — 예: 알림 읽음·감사 로그는 본인 이메일 행만 접근 (`db/V4_audit_logs.sql`, `db/V8_notifications.sql`)
-- ✅ **`service_role` 키는 앱 코드에서 미사용** — RLS를 우회하는 강력 키는 서버측 자동화(GAS)에서만 사용, 프론트엔드에는 절대 포함하지 않음
+- ✅ **`service_role` 키는 서버 전용** — RLS를 우회하는 강력 키는 Route Handler와 자동화 경로에서만 사용, 프론트엔드에는 절대 포함하지 않음
 
 ### 전송 · 응답 헤더
 - ✅ **보안 응답 헤더 적용** (`next.config.ts`) — 모든 경로에:
@@ -544,7 +627,7 @@ src/
 
 ### 감사 · 비밀 관리
 - ✅ **감사 로그(`audit_logs`)** — 로그인 성공 / 로그아웃 시 이메일·IP·User-Agent 기록 (역방향 프록시 헤더 `x-forwarded-for` 고려)
-- ✅ **환경변수 공개 범위 분리** — 클라이언트 노출은 `NEXT_PUBLIC_*` 만, 서버 전용 값(`API_URL`, `GOOGLE_CHAT_WEBHOOK`)은 비공개
+- ✅ **환경변수 공개 범위 분리** — 클라이언트 노출은 `NEXT_PUBLIC_*` 만, 서버 전용 값(`SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CALENDAR_CLIENT_SECRET`, `GOOGLE_CHAT_WEBHOOK`)은 비공개
 - ✅ **비밀 미커밋** — `.gitignore`의 `.env*` 로 모든 환경파일 git 추적 제외 (코드 내 하드코딩된 시크릿 없음)
 
 ---
@@ -555,15 +638,25 @@ src/
 # Supabase (데이터·실시간)
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
 
-# Spring Boot 인증 백엔드
+# Google Calendar OAuth
+GOOGLE_CALENDAR_CLIENT_ID=
+GOOGLE_CALENDAR_CLIENT_SECRET=
+GOOGLE_CALENDAR_REDIRECT_URI=
+
+# Vercel Cron
+CRON_SECRET=
+
+# Spring Boot 인증 백엔드 (🚧 개발중)
 API_URL=                       # 서버사이드용 내부 URL (예: http://api:8080)
 NEXT_PUBLIC_API_URL=           # 클라이언트 fallback URL
 NEXT_PUBLIC_SITE_URL=          # OAuth 콜백 등 사이트 베이스 URL
 
 # 팀원/알림
 NEXT_PUBLIC_MEMBER_EMAILS=이메일:이름,이메일:이름,...
-GOOGLE_CHAT_WEBHOOK=
+GOOGLE_CHAT_WEBHOOK=           # legacy/fallback
+GOOGLE_CHAT_WEBHOOKS=          # legacy/fallback map
 ```
 
 ---
