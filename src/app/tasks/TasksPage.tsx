@@ -57,35 +57,6 @@ function periodButtonLabel(range: DateRange | undefined): {
     return { text: `${f} ~ ${t}`, placeholder: false };
 }
 
-function getWeekWin(offset: number = 0) {
-    const now = new Date();
-    // 리포트(ReportPage.getWeekWin)와 동일: 목~목 한 주, 주 시작은 목요일, 끝은 다음 목요일(끝 포함).
-    const y = now.getFullYear();
-    const mon = now.getMonth();
-    const dom = now.getDate();
-    const dow = now.getDay();
-    const daysFromWeekStart = (dow - 4 + 7) % 7;
-    const thu = new Date(y, mon, dom - daysFromWeekStart + offset * 7);
-    thu.setHours(0, 0, 0, 0);
-    const nextThu = new Date(
-        thu.getFullYear(),
-        thu.getMonth(),
-        thu.getDate() + 7,
-        23,
-        59,
-        59,
-        999,
-    );
-    const DOW = ["일", "월", "화", "수", "목", "금", "토"];
-    const fmt = (d: Date) =>
-        `${d.getMonth() + 1}/${d.getDate()}(${DOW[d.getDay()]})`;
-    return {
-        from: toLocalYmd(thu),
-        to: toLocalYmd(nextThu),
-        label: `${thu.getFullYear()}년 ${thu.getMonth() + 1}월 · ${fmt(thu)}~${fmt(nextThu)}`,
-    };
-}
-
 const EMPTY_FORM = {
     member: "",
     type: "",
@@ -422,16 +393,9 @@ export default function TasksPage() {
         loadTasks();
     }
 
-    const wk = getWeekWin();
-
     const filtered = tasks
         .filter((t) => {
-            if (t.is_plan && t.status === "완료") return false;
-            if (t.is_plan) return true;
-            const s = t.start_date || t.end_date;
-            const e = t.end_date || t.start_date;
-            if (!s || !e) return false;
-            return s <= wk.to && e >= wk.from;
+            return normalizeStatus(t.status) !== "완료";
         })
         .filter((t) => {
             if (filterMember && t.member !== filterMember) return false;
@@ -439,16 +403,6 @@ export default function TasksPage() {
             if (filterPriority && t.priority !== filterPriority) return false;
             return true;
         });
-
-    const stats = {
-        total: tasks.length,
-        doing: tasks.filter((t) => t.status === "진행중").length,
-        done: tasks.filter((t) => t.status === "완료").length,
-        urgent: tasks.filter((t) => {
-            const d = getDiff(t.end_date);
-            return d !== null && d <= 7 && t.status !== "완료";
-        }).length,
-    };
 
     const grouped = MEMBERS.reduce(
         (acc, m) => {
@@ -480,7 +434,7 @@ export default function TasksPage() {
                                 업무 관리
                             </h1>
                             <p className="text-xs text-stone-400 mt-0.5">
-                                {wk.label}
+                                미완료 업무를 관리하고 리포트 포함 여부를 조정합니다
                             </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -509,32 +463,8 @@ export default function TasksPage() {
                 </div>
 
                 <div className="max-w-2xl mx-auto pb-24">
-                    {/* 통계 */}
-                    <div className="grid grid-cols-4 gap-2 px-4 py-3">
-                        {[
-                            { n: stats.total, l: "전체" },
-                            { n: stats.doing, l: "진행중" },
-                            { n: stats.done, l: "완료" },
-                            { n: stats.urgent, l: "임박", red: true },
-                        ].map((s) => (
-                            <div
-                                key={s.l}
-                                className="bg-white rounded-xl border border-stone-200 p-3 text-center"
-                            >
-                                <div
-                                    className={`text-xl font-bold ${s.red && s.n > 0 ? "text-red-500" : "text-stone-800"}`}
-                                >
-                                    {s.n}
-                                </div>
-                                <div className="text-xs text-stone-400 mt-0.5">
-                                    {s.l}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
                     {/* 필터 */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 px-4 pb-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 px-4 py-3">
                         <div className="min-w-0">
                             <Select
                                 options={MEMBERS.map((m) => ({
@@ -710,7 +640,7 @@ export default function TasksPage() {
                                                         <div className="flex items-center gap-2 text-xs text-stone-400">
                                                             {t.is_plan && (
                                                                 <span className="text-[10px] px-1.5 py-0.5 bg-violet-100 text-violet-600 rounded font-bold shrink-0">
-                                                                    작업계획
+                                                                    리포트 포함
                                                                 </span>
                                                             )}
                                                             {t.workload > 0 && (
@@ -989,14 +919,14 @@ export default function TasksPage() {
                                         />
                                     </div>
                                 </div>
-                                {/* 작업 계획 토글 */}
+                                {/* 이번주 리포트 포함 토글 */}
                                 <div className="flex items-center justify-between py-1">
                                     <div>
                                         <p className="text-sm font-medium text-stone-700">
-                                            작업 계획
+                                            이번주 리포트 포함
                                         </p>
                                         <p className="text-xs text-stone-400 mt-0.5">
-                                            예정 업무로 등록해요
+                                            주간 리포트에 이 업무를 포함합니다
                                         </p>
                                     </div>
                                     <button
