@@ -355,10 +355,10 @@ export default function TaskEditModal({
                     <div className="flex items-center justify-between py-1">
                         <div>
                             <p className="text-sm font-medium text-stone-700">
-                                작업 계획
+                                이번주 리포트 포함
                             </p>
                             <p className="text-xs text-stone-400 mt-0.5">
-                                예정 업무로 등록해요
+                                주간 리포트에 이 업무를 포함합니다
                             </p>
                         </div>
                         <button
