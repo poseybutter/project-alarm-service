@@ -7,7 +7,7 @@ import type {
     NotificationSuggestionPayload,
 } from "./types";
 
-const DONE_STATUSES = new Set(["완료", "끝남"]);
+const DONE_STATUSES = new Set(["완료", "끝남", "done", "completed"]);
 const URGENT_PRIORITIES = new Set(["긴급", "매우 긴급"]);
 
 export type CalendarEventInput = {
@@ -44,7 +44,7 @@ export type QuestBriefingInput = {
 
 type AlertTask = {
     task: Task;
-    diff: number;
+    diff: number | null;
 };
 
 type AccessibilityAlert = {
@@ -102,6 +102,16 @@ function formatDueCard(diff: number) {
     return `<font color="${color}"><b>${formatDue(diff)}</b></font>`;
 }
 
+function taskDueText(item: AlertTask) {
+    if (item.diff !== null) return formatDue(item.diff);
+    return item.task.is_plan ? "이번주 포함" : "기간 미정";
+}
+
+function taskDueCard(item: AlertTask) {
+    if (item.diff !== null) return formatDueCard(item.diff);
+    return `<font color="#777777"><b>${item.task.is_plan ? "이번주 포함" : "기간 미정"}</b></font>`;
+}
+
 function formatEventTime(event: CalendarEventInput) {
     if (event.all_day) return "종일";
     if (!event.starts_at) return "시간 미정";
@@ -125,13 +135,12 @@ function formatEventTime(event: CalendarEventInput) {
 }
 
 function taskLine(item: AlertTask, index: number) {
-    const { task, diff } = item;
+    const { task } = item;
     const content = task.content?.split("\n")[0]?.trim();
-    const contentText = content ? ` — ${content}` : "";
+    const contentText = content ? ` - ${content}` : "";
     const status = task.status ? ` (${task.status})` : "";
-    return `${index}. ${task.proj}${contentText}${status} (${formatDue(diff)})`;
+    return `${index}. ${task.proj}${contentText}${status} (${taskDueText(item)})`;
 }
-
 function eventLine(event: CalendarEventInput, index: number) {
     const location = event.location ? ` · ${event.location}` : "";
     return `${index}. ${event.title} (${formatEventTime(event)})${location}`;
@@ -176,14 +185,13 @@ function escapeGChatText(value: string) {
 }
 
 function taskCardText(item: AlertTask, index: number) {
-    const { task, diff } = item;
+    const { task } = item;
     const content = task.content?.split("\n")[0]?.trim();
     const status = task.status ? escapeGChatText(task.status) : "상태 없음";
     const project = escapeGChatText(task.proj || "프로젝트 없음");
     const body = content ? `<br>${escapeGChatText(content)}` : "";
-    return `<b>${index}. ${project}</b>${body}<br><font color="#777777">${status}</font> · ${formatDueCard(diff)}`;
+    return `<b>${index}. ${project}</b>${body}<br><font color="#777777">${status}</font> · ${taskDueCard(item)}`;
 }
-
 function eventCardText(event: CalendarEventInput, index: number) {
     const title = escapeGChatText(event.title || "제목 없음");
     const location = event.location
@@ -309,7 +317,7 @@ function buildMemberCard(
 }
 
 function memberSeverity(digest: MemberDigest) {
-    if (digest.tasks.some((item) => item.diff <= -7)) return "critical";
+    if (digest.tasks.some((item) => item.diff !== null && item.diff <= -7)) return "critical";
     if (
         digest.accessibility.some(
             (item) =>
@@ -322,7 +330,7 @@ function memberSeverity(digest: MemberDigest) {
     if (
         digest.tasks.some(
             (item) =>
-                item.diff <= 0 ||
+                (item.diff !== null && item.diff <= 0) ||
                 (item.task.priority && URGENT_PRIORITIES.has(item.task.priority)),
         )
     ) {
@@ -389,8 +397,10 @@ export function buildNotificationSuggestions(input: {
         if (isDone(task.status)) continue;
 
         const diff = getDiff(task.end_date);
-        if (diff === null) continue;
-        if (diff > 3) continue;
+        if (!task.is_plan) {
+            if (diff === null) continue;
+            if (diff > 3) continue;
+        }
 
         ensureDigest(task.member).tasks.push({ task, diff });
     }
@@ -451,7 +461,7 @@ export function buildNotificationSuggestions(input: {
     return [...grouped.entries()].map(([member, digest]) => {
         const sortedTasks = [...digest.tasks].sort(
             (a, b) =>
-                a.diff - b.diff ||
+                (a.diff ?? 9999) - (b.diff ?? 9999) ||
                 Number(Boolean(b.task.priority && URGENT_PRIORITIES.has(b.task.priority))) -
                     Number(Boolean(a.task.priority && URGENT_PRIORITIES.has(a.task.priority))) ||
                 a.task.id - b.task.id,

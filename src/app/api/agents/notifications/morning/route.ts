@@ -10,6 +10,7 @@ import { hasRecentNotificationDelivery } from "@/lib/agents/notificationDeliveri
 import { sendGoogleChatMessage } from "@/lib/server/googleChat";
 import {
     syncTodayGoogleCalendarEvents,
+    syncTodayTeamCalendarEvents,
     type GoogleCalendarConnection,
 } from "@/lib/server/googleCalendar";
 import type { AgentSuggestion, NotificationSuggestionPayload } from "@/lib/agents/types";
@@ -86,12 +87,15 @@ async function buildFreshSuggestion(
         .maybeSingle();
     if (connectionError) throw connectionError;
 
-    const calendarEvents = calendarConnection
+    const personalCalendarEvents = calendarConnection
         ? await syncTodayGoogleCalendarEvents(supabase, {
               teamId: TEAM_ID,
               connection: calendarConnection as GoogleCalendarConnection,
           })
         : [];
+    const teamCalendarEvents = await syncTodayTeamCalendarEvents(supabase, {
+        teamId: TEAM_ID,
+    });
 
     const [
         { data: tasks, error: taskError },
@@ -126,7 +130,10 @@ async function buildFreshSuggestion(
     return buildNotificationSuggestions({
         tasks: (tasks ?? []) as Task[],
         accessibility: (accessibility ?? []) as Accessibility[],
-        calendarEvents: (calendarEvents ?? []) as CalendarEventInput[],
+        calendarEvents: [
+            ...(personalCalendarEvents ?? []),
+            ...(teamCalendarEvents ?? []),
+        ] as CalendarEventInput[],
         quests: (quests ?? []) as QuestBriefingInput[],
         createdBy: "morning-briefing-cron",
     }).find((suggestion) => {

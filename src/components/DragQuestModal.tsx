@@ -58,7 +58,7 @@ export default function DragQuestModal({
             onClick={onClose}
         >
             <div
-                className="w-full max-w-2xl rounded-t-2xl bg-white p-5"
+                className="max-h-[calc(100dvh-83px)] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-5"
                 style={{ marginBottom: "67px" }}
                 onClick={(e) => e.stopPropagation()}
             >
