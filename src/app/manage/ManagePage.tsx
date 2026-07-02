@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import UserMenu from "@/components/UserMenu";
+import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import Avatar from "@/components/Avatar";
@@ -591,6 +592,7 @@ export default function ManagePage() {
                                     + 접근성 추가
                                 </button>
                             )}
+                            <AgentButton />
                             <NotificationButton />
                             <UserMenu />
                         </div>

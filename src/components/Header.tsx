@@ -2,6 +2,7 @@
 
 import UserMenu from './UserMenu'
 import NotificationButton from './NotificationButton'
+import AgentButton from './AgentButton'
 
 export default function Header({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
@@ -12,6 +13,7 @@ export default function Header({ title, subtitle }: { title: string; subtitle?: 
           {subtitle && <p className="text-xs text-stone-400 mt-0.5">{subtitle}</p>}
         </div>
         <div className="flex items-center gap-2">
+          <AgentButton />
           <NotificationButton />
           <UserMenu />
         </div>

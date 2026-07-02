@@ -16,6 +16,7 @@ import UserMenu from "@/components/UserMenu";
 import Avatar from "@/components/Avatar";
 import { supabase } from "@/lib/supabase";
 import AuthGuard from "@/components/AuthGuard";
+import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import { useAuth } from "@/components/AuthProvider";
 import { PageSpinner } from "@/components/Spinner";
@@ -1439,6 +1440,7 @@ export default function ReportPage() {
                             리포트
                         </h1>
                         <div className="flex items-center gap-2">
+                            <AgentButton />
                             <NotificationButton />
                             <UserMenu />
                         </div>
