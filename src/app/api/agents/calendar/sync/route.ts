@@ -5,8 +5,8 @@ import {
     getServerUser,
 } from "@/lib/serverSupabase";
 import {
-    fetchTodayGoogleCalendarEvents,
-    refreshGoogleCalendarToken,
+    syncTodayGoogleCalendarEvents,
+    type GoogleCalendarConnection,
 } from "@/lib/server/googleCalendar";
 import {
     buildNotificationSuggestions,
@@ -14,21 +14,6 @@ import {
 } from "@/lib/agents/notificationAgent";
 import { createAgentSuggestions } from "@/lib/agents/suggestions";
 import type { Accessibility, Task } from "@/lib/types";
-
-type CalendarConnection = {
-    member: string;
-    email: string;
-    access_token: string | null;
-    refresh_token: string | null;
-    expires_at: string | null;
-};
-
-function eventDateTime(value: { date?: string; dateTime?: string } | undefined) {
-    if (!value) return { at: null, allDay: false };
-    if (value.dateTime) return { at: value.dateTime, allDay: false };
-    if (value.date) return { at: `${value.date}T00:00:00+09:00`, allDay: true };
-    return { at: null, allDay: false };
-}
 
 export async function POST() {
     const { user } = await getServerUser();
@@ -55,61 +40,11 @@ export async function POST() {
     }
 
     try {
-        const connection = data as CalendarConnection;
-        let accessToken = connection.access_token;
-        const expiresAt = connection.expires_at
-            ? new Date(connection.expires_at).getTime()
-            : 0;
-
-        if (!accessToken || expiresAt < Date.now() + 60_000) {
-            if (!connection.refresh_token) {
-                throw new Error("Calendar refresh token is missing");
-            }
-            const refreshed = await refreshGoogleCalendarToken(
-                connection.refresh_token,
-            );
-            accessToken = refreshed.access_token;
-            await serviceSupabase
-                .from("agent_calendar_connections")
-                .update({
-                    access_token: refreshed.access_token,
-                    expires_at: new Date(
-                        Date.now() + refreshed.expires_in * 1000,
-                    ).toISOString(),
-                    updated_at: new Date().toISOString(),
-                })
-                .eq("team_id", TEAM_ID)
-                .eq("email", user.email);
-        }
-
-        const events = await fetchTodayGoogleCalendarEvents(accessToken);
-        const rows = events.map((event) => {
-            const start = eventDateTime(event.start);
-            const end = eventDateTime(event.end);
-            return {
-                team_id: TEAM_ID,
-                member: connection.member,
-                email: connection.email,
-                google_event_id: event.id,
-                calendar_id: "primary",
-                title: event.summary || "(제목 없음)",
-                starts_at: start.at,
-                ends_at: end.at,
-                all_day: start.allDay,
-                location: event.location ?? null,
-                html_link: event.htmlLink ?? null,
-                synced_at: new Date().toISOString(),
-            };
+        const connection = data as GoogleCalendarConnection;
+        const rows = await syncTodayGoogleCalendarEvents(serviceSupabase, {
+            teamId: TEAM_ID,
+            connection,
         });
-
-        if (rows.length > 0) {
-            const { error: upsertError } = await serviceSupabase
-                .from("agent_calendar_events")
-                .upsert(rows, {
-                    onConflict: "team_id,email,calendar_id,google_event_id",
-                });
-            if (upsertError) throw upsertError;
-        }
 
         const { data: tasks, error: taskError } = await serviceSupabase
             .from("tasks")
@@ -126,22 +61,21 @@ export async function POST() {
             .order("end_date", { ascending: true });
         if (accError) throw accError;
 
-        const { data: quests, error: questError } =
-            await serviceSupabase
-                .from("quests")
-                .select("id, member, content, proj, end_date, task_id, status")
-                .eq("team_id", TEAM_ID)
-                .eq("member", connection.member)
-                .is("task_id", null)
-                .order("order_index", { ascending: true, nullsFirst: false })
-                .order("created_at", { ascending: true });
+        const { data: quests, error: questError } = await serviceSupabase
+            .from("quests")
+            .select("id, member, content, proj, end_date, task_id, status")
+            .eq("team_id", TEAM_ID)
+            .eq("member", connection.member)
+            .is("task_id", null)
+            .order("order_index", { ascending: true, nullsFirst: false })
+            .order("created_at", { ascending: true });
         if (questError) throw questError;
 
         const suggestions = buildNotificationSuggestions({
             tasks: (tasks ?? []) as Task[],
             accessibility: (accessibility ?? []) as Accessibility[],
             calendarEvents: rows.map((row) => ({
-                id: row.google_event_id,
+                id: row.id ?? 0,
                 member: row.member,
                 email: row.email,
                 title: row.title,

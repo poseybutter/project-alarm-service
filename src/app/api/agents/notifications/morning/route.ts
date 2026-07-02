@@ -8,6 +8,10 @@ import {
 } from "@/lib/agents/notificationAgent";
 import { hasRecentNotificationDelivery } from "@/lib/agents/notificationDeliveries";
 import { sendGoogleChatMessage } from "@/lib/server/googleChat";
+import {
+    syncTodayGoogleCalendarEvents,
+    type GoogleCalendarConnection,
+} from "@/lib/server/googleCalendar";
 import type { AgentSuggestion, NotificationSuggestionPayload } from "@/lib/agents/types";
 import type { Accessibility, Task } from "@/lib/types";
 
@@ -61,8 +65,7 @@ function settingMinutes(value: string) {
 }
 
 function isDueNow(settingTime: string, now = new Date()) {
-    const diff = currentKstMinutes(now) - settingMinutes(settingTime);
-    return diff >= 0 && diff < 5;
+    return currentKstMinutes(now) >= settingMinutes(settingTime);
 }
 
 function isNotificationPayload(
@@ -75,10 +78,24 @@ async function buildFreshSuggestion(
     supabase: ReturnType<typeof createServiceSupabaseClient>,
     setting: NotificationSetting,
 ) {
+    const { data: calendarConnection, error: connectionError } = await supabase
+        .from("agent_calendar_connections")
+        .select("member, email, access_token, refresh_token, expires_at")
+        .eq("team_id", TEAM_ID)
+        .eq("email", setting.email)
+        .maybeSingle();
+    if (connectionError) throw connectionError;
+
+    const calendarEvents = calendarConnection
+        ? await syncTodayGoogleCalendarEvents(supabase, {
+              teamId: TEAM_ID,
+              connection: calendarConnection as GoogleCalendarConnection,
+          })
+        : [];
+
     const [
         { data: tasks, error: taskError },
         { data: accessibility, error: accError },
-        { data: calendarEvents, error: calendarError },
         { data: quests, error: questError },
     ] = await Promise.all([
         supabase
@@ -93,14 +110,6 @@ async function buildFreshSuggestion(
             .eq("member", setting.member)
             .order("end_date", { ascending: true }),
         supabase
-            .from("agent_calendar_events")
-            .select(
-                "id, member, email, title, starts_at, ends_at, all_day, location, html_link",
-            )
-            .eq("team_id", TEAM_ID)
-            .eq("email", setting.email)
-            .order("starts_at", { ascending: true }),
-        supabase
             .from("quests")
             .select("id, member, content, proj, end_date, task_id, status")
             .eq("team_id", TEAM_ID)
@@ -110,8 +119,8 @@ async function buildFreshSuggestion(
             .order("created_at", { ascending: true }),
     ]);
 
-    if (taskError || accError || calendarError || questError) {
-        throw taskError ?? accError ?? calendarError ?? questError;
+    if (taskError || accError || questError) {
+        throw taskError ?? accError ?? questError;
     }
 
     return buildNotificationSuggestions({
@@ -221,6 +230,7 @@ async function handleMorningBriefings(req: NextRequest) {
                     .eq("agent_type", "notification")
                     .eq("status", "pending")
                     .eq("payload->>recipientMember", setting.member)
+                    .like("dedupe_key", `notification:member:${setting.member}:${today}:%`)
                     .order("created_at", { ascending: false })
                     .limit(1);
             if (suggestionError) throw suggestionError;
