@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
@@ -43,6 +43,7 @@ const EMPTY_EDIT = {
     status: "",
     is_plan: false,
     is_starred: false,
+    show_on_team_calendar: true,
 };
 
 function WorkloadInput({
@@ -106,6 +107,12 @@ export default function TaskEditModal({
     const [editDateRange, setEditDateRange] = useState<DateRange | undefined>();
     const [showEditDatePicker, setShowEditDatePicker] = useState(false);
     const [editProjTab, setEditProjTab] = useState<"mine" | "all">("mine");
+    const [toast, setToast] = useState("");
+
+    function showToast(message: string) {
+        setToast(message);
+        window.setTimeout(() => setToast(""), 2600);
+    }
 
     useEffect(() => {
         if (!task) return;
@@ -120,6 +127,7 @@ export default function TaskEditModal({
             status: task.status || "대기",
             is_plan: task.is_plan ?? false,
             is_starred: task.is_starred ?? false,
+            show_on_team_calendar: true,
         });
         if (task.start_date || task.end_date) {
             setEditDateRange({
@@ -188,6 +196,21 @@ export default function TaskEditModal({
         setEditForm((f) => ({ ...f, is_plan: !f.is_plan }));
     }
 
+    function toggleTeamCalendar() {
+        if (
+            !editForm.show_on_team_calendar &&
+            !editDateRange?.from &&
+            !editDateRange?.to
+        ) {
+            showToast("팀 캘린더에 표시하려면 시작일이나 마감일을 먼저 선택해주세요");
+            return;
+        }
+        setEditForm((f) => ({
+            ...f,
+            show_on_team_calendar: !f.show_on_team_calendar,
+        }));
+    }
+
     function handleClose() {
         setEditForm(EMPTY_EDIT);
         setEditDateRange(undefined);
@@ -197,7 +220,14 @@ export default function TaskEditModal({
 
     async function saveEdit() {
         if (!task) return;
-        await supabase
+        if (
+            !editDateRange?.from &&
+            !editDateRange?.to
+        ) {
+            showToast("업무 캘린더 등록을 위해 기간 또는 마감일을 선택해주세요");
+            return;
+        }
+        const { error } = await supabase
             .from("tasks")
             .update({
                 type: editForm.type,
@@ -215,8 +245,24 @@ export default function TaskEditModal({
                 status: editForm.status,
                 is_plan: editForm.is_plan ?? false,
                 is_starred: editForm.is_starred ?? false,
+                show_on_team_calendar: true,
             })
             .eq("id", task.id);
+        if (error) {
+            alert("업무 수정에 실패했어요");
+            return;
+        }
+        try {
+            const res = await fetch(`/api/agents/team-calendar/tasks/${task.id}`, {
+                method: "POST",
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(json.message || "팀 캘린더 동기화 실패");
+            }
+        } catch (err) {
+            alert(err instanceof Error ? err.message : "팀 캘린더 동기화 실패");
+        }
         await Promise.resolve(onSaved());
         handleClose();
     }
@@ -230,7 +276,7 @@ export default function TaskEditModal({
             onClick={handleClose}
         >
             <div
-                className="bg-white rounded-t-2xl p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto"
+                className="max-h-[calc(100dvh-var(--nav-height,0px)-1rem)] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-5"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex justify-between items-center mb-5">
@@ -358,7 +404,7 @@ export default function TaskEditModal({
                                 이번주 리포트 포함
                             </p>
                             <p className="text-xs text-stone-400 mt-0.5">
-                                주간 리포트에 이 업무를 포함합니다
+                                주간 리포트에 이 업무를 포함합니다.
                             </p>
                         </div>
                         <button
@@ -376,10 +422,10 @@ export default function TaskEditModal({
                     <div className="flex items-center justify-between py-1">
                         <div>
                             <p className="text-sm font-medium text-stone-700">
-                                ⭐ 핵심 프로젝트
+                                중요 프로젝트
                             </p>
                             <p className="text-xs text-stone-400 mt-0.5">
-                                주간 브리핑·목록에서 강조 표시
+                                주간 브리핑 목록에서 강조 표시
                             </p>
                         </div>
                         <button
@@ -396,6 +442,27 @@ export default function TaskEditModal({
                             <span
                                 className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform
                         ${editForm.is_starred ? "translate-x-6" : "translate-x-1"}`}
+                            />
+                        </button>
+                    </div>
+                    <div className="hidden items-center justify-between py-1">
+                        <div>
+                            <p className="text-sm font-medium text-stone-700">
+                                팀 캘린더에 표시
+                            </p>
+                            <p className="text-xs text-stone-400 mt-0.5">
+                                저장된 팀 캘린더에 업무 일정을 등록합니다.
+                            </p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={toggleTeamCalendar}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+                      ${editForm.show_on_team_calendar ? "bg-blue-500" : "bg-stone-200"}`}
+                        >
+                            <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform
+                        ${editForm.show_on_team_calendar ? "translate-x-6" : "translate-x-1"}`}
                             />
                         </button>
                     </div>
@@ -561,7 +628,7 @@ export default function TaskEditModal({
                         </label>
                         <input
                             className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                            placeholder="예) 클라이언트 피드백 대기..."
+                            placeholder="예: 클라이언트 피드백 대기..."
                             value={editForm.issue}
                             onChange={(e) =>
                                 setEditForm({
@@ -579,6 +646,11 @@ export default function TaskEditModal({
                         저장하기
                     </button>
                 </div>
+                {toast && (
+                    <div className="fixed bottom-24 left-1/2 z-[260] -translate-x-1/2 rounded-full bg-stone-900 px-4 py-2 text-xs font-bold text-white shadow-lg">
+                        {toast}
+                    </div>
+                )}
             </div>
         </div>
     );

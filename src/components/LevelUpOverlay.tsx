@@ -77,7 +77,7 @@ export default function LevelUpOverlay({
                     <motion.div
                         role="dialog"
                         aria-modal="true"
-                        className="relative mx-auto w-full max-w-[min(22rem,calc(100vw-2rem))] cursor-pointer overflow-hidden rounded-3xl border-[3px] border-white shadow-[0_8px_0_rgb(180,83,9),0_16px_48px_rgba(251,191,36,0.45),0_0_0_1px_rgba(251,146,60,0.3)]"
+                        className="relative mx-auto max-h-[calc(100dvh-2rem)] w-full max-w-[min(22rem,calc(100vw-2rem))] cursor-pointer overflow-y-auto rounded-3xl border-[3px] border-white shadow-[0_8px_0_rgb(180,83,9),0_16px_48px_rgba(251,191,36,0.45),0_0_0_1px_rgba(251,146,60,0.3)]"
                         initial={{ scale: 0.82, opacity: 0, y: 24 }}
                         animate={{ scale: 1, opacity: 1, y: 0 }}
                         exit={{ scale: 0.92, opacity: 0, y: 12 }}

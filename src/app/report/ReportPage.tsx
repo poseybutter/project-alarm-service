@@ -2386,7 +2386,7 @@ export default function ReportPage() {
                         role="presentation"
                     >
                         <div
-                            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl"
+                            className="max-h-[calc(100dvh-var(--nav-height,0px)-1rem)] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl"
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="mb-4 flex items-center justify-between">

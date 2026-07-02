@@ -10,6 +10,7 @@ import {
     type QuestBriefingInput,
 } from "@/lib/agents/notificationAgent";
 import { sendGoogleChatMessage } from "@/lib/server/googleChat";
+import { syncTodayTeamCalendarEvents } from "@/lib/server/googleCalendar";
 import type {
     AgentSuggestion,
     NotificationSuggestionPayload,
@@ -26,6 +27,8 @@ async function buildFreshSuggestion(
     supabase: ReturnType<typeof createServiceSupabaseClient>,
     params: { member: string; email: string },
 ) {
+    await syncTodayTeamCalendarEvents(supabase, { teamId: TEAM_ID });
+
     const [
         { data: tasks, error: taskError },
         { data: accessibility, error: accError },

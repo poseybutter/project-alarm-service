@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -152,7 +152,7 @@ function QuestFormModal({
             onClick={onClose}
         >
             <div
-                className="bg-white rounded-t-2xl p-5 w-full max-w-2xl"
+                className="max-h-[calc(100dvh-83px)] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-5"
                 style={{ marginBottom: "67px" }}
                 onClick={(e) => e.stopPropagation()}
             >
@@ -178,7 +178,7 @@ function QuestFormModal({
                             onChange={(html) =>
                                 setQuestForm((f) => ({ ...f, content: html }))
                             }
-                            placeholder="예) 메인 슬라이드 퍼블리싱"
+                            placeholder="예: 메인 슬라이드 리브리핑"
                         />
                     </div>
                     <div>
@@ -279,7 +279,7 @@ function QuestFormModal({
                                                 }
                                                 className="flex-1 rounded-lg border border-stone-200 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
                                             >
-                                                초기화
+                                                珥덇린??
                                             </button>
                                             <button
                                                 type="button"
@@ -288,7 +288,7 @@ function QuestFormModal({
                                                 }
                                                 className="flex-1 rounded-lg bg-amber-500 py-2 text-xs font-bold text-white hover:bg-amber-600"
                                             >
-                                                적용
+                                                ?곸슜
                                             </button>
                                         </div>
                                     </div>
@@ -405,7 +405,7 @@ function HomeMyTaskRow({
             className={`px-4 py-3 ${showBorderBottom ? "border-b border-stone-100" : ""} ${t.priority === "긴급" ? "bg-amber-50" : ""}`}
         >
             <div className="flex gap-3">
-                {/* 왼쪽: 텍스트 정보 */}
+                {/* ?쇱そ: ?띿뒪???뺣낫 */}
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                         {t.is_starred && (
@@ -457,7 +457,7 @@ function HomeMyTaskRow({
                     </div>
                 </div>
 
-                {/* 오른쪽: 상태 select + 수정/삭제 버튼 */}
+                {/* ?ㅻⅨ履? ?곹깭 select + ?섏젙/??젣 踰꾪듉 */}
                 <div className="flex shrink-0 flex-col justify-between items-end gap-1.5">
                     <div
                         ref={statusWrapRef}
@@ -535,7 +535,7 @@ function HomeMyTaskRow({
     );
 }
 
-/** 세션 내 완료 퀘스트 (되돌리기 가능) */
+/** 이번 세션 완료 퀘스트(되돌리기 가능) */
 function CompletedQuestItem({
     quest: q,
     showBorderBottom,
@@ -723,7 +723,7 @@ function SortableQuestItem({
                     : ""
             }`}
         >
-            {/* 드래그 핸들 */}
+            {/* ?쒕옒洹??몃뱾 */}
             {showDragHandle && (
                 <button
                     type="button"
@@ -736,7 +736,7 @@ function SortableQuestItem({
                     ⠿
                 </button>
             )}
-            {/* 완료 버튼 / 아이콘 */}
+            {/* ?꾨즺 踰꾪듉 / ?꾩씠肄?*/}
             <button
                 onClick={(ev) => { if (!isCompleting) onComplete(q, ev); }}
                 disabled={isCompleting}
@@ -771,7 +771,7 @@ function SortableQuestItem({
                     </span>
                 )}
                 {!isCompleting && (
-                    <Tooltip label="수정">
+                                <Tooltip label="수정">
                         <button
                             onClick={() => onEdit(q)}
                             aria-label="수정"
@@ -851,7 +851,7 @@ export default function HomePage() {
                 const newIndex = prev.findIndex((item) => item.id === over.id);
                 if (oldIndex === -1 || newIndex === -1) return prev;
                 const reordered = arrayMove(prev, oldIndex, newIndex);
-                // quest 타입만 order_index 저장
+                // quest ??낅쭔 order_index ???
                 reordered.forEach((item, i) => {
                     if (item.type === "quest") {
                         void supabase
@@ -950,7 +950,7 @@ export default function HomePage() {
         if (member) {
             loadData();
 
-            // Realtime 구독
+            // Realtime 援щ룆
             const channel = supabase
                 .channel(`home-realtime-${channelIdRef.current}`)
                 .on(
@@ -989,7 +989,7 @@ export default function HomePage() {
         const today = new Date();
         if (today.getDay() !== 1) return;
 
-        // 이번 주 월요일에 이미 닫았으면 다시 띄우지 않음
+        // ?대쾲 二??붿슂?쇱뿉 ?대? ?レ븯?쇰㈃ ?ㅼ떆 ?꾩슦吏 ?딆쓬
         const thisMonday = getThisMonday(today);
         if (localStorage.getItem("mvp_popup_dismissed_week") === thisMonday)
             return;
@@ -1075,7 +1075,7 @@ export default function HomePage() {
         })();
     }, [member, authLoading]);
 
-    // myTasks/quests 변경 시 통합 목록 재구성 (드래그 중에는 allQuestItems만 변경되므로 deps 불변)
+    // myTasks/quests 蹂寃????듯빀 紐⑸줉 ?ш뎄??(?쒕옒洹?以묒뿉??allQuestItems留?蹂寃쎈릺誘濡?deps 遺덈?)
     useEffect(() => {
         const todayStr = toLocalYmd(new Date());
         const todayTasks = myTasks.filter((t) => {
@@ -1158,14 +1158,14 @@ export default function HomePage() {
         if (!player || !member || isAttending) return;
         const today = toLocalYmd(new Date());
         if (player.attend_last === today) {
-            showToastMsg("오늘은 이미 출석했어요!");
+            showToastMsg("오늘은 이미 출석했어요");
             return;
         }
         setIsAttending(true);
         try {
             const result = await rpcAttendanceCheck(member);
             if (!result.success) {
-                showToastMsg(result.message || "오류");
+                showToastMsg(result.message || "?ㅻ쪟");
                 return;
             }
             pushExpPopup(
@@ -1182,7 +1182,7 @@ export default function HomePage() {
                 });
             } else {
                 showToastMsg(
-                    `☀️ 출석 완료! +${result.exp} EXP · ${result.streak}일 연속`,
+                    `출석 완료! +${result.exp} EXP · ${result.streak}일 연속`,
                 );
             }
             await loadData();
@@ -1196,11 +1196,11 @@ export default function HomePage() {
         if (completingQuestIds.has(quest.id)) return;
         const { clientX, clientY } = e;
 
-        // 애니메이션 시작
+        // ?좊땲硫붿씠???쒖옉
         setCompletingQuestIds((prev) => new Set([...prev, quest.id]));
         await new Promise<void>((resolve) => setTimeout(resolve, 650));
 
-        // DB 업데이트 + EXP 지급 (서버 RPC 가 원자적으로)
+        // DB ?낅뜲?댄듃 + EXP 吏湲?(?쒕쾭 RPC 媛 ?먯옄?곸쑝濡?
         const result = await rpcSetQuestDone(quest.id, true, member).catch(
             () => null,
         );
@@ -1214,10 +1214,10 @@ export default function HomePage() {
                 levelName: result.newLv.name,
             });
         } else {
-            showToastMsg(`⚔️ 완료! +${result?.amount ?? 0} EXP`);
+            showToastMsg(`완료! +${result?.amount ?? 0} EXP`);
         }
 
-        // 애니메이션 종료 + 완료 목록 이동
+        // ?좊땲硫붿씠??醫낅즺 + ?꾨즺 紐⑸줉 ?대룞
         setCompletingQuestIds((prev) => {
             const next = new Set(prev);
             next.delete(quest.id);
@@ -1263,7 +1263,7 @@ export default function HomePage() {
     }
 
     async function undoQuest(quest: Quest) {
-        // 완료 취소 → 서버 RPC 가 상태 되돌림 + 점수 차감(-10).
+        // ?꾨즺 痍⑥냼 ???쒕쾭 RPC 媛 ?곹깭 ?섎룎由?+ ?먯닔 李④컧(-10).
         await rpcSetQuestDone(quest.id, false, member!).catch(() => null);
         setCompletedQuestsThisSession((prev) =>
             prev.filter((q) => q.id !== quest.id),
@@ -1328,7 +1328,7 @@ export default function HomePage() {
         task: Task,
         anchor?: { x: number; y: number },
     ) {
-        // 상태 변경 + 점수는 서버 RPC 가 원자적으로 처리.
+        // ?곹깭 蹂寃?+ ?먯닔???쒕쾭 RPC 媛 ?먯옄?곸쑝濡?泥섎━.
         const result = await rpcSetTaskStatus(id, status, task.member).catch(
             () => null,
         );
@@ -1353,6 +1353,15 @@ export default function HomePage() {
                 });
             }
         }
+        try {
+            await syncTaskToTeamCalendar(id);
+        } catch (err) {
+            showToastMsg(
+                err instanceof Error
+                    ? err.message
+                    : "팀 캘린더 동기화 실패",
+            );
+        }
         loadData();
     }
 
@@ -1360,8 +1369,41 @@ export default function HomePage() {
         setEditForm((f) => ({ ...f, is_plan: !f.is_plan }));
     }
 
+    async function syncTaskToTeamCalendar(taskId: number) {
+        const res = await fetch(`/api/agents/team-calendar/tasks/${taskId}`, {
+            method: "POST",
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(json.message || "팀 캘린더 동기화 실패");
+        }
+        return json;
+    }
+
+    async function deleteTaskFromTeamCalendar(taskId: number) {
+        const res = await fetch(`/api/agents/team-calendar/tasks/${taskId}`, {
+            method: "DELETE",
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(json.message || "팀 캘린더 일정 삭제 실패");
+        }
+        return json;
+    }
+
     async function deleteMyTask(id: number) {
         if (!confirm("삭제할까요?")) return;
+        try {
+            await deleteTaskFromTeamCalendar(id);
+        } catch (err) {
+            if (
+                !confirm(
+                    `${err instanceof Error ? err.message : "팀 캘린더 일정 삭제 실패"}\n그래도 업무를 삭제할까요?`,
+                )
+            ) {
+                return;
+            }
+        }
         await supabase.from("tasks").delete().eq("id", id);
         loadData();
     }
@@ -1398,6 +1440,10 @@ export default function HomePage() {
 
     async function saveEditTask() {
         if (!editTask) return;
+        if (!editDateRange?.from && !editDateRange?.to) {
+            alert("업무 캘린더 등록을 위해 기간 또는 마감일을 선택해주세요");
+            return;
+        }
         await supabase
             .from("tasks")
             .update({
@@ -1418,8 +1464,18 @@ export default function HomePage() {
                 status: editForm.status,
                 is_plan: editForm.is_plan ?? false,
                 is_starred: editForm.is_starred ?? false,
+                show_on_team_calendar: true,
             })
             .eq("id", editTask.id);
+        try {
+            await syncTaskToTeamCalendar(editTask.id);
+        } catch (err) {
+            alert(
+                err instanceof Error
+                    ? err.message
+                    : "팀 캘린더 동기화 실패",
+            );
+        }
         setShowEditTask(false);
         setEditTask(null);
         setEditForm({ ...EMPTY_EDIT_TASK });
@@ -1469,7 +1525,7 @@ export default function HomePage() {
 
     const activeMyTasks = myTasks.filter((t) => t.status !== "완료");
 
-    // 오늘의 퀘스트 진행 바
+    // ?ㅻ뒛???섏뒪??吏꾪뻾 諛?
     const completedCount = completedQuestsThisSession.length;
     const totalQuestCount = allQuestItems.length + completedCount;
     const progressPct =
@@ -1485,10 +1541,10 @@ export default function HomePage() {
                 onDragEnd={onQuestDragEnd}
             >
                 <div className="min-h-screen bg-[#f7f6f3]">
-                    <Header title="UD2팀 업무" />
+                    <Header title="UD2 업무" />
 
                     <div className="max-w-2xl mx-auto px-4 pt-3 pb-24">
-                        {/* 프로필 카드 */}
+                        {/* ?꾨줈??移대뱶 */}
                         <div className="bg-white rounded-2xl border border-stone-200 p-4 mb-3">
                             <div className="flex items-center gap-3 mb-3">
                                 {isGuest ? (
@@ -1523,21 +1579,21 @@ export default function HomePage() {
                     ${attended ? "bg-green-100 text-green-700" : "bg-amber-500 text-white"}`}
                                         >
                                             {attended
-                                                ? "✅ 출석완료"
+                                                ? "출석 완료"
                                                 : isAttending
-                                                  ? "⏳ 처리 중..."
-                                                  : "☀️ 출석 체크"}
+                                                  ? "처리 중..."
+                                                  : "출석 체크"}
                                         </button>
                                     )}
                                 </div>
                                 {!isGuest && (
                                     <div className="text-right text-xs text-stone-400">
                                         <div>
-                                            🔥 {player?.attend_streak || 0}일
+                                            {player?.attend_streak || 0}일
                                             연속
                                         </div>
                                         <div>
-                                            이달 {stats.exp.toLocaleString()}{" "}
+                                            이번달 {stats.exp.toLocaleString()}{" "}
                                             EXP
                                         </div>
                                     </div>
@@ -1587,8 +1643,7 @@ export default function HomePage() {
                             <>
                                 <div className="bg-white rounded-xl border border-stone-200 px-4 py-3 mb-3">
                                     <p className="text-sm text-stone-500">
-                                        게스트 계정으로 로그인되었어요. 업무
-                                        현황을 확인할 수 있어요.
+                                        게스트 계정으로 로그인되어 업무 현황을 확인할 수 있어요.
                                     </p>
                                 </div>
                                 <div className="mb-3">
@@ -1685,7 +1740,7 @@ export default function HomePage() {
                             </>
                         ) : (
                             <>
-                                {/* 스탯 */}
+                                {/* ?ㅽ꺈 */}
                                 <div className="grid grid-cols-3 gap-2 mb-3">
                                     {[
                                         {
@@ -1732,7 +1787,7 @@ export default function HomePage() {
                                     ))}
                                 </div>
 
-                                {/* 오늘의 퀘스트 */}
+                                {/* ?ㅻ뒛???섏뒪??*/}
                                 <div className="mb-3">
                                     <div className="mb-2 flex items-end justify-between">
                                         <div className="flex items-center gap-1.5">
@@ -1776,8 +1831,7 @@ export default function HomePage() {
                                                 오늘 퀘스트가 없어요
                                             </p>
                                             <p className="mt-1 text-xs text-stone-300">
-                                                + 추가 버튼으로 퀘스트를
-                                                만들어보세요!
+                                                + 추가 버튼으로 퀘스트를 만들어보세요!
                                             </p>
                                         </div>
                                     ) : (
@@ -1991,7 +2045,7 @@ export default function HomePage() {
                             }}
                         >
                             <div
-                                className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-5"
+                                className="max-h-[calc(100dvh-var(--nav-height,0px)-1rem)] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-5"
                                 onClick={(e) => e.stopPropagation()}
                             >
                                 <div className="mb-5 flex items-center justify-between">
@@ -2160,10 +2214,10 @@ export default function HomePage() {
                                     <div className="flex items-center justify-between py-1">
                                         <div>
                                             <p className="text-sm font-medium text-stone-700">
-                                                ⭐ 핵심 프로젝트
+                                                중요 프로젝트
                                             </p>
                                             <p className="mt-0.5 text-xs text-stone-400">
-                                                주간 브리핑·목록에서 강조 표시
+                                                주간 브리핑 목록에서 강조 표시
                                             </p>
                                         </div>
                                         <button
@@ -2367,7 +2421,7 @@ export default function HomePage() {
                                         </label>
                                         <input
                                             className="w-full rounded-lg border border-stone-200 px-3 py-2.5 text-sm"
-                                            placeholder="예) 클라이언트 피드백 대기..."
+                                            placeholder="예: 클라이언트 피드백 대기..."
                                             value={editForm.issue}
                                             onChange={(e) =>
                                                 setEditForm({
@@ -2425,7 +2479,7 @@ export default function HomePage() {
                         />
                     ))}
 
-                    {/* 토스트 */}
+                    {/* ?좎뒪??*/}
                     {toast && (
                         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-stone-800 text-white text-sm px-5 py-2.5 rounded-full shadow-lg z-50 whitespace-nowrap">
                             {toast}

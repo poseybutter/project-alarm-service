@@ -6,6 +6,7 @@ import {
 } from "@/lib/serverSupabase";
 import {
     syncTodayGoogleCalendarEvents,
+    syncTodayTeamCalendarEvents,
     type GoogleCalendarConnection,
 } from "@/lib/server/googleCalendar";
 import {
@@ -45,6 +46,9 @@ export async function POST() {
             teamId: TEAM_ID,
             connection,
         });
+        const teamRows = await syncTodayTeamCalendarEvents(serviceSupabase, {
+            teamId: TEAM_ID,
+        });
 
         const { data: tasks, error: taskError } = await serviceSupabase
             .from("tasks")
@@ -74,7 +78,7 @@ export async function POST() {
         const suggestions = buildNotificationSuggestions({
             tasks: (tasks ?? []) as Task[],
             accessibility: (accessibility ?? []) as Accessibility[],
-            calendarEvents: rows.map((row) => ({
+            calendarEvents: [...rows, ...teamRows].map((row) => ({
                 id: row.id ?? 0,
                 member: row.member,
                 email: row.email,
@@ -94,8 +98,10 @@ export async function POST() {
         );
 
         return NextResponse.json({
-            events: rows,
-            count: rows.length,
+            events: [...rows, ...teamRows],
+            count: rows.length + teamRows.length,
+            personalCount: rows.length,
+            teamCount: teamRows.length,
             suggestions: createdSuggestions,
             suggestionCount: createdSuggestions.length,
         });

@@ -11,6 +11,7 @@ import {
 } from "@/lib/agents/notificationAgent";
 import {
     syncTodayGoogleCalendarEvents,
+    syncTodayTeamCalendarEvents,
     type GoogleCalendarConnection,
 } from "@/lib/server/googleCalendar";
 import type { Accessibility, Task } from "@/lib/types";
@@ -46,12 +47,16 @@ export async function POST() {
                 .maybeSingle();
         if (connectionError) throw connectionError;
 
-        const calendarEvents = calendarConnection
+        const personalCalendarEvents = calendarConnection
             ? await syncTodayGoogleCalendarEvents(serviceSupabase, {
                   teamId: TEAM_ID,
                   connection: calendarConnection as GoogleCalendarConnection,
               })
             : [];
+        const teamCalendarEvents = await syncTodayTeamCalendarEvents(
+            serviceSupabase,
+            { teamId: TEAM_ID },
+        );
 
         const [
             { data: tasks, error: taskError },
@@ -86,7 +91,10 @@ export async function POST() {
         const suggestions = buildNotificationSuggestions({
             tasks: (tasks ?? []) as Task[],
             accessibility: (accessibility ?? []) as Accessibility[],
-            calendarEvents: (calendarEvents ?? []) as CalendarEventInput[],
+            calendarEvents: [
+                ...(personalCalendarEvents ?? []),
+                ...(teamCalendarEvents ?? []),
+            ] as CalendarEventInput[],
             quests: (quests ?? []) as QuestBriefingInput[],
             createdBy: user.email,
         });

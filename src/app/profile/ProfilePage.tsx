@@ -179,6 +179,23 @@ export default function ProfilePage() {
 
     async function deleteHistoryTask(id: number) {
         if (!confirm("정말 삭제하시겠어요?")) return;
+        try {
+            const res = await fetch(`/api/agents/team-calendar/tasks/${id}`, {
+                method: "DELETE",
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(json.message || "팀 캘린더 일정 삭제 실패");
+            }
+        } catch (err) {
+            if (
+                !confirm(
+                    `${err instanceof Error ? err.message : "팀 캘린더 일정 삭제 실패"}\n그래도 업무를 삭제할까요?`,
+                )
+            ) {
+                return;
+            }
+        }
         const { error } = await supabase.from("tasks").delete().eq("id", id);
         if (error) {
             showToastMsg("삭제 실패: " + error.message);
@@ -426,7 +443,7 @@ export default function ProfilePage() {
                                 onClick={() => setShowAvatarMenu(false)}
                             >
                                 <div
-                                    className="bg-white rounded-t-2xl w-full max-w-2xl overflow-hidden mb-[67px]"
+                                    className="mb-[67px] max-h-[calc(100dvh-83px)] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white"
                                     onClick={(e) => e.stopPropagation()}
                                 >
                                     <button
