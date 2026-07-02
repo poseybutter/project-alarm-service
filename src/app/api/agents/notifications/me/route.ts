@@ -9,6 +9,10 @@ import {
     type CalendarEventInput,
     type QuestBriefingInput,
 } from "@/lib/agents/notificationAgent";
+import {
+    syncTodayGoogleCalendarEvents,
+    type GoogleCalendarConnection,
+} from "@/lib/server/googleCalendar";
 import type { Accessibility, Task } from "@/lib/types";
 
 export async function POST() {
@@ -33,10 +37,25 @@ export async function POST() {
             );
         }
 
+        const { data: calendarConnection, error: connectionError } =
+            await serviceSupabase
+                .from("agent_calendar_connections")
+                .select("member, email, access_token, refresh_token, expires_at")
+                .eq("team_id", TEAM_ID)
+                .eq("email", user.email)
+                .maybeSingle();
+        if (connectionError) throw connectionError;
+
+        const calendarEvents = calendarConnection
+            ? await syncTodayGoogleCalendarEvents(serviceSupabase, {
+                  teamId: TEAM_ID,
+                  connection: calendarConnection as GoogleCalendarConnection,
+              })
+            : [];
+
         const [
             { data: tasks, error: taskError },
             { data: accessibility, error: accError },
-            { data: calendarEvents, error: calendarError },
             { data: quests, error: questError },
         ] = await Promise.all([
             serviceSupabase
@@ -51,14 +70,6 @@ export async function POST() {
                 .eq("member", player.name)
                 .order("end_date", { ascending: true }),
             serviceSupabase
-                .from("agent_calendar_events")
-                .select(
-                    "id, member, email, title, starts_at, ends_at, all_day, location, html_link",
-                )
-                .eq("team_id", TEAM_ID)
-                .eq("email", user.email)
-                .order("starts_at", { ascending: true }),
-            serviceSupabase
                 .from("quests")
                 .select("id, member, content, proj, end_date, task_id, status")
                 .eq("team_id", TEAM_ID)
@@ -68,8 +79,8 @@ export async function POST() {
                 .order("created_at", { ascending: true }),
         ]);
 
-        if (taskError || accError || calendarError || questError) {
-            throw taskError ?? accError ?? calendarError ?? questError;
+        if (taskError || accError || questError) {
+            throw taskError ?? accError ?? questError;
         }
 
         const suggestions = buildNotificationSuggestions({

@@ -20,6 +20,26 @@ export type GoogleCalendarEvent = {
     htmlLink?: string;
 };
 
+export type GoogleCalendarConnection = {
+    member: string;
+    email: string;
+    access_token: string | null;
+    refresh_token: string | null;
+    expires_at: string | null;
+};
+
+export type SyncedGoogleCalendarEvent = {
+    id?: number;
+    member: string;
+    email: string;
+    title: string;
+    starts_at: string | null;
+    ends_at: string | null;
+    all_day: boolean;
+    location: string | null;
+    html_link: string | null;
+};
+
 export function getGoogleCalendarConfig() {
     const clientId = process.env.GOOGLE_CALENDAR_CLIENT_ID || "";
     const clientSecret = process.env.GOOGLE_CALENDAR_CLIENT_SECRET || "";
@@ -122,4 +142,116 @@ export async function fetchTodayGoogleCalendarEvents(accessToken: string) {
         throw new Error(json.error?.message || "Failed to fetch calendar events");
     }
     return (json.items ?? []) as GoogleCalendarEvent[];
+}
+
+function eventDateTime(value: { date?: string; dateTime?: string } | undefined) {
+    if (!value) return { at: null, allDay: false };
+    if (value.dateTime) return { at: value.dateTime, allDay: false };
+    if (value.date) return { at: `${value.date}T00:00:00+09:00`, allDay: true };
+    return { at: null, allDay: false };
+}
+
+export async function syncTodayGoogleCalendarEvents(
+    supabase: {
+        from: (table: string) => {
+            update: (values: Record<string, unknown>) => {
+                eq: (column: string, value: unknown) => {
+                    eq: (column: string, value: unknown) => PromiseLike<{ error: { message: string } | null }>;
+                };
+            };
+            delete: () => {
+                eq: (column: string, value: unknown) => {
+                    eq: (column: string, value: unknown) => {
+                        eq: (column: string, value: unknown) => {
+                            gte: (column: string, value: unknown) => {
+                                lt: (column: string, value: unknown) => PromiseLike<{ error: { message: string } | null }>;
+                            };
+                        };
+                    };
+                };
+            };
+            upsert: (
+                values: Record<string, unknown>[],
+                options: { onConflict: string },
+            ) => {
+                select: (columns: string) => PromiseLike<{
+                    data: SyncedGoogleCalendarEvent[] | null;
+                    error: { message: string } | null;
+                }>;
+            };
+        };
+    },
+    params: {
+        teamId: string;
+        connection: GoogleCalendarConnection;
+    },
+) {
+    const { teamId, connection } = params;
+    let accessToken = connection.access_token;
+    const expiresAt = connection.expires_at
+        ? new Date(connection.expires_at).getTime()
+        : 0;
+
+    if (!accessToken || expiresAt < Date.now() + 60_000) {
+        if (!connection.refresh_token) {
+            throw new Error("Calendar refresh token is missing");
+        }
+        const refreshed = await refreshGoogleCalendarToken(connection.refresh_token);
+        accessToken = refreshed.access_token;
+        const { error } = await supabase
+            .from("agent_calendar_connections")
+            .update({
+                access_token: refreshed.access_token,
+                expires_at: new Date(
+                    Date.now() + refreshed.expires_in * 1000,
+                ).toISOString(),
+                updated_at: new Date().toISOString(),
+            })
+            .eq("team_id", teamId)
+            .eq("email", connection.email);
+        if (error) throw new Error(error.message);
+    }
+
+    const events = await fetchTodayGoogleCalendarEvents(accessToken);
+    const rows = events.map((event) => {
+        const start = eventDateTime(event.start);
+        const end = eventDateTime(event.end);
+        return {
+            team_id: teamId,
+            member: connection.member,
+            email: connection.email,
+            google_event_id: event.id,
+            calendar_id: "primary",
+            title: event.summary || "(제목 없음)",
+            starts_at: start.at,
+            ends_at: end.at,
+            all_day: start.allDay,
+            location: event.location ?? null,
+            html_link: event.htmlLink ?? null,
+            synced_at: new Date().toISOString(),
+        };
+    });
+
+    const { timeMin, timeMax } = todayKstWindow();
+    const { error: deleteError } = await supabase
+        .from("agent_calendar_events")
+        .delete()
+        .eq("team_id", teamId)
+        .eq("email", connection.email)
+        .eq("calendar_id", "primary")
+        .gte("starts_at", timeMin)
+        .lt("starts_at", timeMax);
+    if (deleteError) throw new Error(deleteError.message);
+
+    if (rows.length === 0) return [];
+
+    const { data, error } = await supabase
+        .from("agent_calendar_events")
+        .upsert(rows, {
+            onConflict: "team_id,email,calendar_id,google_event_id",
+        })
+        .select("id, member, email, title, starts_at, ends_at, all_day, location, html_link");
+    if (error) throw new Error(error.message);
+
+    return data ?? [];
 }
