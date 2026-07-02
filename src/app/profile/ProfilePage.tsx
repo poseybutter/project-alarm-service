@@ -14,6 +14,7 @@ import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import Tooltip from "@/components/Tooltip";
 import UserMenu from "@/components/UserMenu";
+import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import Avatar from "@/components/Avatar";
 import TaskEditModal from "@/components/TaskEditModal";
@@ -344,6 +345,7 @@ export default function ProfilePage() {
                             내 프로필
                         </h1>
                         <div className="flex items-center gap-2">
+                            <AgentButton />
                             <NotificationButton />
                             <UserMenu />
                         </div>
