@@ -14,6 +14,11 @@ export type Task = {
     is_plan?: boolean | null;
     is_starred?: boolean | null;
     is_excluded_today?: boolean | null;
+    show_on_team_calendar?: boolean | null;
+    team_calendar_event_id?: string | null;
+    team_calendar_id?: string | null;
+    team_calendar_synced_at?: string | null;
+    team_calendar_sync_error?: string | null;
     created_at: string;
 };
 

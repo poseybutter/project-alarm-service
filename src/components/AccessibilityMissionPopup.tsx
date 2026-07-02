@@ -319,7 +319,7 @@ export default function AccessibilityMissionPopup() {
                 className="fixed inset-0 z-[110] flex items-end justify-center bg-black/40 px-4 sm:items-center"
             >
                 <div
-                    className="w-full max-w-md rounded-t-2xl bg-white p-5 shadow-xl sm:rounded-2xl"
+                    className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl sm:rounded-2xl"
                     onClick={(e) => e.stopPropagation()}
                 >
                     <div className="mb-4 flex items-start justify-between gap-3">

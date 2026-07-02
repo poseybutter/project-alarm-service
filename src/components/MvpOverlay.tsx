@@ -60,7 +60,7 @@ export default function MvpOverlay({
                     <motion.div
                         role="dialog"
                         aria-modal="true"
-                        className="mx-auto w-full max-w-sm cursor-pointer overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-2xl"
+                        className="mx-auto max-h-[calc(100dvh-2rem)] w-full max-w-sm cursor-pointer overflow-y-auto rounded-2xl border border-stone-200 bg-white shadow-2xl"
                         initial={{ scale: 0.88, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
                         exit={{ scale: 0.92, opacity: 0 }}

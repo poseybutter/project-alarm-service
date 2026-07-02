@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -69,6 +69,7 @@ const EMPTY_FORM = {
     issue: "",
     is_plan: false,
     is_starred: false,
+    show_on_team_calendar: true,
 };
 
 function WorkloadInput({
@@ -308,30 +309,94 @@ export default function TasksPage() {
         setForm((f) => ({ ...f, is_plan: !f.is_plan }));
     }
 
+    function toggleTeamCalendar() {
+        if (
+            !form.show_on_team_calendar &&
+            !formDateRange?.from &&
+            !formDateRange?.to
+        ) {
+            showToastMsg("팀 캘린더에 표시하려면 시작일이나 마감일을 먼저 선택해주세요");
+            return;
+        }
+        setForm((f) => ({
+            ...f,
+            show_on_team_calendar: !f.show_on_team_calendar,
+        }));
+    }
+
+    async function syncTaskToTeamCalendar(taskId: number) {
+        const res = await fetch(`/api/agents/team-calendar/tasks/${taskId}`, {
+            method: "POST",
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(json.message || "팀 캘린더 동기화 실패");
+        }
+        return json;
+    }
+
+    async function deleteTaskFromTeamCalendar(taskId: number) {
+        const res = await fetch(`/api/agents/team-calendar/tasks/${taskId}`, {
+            method: "DELETE",
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            throw new Error(json.message || "팀 캘린더 일정 삭제 실패");
+        }
+        return json;
+    }
+
     async function addTask() {
         if (!form.member || !form.proj)
             return alert("담당자와 프로젝트명은 필수예요");
-        await supabase.from("tasks").insert([
-            {
-                member: form.member,
-                type: form.type,
-                proj: form.proj,
-                content: form.content,
-                priority: form.priority || null,
-                start_date: formDateRange?.from
-                    ? toLocalYmd(formDateRange.from)
-                    : null,
-                end_date: formDateRange?.to
-                    ? toLocalYmd(formDateRange.to)
-                    : null,
-                workload: form.workload || 0,
-                issue: form.issue || null,
-                status: "대기",
-                is_plan: form.is_plan ?? false,
-                is_starred: form.is_starred ?? false,
-                team_id: TEAM_ID,
-            },
-        ]);
+        if (
+            !formDateRange?.from &&
+            !formDateRange?.to
+        ) {
+            showToastMsg("업무 캘린더 등록을 위해 기간 또는 마감일을 선택해주세요");
+            return;
+        }
+        const { data, error } = await supabase
+            .from("tasks")
+            .insert([
+                {
+                    member: form.member,
+                    type: form.type,
+                    proj: form.proj,
+                    content: form.content,
+                    priority: form.priority || null,
+                    start_date: formDateRange?.from
+                        ? toLocalYmd(formDateRange.from)
+                        : null,
+                    end_date: formDateRange?.to
+                        ? toLocalYmd(formDateRange.to)
+                        : null,
+                    workload: form.workload || 0,
+                    issue: form.issue || null,
+                    status: "대기",
+                    is_plan: form.is_plan ?? false,
+                    is_starred: form.is_starred ?? false,
+                    show_on_team_calendar: true,
+                    team_id: TEAM_ID,
+                },
+            ])
+            .select("id")
+            .single();
+        if (error) {
+            showToastMsg("업무 등록에 실패했어요");
+            return;
+        }
+        if (data?.id) {
+            try {
+                await syncTaskToTeamCalendar(data.id);
+            } catch (err) {
+                showToastMsg(
+                    err instanceof Error
+                        ? err.message
+                        : "팀 캘린더 동기화 실패",
+                );
+            }
+        }
         setShowModal(false);
         setForm({ ...EMPTY_FORM });
         setFormDateRange(undefined);
@@ -349,8 +414,8 @@ export default function TasksPage() {
         task: Task,
         anchor?: { x: number; y: number },
     ) {
-        // 상태 변경 + 점수는 서버 RPC 가 원자적으로 처리(완료/긴급/정시 판정 모두 서버측).
-        // 권한 없으면 RPC 가 throw → 토스트.
+        // ?곹깭 蹂寃?+ ?먯닔???쒕쾭 RPC 媛 ?먯옄?곸쑝濡?泥섎━(?꾨즺/湲닿툒/?뺤떆 ?먯젙 紐⑤몢 ?쒕쾭痢?.
+        // 沅뚰븳 ?놁쑝硫?RPC 媛 throw ???좎뒪??
         const result = await rpcSetTaskStatus(id, status, task.member).catch(
             () => null,
         );
@@ -358,7 +423,7 @@ export default function TasksPage() {
             showToastMsg("권한이 없어 상태를 변경할 수 없어요");
             return;
         }
-        // 완료 "진입"(sign>0)일 때만 EXP 팝업/레벨업 연출.
+        // ?꾨즺 "吏꾩엯"(sign>0)???뚮쭔 EXP ?앹뾽/?덈꺼???곗텧.
         if (result.scored && result.sign > 0) {
             if (anchor) {
                 pushExpPopup(
@@ -376,11 +441,31 @@ export default function TasksPage() {
                 });
             }
         }
+        try {
+            await syncTaskToTeamCalendar(id);
+        } catch (err) {
+            showToastMsg(
+                err instanceof Error
+                    ? err.message
+                    : "팀 캘린더 동기화 실패",
+            );
+        }
         loadTasks();
     }
 
     async function deleteTask(id: number) {
         if (!confirm("삭제할까요?")) return;
+        try {
+            await deleteTaskFromTeamCalendar(id);
+        } catch (err) {
+            if (
+                !confirm(
+                    `${err instanceof Error ? err.message : "팀 캘린더 일정 삭제 실패"}\n그래도 업무를 삭제할까요?`,
+                )
+            ) {
+                return;
+            }
+        }
         const { data, error } = await supabase
             .from("tasks")
             .delete()
@@ -426,7 +511,7 @@ export default function TasksPage() {
     return (
         <AuthGuard>
             <div className="min-h-screen bg-[#f7f6f3]">
-                {/* 헤더 */}
+                {/* ?ㅻ뜑 */}
                 <div className="bg-white border-b border-stone-200 px-4 py-3 sticky top-0 z-10">
                     <div className="max-w-2xl mx-auto flex justify-between items-center">
                         <div>
@@ -434,7 +519,7 @@ export default function TasksPage() {
                                 업무 관리
                             </h1>
                             <p className="text-xs text-stone-400 mt-0.5">
-                                미완료 업무를 관리하고 리포트 포함 여부를 조정합니다
+                                미완료 업무를 관리하고 리포트 포함 여부를 조정합니다.
                             </p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -454,7 +539,7 @@ export default function TasksPage() {
                                     + 업무
                                 </button>
                             )}
-                            {/* 알림 + 유저메뉴는 Header 컴포넌트 없이 직접 */}
+                            {/* ?뚮┝ + ?좎?硫붾돱??Header 而댄룷?뚰듃 ?놁씠 吏곸젒 */}
                             <AgentButton />
                             <NotificationButton />
                             <UserMenu />
@@ -463,7 +548,7 @@ export default function TasksPage() {
                 </div>
 
                 <div className="max-w-2xl mx-auto pb-24">
-                    {/* 필터 */}
+                    {/* ?꾪꽣 */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 px-4 py-3">
                         <div className="min-w-0">
                             <Select
@@ -548,7 +633,7 @@ export default function TasksPage() {
                         </div>
                     </div>
 
-                    {/* 업무 목록 */}
+                    {/* ?낅Т 紐⑸줉 */}
                     {loading ? (
                         <PageSpinner />
                     ) : filtered.length === 0 ? (
@@ -597,9 +682,9 @@ export default function TasksPage() {
                                                             {t.is_starred && (
                                                                 <span
                                                                     className="text-xs"
-                                                                    title="핵심 프로젝트"
+                                                                    title="중요 프로젝트"
                                                                 >
-                                                                    ⭐
+                                                                    ★
                                                                 </span>
                                                             )}
                                                             {t.type && (
@@ -636,7 +721,7 @@ export default function TasksPage() {
                                                                 이슈: {t.issue}
                                                             </div>
                                                         )}
-                                                        {/* 기간 + 공수 */}
+                                                        {/* 湲곌컙 + 怨듭닔 */}
                                                         <div className="flex items-center gap-2 text-xs text-stone-400">
                                                             {t.is_plan && (
                                                                 <span className="text-[10px] px-1.5 py-0.5 bg-violet-100 text-violet-600 rounded font-bold shrink-0">
@@ -733,14 +818,14 @@ export default function TasksPage() {
                                                             t.member,
                                                         ) && (
                                                             <div className="flex items-center gap-2">
-                                                                <Tooltip label="수정">
+                                                                <Tooltip label="?섏젙">
                                                                     <button
                                                                         onClick={() =>
                                                                             openEdit(
                                                                                 t,
                                                                             )
                                                                         }
-                                                                        aria-label="수정"
+                                                                        aria-label="?섏젙"
                                                                         className="text-base text-stone-300 hover:text-amber-500 transition-colors"
                                                                     >
                                                                         <i
@@ -749,14 +834,14 @@ export default function TasksPage() {
                                                                         />
                                                                     </button>
                                                                 </Tooltip>
-                                                                <Tooltip label="삭제">
+                                                                <Tooltip label="??젣">
                                                                     <button
                                                                         onClick={() =>
                                                                             deleteTask(
                                                                                 t.id,
                                                                             )
                                                                         }
-                                                                        aria-label="삭제"
+                                                                        aria-label="??젣"
                                                                         className="text-base text-stone-300 hover:text-red-400 transition-colors"
                                                                     >
                                                                         <i
@@ -790,7 +875,7 @@ export default function TasksPage() {
                         }}
                     >
                         <div
-                            className="bg-white rounded-t-2xl p-5 w-full max-w-2xl max-h-[85vh] overflow-y-auto"
+                            className="max-h-[calc(100dvh-var(--nav-height,0px)-1rem)] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-5"
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="flex justify-between items-center mb-5">
@@ -808,7 +893,7 @@ export default function TasksPage() {
                                 </button>
                             </div>
                             <div className="space-y-4">
-                                {/* 담당자 */}
+                                {/* ?대떦??*/}
                                 <div>
                                     <label className="text-xs font-medium text-stone-500 block mb-2">
                                         담당자{" "}
@@ -926,7 +1011,7 @@ export default function TasksPage() {
                                             이번주 리포트 포함
                                         </p>
                                         <p className="text-xs text-stone-400 mt-0.5">
-                                            주간 리포트에 이 업무를 포함합니다
+                                            주간 리포트에 이 업무를 포함합니다.
                                         </p>
                                     </div>
                                     <button
@@ -941,13 +1026,13 @@ export default function TasksPage() {
                                         />
                                     </button>
                                 </div>
-                                <div className="flex items-center justify-between py-1">
-                                    <div>
-                                        <p className="text-sm font-medium text-stone-700">
-                                            ⭐ 핵심 프로젝트
+                                 <div className="flex items-center justify-between py-1">
+                                     <div>
+                                         <p className="text-sm font-medium text-stone-700">
+                                             중요 프로젝트
                                         </p>
                                         <p className="text-xs text-stone-400 mt-0.5">
-                                            주간 브리핑·목록에서 강조 표시
+                                            주간 브리핑 목록에서 강조 표시
                                         </p>
                                     </div>
                                     <button
@@ -964,11 +1049,32 @@ export default function TasksPage() {
                                         <span
                                             className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform
                         ${form.is_starred ? "translate-x-6" : "translate-x-1"}`}
+                                         />
+                                     </button>
+                                 </div>
+                                <div className="hidden items-center justify-between py-1">
+                                    <div>
+                                        <p className="text-sm font-medium text-stone-700">
+                                            팀 캘린더에 표시
+                                        </p>
+                                        <p className="text-xs text-stone-400 mt-0.5">
+                                            저장된 팀 캘린더에 업무 일정을 등록합니다.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={toggleTeamCalendar}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+                      ${form.show_on_team_calendar ? "bg-blue-500" : "bg-stone-200"}`}
+                                    >
+                                        <span
+                                            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform
+                        ${form.show_on_team_calendar ? "translate-x-6" : "translate-x-1"}`}
                                         />
                                     </button>
                                 </div>
-                                {/* 프로젝트 */}
-                                <div>
+                                 {/* 프로젝트 */}
+                                 <div>
                                     <label className="text-xs font-medium text-stone-500 block mb-1.5">
                                         프로젝트{" "}
                                         <span className="text-red-500">*</span>
@@ -1040,7 +1146,7 @@ export default function TasksPage() {
                                     </label>
                                     <textarea
                                         className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm h-20 resize-none"
-                                        placeholder="예) 메인 슬라이드 퍼블리싱"
+                                        placeholder="예: 메인 슬라이드 리브리핑"
                                         value={form.content}
                                         onChange={(e) =>
                                             setForm({
@@ -1050,14 +1156,14 @@ export default function TasksPage() {
                                         }
                                     />
                                 </div>
-                                {/* 공수 */}
+                                {/* 怨듭닔 */}
                                 <WorkloadInput
                                     value={form.workload}
                                     onChange={(v) =>
                                         setForm({ ...form, workload: v })
                                     }
                                 />
-                                {/* 기간 — 추가 모달 (오버레이 + absolute 패널) */}
+                                {/* 기간 선택 모달 */}
                                 <div className="relative z-20">
                                     <label className="text-xs font-medium text-stone-500 block mb-1.5">
                                         기간
@@ -1152,7 +1258,7 @@ export default function TasksPage() {
                                     </label>
                                     <input
                                         className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                                        placeholder="예) 클라이언트 피드백 대기..."
+                                        placeholder="예: 클라이언트 피드백 대기..."
                                         value={form.issue}
                                         onChange={(e) =>
                                             setForm({
@@ -1197,7 +1303,7 @@ export default function TasksPage() {
                 ))}
             </div>
 
-            {/* 토스트 */}
+            {/* ?좎뒪??*/}
             {toast && (
                 <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-stone-800 text-white text-sm px-5 py-2.5 rounded-full shadow-lg z-50 whitespace-nowrap">
                     {toast}
