@@ -254,110 +254,138 @@ async function handleMorningBriefings(req: NextRequest) {
             .filter((setting) => setting.morning_enabled);
 
         for (const setting of targets) {
-            if (!forceSend && !isDueNow(setting.morning_send_time)) {
-                skipped.push({ member: setting.member, reason: "not_due" });
-                continue;
-            }
-
-            const dedupeKey = `morning-briefing:${setting.email}:${today}`;
-            if (!forceSend &&
-                await hasRecentNotificationDelivery(supabase, {
-                    teamId: TEAM_ID,
-                    dedupeKey,
-                    cooldownHours: 24,
-                })
-            ) {
-                skipped.push({ member: setting.member, reason: "already_sent" });
-                continue;
-            }
-
-            const { data: webhookRow, error: webhookError } = await supabase
-                .from("agent_member_webhooks")
-                .select("webhook_url")
-                .eq("team_id", TEAM_ID)
-                .eq("email", setting.email)
-                .maybeSingle();
-            if (webhookError) throw webhookError;
-            if (!webhookRow?.webhook_url) {
-                skipped.push({ member: setting.member, reason: "missing_webhook" });
-                continue;
-            }
-
-            const { data: existingSuggestions, error: suggestionError } =
-                await supabase
-                    .from("agent_suggestions")
-                    .select("*")
-                    .eq("team_id", TEAM_ID)
-                    .eq("agent_type", "notification")
-                    .eq("status", "pending")
-                    .eq("payload->>recipientMember", setting.member)
-                    .like("dedupe_key", `notification:member:${setting.member}:${today}:%`)
-                    .order("created_at", { ascending: false })
-                    .limit(1);
-            if (suggestionError) throw suggestionError;
-
-            let suggestion = (existingSuggestions?.[0] ?? null) as AgentSuggestion | null;
-            if (!suggestion) {
-                const fresh = await buildFreshSuggestion(supabase, setting);
-                if (!fresh) {
-                    skipped.push({ member: setting.member, reason: "empty_briefing" });
+            try {
+                if (!forceSend && !isDueNow(setting.morning_send_time)) {
+                    skipped.push({ member: setting.member, reason: "not_due" });
                     continue;
                 }
-                const { data: created, error: createError } = await supabase
-                    .from("agent_suggestions")
-                    .upsert(
-                        {
-                            ...fresh,
-                            status: "pending",
-                        },
-                        { onConflict: "team_id,dedupe_key" },
-                    )
-                    .select("*")
+
+                const dedupeKey = `morning-briefing:${setting.email}:${today}`;
+                if (
+                    !forceSend &&
+                    (await hasRecentNotificationDelivery(supabase, {
+                        teamId: TEAM_ID,
+                        dedupeKey,
+                        cooldownHours: 24,
+                    }))
+                ) {
+                    skipped.push({
+                        member: setting.member,
+                        reason: "already_sent",
+                    });
+                    continue;
+                }
+
+                const { data: webhookRow, error: webhookError } = await supabase
+                    .from("agent_member_webhooks")
+                    .select("webhook_url")
+                    .eq("team_id", TEAM_ID)
+                    .eq("email", setting.email)
                     .maybeSingle();
-                if (createError) throw createError;
-                suggestion = created as AgentSuggestion;
-            }
+                if (webhookError) throw webhookError;
+                if (!webhookRow?.webhook_url) {
+                    skipped.push({
+                        member: setting.member,
+                        reason: "missing_webhook",
+                    });
+                    continue;
+                }
 
-            if (!isNotificationPayload(suggestion.payload)) {
-                skipped.push({ member: setting.member, reason: "invalid_payload" });
-                continue;
-            }
+                const { data: existingSuggestions, error: suggestionError } =
+                    await supabase
+                        .from("agent_suggestions")
+                        .select("*")
+                        .eq("team_id", TEAM_ID)
+                        .eq("agent_type", "notification")
+                        .eq("status", "pending")
+                        .eq("payload->>recipientMember", setting.member)
+                        .like(
+                            "dedupe_key",
+                            `notification:member:${setting.member}:${today}:%`,
+                        )
+                        .order("created_at", { ascending: false })
+                        .limit(1);
+                if (suggestionError) throw suggestionError;
 
-            await sendGoogleChatMessage({
-                text: suggestion.payload.text,
-                card: suggestion.payload.card,
-                channel: "personal_dm",
-                recipientMember: setting.member,
-                webhookUrl: webhookRow.webhook_url,
-            });
+                let suggestion = (existingSuggestions?.[0] ??
+                    null) as AgentSuggestion | null;
+                if (!suggestion) {
+                    const fresh = await buildFreshSuggestion(supabase, setting);
+                    if (!fresh) {
+                        skipped.push({
+                            member: setting.member,
+                            reason: "empty_briefing",
+                        });
+                        continue;
+                    }
+                    const { data: created, error: createError } = await supabase
+                        .from("agent_suggestions")
+                        .upsert(
+                            {
+                                ...fresh,
+                                status: "pending",
+                            },
+                            { onConflict: "team_id,dedupe_key" },
+                        )
+                        .select("*")
+                        .maybeSingle();
+                    if (createError) throw createError;
+                    suggestion = created as AgentSuggestion;
+                }
 
-            const { error: deliveryError } = await supabase
-                .from("agent_notification_deliveries")
-                .insert({
-                    team_id: TEAM_ID,
-                    suggestion_id: suggestion.id,
-                    agent_type: "notification",
-                    target_table: suggestion.target_table,
-                    target_id: suggestion.target_id,
-                    dedupe_key: dedupeKey,
+                if (!isNotificationPayload(suggestion.payload)) {
+                    skipped.push({
+                        member: setting.member,
+                        reason: "invalid_payload",
+                    });
+                    continue;
+                }
+
+                await sendGoogleChatMessage({
+                    text: suggestion.payload.text,
+                    card: suggestion.payload.card,
                     channel: "personal_dm",
-                    recipient_member: setting.member,
-                    payload: suggestion.payload,
-                    sent_by: "morning-briefing-cron",
+                    recipientMember: setting.member,
+                    webhookUrl: webhookRow.webhook_url,
                 });
-            if (deliveryError) throw deliveryError;
 
-            await supabase
-                .from("agent_suggestions")
-                .update({
-                    status: "applied",
-                    reviewed_by: "morning-briefing-cron",
-                    reviewed_at: new Date().toISOString(),
-                })
-                .eq("team_id", TEAM_ID)
-                .eq("id", suggestion.id);
+                const { error: deliveryError } = await supabase
+                    .from("agent_notification_deliveries")
+                    .insert({
+                        team_id: TEAM_ID,
+                        suggestion_id: suggestion.id,
+                        agent_type: "notification",
+                        target_table: suggestion.target_table,
+                        target_id: suggestion.target_id,
+                        dedupe_key: dedupeKey,
+                        channel: "personal_dm",
+                        recipient_member: setting.member,
+                        payload: suggestion.payload,
+                        sent_by: "morning-briefing-cron",
+                    });
+                if (deliveryError) throw deliveryError;
 
-            sent.push({ member: setting.member, title: suggestion.title });
+                const { error: suggestionUpdateError } = await supabase
+                    .from("agent_suggestions")
+                    .update({
+                        status: "applied",
+                        reviewed_by: "morning-briefing-cron",
+                        reviewed_at: new Date().toISOString(),
+                    })
+                    .eq("team_id", TEAM_ID)
+                    .eq("id", suggestion.id);
+                if (suggestionUpdateError) throw suggestionUpdateError;
+
+                sent.push({ member: setting.member, title: suggestion.title });
+            } catch (err) {
+                skipped.push({
+                    member: setting.member,
+                    reason:
+                        err instanceof Error
+                            ? `error:${err.message}`
+                            : "error:unknown",
+                });
+            }
         }
 
         return NextResponse.json({ sent, skipped });
