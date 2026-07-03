@@ -2,7 +2,47 @@
   "crons": [
     {
       "path": "/api/agents/notifications/morning",
-      "schedule": "30 23 * * *"
+      "schedule": "0 23 * * 0-4"
+    },
+    {
+      "path": "/api/agents/notifications/morning",
+      "schedule": "0 0 * * 1-5"
+    },
+    {
+      "path": "/api/agents/notifications/morning",
+      "schedule": "0 1 * * 1-5"
+    },
+    {
+      "path": "/api/agents/notifications/morning",
+      "schedule": "0 2 * * 1-5"
+    },
+    {
+      "path": "/api/agents/notifications/morning",
+      "schedule": "0 3 * * 1-5"
+    },
+    {
+      "path": "/api/agents/notifications/morning",
+      "schedule": "0 4 * * 1-5"
+    },
+    {
+      "path": "/api/agents/notifications/morning",
+      "schedule": "0 5 * * 1-5"
+    },
+    {
+      "path": "/api/agents/notifications/morning",
+      "schedule": "0 6 * * 1-5"
+    },
+    {
+      "path": "/api/agents/notifications/morning",
+      "schedule": "0 7 * * 1-5"
+    },
+    {
+      "path": "/api/agents/notifications/morning",
+      "schedule": "0 8 * * 1-5"
+    },
+    {
+      "path": "/api/agents/notifications/morning",
+      "schedule": "0 9 * * 1-5"
     }
   ]
 }
