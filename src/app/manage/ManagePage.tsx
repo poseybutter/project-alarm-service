@@ -62,6 +62,49 @@ const ACC_OPTIONS = ACC_INSPECTION_OPTIONS.map((s) => ({
     label: s,
 }));
 
+function accMissionSnoozeKeys(
+    row: Accessibility,
+    status: string,
+    kind: "apply" | "missing_schedule" | "result" | "renewal",
+) {
+    return [
+        `${row.id}:${status}:${kind}`,
+        `${row.id}:${status}:${row.end_date ?? ""}:${kind}`,
+    ];
+}
+
+function formatAccStatusUpdatedAt(value?: string | null) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat("ko-KR", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+    }).format(date);
+}
+
+function accStatusAuditPayload(
+    row: Accessibility | null,
+    nextStatus: string,
+    actor: string | null | undefined,
+) {
+    const previousStatus = row?.inspection_status ?? null;
+    if (previousStatus === nextStatus) return {};
+    return {
+        previous_inspection_status: previousStatus,
+        status_updated_at: new Date().toISOString(),
+        status_updated_by: actor ?? null,
+    };
+}
+
+function notifyAccessibilityChanged() {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(new CustomEvent("accessibility:changed"));
+}
+
 function AccInspectionBadgeSelect({
     status,
     disabled,
@@ -441,6 +484,11 @@ export default function ManagePage() {
         if (isGuest) return;
 
         if (editAcc) {
+            const canChangeStatus = await prepareAccStatusTransition(
+                editAcc,
+                accForm.inspection_status,
+            );
+            if (!canChangeStatus) return;
             const { error } = await supabase
                 .from("accessibility")
                 .update({
@@ -448,9 +496,15 @@ export default function ManagePage() {
                     start_date: accForm.start_date || null,
                     end_date: accForm.end_date || null,
                     inspection_status: accForm.inspection_status,
+                    ...accStatusAuditPayload(
+                        editAcc,
+                        accForm.inspection_status,
+                        member,
+                    ),
                     note: accForm.note || null,
                     is_new: accForm.is_new,
                 })
+                .eq("team_id", TEAM_ID)
                 .eq("id", editAcc.id);
             if (error) {
                 showToastMsg("저장 실패: " + error.message);
@@ -467,6 +521,9 @@ export default function ManagePage() {
                     end_date: accForm.end_date || null,
                     note: accForm.note || null,
                     inspection_status: accForm.inspection_status || "신청필요",
+                    previous_inspection_status: null,
+                    status_updated_at: new Date().toISOString(),
+                    status_updated_by: member ?? null,
                     is_new: accForm.is_new,
                     team_id: TEAM_ID,
                 },
@@ -478,6 +535,81 @@ export default function ManagePage() {
         }
         closeAccModal();
         await loadData();
+        notifyAccessibilityChanged();
+    }
+
+    async function prepareAccStatusTransition(
+        row: Accessibility,
+        nextStatus: string,
+    ) {
+        if (row.inspection_status === nextStatus) return true;
+        if (nextStatus === "신청필요") {
+            const res = await fetch("/api/accessibility-mission-snoozes", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    accessibilityId: row.id,
+                    keys: [
+                        ...accMissionSnoozeKeys(row, "신청필요", "apply"),
+                        ...accMissionSnoozeKeys(
+                            row,
+                            "신청필요",
+                            "missing_schedule",
+                        ),
+                    ],
+                }),
+            });
+            if (!res.ok) {
+                const json = await res.json().catch(() => ({}));
+                showToastMsg(
+                    json.message || "접근성 미션 다시 알림 해제에 실패했어요",
+                );
+                return false;
+            }
+        }
+        if (nextStatus === "취득·갱신완료") {
+            const res = await fetch("/api/accessibility-mission-snoozes", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    accessibilityId: row.id,
+                    keys: accMissionSnoozeKeys(
+                        row,
+                        "취득·갱신완료",
+                        "renewal",
+                    ),
+                }),
+            });
+            if (!res.ok) {
+                const json = await res.json().catch(() => ({}));
+                showToastMsg(
+                    json.message || "접근성 미션 다시 알림 해제에 실패했어요",
+                );
+                return false;
+            }
+        }
+        if (nextStatus === "신청완료") {
+            const snoozedUntil = new Date(
+                Date.now() + 14 * 24 * 60 * 60 * 1000,
+            ).toISOString();
+            const res = await fetch("/api/accessibility-mission-snoozes", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    accessibilityId: row.id,
+                    keys: [`${row.id}:신청완료:result`],
+                    snoozedUntil,
+                }),
+            });
+            if (!res.ok) {
+                const json = await res.json().catch(() => ({}));
+                showToastMsg(
+                    json.message || "접근성 미션 다시 알림 저장에 실패했어요",
+                );
+                return false;
+            }
+        }
+        return true;
     }
 
     async function updateAccStatus(id: number, status: string) {
@@ -485,11 +617,22 @@ export default function ManagePage() {
         if (!row) return;
         const can = !isGuest;
         if (!can) return;
-        await supabase
+        const canChangeStatus = await prepareAccStatusTransition(row, status);
+        if (!canChangeStatus) return;
+        const { error } = await supabase
             .from("accessibility")
-            .update({ inspection_status: status })
+            .update({
+                inspection_status: status,
+                ...accStatusAuditPayload(row, status, member),
+            })
+            .eq("team_id", TEAM_ID)
             .eq("id", id);
+        if (error) {
+            showToastMsg(error.message || "상태 변경에 실패했어요");
+            return;
+        }
         await loadData();
+        notifyAccessibilityChanged();
     }
 
     async function deleteAcc(id: number) {
@@ -500,6 +643,7 @@ export default function ManagePage() {
         if (!confirm("삭제할까요?")) return;
         await supabase.from("accessibility").delete().eq("id", id);
         await loadData();
+        notifyAccessibilityChanged();
     }
 
     async function toggleArchive(id: number, current: boolean) {
@@ -1146,6 +1290,25 @@ export default function ManagePage() {
                                     />
                                 </div>
                             </div>
+                            <div className="mb-3 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-stone-600">
+                                <p className="font-bold text-stone-800">
+                                    접근성 미션 알림 기준
+                                </p>
+                                <ul className="mt-2 list-disc space-y-1 pl-5">
+                                    <li>
+                                        취득·갱신완료 상태에서 만료 D-45가 되면 신청필요로 바꾸라고 안내합니다.
+                                    </li>
+                                    <li>
+                                        신청필요 상태가 되면 신청을 진행했는지 확인하고, 신청완료로 변경하라고 안내합니다.
+                                    </li>
+                                    <li>
+                                        신청완료로 변경한 뒤 14일 후 취득·갱신완료 처리와 만료일 업데이트를 안내합니다.
+                                    </li>
+                                    <li className="text-stone-500">
+                                        7일 뒤 다시 알림은 선택한 접근성 항목에만 적용됩니다.
+                                    </li>
+                                </ul>
+                            </div>
                             <div className="mb-3 flex items-center justify-between">
                                 <span className="text-xs text-stone-400">
                                     총 {filteredAcc.length}개
@@ -1203,12 +1366,19 @@ export default function ManagePage() {
                                             diff > 14 &&
                                             diff <= 45 &&
                                             a.inspection_status === "신청필요";
+                                        const isSkipped =
+                                            a.inspection_status ===
+                                            "신청불필요";
+                                        const isDueWithin45 =
+                                            diff !== null &&
+                                            diff <= 45 &&
+                                            !isSkipped;
                                         const canRow = canEditRowAcc();
                                         return (
                                             <div
                                                 key={a.id}
                                                 className={`flex items-center justify-between px-4 py-3
-                      ${isUrgent ? "bg-red-50" : isWarning ? "bg-amber-50" : ""}
+                      ${isSkipped ? "bg-stone-50 opacity-70" : isUrgent ? "bg-red-50" : isWarning ? "bg-amber-50" : ""}
                       ${i < filteredAcc.length - 1 ? "border-b border-stone-100" : ""}`}
                                             >
                                                 <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -1231,10 +1401,8 @@ export default function ManagePage() {
                                                             {a.end_date && (
                                                                 <span
                                                                     className={
-                                                                        isUrgent
-                                                                            ? "text-red-500 font-medium"
-                                                                            : isWarning
-                                                                              ? "text-amber-600 font-medium"
+                                                                        isDueWithin45
+                                                                            ? "text-red-500 font-bold"
                                                                               : "text-stone-400"
                                                                     }
                                                                 >
@@ -1253,6 +1421,17 @@ export default function ManagePage() {
                                                                     · {a.note}
                                                                 </span>
                                                             )}
+                                                        </div>
+                                                        <div className="mt-1 flex items-center gap-1.5 text-[11px] text-stone-400">
+                                                            <i
+                                                                className="ri-history-line text-xs"
+                                                                aria-hidden
+                                                            />
+                                                            <span className="min-w-0 truncate">
+                                                                {a.status_updated_at
+                                                                    ? `상태 변경: ${a.previous_inspection_status ? `${a.previous_inspection_status} → ` : ""}${a.inspection_status} · ${formatAccStatusUpdatedAt(a.status_updated_at)}${a.status_updated_by ? ` · ${a.status_updated_by}` : ""}`
+                                                                    : `상태 기록 없음 · 현재 ${a.inspection_status}`}
+                                                            </span>
                                                         </div>
                                                     </div>
                                                 </div>

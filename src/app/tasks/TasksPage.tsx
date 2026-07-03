@@ -24,6 +24,7 @@ import ExpPopup, { type ExpPopupType } from "@/components/ExpPopup";
 import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import TaskEditModal from "@/components/TaskEditModal";
+import TaskContentInputs from "@/components/TaskContentInputs";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { PageSpinner } from "@/components/Spinner";
 import { DayPicker, DateRange } from "react-day-picker";
@@ -1139,23 +1140,13 @@ export default function TasksPage() {
                                         }
                                     />
                                 </div>
-                                {/* 업무 내용 */}
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        업무 내용
-                                    </label>
-                                    <textarea
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm h-20 resize-none"
-                                        placeholder="예: 메인 슬라이드 리브리핑"
-                                        value={form.content}
-                                        onChange={(e) =>
-                                            setForm({
-                                                ...form,
-                                                content: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
+                                <TaskContentInputs
+                                    value={form.content}
+                                    onChange={(content) =>
+                                        setForm({ ...form, content })
+                                    }
+                                    placeholder="예: 메인 슬라이드 리브리핑"
+                                />
                                 {/* 怨듭닔 */}
                                 <WorkloadInput
                                     value={form.workload}
@@ -1250,23 +1241,6 @@ export default function TasksPage() {
                                             </div>,
                                             document.body,
                                         )}
-                                </div>
-                                {/* 이슈/비고 */}
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        이슈 / 비고
-                                    </label>
-                                    <input
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                                        placeholder="예: 클라이언트 피드백 대기..."
-                                        value={form.issue}
-                                        onChange={(e) =>
-                                            setForm({
-                                                ...form,
-                                                issue: e.target.value,
-                                            })
-                                        }
-                                    />
                                 </div>
                                 <button
                                     onClick={addTask}

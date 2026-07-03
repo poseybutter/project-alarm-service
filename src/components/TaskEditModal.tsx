@@ -16,6 +16,7 @@ import {
     modalFormSelectStyles,
 } from "@/lib/reactSelectStyles";
 import { toLocalYmd } from "@/lib/toLocalYmd";
+import TaskContentInputs from "@/components/TaskContentInputs";
 
 function periodButtonLabel(range: DateRange | undefined): {
     text: string;
@@ -525,21 +526,15 @@ export default function TaskEditModal({
                             noOptionsMessage={() => "검색 결과가 없어요"}
                         />
                     </div>
-                    <div>
-                        <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                            업무 내용
-                        </label>
-                        <textarea
-                            className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm h-20 resize-none"
-                            value={editForm.content}
-                            onChange={(e) =>
-                                setEditForm({
-                                    ...editForm,
-                                    content: e.target.value,
-                                })
-                            }
-                        />
-                    </div>
+                    <TaskContentInputs
+                        value={editForm.content}
+                        onChange={(content) =>
+                            setEditForm({
+                                ...editForm,
+                                content,
+                            })
+                        }
+                    />
                     <WorkloadInput
                         value={editForm.workload}
                         onChange={(v) =>
@@ -621,22 +616,6 @@ export default function TaskEditModal({
                                 </div>,
                                 document.body,
                             )}
-                    </div>
-                    <div>
-                        <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                            이슈 / 비고 (선택)
-                        </label>
-                        <input
-                            className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                            placeholder="예: 클라이언트 피드백 대기..."
-                            value={editForm.issue}
-                            onChange={(e) =>
-                                setEditForm({
-                                    ...editForm,
-                                    issue: e.target.value,
-                                })
-                            }
-                        />
                     </div>
                     <button
                         type="button"
