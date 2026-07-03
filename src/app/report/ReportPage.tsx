@@ -422,6 +422,21 @@ function contentToCardHtml(t: Task): string {
     // 계획 항목(미완료)만 기간 접두 — 구 브리핑 형식과 동일
     const datePrefix =
         t.is_plan && t.status !== "완료" ? planDatePrefix(t) : "";
+    const taskLines = (t.content || "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const formattedLines = taskLines.map((line, index) => {
+        const prefix = index === 0 ? datePrefix : "";
+        return `⇒ ${prefix}${briefingEscapedToHtmlWithBold(escapeHtml(line))}`;
+    });
+
+    if (formattedLines.length > 0) {
+        return `<p>${formattedLines.join("<br>")}</p>`;
+    }
+    if (datePrefix) {
+        return `<p>⇒ ${datePrefix.trim()}</p>`;
+    }
     const lines = (t.content || "").split("\n");
     const out: string[] = [];
     let firstDone = false;

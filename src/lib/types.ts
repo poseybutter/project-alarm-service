@@ -63,6 +63,9 @@ export type Accessibility = {
     start_date: string | null;
     end_date: string | null;
     inspection_status: string;
+    previous_inspection_status?: string | null;
+    status_updated_at?: string | null;
+    status_updated_by?: string | null;
     note: string | null;
     is_new?: boolean | null;
 };
