@@ -2,11 +2,7 @@
   "crons": [
     {
       "path": "/api/agents/notifications/morning",
-      "schedule": "*/5 23 * * 0-4"
-    },
-    {
-      "path": "/api/agents/notifications/morning",
-      "schedule": "*/5 0-9 * * 1-5"
+      "schedule": "30 23 * * 0-4"
     }
   ]
 }
