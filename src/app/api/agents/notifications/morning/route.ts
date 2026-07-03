@@ -29,6 +29,7 @@ type PlayerNotificationTarget = {
 };
 
 const DEFAULT_MORNING_SEND_TIME = "08:30:00";
+const PUBLIC_HOLIDAYS_API_BASE_URL = "https://date.nager.at/api/v3/PublicHolidays";
 
 function isAuthorized(req: NextRequest) {
     const secret = process.env.CRON_SECRET;
@@ -44,6 +45,39 @@ function todayKstYmd(now = new Date()) {
         month: "2-digit",
         day: "2-digit",
     }).format(now);
+}
+
+function kstDateInfo(now = new Date()) {
+    const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const year = kstNow.getUTCFullYear();
+    const month = String(kstNow.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(kstNow.getUTCDate()).padStart(2, "0");
+    return {
+        year,
+        ymd: `${year}-${month}-${day}`,
+        weekday: kstNow.getUTCDay(),
+    };
+}
+
+async function getKoreanBusinessDayStatus(now = new Date()) {
+    const { year, ymd, weekday } = kstDateInfo(now);
+    if (weekday === 0 || weekday === 6) {
+        return { businessDay: false, reason: "weekend" };
+    }
+
+    const res = await fetch(`${PUBLIC_HOLIDAYS_API_BASE_URL}/${year}/KR`, {
+        next: { revalidate: 24 * 60 * 60 },
+    });
+    if (!res.ok) {
+        return { businessDay: false, reason: "holiday_check_failed" };
+    }
+
+    const holidays = (await res.json()) as Array<{ date?: string }>;
+    const isHoliday = holidays.some((holiday) => holiday.date === ymd);
+    return {
+        businessDay: !isHoliday,
+        reason: isHoliday ? "public_holiday" : null,
+    };
 }
 
 function currentKstMinutes(now = new Date()) {
@@ -67,6 +101,10 @@ function settingMinutes(value: string) {
 
 function isDueNow(settingTime: string, now = new Date()) {
     return currentKstMinutes(now) >= settingMinutes(settingTime);
+}
+
+function isForceSend(req: NextRequest) {
+    return req.nextUrl.searchParams.get("force") === "1";
 }
 
 function isNotificationPayload(
@@ -177,8 +215,24 @@ async function handleMorningBriefings(req: NextRequest) {
 
     try {
         const today = todayKstYmd();
+        const forceSend = isForceSend(req);
         const sent: Array<{ member: string; title: string }> = [];
         const skipped: Array<{ member: string; reason: string }> = [];
+        if (!forceSend) {
+            const businessDay = await getKoreanBusinessDayStatus();
+            if (!businessDay.businessDay) {
+                return NextResponse.json({
+                    sent,
+                    skipped: [
+                        {
+                            member: "all",
+                            reason: businessDay.reason ?? "not_business_day",
+                        },
+                    ],
+                });
+            }
+        }
+
         const settingsByEmail = new Map(
             ((settings ?? []) as NotificationSetting[]).map((setting) => [
                 setting.email,
@@ -200,13 +254,13 @@ async function handleMorningBriefings(req: NextRequest) {
             .filter((setting) => setting.morning_enabled);
 
         for (const setting of targets) {
-            if (!isDueNow(setting.morning_send_time)) {
+            if (!forceSend && !isDueNow(setting.morning_send_time)) {
                 skipped.push({ member: setting.member, reason: "not_due" });
                 continue;
             }
 
             const dedupeKey = `morning-briefing:${setting.email}:${today}`;
-            if (
+            if (!forceSend &&
                 await hasRecentNotificationDelivery(supabase, {
                     teamId: TEAM_ID,
                     dedupeKey,

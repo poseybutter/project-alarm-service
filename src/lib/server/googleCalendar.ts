@@ -1,3 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_EVENTS_URL =
@@ -438,7 +440,7 @@ function isAppTaskCalendarEvent(event: GoogleCalendarEvent) {
 }
 
 export async function syncTodayTeamCalendarEvents(
-    supabase: any,
+    supabase: SupabaseClient,
     params: {
         teamId: string;
     },
