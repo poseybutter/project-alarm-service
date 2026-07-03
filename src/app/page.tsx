@@ -70,6 +70,7 @@ import {
 } from "@/lib/reactSelectStyles";
 import { toLocalYmd, getThisMonday } from "@/lib/toLocalYmd";
 import TiptapQuestContentEditor from "@/components/TiptapQuestContentEditor";
+import TaskContentInputs from "@/components/TaskContentInputs";
 
 function QuestCardContent({
     content,
@@ -2193,10 +2194,10 @@ export default function HomePage() {
                                     <div className="flex items-center justify-between py-1">
                                         <div>
                                             <p className="text-sm font-medium text-stone-700">
-                                                작업 계획
+                                                이번주 리포트 포함
                                             </p>
                                             <p className="mt-0.5 text-xs text-stone-400">
-                                                예정 업무로 등록해요
+                                                주간 리포트에 이 업무를 포함합니다.
                                             </p>
                                         </div>
                                         <button
@@ -2301,21 +2302,15 @@ export default function HomePage() {
                                             }
                                         />
                                     </div>
-                                    <div>
-                                        <label className="mb-1.5 block text-xs font-medium text-stone-500">
-                                            업무 내용
-                                        </label>
-                                        <textarea
-                                            className="h-20 w-full resize-none rounded-lg border border-stone-200 px-3 py-2.5 text-sm"
-                                            value={editForm.content}
-                                            onChange={(e) =>
-                                                setEditForm({
-                                                    ...editForm,
-                                                    content: e.target.value,
-                                                })
-                                            }
-                                        />
-                                    </div>
+                                    <TaskContentInputs
+                                        value={editForm.content}
+                                        onChange={(content) =>
+                                            setEditForm({
+                                                ...editForm,
+                                                content,
+                                            })
+                                        }
+                                    />
                                     <HomeWorkloadInput
                                         value={editForm.workload}
                                         onChange={(v) =>
@@ -2414,22 +2409,6 @@ export default function HomePage() {
                                                 </div>,
                                                 document.body,
                                             )}
-                                    </div>
-                                    <div>
-                                        <label className="mb-1.5 block text-xs font-medium text-stone-500">
-                                            이슈 / 비고 (선택)
-                                        </label>
-                                        <input
-                                            className="w-full rounded-lg border border-stone-200 px-3 py-2.5 text-sm"
-                                            placeholder="예: 클라이언트 피드백 대기..."
-                                            value={editForm.issue}
-                                            onChange={(e) =>
-                                                setEditForm({
-                                                    ...editForm,
-                                                    issue: e.target.value,
-                                                })
-                                            }
-                                        />
                                     </div>
                                     <button
                                         type="button"

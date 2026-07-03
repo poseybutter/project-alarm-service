@@ -10,10 +10,12 @@ import { getDiff } from "@/lib/utils";
 import type { Accessibility } from "@/lib/types";
 
 const ACTIVE_PATHS = new Set(["/", "/home", "/tasks", "/report", "/manage", "/profile"]);
-const SNOOZE_STORAGE_KEY = "accessibility-mission-snoozes";
 const SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
-const POST_APPLY_SNOOZE_MS = 14 * 24 * 60 * 60 * 1000;
-const POST_RENEWAL_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
+
+type MissionSnoozeRow = {
+    snooze_key: string;
+    snoozed_until: string;
+};
 
 type AccInspectionStatus =
     | "신청필요"
@@ -72,21 +74,19 @@ function buildAccMissionPrompt(row: Accessibility): AccMissionPrompt | null {
                 diff <= 0
                     ? "만료일이 지났어요. 이미 신청했다면 상태를 신청완료로 바꿔두고 다음 액션을 놓치지 않게 해요."
                     : "만료일이 가까워지고 있어요. 신청을 마쳤다면 상태를 신청완료로 바꿔두면 브리핑도 더 정확해져요.",
-            actionLabel: "신청완료로 변경",
+            actionLabel: "신청 상태 확인하기",
         };
     }
 
     if (row.inspection_status === "신청완료") {
-        if (diff === null || diff > 14) return null;
-
         return {
             row,
             kind: "result",
             nextStatus: "취득·갱신완료",
-            badge: dueText,
+            badge: diff === null ? "신청 후 결과 확인" : dueText,
             title: "심사 결과가 나왔나요?",
             body: "합격 또는 갱신 완료가 확인됐다면 상태를 취득·갱신완료로 바꾸고, 취득/갱신 기준일과 다음 만료일도 함께 업데이트해주세요.",
-            actionLabel: "상태/만료일 업데이트",
+            actionLabel: "결과 확인하기",
         };
     }
 
@@ -99,31 +99,12 @@ function buildAccMissionPrompt(row: Accessibility): AccMissionPrompt | null {
             nextStatus: "신청필요",
             badge: dueText,
             title: "갱신 준비를 시작할까요?",
-            body: "아직 인증 상태는 유효하지만 만료일이 가까워지고 있어요. 갱신 신청을 준비해야 한다면 상태를 신청필요로 전환해 관리 흐름을 시작하세요.",
-            actionLabel: "신청필요로 전환",
+            body: "아직 인증 상태는 유효하지만 만료일이 가까워지고 있어요. 갱신 신청이 필요하다면 관리 페이지에서 상태와 만료일을 확인해주세요.",
+            actionLabel: "갱신 상태 확인하기",
         };
     }
 
     return null;
-}
-
-function readSnoozes() {
-    if (typeof window === "undefined") return {};
-    try {
-        const raw = window.localStorage.getItem(SNOOZE_STORAGE_KEY);
-        if (!raw) return {};
-        const parsed = JSON.parse(raw);
-        return parsed && typeof parsed === "object"
-            ? (parsed as Record<string, number>)
-            : {};
-    } catch {
-        return {};
-    }
-}
-
-function writeSnoozes(value: Record<string, number>) {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(SNOOZE_STORAGE_KEY, JSON.stringify(value));
 }
 
 function missionKey(
@@ -131,21 +112,25 @@ function missionKey(
     status: string,
     kind: AccMissionPrompt["kind"],
 ) {
-    return `${row.id}:${status}:${row.end_date ?? ""}:${kind}`;
+    return `${row.id}:${status}:${kind}`;
 }
 
-function notifyAccessibilityChanged() {
-    if (typeof window === "undefined") return;
-    window.dispatchEvent(new CustomEvent("accessibility:changed"));
+function legacyMissionKey(
+    row: Accessibility,
+    status: string,
+    kind: AccMissionPrompt["kind"],
+) {
+    return `${row.id}:${status}:${row.end_date ?? ""}:${kind}`;
 }
 
 export default function AccessibilityMissionPopup() {
     const pathname = usePathname();
     const router = useRouter();
-    const { member, role, loading } = useAuth();
+    const { user, member, role, loading } = useAuth();
     const [items, setItems] = useState<Accessibility[]>([]);
     const [snoozedUntilByKey, setSnoozedUntilByKey] =
-        useState<Record<string, number>>(readSnoozes);
+        useState<Record<string, number>>({});
+    const [snoozesLoaded, setSnoozesLoaded] = useState(false);
     const [closedState, setClosedState] = useState<{
         pathname: string;
         keys: string[];
@@ -156,6 +141,7 @@ export default function AccessibilityMissionPopup() {
 
     const isActivePath = ACTIVE_PATHS.has(pathname);
     const isGuest = member === "GUEST" || role === "guest";
+    const userEmail = user?.email ?? "";
 
     const showToast = useCallback((message: string) => {
         setToast(message);
@@ -182,17 +168,70 @@ export default function AccessibilityMissionPopup() {
         setItems((data ?? []) as Accessibility[]);
     }, [isActivePath, isGuest, member]);
 
+    const loadSnoozes = useCallback(async () => {
+        if (!userEmail || !member || isGuest || !isActivePath) {
+            setSnoozedUntilByKey({});
+            setSnoozesLoaded(true);
+            return;
+        }
+
+        setSnoozesLoaded(false);
+        const { data, error } = await supabase
+            .from("agent_accessibility_mission_snoozes")
+            .select("snooze_key, snoozed_until")
+            .eq("team_id", TEAM_ID)
+            .eq("email", userEmail)
+            .gt("snoozed_until", new Date().toISOString());
+
+        if (error) {
+            console.warn("접근성 미션 다시 알림 조회 실패:", error.message);
+            setSnoozedUntilByKey({});
+            setSnoozesLoaded(false);
+            return;
+        }
+
+        setSnoozedUntilByKey(
+            Object.fromEntries(
+                ((data ?? []) as MissionSnoozeRow[]).map((row) => [
+                    row.snooze_key,
+                    new Date(row.snoozed_until).getTime(),
+                ]),
+            ),
+        );
+        setSnoozesLoaded(true);
+    }, [isActivePath, isGuest, member, userEmail]);
+
     useEffect(() => {
         if (loading) return;
         const timer = window.setTimeout(() => {
             setCurrentTime(Date.now());
             void loadItems();
+            void loadSnoozes();
         }, 0);
         return () => window.clearTimeout(timer);
-    }, [loadItems, loading]);
+    }, [loadItems, loadSnoozes, loading]);
+
+    useEffect(() => {
+        function handleAccessibilityChanged() {
+            setCurrentTime(Date.now());
+            setClosedState({ pathname: "", keys: [] });
+            void loadItems();
+            void loadSnoozes();
+        }
+
+        window.addEventListener(
+            "accessibility:changed",
+            handleAccessibilityChanged,
+        );
+        return () =>
+            window.removeEventListener(
+                "accessibility:changed",
+                handleAccessibilityChanged,
+            );
+    }, [loadItems, loadSnoozes]);
 
     const prompt = useMemo(() => {
-        if (loading || !isActivePath || isGuest) return null;
+        if (loading || !snoozesLoaded || !isActivePath || isGuest) return null;
 
         const closedKeys =
             closedState.pathname === pathname ? closedState.keys : [];
@@ -206,8 +245,14 @@ export default function AccessibilityMissionPopup() {
                         item.row.inspection_status,
                         item.kind,
                     );
+                    const oldKey = legacyMissionKey(
+                        item.row,
+                        item.row.inspection_status,
+                        item.kind,
+                    );
                     return (
                         (snoozedUntilByKey[key] ?? 0) <= currentTime &&
+                        (snoozedUntilByKey[oldKey] ?? 0) <= currentTime &&
                         !closedKeys.includes(key)
                     );
                 })
@@ -225,6 +270,7 @@ export default function AccessibilityMissionPopup() {
         items,
         loading,
         pathname,
+        snoozesLoaded,
         snoozedUntilByKey,
     ]);
 
@@ -232,28 +278,61 @@ export default function AccessibilityMissionPopup() {
         ? missionKey(prompt.row, prompt.row.inspection_status, prompt.kind)
         : "";
 
-    function snoozeMissionKey(key: string, delayMs: number) {
-        setSnoozedUntilByKey((prev) => {
-            const next = {
-                ...prev,
-                [key]: Date.now() + delayMs,
-            };
-            writeSnoozes(next);
-            return next;
-        });
+    async function snoozeMissionKeys(keys: string[], delayMs: number) {
+        if (!userEmail || !member || isGuest) {
+            throw new Error("다시 알림을 저장할 사용자 정보가 없어요");
+        }
+        const uniqueKeys = [...new Set(keys.map((key) => key.trim()))].filter(
+            Boolean,
+        );
+        if (uniqueKeys.length === 0) {
+            throw new Error("다시 알림을 저장할 대상이 없어요");
+        }
+        const snoozedUntil = new Date(Date.now() + delayMs);
+        const { error } = await supabase
+            .from("agent_accessibility_mission_snoozes")
+            .upsert(
+                uniqueKeys.map((key) => ({
+                    team_id: TEAM_ID,
+                    member,
+                    email: userEmail,
+                    snooze_key: key,
+                    snoozed_until: snoozedUntil.toISOString(),
+                    updated_at: new Date().toISOString(),
+                })),
+                { onConflict: "team_id,email,snooze_key" },
+            );
+        if (error) throw error;
+        setSnoozedUntilByKey((prev) => ({
+            ...prev,
+            ...Object.fromEntries(
+                uniqueKeys.map((key) => [key, snoozedUntil.getTime()]),
+            ),
+        }));
     }
 
-    function snoozePrompt() {
-        if (!promptKey) return;
-        snoozeMissionKey(promptKey, SNOOZE_MS);
+    async function snoozePrompt() {
+        if (!promptKey || !prompt) return;
+        setSaving(true);
+        try {
+            await snoozeMissionKeys([promptKey], SNOOZE_MS);
+        } catch (err) {
+            showToast(
+                err instanceof Error
+                    ? err.message
+                    : "다시 알림 저장에 실패했어요",
+            );
+        } finally {
+            setSaving(false);
+        }
     }
 
-    function closePrompt() {
+    function closePromptOnPath(nextPathname = pathname) {
         if (!promptKey) return;
         setClosedState((prev) => {
-            const prevKeys = prev.pathname === pathname ? prev.keys : [];
+            const prevKeys = prev.pathname === nextPathname ? prev.keys : [];
             return {
-                pathname,
+                pathname: nextPathname,
                 keys: prevKeys.includes(promptKey)
                     ? prevKeys
                     : [...prevKeys, promptKey],
@@ -261,48 +340,14 @@ export default function AccessibilityMissionPopup() {
         });
     }
 
-    async function applyPrompt() {
+    function closePrompt() {
+        closePromptOnPath();
+    }
+
+    function applyPrompt() {
         if (!prompt) return;
-
-        if (prompt.kind === "missing_schedule") {
-            router.push(`/manage?tab=accessibility&accId=${prompt.row.id}`);
-            return;
-        }
-
-        setSaving(true);
-        try {
-            const { error } = await supabase
-                .from("accessibility")
-                .update({ inspection_status: prompt.nextStatus })
-                .eq("team_id", TEAM_ID)
-                .eq("id", prompt.row.id);
-            if (error) throw error;
-            notifyAccessibilityChanged();
-            if (prompt.kind === "apply") {
-                snoozeMissionKey(
-                    missionKey(prompt.row, "신청완료", "result"),
-                    POST_APPLY_SNOOZE_MS,
-                );
-            }
-            if (prompt.kind === "renewal") {
-                snoozeMissionKey(
-                    missionKey(prompt.row, "신청필요", "apply"),
-                    POST_RENEWAL_SNOOZE_MS,
-                );
-            }
-            if (prompt.kind === "result") {
-                router.push(`/manage?tab=accessibility&accId=${prompt.row.id}`);
-                return;
-            }
-            showToast(`${prompt.nextStatus} 상태로 변경했어요`);
-            await loadItems();
-        } catch (err) {
-            showToast(
-                err instanceof Error ? err.message : "상태 변경에 실패했어요",
-            );
-        } finally {
-            setSaving(false);
-        }
+        closePromptOnPath("/manage");
+        router.push("/manage?tab=accessibility");
     }
 
     if (!prompt) {
@@ -376,7 +421,7 @@ export default function AccessibilityMissionPopup() {
                     <div className="grid grid-cols-[1fr_auto] gap-2">
                         <button
                             type="button"
-                            onClick={() => void applyPrompt()}
+                            onClick={applyPrompt}
                             disabled={saving}
                             className="rounded-xl bg-amber-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                         >
@@ -384,7 +429,7 @@ export default function AccessibilityMissionPopup() {
                         </button>
                         <button
                             type="button"
-                            onClick={snoozePrompt}
+                            onClick={() => void snoozePrompt()}
                             disabled={saving}
                             className="rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-bold text-stone-500 disabled:opacity-50"
                         >
