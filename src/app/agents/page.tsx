@@ -205,7 +205,6 @@ export default function AgentsPage() {
         morning_send_time: "08:30:00",
         morning_enabled: true,
     });
-    const [briefingTimeDraft, setBriefingTimeDraft] = useState("08:30");
     const [teamCalendar, setTeamCalendar] =
         useState<TeamCalendarSettings | null>(null);
     const [teamCalendarId, setTeamCalendarId] = useState("");
@@ -241,10 +240,8 @@ export default function AgentsPage() {
     const [rangePickerDateTarget, setRangePickerDateTarget] = useState<
         "start" | "end"
     >("start");
-    const [timePickerOpen, setTimePickerOpen] = useState(false);
     const [eventTimePickerOpen, setEventTimePickerOpen] = useState(false);
     const [settingsLoading, setSettingsLoading] = useState(true);
-    const [settingsSaving, setSettingsSaving] = useState(false);
     const [testSending, setTestSending] = useState(false);
 
     const [webhookModalOpen, setWebhookModalOpen] = useState(false);
@@ -347,7 +344,6 @@ export default function AgentsPage() {
             const json = await res.json();
             if (!res.ok) throw new Error(json.message || "알림 설정 조회 실패");
             setSettings(json.settings);
-            setBriefingTimeDraft(json.settings.morning_send_time.slice(0, 5));
             setTeamCalendar(json.teamCalendar ?? null);
             setTeamCalendarId(json.teamCalendar?.calendar_id ?? "");
             const memberCalendars =
@@ -410,29 +406,6 @@ export default function AgentsPage() {
             };
         });
     }, [member]);
-
-    async function saveSettings(nextSettings = settings) {
-        setSettingsSaving(true);
-        try {
-            const res = await fetch("/api/agents/settings", {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    morningSendTime: nextSettings.morning_send_time.slice(0, 5),
-                    morningEnabled: true,
-                }),
-            });
-            const json = await res.json();
-            if (!res.ok) throw new Error(json.message || "알림 설정 저장 실패");
-            setSettings(json.settings);
-            setBriefingTimeDraft(json.settings.morning_send_time.slice(0, 5));
-            showToast("알림 설정을 저장했습니다");
-        } catch (err) {
-            showToast(err instanceof Error ? err.message : "알림 설정 저장 실패");
-        } finally {
-            setSettingsSaving(false);
-        }
-    }
 
     async function saveTeamCalendarSettings() {
         setTeamCalendarSaving(true);
@@ -522,7 +495,6 @@ export default function AgentsPage() {
 
         setTeamEventSaving(true);
         setEventTimePickerOpen(false);
-        setTimePickerOpen(false);
         try {
             const payload = {
                 ...teamEventForm,
@@ -945,7 +917,6 @@ export default function AgentsPage() {
                                         type="button"
                                         onClick={() => {
                                             setRangePickerOpen(true);
-                                            setTimePickerOpen(false);
                                             setEventTimePickerOpen(false);
                                         }}
                                         className="flex w-full min-w-0 items-center gap-2 rounded-lg border border-stone-200 bg-white px-3 py-2 text-left text-sm text-stone-800 shadow-sm hover:border-stone-300"
@@ -1062,11 +1033,11 @@ export default function AgentsPage() {
                         <div className="mb-3 flex items-start justify-between gap-3">
                             <div>
                                 <h2 className="text-sm font-bold text-stone-900">
-                                    브리핑 발송 시간
+                                    모닝 브리핑 자동 발송
                                 </h2>
                                 <p className="mt-1 text-xs leading-relaxed text-stone-500">
-                                    매일 모닝 브리핑을 받을 시간을 개인별로 설정합니다.
-                                    저장하면 해당 시간에 자동 발송됩니다.
+                                    평일 오전 8시 30분에 개인 Google Chat으로 자동 발송됩니다.
+                                    공휴일에는 발송하지 않습니다.
                                 </p>
                             </div>
                             <button
@@ -1074,7 +1045,6 @@ export default function AgentsPage() {
                                 onClick={() => void sendTestBriefing()}
                                 disabled={
                                     settingsLoading ||
-                                    settingsSaving ||
                                     testSending ||
                                     !webhookConfigured
                                 }
@@ -1083,80 +1053,12 @@ export default function AgentsPage() {
                                 {testSending ? "발송 중" : "테스트 발송"}
                             </button>
                         </div>
-                        <div className="grid grid-cols-[1fr_auto] gap-2">
-                            <div className="relative min-w-0">
-                                <button
-                                    type="button"
-                                    disabled={settingsLoading || settingsSaving}
-                                    onClick={() => {
-                                        setBriefingTimeDraft(
-                                            settings.morning_send_time.slice(0, 5),
-                                        );
-                                        setTimePickerOpen((prev) => !prev);
-                                    }}
-                                    className="flex h-[42px] w-full items-center justify-between rounded-lg border border-stone-200 bg-white px-3 text-sm text-stone-800 outline-none hover:border-stone-300 disabled:bg-stone-50 disabled:text-stone-400"
-                                >
-                                    <span className="flex items-center gap-2">
-                                        <i className="ri-time-line text-base text-stone-400" />
-                                        {settings.morning_send_time.slice(0, 5)}
-                                    </span>
-                                    <i className="ri-arrow-down-s-line text-base text-stone-400" />
-                                </button>
-                                {timePickerOpen && (
-                                    <div className="absolute left-0 top-11 z-50 w-full rounded-xl border border-stone-200 bg-white p-4 shadow-xl">
-                                        <div className="mb-3 flex items-center justify-between">
-                                            <p className="text-sm font-bold text-stone-900">
-                                                브리핑 발송 시간
-                                            </p>
-                                            <button
-                                                type="button"
-                                                onClick={() => setTimePickerOpen(false)}
-                                                className="flex h-8 w-8 items-center justify-center rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700"
-                                                aria-label="브리핑 발송 시간 선택 닫기"
-                                            >
-                                                <i className="ri-close-line text-lg" />
-                                            </button>
-                                        </div>
-                                        <TimeWheelPicker
-                                            value={briefingTimeDraft}
-                                            onChange={setBriefingTimeDraft}
-                                        />
-                                        <div className="mt-4 grid grid-cols-2 gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() =>
-                                                    setTimePickerOpen(false)
-                                                }
-                                                className="rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm font-bold text-stone-600 hover:bg-stone-50"
-                                            >
-                                                취소
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setSettings((prev) => ({
-                                                        ...prev,
-                                                        morning_send_time:
-                                                            briefingTimeDraft,
-                                                    }));
-                                                    setTimePickerOpen(false);
-                                                }}
-                                                className="rounded-lg bg-stone-900 px-3 py-2 text-sm font-bold text-white hover:bg-stone-800"
-                                            >
-                                                적용
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => void saveSettings()}
-                                disabled={settingsLoading || settingsSaving}
-                                className="rounded-lg bg-stone-900 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
-                            >
-                                {settingsSaving ? "저장 중" : "저장"}
-                            </button>
+                        <div className="flex items-center gap-2 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-700">
+                            <i className="ri-time-line text-base text-stone-400" />
+                            <span className="font-bold text-stone-900">08:30</span>
+                            <span className="text-xs text-stone-500">
+                                Vercel Hobby 환경에서는 팀 공통 시간으로 운영합니다.
+                            </span>
                         </div>
                     </section>
 
