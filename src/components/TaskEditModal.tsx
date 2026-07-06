@@ -253,7 +253,7 @@ export default function TaskEditModal({
             alert("업무 수정에 실패했어요");
             return;
         }
-        try {
+        void (async () => {
             const res = await fetch(`/api/agents/team-calendar/tasks/${task.id}`, {
                 method: "POST",
             });
@@ -261,9 +261,9 @@ export default function TaskEditModal({
             if (!res.ok) {
                 throw new Error(json.message || "팀 캘린더 동기화 실패");
             }
-        } catch (err) {
+        })().catch((err) => {
             alert(err instanceof Error ? err.message : "팀 캘린더 동기화 실패");
-        }
+        });
         await Promise.resolve(onSaved());
         handleClose();
     }

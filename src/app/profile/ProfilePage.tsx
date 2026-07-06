@@ -702,17 +702,6 @@ export default function ProfilePage() {
                                                 (s, t) => s + (t.workload || 0),
                                                 0,
                                             );
-                                        const mDone = weekTasks
-                                            .filter(
-                                                (t) =>
-                                                    t.member === m &&
-                                                    t.status === "완료" &&
-                                                    !t.is_plan,
-                                            )
-                                            .reduce(
-                                                (s, t) => s + (t.workload || 0),
-                                                0,
-                                            );
                                         const maxWL = Math.max(
                                             ...MEMBERS.map((mem) =>
                                                 weekTasks
@@ -744,14 +733,6 @@ export default function ProfilePage() {
                                                         className="absolute inset-y-0 left-0 rounded-full"
                                                         style={{
                                                             width: `${(mWL / maxWL) * 100}%`,
-                                                            background: c.bar,
-                                                            opacity: 0.25,
-                                                        }}
-                                                    />
-                                                    <div
-                                                        className="absolute inset-y-0 left-0 rounded-full"
-                                                        style={{
-                                                            width: `${(mDone / maxWL) * 100}%`,
                                                             background: c.bar,
                                                         }}
                                                     />

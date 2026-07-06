@@ -376,9 +376,7 @@ export default function AgentsPage() {
 
     useEffect(() => {
         const timer = window.setTimeout(() => {
-            void refreshMyBriefing().catch(() => {
-                void loadSuggestions();
-            });
+            void loadSuggestions();
             void loadCalendarStatus();
             void loadWebhook();
             void loadSettings();
@@ -390,7 +388,7 @@ export default function AgentsPage() {
             }
         }, 0);
         return () => window.clearTimeout(timer);
-    }, [loadCalendarStatus, loadSettings, loadSuggestions, loadWebhook, refreshMyBriefing, showToast]);
+    }, [loadCalendarStatus, loadSettings, loadSuggestions, loadWebhook, showToast]);
 
     useEffect(() => {
         if (!member || !TEAM_EVENT_MEMBERS.includes(member)) return;
