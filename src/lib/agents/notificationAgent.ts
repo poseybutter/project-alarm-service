@@ -98,8 +98,8 @@ function formatDue(diff: number) {
 }
 
 function formatDueCard(diff: number) {
-    const color = diff <= 0 ? "#c5221f" : "#1a73e8";
-    return `<font color="${color}"><b>${formatDue(diff)}</b></font>`;
+    const color = diff <= 0 ? "#FF0000" : "#0000FF";
+    return `<b><font color="${color}">${formatDue(diff)}</font></b>`;
 }
 
 function taskDueText(item: AlertTask) {
