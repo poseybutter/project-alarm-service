@@ -1354,15 +1354,13 @@ export default function HomePage() {
                 });
             }
         }
-        try {
-            await syncTaskToTeamCalendar(id);
-        } catch (err) {
+        void syncTaskToTeamCalendar(id).catch((err) => {
             showToastMsg(
                 err instanceof Error
                     ? err.message
                     : "팀 캘린더 동기화 실패",
             );
-        }
+        });
         loadData();
     }
 
@@ -1468,15 +1466,13 @@ export default function HomePage() {
                 show_on_team_calendar: true,
             })
             .eq("id", editTask.id);
-        try {
-            await syncTaskToTeamCalendar(editTask.id);
-        } catch (err) {
-            alert(
+        void syncTaskToTeamCalendar(editTask.id).catch((err) => {
+            showToastMsg(
                 err instanceof Error
                     ? err.message
                     : "팀 캘린더 동기화 실패",
             );
-        }
+        });
         setShowEditTask(false);
         setEditTask(null);
         setEditForm({ ...EMPTY_EDIT_TASK });
