@@ -572,7 +572,7 @@ function formatAssignments(list: Assignment[]): string {
             lines.push(`⇒ [배정대기] ${namePart}`);
             if (a.period_note) {
                 a.period_note.split("\n").forEach((l) => {
-                    if (l.trim()) lines.push(`  • ${l.trim()}`);
+                    if (l.trim()) lines.push(l.trim());
                 });
             }
         });
@@ -591,7 +591,7 @@ function assignmentCopyText(a: Assignment): string {
     const lines = [head];
     if (a.period_note) {
         a.period_note.split("\n").forEach((l) => {
-            if (l.trim()) lines.push(`  • ${l.trim()}`);
+            if (l.trim()) lines.push(l.trim());
         });
     }
     return lines.join("\n");
@@ -1280,7 +1280,7 @@ export default function ReportPage() {
                                                     key={i}
                                                     className="text-xs text-stone-600"
                                                 >
-                                                    • {line.trim()}
+                                                    {line.trim()}
                                                 </p>
                                             ) : null,
                                         )}
