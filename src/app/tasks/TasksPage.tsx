@@ -681,7 +681,7 @@ export default function TasksPage() {
                                                                     className="text-xs"
                                                                     title="중요 프로젝트"
                                                                 >
-                                                                    ★
+                                                                    ⭐
                                                                 </span>
                                                             )}
                                                             {t.type && (
