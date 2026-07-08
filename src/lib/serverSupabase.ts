@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
+import { LEADER } from "@/lib/constants";
 
 export async function createCookieSupabaseClient() {
     const store = await cookies();
@@ -45,7 +46,7 @@ export async function getServerUserRole(teamId: string) {
 
     const { data } = await supabase
         .from("players")
-        .select("role")
+        .select("name, role")
         .eq("team_id", teamId)
         .eq("email", user.email)
         .maybeSingle();
@@ -53,7 +54,10 @@ export async function getServerUserRole(teamId: string) {
     return {
         supabase,
         user,
-        role: data?.role === "admin" ? "admin" : "member",
+        role:
+            data?.role === "admin" || data?.name === LEADER
+                ? "admin"
+                : "member",
     };
 }
 
