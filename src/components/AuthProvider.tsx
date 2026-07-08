@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { getMemberName } from "@/lib/auth";
-import { TEAM_ID } from "@/lib/constants";
+import { LEADER, TEAM_ID } from "@/lib/constants";
 
 type AuthContextType = {
     user: User | null;
@@ -134,7 +134,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .eq("name", memberName)
             .maybeSingle();
         setAvatarUrl(data?.avatar_url || null);
-        setRole(data?.role === "admin" ? "admin" : "member");
+        setRole(
+            data?.role === "admin" || memberName === LEADER
+                ? "admin"
+                : "member",
+        );
     }
 
     useEffect(() => {
