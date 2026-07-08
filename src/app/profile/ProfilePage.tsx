@@ -108,6 +108,24 @@ function getThisWeekRange() {
     };
 }
 
+function ymdToLocalDate(value: string | null | undefined, endOfDay = false) {
+    if (!value) return null;
+    const d = new Date(`${value.slice(0, 10)}T00:00:00`);
+    if (endOfDay) d.setHours(23, 59, 59, 999);
+    return d;
+}
+
+function taskOverlapsRange(task: Task, start: Date, end: Date) {
+    const taskStart =
+        ymdToLocalDate(task.start_date) ?? ymdToLocalDate(task.end_date);
+    const taskEnd =
+        ymdToLocalDate(task.end_date, true) ??
+        ymdToLocalDate(task.start_date, true);
+
+    if (!taskStart || !taskEnd) return false;
+    return taskStart <= end && taskEnd >= start;
+}
+
 export default function ProfilePage() {
     const { member, refreshAvatar, role } = useAuth();
     const isGuest = member === "GUEST" || role === "guest";
@@ -338,8 +356,7 @@ export default function ProfilePage() {
         end.setHours(23, 59, 59, 999);
 
         return tasks.filter((t) => {
-            const d = new Date(t.created_at);
-            if (d < start || d > end) return false;
+            if (!taskOverlapsRange(t, start, end)) return false;
             if (historyProjFilter && t.proj !== historyProjFilter) return false;
             if (
                 historyStatusFilter &&
