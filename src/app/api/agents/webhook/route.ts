@@ -82,7 +82,6 @@ export async function GET() {
                         email: row.email,
                         role: row.role,
                         configured: Boolean(hook?.webhook_url),
-                        webhookUrl: hook?.webhook_url ?? "",
                         updatedAt: hook?.updated_at ?? null,
                     };
                 }),

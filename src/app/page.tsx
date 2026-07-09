@@ -71,6 +71,7 @@ import {
 import { toLocalYmd, getThisMonday } from "@/lib/toLocalYmd";
 import TiptapQuestContentEditor from "@/components/TiptapQuestContentEditor";
 import TaskContentInputs from "@/components/TaskContentInputs";
+import { sanitizeHtml } from "@/lib/sanitizeHtml";
 
 function QuestCardContent({
     content,
@@ -83,7 +84,7 @@ function QuestCardContent({
 }) {
     const isHtml = questContentLooksLikeStoredHtml(content);
     if (isHtml) {
-        const inner = content.trim() ? content.trim() : "<p></p>";
+        const inner = sanitizeHtml(content.trim() ? content.trim() : "<p></p>");
         return (
             <div className={`notice-editor min-w-0 ${completing ? "line-through text-stone-400" : ""}`}>
                 <div
