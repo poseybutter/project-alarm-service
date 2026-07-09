@@ -14,6 +14,7 @@ import Select from "react-select";
 import { modalFormSelectStyles } from "@/lib/reactSelectStyles";
 import { toLocalYmd } from "@/lib/toLocalYmd";
 import { useAuth } from "@/components/AuthProvider";
+import { sanitizeHtml } from "@/lib/sanitizeHtml";
 import type {
     AgentSuggestion,
     GoogleChatCardPayload,
@@ -326,9 +327,7 @@ export default function AgentsPage() {
             const members = (json.members ?? []) as MemberWebhook[];
             setMemberWebhooks(members);
             setMemberWebhookDrafts(
-                Object.fromEntries(
-                    members.map((row) => [row.member, row.webhookUrl ?? ""]),
-                ),
+                Object.fromEntries(members.map((row) => [row.member, ""])),
             );
         } catch (err) {
             showToast(err instanceof Error ? err.message : "Webhook 조회 실패");
@@ -1630,7 +1629,7 @@ function GoogleChatCardPreview({
                                 <div
                                     className="min-w-0 flex-1 text-xs leading-relaxed text-stone-700"
                                     dangerouslySetInnerHTML={{
-                                        __html: widget.textParagraph.text,
+                                        __html: sanitizeHtml(widget.textParagraph.text),
                                     }}
                                 />
                                 {editable && (

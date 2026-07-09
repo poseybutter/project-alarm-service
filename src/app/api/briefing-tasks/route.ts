@@ -1,36 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { cookies } from "next/headers";
-import { createServerClient } from "@supabase/ssr";
 import { TEAM_ID } from "@/lib/constants";
+import { getServerUser } from "@/lib/serverSupabase";
 
 /**
  * 주간 브리핑 업무별 편집 내용(briefing_tasks) API.
  * - GET  /api/briefing-tasks?week=YYYY-MM-DD  → 해당 주에 저장된 업무별 편집 내용
  * - POST /api/briefing-tasks                  → { week, task_id, edited_content } upsert
  *
- * 인증/RLS: 기존 라우트와 동일하게 anon 키 + 세션 쿠키로 서버 클라이언트 생성.
+ * 인증/RLS: 로그인 세션을 먼저 확인하고, row 권한은 Supabase RLS에 맡긴다.
  */
-async function getClient() {
-    const store = await cookies();
-    return createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
-        {
-            cookies: {
-                getAll() {
-                    return store.getAll();
-                },
-                setAll(cookiesToSet) {
-                    cookiesToSet.forEach(({ name, value, options }) => {
-                        store.set(name, value, options);
-                    });
-                },
-            },
-        },
-    );
-}
-
 export async function GET(req: NextRequest) {
+    const { supabase, user } = await getServerUser();
+    if (!user?.email) {
+        return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+
     const week = req.nextUrl.searchParams.get("week");
     if (!week) {
         return NextResponse.json(
@@ -38,8 +22,6 @@ export async function GET(req: NextRequest) {
             { status: 400 },
         );
     }
-
-    const supabase = await getClient();
 
     // 해당 주 briefings 행 조회 (없으면 저장된 내용도 없음)
     const { data: brief, error: bErr } = await supabase
@@ -70,6 +52,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+    const { supabase, user } = await getServerUser();
+    if (!user?.email) {
+        return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+
     let body: {
         week?: string;
         task_id?: number;
@@ -91,8 +78,6 @@ export async function POST(req: NextRequest) {
             { status: 400 },
         );
     }
-
-    const supabase = await getClient();
 
     // 이번 주 briefings 행 id 확보 (없으면 생성). week_start 유니크 기준 upsert.
     const { data: brief, error: bErr } = await supabase
