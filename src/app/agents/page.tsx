@@ -1909,7 +1909,7 @@ function WebhookModal({
                                         팀원 webhook 관리
                                     </h3>
                                     <p className="mt-1 text-xs leading-relaxed text-stone-400">
-                                        관리자에게만 보입니다. 팀원의 개인 DM webhook을 대신 등록할 수 있습니다.
+                                        등록된 webhook 원문은 보안상 숨깁니다. 변경할 때만 새 URL을 입력하세요.
                                     </p>
                                 </div>
                                 <div className="space-y-2">
@@ -1952,7 +1952,11 @@ function WebhookModal({
                                                             }),
                                                         )
                                                     }
-                                                    placeholder="https://chat.googleapis.com/v1/spaces/..."
+                                                    placeholder={
+                                                        row.configured
+                                                            ? "등록된 webhook은 숨김 처리됨"
+                                                            : "https://chat.googleapis.com/v1/spaces/..."
+                                                    }
                                                 />
                                                 <button
                                                     type="button"
