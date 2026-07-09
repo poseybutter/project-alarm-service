@@ -29,7 +29,6 @@ type PlayerNotificationTarget = {
 };
 
 const DEFAULT_MORNING_SEND_TIME = "08:30:00";
-const MORNING_CRON_SCHEDULE = "30 23 * * 0-4";
 const PUBLIC_HOLIDAYS_API_BASE_URL = "https://date.nager.at/api/v3/PublicHolidays";
 
 function isAuthorized(req: NextRequest) {
@@ -39,12 +38,7 @@ function isAuthorized(req: NextRequest) {
         return true;
     }
 
-    const isVercelCron =
-        req.method === "GET" &&
-        (req.headers.get("user-agent") ?? "").includes("vercel-cron/1.0") &&
-        req.headers.get("x-vercel-cron-schedule") === MORNING_CRON_SCHEDULE;
-
-    return isVercelCron && !isForceSend(req);
+    return false;
 }
 
 function todayKstYmd(now = new Date()) {

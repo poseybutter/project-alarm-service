@@ -27,6 +27,7 @@ import TiptapSectionEditor from "@/components/TiptapSectionEditor";
 import Tooltip from "@/components/Tooltip";
 import Select from "react-select";
 import { modalFormSelectStyles } from "@/lib/reactSelectStyles";
+import { sanitizeHtml } from "@/lib/sanitizeHtml";
 
 /** 전달사항 HTML이 사용자에게 보일 내용이 있는지 (빈 에디터·공백 태그 제외) */
 function noticeHtmlHasText(html: string | null | undefined): boolean {
@@ -68,7 +69,7 @@ function SectionHtmlReadView({
     html: string;
     theme: SectionTheme;
 }) {
-    const inner = html?.trim() ? html : "";
+    const inner = sanitizeHtml(html?.trim() ? html : "");
     return (
         <div
             className={`rounded-lg px-4 py-3 text-sm text-stone-700 ${SECTION_THEME[theme]} ${PROSE_CLASSES}`}
