@@ -25,6 +25,7 @@ import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import TaskEditModal from "@/components/TaskEditModal";
 import TaskContentInputs from "@/components/TaskContentInputs";
+import TaskContentList from "@/components/TaskContentList";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { PageSpinner } from "@/components/Spinner";
 import { DayPicker, DateRange } from "react-day-picker";
@@ -698,9 +699,12 @@ export default function TasksPage() {
                                                             </span>
                                                         </div>
                                                         {t.content && (
-                                                            <p className="text-xs text-stone-400 truncate mb-1">
-                                                                {t.content}
-                                                            </p>
+                                                            <TaskContentList
+                                                                content={
+                                                                    t.content
+                                                                }
+                                                                className={`mb-1 text-xs leading-relaxed ${isDone ? "text-stone-300 line-through" : "text-stone-500"}`}
+                                                            />
                                                         )}
                                                         {t.issue && (
                                                             <div
