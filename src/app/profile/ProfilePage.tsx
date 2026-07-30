@@ -18,6 +18,7 @@ import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import Avatar from "@/components/Avatar";
 import TaskEditModal from "@/components/TaskEditModal";
+import TaskContentList from "@/components/TaskContentList";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { DayPicker, DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
@@ -1076,9 +1077,12 @@ export default function ProfilePage() {
                                                                 </p>
                                                             </div>
                                                             {t.content && (
-                                                                <p className="text-xs text-stone-400 truncate">
-                                                                    {t.content}
-                                                                </p>
+                                                                <TaskContentList
+                                                                    content={
+                                                                        t.content
+                                                                    }
+                                                                    className={`text-xs leading-relaxed ${t.status === "완료" ? "text-stone-300 line-through" : "text-stone-400"}`}
+                                                                />
                                                             )}
                                                             <div className="flex gap-2 text-xs text-stone-400 mt-0.5">
                                                                 {t.workload >

@@ -71,6 +71,7 @@ import {
 import { toLocalYmd, getThisMonday } from "@/lib/toLocalYmd";
 import TiptapQuestContentEditor from "@/components/TiptapQuestContentEditor";
 import TaskContentInputs from "@/components/TaskContentInputs";
+import TaskContentList from "@/components/TaskContentList";
 import { sanitizeHtml } from "@/lib/sanitizeHtml";
 
 function QuestCardContent({
@@ -427,9 +428,10 @@ function HomeMyTaskRow({
                         </span>
                     </div>
                     {t.content && (
-                        <p className="mt-1 break-words text-xs text-stone-600">
-                            {t.content}
-                        </p>
+                        <TaskContentList
+                            content={t.content}
+                            className="mt-1 text-xs leading-relaxed text-stone-600"
+                        />
                     )}
                     {t.issue && (
                         <p className="mt-1.5 rounded-lg border border-amber-200 bg-amber-100/80 px-2 py-1 text-xs text-amber-800">
