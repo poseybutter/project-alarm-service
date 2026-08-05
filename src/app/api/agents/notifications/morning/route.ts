@@ -294,47 +294,56 @@ async function handleMorningBriefings(req: NextRequest) {
                     continue;
                 }
 
-                const { data: existingSuggestions, error: suggestionError } =
-                    await supabase
-                        .from("agent_suggestions")
-                        .select("*")
-                        .eq("team_id", TEAM_ID)
-                        .eq("agent_type", "notification")
-                        .eq("status", "pending")
-                        .eq("payload->>recipientMember", setting.member)
-                        .like(
-                            "dedupe_key",
-                            `notification:member:${setting.member}:${today}:%`,
-                        )
-                        .order("created_at", { ascending: false })
-                        .limit(1);
-                if (suggestionError) throw suggestionError;
-
-                let suggestion = (existingSuggestions?.[0] ??
-                    null) as AgentSuggestion | null;
-                if (!suggestion) {
-                    const fresh = await buildFreshSuggestion(supabase, setting);
-                    if (!fresh) {
-                        skipped.push({
-                            member: setting.member,
-                            reason: "empty_briefing",
-                        });
-                        continue;
-                    }
-                    const { data: created, error: createError } = await supabase
-                        .from("agent_suggestions")
-                        .upsert(
-                            {
-                                ...fresh,
-                                status: "pending",
-                            },
-                            { onConflict: "team_id,dedupe_key" },
-                        )
-                        .select("*")
-                        .maybeSingle();
-                    if (createError) throw createError;
-                    suggestion = created as AgentSuggestion;
+                const fresh = await buildFreshSuggestion(supabase, setting);
+                if (!fresh) {
+                    skipped.push({
+                        member: setting.member,
+                        reason: "empty_briefing",
+                    });
+                    continue;
                 }
+
+                const { data: created, error: createError } = await supabase
+                    .from("agent_suggestions")
+                    .upsert(
+                        {
+                            ...fresh,
+                            status: "pending",
+                            reviewed_by: null,
+                            reviewed_at: null,
+                        },
+                        { onConflict: "team_id,dedupe_key" },
+                    )
+                    .select("*")
+                    .maybeSingle();
+                if (createError) throw createError;
+                if (!created) {
+                    skipped.push({
+                        member: setting.member,
+                        reason: "empty_briefing",
+                    });
+                    continue;
+                }
+
+                const suggestion = created as AgentSuggestion;
+
+                const { error: staleCleanupError } = await supabase
+                    .from("agent_suggestions")
+                    .update({
+                        status: "dismissed",
+                        reviewed_by: "morning-briefing-cron",
+                        reviewed_at: new Date().toISOString(),
+                    })
+                    .eq("team_id", TEAM_ID)
+                    .eq("agent_type", "notification")
+                    .eq("status", "pending")
+                    .eq("payload->>recipientMember", setting.member)
+                    .like(
+                        "dedupe_key",
+                        `notification:member:${setting.member}:${today}:%`,
+                    )
+                    .neq("id", suggestion.id);
+                if (staleCleanupError) throw staleCleanupError;
 
                 if (!isNotificationPayload(suggestion.payload)) {
                     skipped.push({
