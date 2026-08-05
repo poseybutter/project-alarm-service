@@ -140,7 +140,7 @@ function taskLine(item: AlertTask, index: number) {
     const project = `${task.is_starred ? "⭐ " : ""}${task.proj}`;
     const contentText =
         content.length > 0
-            ? `\n${content.map((line) => `   ⇒ ${line}`).join("\n")}`
+            ? `\n${content.map((line) => `   • ${line}`).join("\n")}`
             : "";
     return `${index}. ${project}${contentText}\n   ${task.status || "상태 없음"} · ${taskDueText(item)}`;
 }
@@ -204,7 +204,7 @@ function taskCardText(item: AlertTask, index: number) {
     const body =
         content.length > 0
             ? `<br>${content
-                  .map((line) => `⇒ ${escapeGChatText(line)}`)
+                  .map((line) => `• ${escapeGChatText(line)}`)
                   .join("<br>")}`
             : "";
     return `<b>${index}. ${project}</b>${body}<br><font color="#777777">${status}</font> · ${taskDueCard(item)}`;
