@@ -136,8 +136,8 @@ function formatEventTime(event: CalendarEventInput) {
 
 function taskLine(item: AlertTask, index: number) {
     const { task } = item;
-    const content = task.content?.split("\n")[0]?.trim();
-    const contentText = content ? ` - ${content}` : "";
+    const content = taskContentLines(task.content);
+    const contentText = content.length > 0 ? ` - ${content.join("\n   ")}` : "";
     const status = task.status ? ` (${task.status})` : "";
     return `${index}. ${task.proj}${contentText}${status} (${taskDueText(item)})`;
 }
@@ -177,6 +177,13 @@ function htmlToPlainText(value: string | null | undefined) {
         .join("\n");
 }
 
+function taskContentLines(value: string | null | undefined) {
+    return htmlToPlainText(value)
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+}
+
 function escapeGChatText(value: string) {
     return value
         .replace(/&/g, "&amp;")
@@ -186,10 +193,13 @@ function escapeGChatText(value: string) {
 
 function taskCardText(item: AlertTask, index: number) {
     const { task } = item;
-    const content = task.content?.split("\n")[0]?.trim();
+    const content = taskContentLines(task.content);
     const status = task.status ? escapeGChatText(task.status) : "상태 없음";
     const project = escapeGChatText(task.proj || "프로젝트 없음");
-    const body = content ? `<br>${escapeGChatText(content)}` : "";
+    const body =
+        content.length > 0
+            ? `<br>${content.map((line) => escapeGChatText(line)).join("<br>")}`
+            : "";
     return `<b>${index}. ${project}</b>${body}<br><font color="#777777">${status}</font> · ${taskDueCard(item)}`;
 }
 function eventCardText(event: CalendarEventInput, index: number) {
