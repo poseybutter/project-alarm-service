@@ -23,6 +23,15 @@ function isNotificationPayload(
     return typeof payload.text === "string" && payload.text.trim().length > 0;
 }
 
+function todayKstYmd(now = new Date()) {
+    return new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).format(now);
+}
+
 async function buildFreshSuggestion(
     supabase: ReturnType<typeof createServiceSupabaseClient>,
     params: { member: string; email: string },
@@ -155,6 +164,58 @@ export async function POST() {
             if (createError) throw createError;
             suggestion = created as AgentSuggestion;
         }
+
+        const fresh = await buildFreshSuggestion(serviceSupabase, {
+            member: player.name,
+            email: user.email,
+        });
+        if (!fresh) {
+            return NextResponse.json(
+                { message: "No briefing content to send" },
+                { status: 404 },
+            );
+        }
+
+        const { data: refreshed, error: refreshError } = await serviceSupabase
+            .from("agent_suggestions")
+            .upsert(
+                {
+                    ...fresh,
+                    status: "pending",
+                    reviewed_by: null,
+                    reviewed_at: null,
+                },
+                { onConflict: "team_id,dedupe_key" },
+            )
+            .select("*")
+            .maybeSingle();
+        if (refreshError) throw refreshError;
+        if (!refreshed) {
+            return NextResponse.json(
+                { message: "No briefing content to send" },
+                { status: 404 },
+            );
+        }
+
+        suggestion = refreshed as AgentSuggestion;
+
+        const { error: staleCleanupError } = await serviceSupabase
+            .from("agent_suggestions")
+            .update({
+                status: "dismissed",
+                reviewed_by: user.email,
+                reviewed_at: new Date().toISOString(),
+            })
+            .eq("team_id", TEAM_ID)
+            .eq("agent_type", "notification")
+            .eq("status", "pending")
+            .eq("payload->>recipientMember", player.name)
+            .like(
+                "dedupe_key",
+                `notification:member:${player.name}:${todayKstYmd()}:%`,
+            )
+            .neq("id", suggestion.id);
+        if (staleCleanupError) throw staleCleanupError;
 
         if (!isNotificationPayload(suggestion.payload)) {
             return NextResponse.json(
