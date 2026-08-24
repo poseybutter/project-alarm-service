@@ -1,84 +1,83 @@
-name: Notify on deploy
+name: Release and notify
 
-# main 브랜치에 push 되면:
-#  1) (항상) Supabase notifications 테이블에 업데이트 알림을 한 건 INSERT
-#  2) 커밋 메시지에 (vX.Y.Z) 패턴이 있고 해당 태그가 없을 때만 → git tag + GitHub Release 생성
-#
-# 버전은 package.json 대신 커밋 메시지의 (vX.Y.Z) 패턴에서 자동 추출.
-# 패턴이 없으면 가장 최근 태그를 폴백으로 사용.
 on:
   push:
     branches: [main]
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
-  notify:
+  release:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Extract version from commit message
+      - name: Read and validate package version
         id: version
+        shell: bash
         run: |
-          MSG="$(git log -1 --pretty=format:'%s' "${{ github.sha }}")"
-          # 커밋 메시지에서 (vX.Y.Z) 패턴 추출
-          VERSION="$(echo "$MSG" | grep -oP '\(v\K[0-9]+\.[0-9]+\.[0-9]+(?=\))' || true)"
-          if [ -z "$VERSION" ]; then
-            # 패턴 없으면 가장 최근 태그에서 폴백
-            VERSION="$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo '0.0.0')"
-            echo "커밋 메시지에 버전 없음 → 폴백: $VERSION"
+          VERSION="$(node -p "require('./package.json').version")"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid semantic version in package.json: $VERSION" >&2
+            exit 1
+          fi
+
+          TAG="v$VERSION"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists. Skipping this release."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "커밋 메시지에서 추출: $VERSION"
+            echo "Preparing release $TAG"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Collect commit messages
-        id: commits
+      - name: Collect release changes
+        if: steps.version.outputs.changed == 'true'
+        id: changes
+        shell: bash
         run: |
-          BEFORE="${{ github.event.before }}"
-          AFTER="${{ github.sha }}"
-          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE" 2>/dev/null; then
-            MESSAGES="$(git log -1 --pretty=format:'- %s' "$AFTER")"
+          PREVIOUS_TAG="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+          if [ -n "$PREVIOUS_TAG" ]; then
+            MESSAGES="$(git log --pretty=format:'- %s' "$PREVIOUS_TAG..${{ github.sha }}")"
           else
-            MESSAGES="$(git log --pretty=format:'- %s' "$BEFORE..$AFTER")"
+            MESSAGES="$(git log --pretty=format:'- %s' "${{ github.sha }}")"
           fi
+
           if [ -z "$MESSAGES" ]; then
-            MESSAGES="$(git log -1 --pretty=format:'- %s' "$AFTER")"
+            MESSAGES="- Release v${{ steps.version.outputs.version }}"
           fi
+
           {
-            echo "body<<COMMIT_MSG_EOF"
+            echo "body<<RELEASE_NOTES_EOF"
             echo "$MESSAGES"
-            echo "COMMIT_MSG_EOF"
+            echo "RELEASE_NOTES_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Detect version change
-        id: changed
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          TAG="v$VERSION"
-          # 해당 태그가 이미 존재하면 동일 버전으로 간주
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "태그 $TAG 이미 존재 → 버전 변경 없음"
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "새 버전: $TAG"
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Insert notification into Supabase
-        if: steps.changed.outputs.changed == 'true'
+      - name: Insert service notification
+        if: steps.version.outputs.changed == 'true'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VERSION: ${{ steps.version.outputs.version }}
-          BODY: ${{ steps.commits.outputs.body }}
+          BODY: ${{ steps.changes.outputs.body }}
           SHA: ${{ github.sha }}
+        shell: bash
         run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY secrets are required." >&2
+            exit 1
+          fi
+
           PAYLOAD="$(jq -n \
             --arg version "v$VERSION" \
             --arg title "v$VERSION 업데이트" \
@@ -86,21 +85,25 @@ jobs:
             --arg commit_sha "$SHA" \
             '{version: $version, title: $title, body: $body, commit_sha: $commit_sha}')"
 
-          curl -sf -X POST "$SUPABASE_URL/rest/v1/notifications" \
-            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-            -H "Content-Type: application/json" \
-            -H "Prefer: return=minimal" \
-            -d "$PAYLOAD"
+          curl --fail-with-body --silent --show-error \
+            --request POST "$SUPABASE_URL/rest/v1/notifications" \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/json" \
+            --header "Prefer: return=minimal" \
+            --data "$PAYLOAD"
 
-      - name: Create tag and GitHub Release
-        if: steps.changed.outputs.changed == 'true'
+      - name: Create Git tag and GitHub Release
+        if: steps.version.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
-          BODY: ${{ steps.commits.outputs.body }}
+          TAG: v${{ steps.version.outputs.version }}
+          BODY: ${{ steps.changes.outputs.body }}
+        shell: bash
         run: |
-          TAG="v$VERSION"
-          git tag "$TAG"
+          git tag "$TAG" "${{ github.sha }}"
           git push origin "$TAG"
-          gh release create "$TAG" --title "$TAG" --notes "$BODY"
+          gh release create "$TAG" \
+            --target "${{ github.sha }}" \
+            --title "$TAG" \
+            --notes "$BODY"
