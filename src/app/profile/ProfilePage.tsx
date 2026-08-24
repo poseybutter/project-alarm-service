@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import {
     calcLevel,
@@ -153,11 +153,7 @@ export default function ProfilePage() {
     const canEditHistoryTask = (taskMember: string) =>
         !isGuest && (role === "admin" || taskMember === member);
 
-    useEffect(() => {
-        if (member && teamId) loadAll();
-    }, [member, teamId]); // member와 현재 팀이 준비된 뒤 실행
-
-    async function loadAll() {
+    const loadAll = useCallback(async () => {
         if (!teamId) return;
         const [
             { data: playerData },
@@ -194,7 +190,11 @@ export default function ProfilePage() {
             return s >= wr.from && s < wr.to;
         });
         setWeekTasks(weekly);
-    }
+    }, [isGuest, member, members, teamId]);
+
+    useEffect(() => {
+        if (member && teamId) void loadAll();
+    }, [loadAll, member, teamId]); // member와 현재 팀이 준비된 뒤 실행
 
     async function deleteHistoryTask(id: number) {
         if (!confirm("정말 삭제하시겠어요?")) return;
@@ -258,7 +258,7 @@ export default function ProfilePage() {
         const { data } = supabase.storage
             .from("avatars")
             .getPublicUrl(fileName);
-        const url = data.publicUrl + "?t=" + Date.now();
+        const url = `${data.publicUrl}?t=${file.lastModified}`;
 
         await supabase
             .from("players")
@@ -738,7 +738,7 @@ export default function ProfilePage() {
                                             ),
                                             1,
                                         );
-                                        const c = MEMBER_COLORS[m];
+                                        const c = MEMBER_COLORS[m] ?? { bar: "#a8a29e" };
                                         return (
                                             <div
                                                 key={m}

@@ -86,7 +86,9 @@ V31 전환 기간에는 기존 쓰기 경로가 `players`를 계속 사용하고
 10. `V33_team_context_foundation.sql`을 적용한 뒤
     `V33_team_context_audit.sql`의 모든 `issue_count`가 0인지 확인한다.
     로컬에서는 `node tools/verify-v33.mjs`로 같은 핵심 정합성을 재검증한다.
-11. `V34_work_relation_fk_compatibility.sql`을 적용한다. 이 단계는 기존
+11. `V34_work_relation_fk_compatibility.sql` 적용 전에 팀별 `players.name`과
+    `projects.name` 중복이 없는지 `tools/audit-v34-readiness.mjs`로 확인한다.
+    중복이 있으면 정리한 뒤 마이그레이션을 실행한다. 이 단계는 기존
     `member`/`proj` 문자열 컬럼을 유지하면서 FK를 백필하고 양방향 호환 트리거를
     설치한다.
 12. `V34_work_relation_fk_audit.sql`의 모든 `issue_count`가 0인지 확인한 뒤,

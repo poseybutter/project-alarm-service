@@ -366,6 +366,7 @@ export function RequestsPage() {
 function formatRequestedAt(value: string | null) {
   if (!value) return "기존 요청";
   return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

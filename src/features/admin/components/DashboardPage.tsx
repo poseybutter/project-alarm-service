@@ -409,11 +409,12 @@ function QuickLink({
 }
 
 function formatGeneratedAt(value: string) {
-  return `${new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit" }).format(new Date(value))} 기준`;
+  return `${new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" }).format(new Date(value))} 기준`;
 }
 
 export function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",

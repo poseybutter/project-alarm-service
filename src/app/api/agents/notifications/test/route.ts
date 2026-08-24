@@ -33,9 +33,16 @@ function todayKstYmd(now = new Date()) {
 
 async function buildFreshSuggestion(
     supabase: ReturnType<typeof createServiceSupabaseClient>,
-    params: { member: string; email: string; teamId: string },
+    params: {
+        member: string;
+        email: string;
+        teamId: string;
+        canSyncTeamCalendar: boolean;
+    },
 ) {
-    await syncTodayTeamCalendarEvents(supabase, { teamId: params.teamId });
+    if (params.canSyncTeamCalendar) {
+        await syncTodayTeamCalendarEvents(supabase, { teamId: params.teamId });
+    }
 
     const [
         { data: tasks, error: taskError },
@@ -144,6 +151,7 @@ export async function POST() {
                 member: player.name,
                 email: user.email,
                 teamId,
+                canSyncTeamCalendar: role === "admin",
             });
             if (!fresh) {
                 return NextResponse.json(
@@ -170,6 +178,7 @@ export async function POST() {
             member: player.name,
             email: user.email,
             teamId,
+            canSyncTeamCalendar: role === "admin",
         });
         if (!fresh) {
             return NextResponse.json(

@@ -132,7 +132,7 @@ export function RolesPage() {
   }
 
   async function saveRole() {
-    if (!selectedTeamId || saving || selected?.isSystem) return;
+    if (!selectedTeamId || saving || selected?.isSystem || !canManage || !data?.schemaReady) return;
     setSaving(true);
     setActionError(null);
     setSuccessMessage(null);
@@ -161,7 +161,13 @@ export function RolesPage() {
   }
 
   async function removeRole() {
-    if (!selected || selected.isSystem || saving) return;
+    if (
+      !selected ||
+      selected.isSystem ||
+      saving ||
+      !canManage ||
+      !data?.schemaReady
+    ) return;
     setSaving(true);
     setActionError(null);
     try {
@@ -313,7 +319,9 @@ export function RolesPage() {
         <div className="space-y-5">
           <fieldset
             className="space-y-4"
-            disabled={selected?.isSystem || saving}
+            disabled={
+              selected?.isSystem || saving || !canManage || !data?.schemaReady
+            }
           >
             <legend className="text-sm font-extrabold">역할 정보</legend>
             <RoleTextField
@@ -356,7 +364,11 @@ export function RolesPage() {
             </label>
           </fieldset>
 
-          <fieldset disabled={selected?.isSystem || saving}>
+          <fieldset
+            disabled={
+              selected?.isSystem || saving || !canManage || !data?.schemaReady
+            }
+          >
             <legend className="text-sm font-extrabold">권한</legend>
             <div className="mt-2 overflow-hidden rounded-md border border-stone-200">
               {(data?.permissions ?? []).map((permission) => {
@@ -455,7 +467,7 @@ export function RolesPage() {
                 <AdminButton
                   variant="ghost"
                   onClick={() => setConfirmDelete(true)}
-                  disabled={!canManage || saving}
+                  disabled={!canManage || !data?.schemaReady || saving}
                 >
                   <Trash2 size={14} /> 삭제
                 </AdminButton>
@@ -471,6 +483,7 @@ export function RolesPage() {
                   onClick={() => void saveRole()}
                   disabled={
                     !canManage ||
+                    !data?.schemaReady ||
                     saving ||
                     !draft.name.trim() ||
                     !draft.key.trim()

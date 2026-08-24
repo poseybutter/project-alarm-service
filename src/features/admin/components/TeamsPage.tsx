@@ -21,6 +21,7 @@ import { useAdmin } from "@/features/admin/components/AdminShell";
 import {
   AdminButton,
   AdminDrawer,
+  AdminModal,
   AdminPage,
   EmptyState,
   ErrorState,
@@ -34,12 +35,11 @@ import type {
   AdminTeam,
   ApiFailure,
 } from "@/features/admin/types";
+import { TEAM_ID } from "@/lib/constants";
 
 type TeamsResponse = { teams: AdminTeam[] };
 type MembersResponse = { members: AdminMember[] };
 type TeamFilter = "all" | "active" | "archived";
-
-const DEFAULT_TEAM_ID = "ud2";
 
 export function TeamsPage() {
   const router = useRouter();
@@ -368,7 +368,7 @@ export function TeamsPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <h3 className="text-sm font-extrabold">{team.name}</h3>
-                    {team.id === DEFAULT_TEAM_ID && (
+                    {team.id === TEAM_ID && (
                       <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
                         기본 운영팀
                       </span>
@@ -660,7 +660,7 @@ export function TeamsPage() {
               </div>
             )}
 
-            {selected.id === DEFAULT_TEAM_ID && (
+            {selected.id === TEAM_ID && (
               <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
                 <ShieldAlert className="mt-0.5 shrink-0" size={16} />
                 <span>
@@ -699,7 +699,7 @@ export function TeamsPage() {
             ) : identity.isOrganizationAdmin ? (
               <>
                 <div className="flex flex-wrap justify-end gap-2 border-t border-stone-200 pt-4">
-                  {selected.id !== DEFAULT_TEAM_ID && (
+                  {selected.id !== TEAM_ID && (
                     <AdminButton
                       onClick={() =>
                         void updateTeam(
@@ -737,7 +737,7 @@ export function TeamsPage() {
                   </AdminButton>
                 </div>
 
-                {selected.id !== DEFAULT_TEAM_ID && (
+                {selected.id !== TEAM_ID && (
                   <section className="border-t border-red-200 pt-5">
                     <h3 className="text-sm font-extrabold text-red-900">
                       위험 작업
@@ -766,19 +766,16 @@ export function TeamsPage() {
         )}
       </AdminDrawer>
 
-      {deletePrompt && selected && (
-        <div className="fixed inset-0 z-[60] grid place-items-center p-4">
-          <button
-            type="button"
-            className="absolute inset-0 bg-stone-950/45"
-            aria-label="삭제 확인 닫기"
-            onClick={() => !saving && setDeletePrompt(false)}
-          />
+      {selected && (
+        <AdminModal
+          open={deletePrompt}
+          role="alertdialog"
+          labelledBy="delete-team-title"
+          onClose={() => !saving && setDeletePrompt(false)}
+          className="m-auto w-[calc(100%_-_2rem)] max-w-md rounded-md border-2 border-stone-950 bg-white shadow-2xl"
+        >
           <div
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="delete-team-title"
-            className="relative w-full max-w-md rounded-md border-2 border-stone-950 bg-white p-5 shadow-2xl"
+            className="relative p-5"
           >
             <button
               type="button"
@@ -836,7 +833,7 @@ export function TeamsPage() {
               </AdminButton>
             </div>
           </div>
-        </div>
+        </AdminModal>
       )}
     </AdminPage>
   );

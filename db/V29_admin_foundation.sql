@@ -23,6 +23,11 @@ alter table public.teams
     add column if not exists updated_at timestamptz not null default now(),
     add column if not exists archived_at timestamptz;
 
+alter table public.teams
+    drop constraint if exists teams_status_check;
+alter table public.teams
+    add constraint teams_status_check check (status in ('active', 'archived'));
+
 -- 샘플 팀을 만들지 않고 실제 구성원이 소속된 기존 팀만 이관한다.
 insert into public.teams (id, name, description)
 select distinct
@@ -86,19 +91,14 @@ using (
         select 1 from public.players p
         where lower(p.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
           and p.status = 'active'
+          and p.team_id = teams.id
     )
 );
 
 drop policy if exists "teams managed by admins" on public.teams;
 create policy "teams managed by admins"
-on public.teams for all to authenticated
+on public.teams for select to authenticated
 using (
-    exists (
-        select 1 from public.organization_admins oa
-        where oa.email = lower(coalesce(auth.jwt() ->> 'email', ''))
-    )
-)
-with check (
     exists (
         select 1 from public.organization_admins oa
         where oa.email = lower(coalesce(auth.jwt() ->> 'email', ''))
@@ -154,6 +154,7 @@ begin
           and p.status = 'active'
           and p.role = 'admin'
           and (p.team_id = old.team_id or old.team_id is null)
+          and (p.team_id = new.team_id or new.team_id is null)
     ) into actor_is_admin;
 
     if not actor_is_admin then
