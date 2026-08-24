@@ -63,7 +63,16 @@ function buildIndex(
 
   for (const row of rows) {
     if (byMembershipId.has(row.id)) continue;
-    const authorization = legacyAuthorization(row);
+    const authorization = row.role_id
+      ? {
+          membershipId: row.id,
+          legacyPlayerId: row.legacy_player_id,
+          roleId: row.role_id,
+          roleKey: "unresolved",
+          roleName: "권한 없음",
+          permissions: [],
+        }
+      : legacyAuthorization(row);
     byMembershipId.set(row.id, authorization);
     if (authorization.legacyPlayerId !== null) {
       byLegacyPlayerId.set(authorization.legacyPlayerId, authorization);

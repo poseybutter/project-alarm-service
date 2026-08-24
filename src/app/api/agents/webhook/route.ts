@@ -49,7 +49,7 @@ export async function GET() {
 
         if (error) throw error;
 
-        if (player.role === "admin") {
+        if (role === "admin") {
             const [{ data: players, error: playersError }, { data: hooks, error: hooksError }] =
                 await Promise.all([
                     supabase
@@ -130,7 +130,7 @@ export async function PUT(req: NextRequest) {
         }
 
         const targetMember =
-            player.role === "admin" && body.member?.trim()
+            role === "admin" && body.member?.trim()
                 ? body.member.trim()
                 : player.name;
 

@@ -51,7 +51,7 @@ export async function getServerUserRole(teamId: string) {
     }
 
     const normalized = await loadNormalizedIdentity(supabase, user.email);
-    if (normalized?.profile) {
+    if (normalized?.profile && normalized.memberships.length > 0) {
         const membership = normalized.memberships.find(
             (item) => item.teamId === teamId,
         );
@@ -61,11 +61,7 @@ export async function getServerUserRole(teamId: string) {
         return {
             supabase,
             user,
-            role: !active
-                ? null
-                : membership.role === "admin"
-                  ? "admin"
-                  : "member",
+            role: !active ? null : membership.role,
         };
     }
 
@@ -111,12 +107,8 @@ export async function getServerCurrentTeamRole() {
         return {
             supabase,
             user,
-            teamId: membership?.teamId ?? cookieTeamId ?? null,
-            role: !active
-                ? null
-                : membership?.role === "admin"
-                  ? "admin"
-                  : "member",
+            teamId: membership?.teamId ?? null,
+            role: !active ? null : membership?.role ?? null,
         };
     }
 

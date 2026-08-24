@@ -45,9 +45,9 @@ export async function POST() {
             teamId,
             connection,
         });
-        const teamRows = await syncTodayTeamCalendarEvents(serviceSupabase, {
-            teamId,
-        });
+        const teamRows = role === "admin"
+            ? await syncTodayTeamCalendarEvents(serviceSupabase, { teamId })
+            : [];
 
         const { data: tasks, error: taskError } = await serviceSupabase
             .from("tasks")

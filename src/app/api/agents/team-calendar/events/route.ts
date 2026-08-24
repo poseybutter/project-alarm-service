@@ -83,6 +83,30 @@ export async function POST(req: NextRequest) {
     const supabase = createServiceSupabaseClient();
 
     try {
+        if (body.targetMember) {
+            if (role !== "admin") {
+                const { data: actor } = await supabase
+                    .from("players")
+                    .select("name")
+                    .eq("team_id", teamId)
+                    .eq("email", user.email)
+                    .eq("status", "active")
+                    .maybeSingle();
+                if (!actor?.name || actor.name !== body.targetMember) {
+                    return NextResponse.json({ message: "본인 일정만 등록할 수 있습니다" }, { status: 403 });
+                }
+            }
+            const { data: target } = await supabase
+                .from("players")
+                .select("id")
+                .eq("team_id", teamId)
+                .eq("name", body.targetMember)
+                .eq("status", "active")
+                .maybeSingle();
+            if (!target) {
+                return NextResponse.json({ message: "현재 팀의 활성 구성원을 선택해주세요" }, { status: 400 });
+            }
+        }
         const { data: setting, error: settingError } = await supabase
             .from("agent_team_calendar_settings")
             .select("calendar_id, connection_email")

@@ -1,6 +1,7 @@
 .admin-root {
   --admin-ink: #1c1917;
   --admin-amber: #f59e0b;
+
   font-family: "SUIT Variable", "Pretendard Variable", system-ui, sans-serif;
   letter-spacing: 0;
 }

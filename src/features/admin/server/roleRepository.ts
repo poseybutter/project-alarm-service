@@ -256,6 +256,10 @@ export async function saveRole(input: {
 }) {
   const bootstrap = await requireAdminSession(input.teamId, "roles.manage");
   const normalized = normalizeRoleInput(input);
+  const grantedPermissions = new Set(bootstrap.currentScope.permissions);
+  if (normalized.permissions.some((permission) => !grantedPermissions.has(permission))) {
+    throw new AdminApiError("보유하지 않은 권한은 역할에 부여할 수 없습니다.", 403);
+  }
   let before: RoleRow | null = null;
   if (input.id) {
     before = await loadRoleForMutation(input.id);

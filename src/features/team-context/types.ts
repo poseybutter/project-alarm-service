@@ -18,5 +18,5 @@ export type TeamContextResponse = {
     member: string;
     playerId: number | null;
     avatarUrl: string | null;
-    role: "admin" | "member" | "guest";
+    role: "admin" | "member" | "viewer" | "guest";
 };
