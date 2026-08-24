@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
-import { LEADER, TEAM_ID } from "@/lib/constants";
+import { TEAM_ID } from "@/lib/constants";
 import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
 
 export async function createCookieSupabaseClient() {
@@ -78,9 +78,7 @@ export async function getServerUserRole(teamId: string) {
         role:
             data?.status !== "active"
                 ? null
-                : data?.role === "admin" || data?.name === LEADER
-                ? "admin"
-                : "member",
+                : data?.role ?? "member",
     };
 }
 
@@ -126,9 +124,7 @@ export async function getServerCurrentTeamRole() {
         role:
             data?.status !== "active"
                 ? null
-                : data?.role === "admin" || data?.name === LEADER
-                  ? "admin"
-                  : "member",
+                : data?.role ?? "member",
     };
 }
 
