@@ -1,6 +1,14 @@
 -- V31 적용 후 반복 실행할 수 있는 읽기 전용 정합성 점검 쿼리.
 -- issue_count가 모두 0이면 레거시 players와 정규화 테이블의 핵심 관계가 일치한다.
 
+drop function if exists public.audit_v31_identity_membership();
+create or replace function public.audit_v31_identity_membership()
+returns table (issue text, issue_count bigint)
+language sql
+stable
+security definer
+set search_path = public
+as $$
 with audit as (
     select
         'active_player_without_profile'::text as issue,
@@ -76,13 +84,9 @@ with audit as (
 select issue, issue_count
 from audit
 order by issue;
+$$;
 
-select 'profiles' as entity, count(*) as row_count
-from public.profiles
-union all
-select 'team_memberships', count(*)
-from public.team_memberships
-union all
-select 'pending_access_requests', count(*)
-from public.access_requests
-where status = 'pending';
+revoke all on function public.audit_v31_identity_membership() from public, anon, authenticated;
+grant execute on function public.audit_v31_identity_membership() to service_role;
+
+select * from public.audit_v31_identity_membership();

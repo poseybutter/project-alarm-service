@@ -27,7 +27,6 @@ type MemberWebhook = {
     email: string;
     role: string | null;
     configured: boolean;
-    webhookUrl: string;
     updatedAt: string | null;
 };
 
@@ -60,7 +59,6 @@ type MemberCalendarSettings = {
 type TeamEventType = "meeting" | "leave" | "other";
 type LeaveType = "annual_leave" | "offset";
 
-const TEAM_EVENT_MEMBERS = ["TEAM_MEMBER_4", "TEAM_MEMBER_1", "TEAM_MEMBER_2", "TEAM_MEMBER_3"];
 const MEETING_ROOMS = [
     "몰디브",
     "아로파",
@@ -86,11 +84,6 @@ const LEAVE_TYPE_OPTIONS = [
 const MEETING_ROOM_OPTIONS = MEETING_ROOMS.map((room) => ({
     value: room,
     label: room,
-}));
-
-const MEMBER_OPTIONS = TEAM_EVENT_MEMBERS.map((member) => ({
-    value: member,
-    label: member,
 }));
 
 const TIME_WHEEL_HOURS = Array.from({ length: 12 }, (_, index) => index + 1);
@@ -191,8 +184,12 @@ function cardHtmlToPlainText(value: string) {
 }
 
 export default function AgentsPage() {
-    const { role, member, teamId } = useAuth();
+    const { role, member, members, teamId } = useAuth();
     const isAdmin = role === "admin";
+    const teamEventMembers = useMemo(
+        () => members.filter((name) => name && name !== "GUEST"),
+        [members],
+    );
 
     const [suggestions, setSuggestions] = useState<AgentSuggestion[]>([]);
     const [suggestionsLoading, setSuggestionsLoading] = useState(true);
@@ -235,7 +232,7 @@ export default function AgentsPage() {
         startTime: "10:00",
         endTime: "11:00",
         meetingRoom: "몰디브",
-        targetMember: "TEAM_MEMBER_4",
+        targetMember: "",
         attendeeMembers: [],
     });
     const [rangePickerOpen, setRangePickerOpen] = useState(false);
@@ -350,7 +347,7 @@ export default function AgentsPage() {
                 (json.memberCalendars ?? []) as MemberCalendarSettings[];
             setMemberCalendarIds(
                 Object.fromEntries(
-                    TEAM_EVENT_MEMBERS.map((name) => [
+                    teamEventMembers.map((name) => [
                         name,
                         memberCalendars.find((row) => row.member === name)
                             ?.calendar_id ?? "",
@@ -362,7 +359,7 @@ export default function AgentsPage() {
         } finally {
             setSettingsLoading(false);
         }
-    }, [showToast]);
+    }, [showToast, teamEventMembers]);
 
     const refreshMyBriefing = useCallback(async () => {
         const res = await fetch("/api/agents/notifications/me", {
@@ -391,19 +388,24 @@ export default function AgentsPage() {
     }, [loadCalendarStatus, loadSettings, loadSuggestions, loadWebhook, showToast, teamId]);
 
     useEffect(() => {
-        if (!member || !TEAM_EVENT_MEMBERS.includes(member)) return;
-        setTeamEventForm((prev) => {
-            const attendeeMembers =
-                prev.attendeeMembers.length > 0
-                    ? prev.attendeeMembers
-                    : [member];
-            return {
-                ...prev,
-                targetMember: prev.targetMember || member,
-                attendeeMembers,
-            };
-        });
-    }, [member]);
+        if (!member || !teamEventMembers.includes(member)) return;
+        const timer = window.setTimeout(() => {
+            setTeamEventForm((prev) => {
+                const validAttendees = prev.attendeeMembers.filter((name) =>
+                    teamEventMembers.includes(name),
+                );
+                return {
+                    ...prev,
+                    targetMember: teamEventMembers.includes(prev.targetMember)
+                        ? prev.targetMember
+                        : member,
+                    attendeeMembers:
+                        validAttendees.length > 0 ? validAttendees : [member],
+                };
+            });
+        }, 0);
+        return () => window.clearTimeout(timer);
+    }, [member, teamEventMembers]);
 
     async function saveTeamCalendarSettings() {
         setTeamCalendarSaving(true);
@@ -427,7 +429,7 @@ export default function AgentsPage() {
                 (json.memberCalendars ?? []) as MemberCalendarSettings[];
             setMemberCalendarIds(
                 Object.fromEntries(
-                    TEAM_EVENT_MEMBERS.map((name) => [
+                    teamEventMembers.map((name) => [
                         name,
                         savedMemberCalendars.find((row) => row.member === name)
                             ?.calendar_id ?? memberCalendarIds[name] ?? "",
@@ -588,6 +590,31 @@ export default function AgentsPage() {
         }
     }
 
+    async function disconnectCalendar() {
+        if (!window.confirm("Google Calendar 연결과 동기화된 개인 일정을 삭제할까요?")) {
+            return;
+        }
+        setCalendarSyncing(true);
+        try {
+            const res = await fetch("/api/agents/calendar/status", {
+                method: "DELETE",
+            });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.message || "캘린더 연결 해제 실패");
+            setCalendarStatus({ connected: false, connection: null });
+            showToast("Google Calendar 연결을 해제했습니다");
+            await loadSuggestions();
+        } catch (error) {
+            showToast(
+                error instanceof Error
+                    ? error.message
+                    : "캘린더 연결 해제 실패",
+            );
+        } finally {
+            setCalendarSyncing(false);
+        }
+    }
+
     async function rebuildMyBriefing() {
         setGenerating(true);
         try {
@@ -712,11 +739,33 @@ export default function AgentsPage() {
             const json = await res.json();
             if (!res.ok) throw new Error(json.message || "Webhook 저장 실패");
             setWebhookConfigured(Boolean(json.configured));
-            setWebhookUrl(json.webhookUrl ?? webhookUrl);
+            setWebhookUrl("");
             showToast("개인 webhook을 저장했습니다");
             await loadWebhook();
         } catch (err) {
             showToast(err instanceof Error ? err.message : "Webhook 저장 실패");
+        } finally {
+            setWebhookSaving(false);
+        }
+    }
+
+    async function deleteWebhook() {
+        if (!window.confirm("개인 Google Chat Webhook을 삭제할까요?")) return;
+        setWebhookSaving(true);
+        try {
+            const res = await fetch("/api/agents/webhook", {
+                method: "DELETE",
+            });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.message || "Webhook 삭제 실패");
+            setWebhookUrl("");
+            setWebhookConfigured(false);
+            showToast("개인 Webhook을 삭제했습니다");
+            await loadWebhook();
+        } catch (error) {
+            showToast(
+                error instanceof Error ? error.message : "Webhook 삭제 실패",
+            );
         } finally {
             setWebhookSaving(false);
         }
@@ -808,7 +857,13 @@ export default function AgentsPage() {
                                 · {formatDateTime(calendarStatus.connection.updated_at)}
                             </p>
                         )}
-                        <div className="mt-3 grid grid-cols-2 gap-2">
+                        <div
+                            className={`mt-3 grid gap-2 ${
+                                calendarStatus?.connected
+                                    ? "grid-cols-3"
+                                    : "grid-cols-2"
+                            }`}
+                        >
                             <a
                                 href="/api/agents/calendar/connect"
                                 className="rounded-lg bg-stone-900 px-3 py-2 text-center text-xs font-bold text-white"
@@ -823,6 +878,16 @@ export default function AgentsPage() {
                             >
                                 {calendarSyncing ? "동기화 중" : "오늘 일정 동기화"}
                             </button>
+                            {calendarStatus?.connected && (
+                                <button
+                                    type="button"
+                                    onClick={disconnectCalendar}
+                                    disabled={calendarSyncing}
+                                    className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-bold text-red-600 disabled:opacity-50"
+                                >
+                                    연결 해제
+                                </button>
+                            )}
                         </div>
                         {teamCalendar && (
                             <div className="mt-4 rounded-lg border border-stone-100 bg-white p-3">
@@ -888,7 +953,7 @@ export default function AgentsPage() {
                                             ))}
                                         </div>
                                         <div className="mt-2 flex flex-wrap gap-1.5">
-                                            {TEAM_EVENT_MEMBERS.map((item) => (
+                                            {teamEventMembers.map((item) => (
                                                 <button
                                                     key={item}
                                                     type="button"
@@ -979,7 +1044,7 @@ export default function AgentsPage() {
                                             className="mt-2 w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-100"
                                         />
                                         <div className="mt-2 flex flex-wrap gap-1.5">
-                                            {TEAM_EVENT_MEMBERS.map((member) => (
+                                            {teamEventMembers.map((member) => (
                                                 <button
                                                     key={member}
                                                     type="button"
@@ -1311,12 +1376,14 @@ export default function AgentsPage() {
                         savingMemberWebhook={savingMemberWebhook}
                         teamCalendar={teamCalendar}
                         teamCalendarId={teamCalendarId}
+                        teamEventMembers={teamEventMembers}
                         memberCalendarIds={memberCalendarIds}
                         teamCalendarSaving={teamCalendarSaving}
                         onClose={() => setWebhookModalOpen(false)}
                         onWebhookUrlChange={setWebhookUrl}
                         onMemberWebhookDraftChange={setMemberWebhookDrafts}
                         onSaveWebhook={saveWebhook}
+                        onDeleteWebhook={deleteWebhook}
                         onSaveMemberWebhook={saveMemberWebhook}
                         onTeamCalendarIdChange={setTeamCalendarId}
                         onMemberCalendarIdsChange={setMemberCalendarIds}
@@ -1767,12 +1834,14 @@ function WebhookModal({
     savingMemberWebhook,
     teamCalendar,
     teamCalendarId,
+    teamEventMembers,
     memberCalendarIds,
     teamCalendarSaving,
     onClose,
     onWebhookUrlChange,
     onMemberWebhookDraftChange,
     onSaveWebhook,
+    onDeleteWebhook,
     onSaveMemberWebhook,
     onTeamCalendarIdChange,
     onMemberCalendarIdsChange,
@@ -1789,6 +1858,7 @@ function WebhookModal({
     savingMemberWebhook: string | null;
     teamCalendar: TeamCalendarSettings | null;
     teamCalendarId: string;
+    teamEventMembers: string[];
     memberCalendarIds: Record<string, string>;
     teamCalendarSaving: boolean;
     onClose: () => void;
@@ -1797,6 +1867,7 @@ function WebhookModal({
         React.SetStateAction<Record<string, string>>
     >;
     onSaveWebhook: () => void;
+    onDeleteWebhook: () => void;
     onSaveMemberWebhook: (member: string) => void;
     onTeamCalendarIdChange: (value: string) => void;
     onMemberCalendarIdsChange: React.Dispatch<
@@ -1891,7 +1962,11 @@ function WebhookModal({
                                     value={webhookUrl}
                                     disabled={webhookLoading}
                                     onChange={onWebhookUrlChange}
-                                    placeholder="https://chat.googleapis.com/v1/spaces/..."
+                                    placeholder={
+                                        webhookConfigured
+                                            ? "등록된 webhook은 숨김 처리됨"
+                                            : "https://chat.googleapis.com/v1/spaces/..."
+                                    }
                                 />
                                 <button
                                     type="button"
@@ -1901,6 +1976,16 @@ function WebhookModal({
                                 >
                                     {webhookSaving ? "저장 중" : "저장"}
                                 </button>
+                                {webhookConfigured && (
+                                    <button
+                                        type="button"
+                                        onClick={onDeleteWebhook}
+                                        disabled={webhookLoading || webhookSaving}
+                                        className="shrink-0 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-bold text-red-600 disabled:opacity-50"
+                                    >
+                                        삭제
+                                    </button>
+                                )}
                             </div>
                         </section>
 
@@ -2012,7 +2097,7 @@ function WebhookModal({
                                 />
                             </div>
                             <div className="space-y-2">
-                                {TEAM_EVENT_MEMBERS.map((name) => (
+                                {teamEventMembers.map((name) => (
                                     <div
                                         key={name}
                                         className="grid grid-cols-[4.5rem_1fr] items-center gap-2"
