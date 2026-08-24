@@ -7,8 +7,7 @@ const projectRoot = dirname(fileURLToPath(import.meta.url));
 /**
  * 보안 응답 헤더.
  * - 모든 경로에 적용. 클릭재킹·MIME 스니핑·과도한 referrer 노출·미사용 브라우저 기능 차단.
- * - CSP(Content-Security-Policy)는 Next.js 인라인 스타일/스크립트와 충돌 위험이 커서
- *   별도 검증 후 도입 예정 (아래 주석 참고).
+ * - CSP는 먼저 Report-Only로 관찰해 화면 동작에 영향을 주지 않고 정책을 조정한다.
  */
 const securityHeaders = [
     // MIME 타입 스니핑 차단
@@ -26,6 +25,21 @@ const securityHeaders = [
     {
         key: "Strict-Transport-Security",
         value: "max-age=63072000; includeSubDomains; preload",
+    },
+    {
+        key: "Content-Security-Policy-Report-Only",
+        value: [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline'",
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+            "font-src 'self' data: https://cdn.jsdelivr.net",
+            "img-src 'self' data: blob: https:",
+            "connect-src 'self' https: wss:",
+            "object-src 'none'",
+            "base-uri 'self'",
+            "form-action 'self'",
+            "frame-ancestors 'self'",
+        ].join("; "),
     },
 ];
 

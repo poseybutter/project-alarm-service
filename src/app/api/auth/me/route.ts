@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { ApiError, apiFetch } from "@/lib/api";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
 
 const ACCESS_COOKIE = "accessToken";
 
@@ -28,12 +29,14 @@ export async function GET() {
     } catch (err) {
         if (err instanceof ApiError) {
             return NextResponse.json(
-                { message: err.message },
+                { message: "사용자 정보를 확인할 수 없습니다." },
                 { status: err.status },
             );
         }
-        const message =
-            err instanceof Error ? err.message : "사용자 정보 조회 실패";
-        return NextResponse.json({ message }, { status: 500 });
+        return internalErrorResponse(
+            "auth-me",
+            err,
+            "사용자 정보 조회에 실패했습니다.",
+        );
     }
 }

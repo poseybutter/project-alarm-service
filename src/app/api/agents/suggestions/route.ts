@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getServerCurrentTeamRole } from "@/lib/serverSupabase";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
+import {
+    createServiceSupabaseClient,
+    getServerCurrentTeamRole,
+} from "@/lib/serverSupabase";
 import {
     createAgentSuggestions,
     listAgentSuggestions,
@@ -21,7 +25,7 @@ const STATUSES = new Set<AgentSuggestionStatus>([
 ]);
 
 export async function GET(req: NextRequest) {
-    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    const { user, role, teamId } = await getServerCurrentTeamRole();
     if (!user || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
@@ -41,7 +45,8 @@ export async function GET(req: NextRequest) {
             : undefined;
 
     try {
-        let suggestions = await listAgentSuggestions(supabase, {
+        const service = createServiceSupabaseClient();
+        let suggestions = await listAgentSuggestions(service, {
             teamId,
             status,
             agentType,
@@ -50,7 +55,7 @@ export async function GET(req: NextRequest) {
 
         const shouldShowTeam = role === "admin" && scopeParam === "team";
         if (!shouldShowTeam && user.email) {
-            const { data: player, error: playerError } = await supabase
+            const { data: player, error: playerError } = await service
                 .from("players")
                 .select("name")
                 .eq("team_id", teamId)
@@ -66,15 +71,17 @@ export async function GET(req: NextRequest) {
         }
 
         return NextResponse.json({ suggestions });
-    } catch (err) {
-        const message =
-            err instanceof Error ? err.message : "Failed to load suggestions";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "agent-suggestions-get",
+            error,
+            "에이전트 제안을 불러오지 못했습니다.",
+        );
     }
 }
 
 export async function POST(req: NextRequest) {
-    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    const { user, role, teamId } = await getServerCurrentTeamRole();
     if (!user || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
@@ -105,8 +112,9 @@ export async function POST(req: NextRequest) {
     }
 
     try {
+        const service = createServiceSupabaseClient();
         const created = await createAgentSuggestions(
-            supabase,
+            service,
             suggestions.map((item) => ({
                 ...(item as Record<string, unknown>),
                 team_id: teamId,
@@ -114,9 +122,11 @@ export async function POST(req: NextRequest) {
             })) as Parameters<typeof createAgentSuggestions>[1],
         );
         return NextResponse.json({ suggestions: created }, { status: 201 });
-    } catch (err) {
-        const message =
-            err instanceof Error ? err.message : "Failed to create suggestions";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "agent-suggestions-post",
+            error,
+            "에이전트 제안을 저장하지 못했습니다.",
+        );
     }
 }

@@ -91,7 +91,7 @@ export async function getServerCurrentTeamRole() {
     const store = await cookies();
     const cookieTeamId = store.get("current_team_id")?.value;
     const normalized = await loadNormalizedIdentity(supabase, user.email);
-    if (normalized?.profile) {
+    if (normalized?.profile && normalized.memberships.length > 0) {
         const activeMemberships = normalized.memberships.filter(
             (membership) => membership.status === "active",
         );

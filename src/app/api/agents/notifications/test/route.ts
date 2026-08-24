@@ -15,6 +15,13 @@ import type {
     NotificationSuggestionPayload,
 } from "@/lib/agents/types";
 import type { Accessibility, Task } from "@/lib/types";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
+import { decryptIntegrationToken } from "@/lib/server/tokenEncryption";
+import {
+    consumeRateLimit,
+    rateLimitResponse,
+    requestRateLimitKey,
+} from "@/lib/server/rateLimit";
 
 function isNotificationPayload(
     payload: Record<string, unknown>,
@@ -96,11 +103,16 @@ async function buildFreshSuggestion(
     });
 }
 
-export async function POST() {
+export async function POST(request: Request) {
     const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
     if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
+    const rate = consumeRateLimit(
+        requestRateLimitKey(request, "briefing-test", user.email),
+        { limit: 5, windowMs: 5 * 60 * 1000 },
+    );
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
 
     try {
         const serviceSupabase = createServiceSupabaseClient();
@@ -240,7 +252,7 @@ export async function POST() {
             card: suggestion.payload.card,
             channel: "personal_dm",
             recipientMember: player.name,
-            webhookUrl: webhookRow.webhook_url,
+            webhookUrl: decryptIntegrationToken(webhookRow.webhook_url),
         });
 
         return NextResponse.json({
@@ -250,9 +262,11 @@ export async function POST() {
                 title: suggestion.title,
             },
         });
-    } catch (err) {
-        const message =
-            err instanceof Error ? err.message : "Failed to send test briefing";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "test-briefing-send",
+            error,
+            "테스트 브리핑을 발송하지 못했습니다.",
+        );
     }
 }

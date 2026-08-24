@@ -10,6 +10,7 @@ import {
     type GoogleCalendarConnection,
     type TeamCalendarEventInput,
 } from "@/lib/server/googleCalendar";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
 
 const VALID_EVENT_TYPES = new Set([
     "meeting",
@@ -156,9 +157,11 @@ export async function POST(req: NextRequest) {
                 htmlLink: event.htmlLink ?? null,
             },
         });
-    } catch (err) {
-        const message =
-            err instanceof Error ? err.message : "팀 일정 등록에 실패했습니다";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "team-calendar-event-create",
+            error,
+            "팀 일정 등록에 실패했습니다.",
+        );
     }
 }

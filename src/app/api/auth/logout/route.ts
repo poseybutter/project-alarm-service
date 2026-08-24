@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { apiFetch } from "@/lib/api";
+import { minimizedAuditMetadata } from "@/lib/server/auditMetadata";
 
 const ACCESS_COOKIE = "accessToken";
 const REFRESH_COOKIE = "refreshToken";
@@ -45,12 +46,7 @@ export async function POST(req: NextRequest) {
             data: { user },
         } = await supabase.auth.getUser();
         if (user?.email) {
-            const forwardedFor = req.headers.get("x-forwarded-for");
-            const ip =
-                forwardedFor?.split(",")[0]?.trim() ||
-                req.headers.get("x-real-ip") ||
-                null;
-            const userAgent = req.headers.get("user-agent") || null;
+            const { ip, userAgent } = minimizedAuditMetadata(req);
             const { error: auditError } = await supabase
                 .from("audit_logs")
                 .insert({

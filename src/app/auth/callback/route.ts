@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { isIdentitySchemaUnavailable } from "@/features/identity/server/identityRepository";
+import { minimizedAuditMetadata } from "@/lib/server/auditMetadata";
 
 /**
  * Supabase OAuth (Google) 콜백.
@@ -67,12 +68,7 @@ export async function GET(req: NextRequest) {
 
     // 감사 로그 — OAuth 인증이 성공한 시점을 기록.
     // 실패해도 로그인 자체는 계속 진행 (실패는 콘솔로만 보고).
-    const forwardedFor = req.headers.get("x-forwarded-for");
-    const ip =
-        forwardedFor?.split(",")[0]?.trim() ||
-        req.headers.get("x-real-ip") ||
-        null;
-    const userAgent = req.headers.get("user-agent") || null;
+    const { ip, userAgent } = minimizedAuditMetadata(req);
     const { error: auditError } = await supabase.from("audit_logs").insert({
         email,
         action: "login_success",
