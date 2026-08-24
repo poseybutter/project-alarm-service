@@ -103,7 +103,7 @@ UD2 퍼블리싱팀 내부 업무관리 SaaS의 인증 화면 4종 디자인 핸
 - 마스코트 (Hero 픽셀 스프라이트, scale=6, bob 애니메이션)
 - 말풍선 "어서 와요!" (white bg, 2px stone-800 border, 3px 하단 그림자, 삼각 꼬리)
 - **게임 상태창** (440px width, white bg, 2px stone-800 border, 6px shadow):
-  - 헤더: CharBox(김유정, level 12) + 이름 + "🛡️ 던전 탐험가" 칩 + 🔥14 스트릭
+  - 헤더: CharBox(운영 관리자, level 12) + 이름 + "🛡️ 던전 탐험가" 칩 + 🔥14 스트릭
   - EXP 바: GameBar (20 segments, value=1240, max=1500, label "Lv. 12 · NEXT", sub "1,240 / 1,500 EXP")
   - 오늘의 퀘스트 3개: 체크박스 + 제목 + 💎+XP
     - "메인 헤더 마크업 리뷰" / D-1 칩 / +60
@@ -187,7 +187,7 @@ const pwColor = ["#a8a29e", "#dc2626", "#f59e0b", "#0ea5e9", "#10b981"][pwStreng
     - "퍼블리싱팀 길드" 20px font-black
     - "Markup Story · 봄 시즌"
     - 픽셀 방패 sprite
-    - 길드장 정보: CharBox(유, lv 12) + "김유정 · 길드장 (Admin)"
+    - 길드장 정보: CharBox(관, lv 12) + "운영 관리자 · 길드장 (Admin)"
     - 3개 메타 박스 (테두리 stone-200, 모노 폰트):
       - VALID · 26.06.10
       - SLOTS · 3 / 5
@@ -273,7 +273,7 @@ const pwColor = ["#a8a29e", "#dc2626", "#f59e0b", "#0ea5e9", "#10b981"][pwStreng
   - 메뉴 4개 (📊 대시보드 / 📜 퀘스트 / 🛡️ 길드원 active / ⚙️ 설정)
     - active는 2px stone-800 border + red 카운트 배지
 - 우:
-  - 🔥14 스트릭 칩 + 본인 CharBox(유, lv 12) + "김유정 · 길드장"
+  - 🔥14 스트릭 칩 + 본인 CharBox(관, lv 12) + "운영 관리자 · 길드장"
 
 **좌측 목록** (stone-50 bg, 2px stone-200 border-r):
 - 검색창 (이름/이메일, search 아이콘)
@@ -295,7 +295,7 @@ const pwColor = ["#a8a29e", "#dc2626", "#f59e0b", "#0ea5e9", "#10b981"][pwStreng
   - 점선 구분선 아래 3개 메타: 희망 역할 / 추천인 (작은 CharBox 포함) / 사용한 열쇠 (모노)
 - **신청 메시지** (note 있을 때): 📜 라벨 + amber-50 박스에 인용
 - **자동 보안 검증** (4개 체크 항목, 능력치 시트 스타일):
-  - 회사 도메인 (@ud2.co)
+  - 허용 도메인 (@example.com)
   - 유효한 열쇠 코드 (발급자 · 만료 전)
   - 신청 IP (서울, 차단 이력 없음)
   - 중복 신청 없음

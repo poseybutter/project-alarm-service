@@ -70,11 +70,16 @@ V31 전환 기간에는 기존 쓰기 경로가 `players`를 계속 사용하고
 
 ## DB 적용 순서
 
+`tools/verify-v31.mjs`, `tools/verify-v32.mjs`, `tools/verify-v33.mjs`,
+`tools/verify-v34.mjs`, `tools/audit-v34-readiness.mjs`는 각각 대응하는 감사
+SQL이 설치한 service-role 전용 RPC를 한 번만 호출한다. 전체 집계가 하나의 DB
+트랜잭션과 스냅샷에서 실행되므로 offset pagination을 사용하지 않는다.
+
 1. `V28_public_table_rls_policies.sql`을 적용한다.
 2. `V29_admin_foundation.sql`을 적용한다.
 3. `V30_admin_team_crud.sql`을 적용한다.
 4. `V31_identity_membership_foundation.sql`을 적용한다.
-5. `V31_identity_membership_audit.sql`을 실행하고 모든 `issue_count`가 0인지 확인한다.
+5. `V31_identity_membership_audit.sql`을 적용하고 모든 `issue_count`가 0인지 확인한다.
    로컬에서는 `node tools/verify-v31.mjs`로 같은 핵심 정합성을 읽기 전용으로
    재검증할 수 있다.
 6. 기존 조직 관리자 이메일이 `organization_admins`에 들어갔는지 확인한다.
@@ -83,15 +88,15 @@ V31 전환 기간에는 기존 쓰기 경로가 `players`를 계속 사용하고
 8. `V32_roles_permissions.sql`과 `V32_roles_permissions_audit.sql`을 적용한다.
 9. 로컬에서 `node tools/verify-v32.mjs`를 실행해 모든 감사 항목이 0인지
    재확인한다.
-10. `V33_team_context_foundation.sql`을 적용한 뒤
-    `V33_team_context_audit.sql`의 모든 `issue_count`가 0인지 확인한다.
+10. `V33_team_context_foundation.sql`과 `V33_team_context_audit.sql`을 적용한 뒤
+    모든 `issue_count`가 0인지 확인한다.
     로컬에서는 `node tools/verify-v33.mjs`로 같은 핵심 정합성을 재검증한다.
 11. `V34_work_relation_fk_compatibility.sql` 적용 전에 팀별 `players.name`과
     `projects.name` 중복이 없는지 `tools/audit-v34-readiness.mjs`로 확인한다.
     중복이 있으면 정리한 뒤 마이그레이션을 실행한다. 이 단계는 기존
     `member`/`proj` 문자열 컬럼을 유지하면서 FK를 백필하고 양방향 호환 트리거를
     설치한다.
-12. `V34_work_relation_fk_audit.sql`의 모든 `issue_count`가 0인지 확인한 뒤,
+12. `V34_work_relation_fk_audit.sql`을 적용하고 모든 `issue_count`가 0인지 확인한 뒤,
     로컬에서 `node tools/verify-v34.mjs`를 실행해 재검증한다. 과거 데이터 중
     연결 대상을 찾을 수 없는 행은 `relation_migration_exceptions`에 보존되며
     검증 결과의 `tracked_exceptions`로 별도 집계된다.

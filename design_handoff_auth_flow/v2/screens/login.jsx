@@ -2,7 +2,7 @@
 const { useState: useStateLoginV2 } = React;
 
 function LoginV2() {
-  const [email, setEmail] = useStateLoginV2("yujin@ud2.co");
+  const [email, setEmail] = useStateLoginV2("user@example.com");
   const [pw, setPw] = useStateLoginV2("");
   const [showPw, setShowPw] = useStateLoginV2(false);
   const [remember, setRemember] = useStateLoginV2(true);
@@ -37,7 +37,7 @@ function LoginV2() {
           </div>
 
           <div className="flex flex-col gap-3">
-            <Field label="이메일" placeholder="name@ud2.co" icon={I.mail()} value={email} onChange={setEmail} autoFocus />
+            <Field label="이메일" placeholder="name@example.com" icon={I.mail()} value={email} onChange={setEmail} autoFocus />
             <Field
               label="비밀번호"
               hint={<a className="text-amber-700 hover:text-amber-800 cursor-pointer font-bold">비밀번호 잊으셨나요?</a>}

@@ -26,7 +26,7 @@ function PendingV2() {
         <Logo size={28} />
         <div className="flex items-center gap-3">
           <ChipG tone="amber" icon="⏳">승인 대기 중</ChipG>
-          <span className="text-[13px] text-stone-500 font-medium">박지훈 · jihoon@ud2.co</span>
+          <span className="text-[13px] text-stone-500 font-medium">사용자 A · user-a@example.com</span>
           <Btn variant="ghost" size="sm">로그아웃</Btn>
         </div>
       </div>
@@ -64,7 +64,7 @@ function PendingV2() {
               </h1>
               <p className="text-[14px] text-stone-500 mt-3 leading-relaxed max-w-[480px] mx-auto">
                 길드장이 신청서를 확인하고 있어요. 승인이 완료되면
-                <b className="text-stone-700"> jihoon@ud2.co</b>로 알림이 가요.
+                <b className="text-stone-700"> user-a@example.com</b>으로 알림이 가요.
                 보통 <b className="text-amber-700">업무시간 내 1시간 이내</b>로 처리됩니다.
               </p>
 
@@ -111,7 +111,7 @@ function PendingV2() {
                   <div className="text-[14px] font-extrabold mt-0.5">
                     주먹펴고 일어서 <ChipG tone="amber" icon="🛡️">던전 탐험가</ChipG>
                   </div>
-                  <div className="text-[12px] text-stone-500 mt-0.5">yujin@ud2.co</div>
+                  <div className="text-[12px] text-stone-500 mt-0.5">user@example.com</div>
                 </div>
                 <Btn variant="soft" size="sm" leftIcon={<span>📣</span>}>슬랙으로 알리기</Btn>
               </div>
