@@ -7,9 +7,14 @@ import {
   getServerUser,
 } from "@/lib/serverSupabase";
 import {
+  ALL_ADMIN_PERMISSIONS,
   normalizeAdminRole,
   normalizeMemberStatus,
 } from "@/features/admin/permissions";
+import {
+  loadMembershipAuthorizationIndex,
+  type MembershipAuthorization,
+} from "@/features/admin/server/authorizationRepository";
 import {
   isIdentitySchemaUnavailable,
   loadNormalizedIdentity,
@@ -23,6 +28,7 @@ import type {
   AdminMember,
   AdminScope,
   AdminTeam,
+  AdminPermission,
   MemberStatus,
 } from "@/features/admin/types";
 
@@ -37,6 +43,7 @@ type PlayerRow = {
   level: number | null;
   exp: number | null;
   created_at?: string | null;
+  authorization?: MembershipAuthorization;
 };
 
 type TeamRow = {
@@ -109,6 +116,9 @@ async function loadActor(email: string) {
   const service = createServiceSupabaseClient();
   const normalized = await loadNormalizedIdentity(service, email);
   if (normalized?.profile && normalized.memberships.length > 0) {
+    const authorizationIndex = await loadMembershipAuthorizationIndex(service, {
+      membershipIds: normalized.memberships.map((membership) => membership.id),
+    });
     return normalized.memberships.map(
       (membership): PlayerRow => ({
         id: membership.legacyPlayerId ?? 0,
@@ -124,6 +134,7 @@ async function loadActor(email: string) {
             : "suspended",
         level: null,
         exp: null,
+        authorization: authorizationIndex.byMembershipId.get(membership.id),
       }),
     );
   }
@@ -153,6 +164,7 @@ async function loadOrganizationAdmin(email: string, memberships: PlayerRow[]) {
 
 export async function requireAdminSession(
   requestedTeamId?: string | null,
+  requiredPermission: AdminPermission = "admin.read",
 ): Promise<AdminBootstrap> {
   const { user } = await getServerUser();
   if (!user?.email) throw new AdminApiError("로그인이 필요합니다.", 401);
@@ -165,9 +177,8 @@ export async function requireAdminSession(
     throw new AdminApiError("활성화된 소속이 없습니다.", 403);
   }
 
-  const adminMemberships = activeMemberships.filter(
-    (membership) =>
-      membership.role === "admin" || membership.name === LEADER,
+  const adminMemberships = activeMemberships.filter((membership) =>
+    membershipPermissions(membership).includes("admin.read"),
   );
   const isOrganizationAdmin = await loadOrganizationAdmin(
     user.email,
@@ -197,11 +208,26 @@ export async function requireAdminSession(
       kind: "team",
       teamId: team.id,
       label: team.name,
+      permissions:
+        adminMemberships.find((membership) => membership.team_id === team.id)
+          ?.authorization?.permissions ?? [...ALL_ADMIN_PERMISSIONS],
     }));
   const scopes: AdminScope[] = isOrganizationAdmin
     ? [
-        { kind: "organization", teamId: null, label: "조직 전체" },
-        ...teamScopes,
+        {
+          kind: "organization",
+          teamId: null,
+          label: "조직 전체",
+          permissions: [...ALL_ADMIN_PERMISSIONS],
+        },
+        ...teams
+          .filter((team) => team.status === "active")
+          .map((team) => ({
+            kind: "team" as const,
+            teamId: team.id,
+            label: team.name,
+            permissions: [...ALL_ADMIN_PERMISSIONS],
+          })),
       ]
     : teamScopes;
   const currentScope = requestedTeamId
@@ -209,6 +235,9 @@ export async function requireAdminSession(
     : scopes[0];
   if (!currentScope) {
     throw new AdminApiError("관리 가능한 팀이 없습니다.", 403);
+  }
+  if (!currentScope.permissions.includes(requiredPermission)) {
+    throw new AdminApiError("이 작업을 수행할 권한이 없습니다.", 403);
   }
 
   const first = memberships[0];
@@ -225,6 +254,13 @@ export async function requireAdminSession(
   return { identity, scopes, currentScope };
 }
 
+function membershipPermissions(membership: PlayerRow): AdminPermission[] {
+  if (membership.authorization) return membership.authorization.permissions;
+  return membership.role === "admin" || membership.name === LEADER
+    ? [...ALL_ADMIN_PERMISSIONS]
+    : [];
+}
+
 function applyScope<T>(query: T, teamId: string | null): T {
   if (!teamId) return query;
   return (query as { eq: (column: string, value: string) => T }).eq(
@@ -237,6 +273,7 @@ function toAdminMember(
   row: PlayerRow,
   teamNames: Map<string, string>,
 ): AdminMember {
+  const role = normalizeAdminRole(row.role);
   return {
     id: row.id,
     name: row.name || row.email?.split("@")[0] || "이름 미등록",
@@ -246,10 +283,17 @@ function toAdminMember(
     teamName: row.team_id
       ? (teamNames.get(row.team_id) ?? fallbackTeamName(row.team_id))
       : "미배정",
-    role: normalizeAdminRole(row.role),
+    role,
     status: normalizeMemberStatus(row.status),
     level: row.level,
     exp: row.exp,
+    roleId: row.authorization?.roleId ?? null,
+    roleKey:
+      row.authorization?.roleKey ??
+      (role === "admin" ? "team_admin" : "team_member"),
+    roleName:
+      row.authorization?.roleName ??
+      (role === "admin" ? "팀 관리자" : "구성원"),
   };
 }
 
@@ -267,18 +311,28 @@ async function queryAdminMembers(
   query = applyScope(query, teamId);
   const { data, error } = await query;
   if (error) throw error;
-  return ((data ?? []) as PlayerRow[]).map((row) =>
-    toAdminMember(row, teamNames),
+  const rows = (data ?? []) as PlayerRow[];
+  const authorizationIndex = await loadMembershipAuthorizationIndex(service, {
+    legacyPlayerIds: rows.map((row) => row.id),
+  });
+  return rows.map((row) =>
+    toAdminMember(
+      {
+        ...row,
+        authorization: authorizationIndex.byLegacyPlayerId.get(row.id),
+      },
+      teamNames,
+    ),
   );
 }
 
 export async function listAdminMembers(teamId: string | null) {
-  const bootstrap = await requireAdminSession(teamId);
+  const bootstrap = await requireAdminSession(teamId, "members.read");
   return queryAdminMembers(bootstrap.currentScope.teamId);
 }
 
 export async function listAccessRequests(teamId: string | null) {
-  const bootstrap = await requireAdminSession(teamId);
+  const bootstrap = await requireAdminSession(teamId, "requests.review");
   const effectiveTeamId = bootstrap.currentScope.teamId;
   const teams = await loadTeams();
   const teamNames = new Map(teams.map((team) => [team.id, team.name]));
@@ -395,7 +449,7 @@ async function queryAdminAuditLogs(
 export async function listAdminAuditLogs(
   teamId: string | null,
 ): Promise<AdminActivity[]> {
-  const bootstrap = await requireAdminSession(teamId);
+  const bootstrap = await requireAdminSession(teamId, "audit.read");
   return queryAdminAuditLogs(bootstrap.currentScope.teamId);
 }
 
@@ -516,7 +570,10 @@ export async function reviewAccessRequest(input: {
   teamId?: string;
   role?: "admin" | "member";
 }) {
-  const bootstrap = await requireAdminSession(input.teamId ?? null);
+  const bootstrap = await requireAdminSession(
+    input.teamId ?? null,
+    "requests.review",
+  );
   const service = createServiceSupabaseClient();
   const { data: before, error: beforeError } = await service
     .from("players")
@@ -590,9 +647,10 @@ export async function updateAdminMember(input: {
   id: number;
   teamId: string;
   role?: "admin" | "member";
+  roleId?: string;
   status?: Extract<MemberStatus, "active" | "suspended">;
 }) {
-  const bootstrap = await requireAdminSession(input.teamId);
+  const bootstrap = await requireAdminSession(input.teamId, "members.manage");
   const service = createServiceSupabaseClient();
   const { data: before, error: beforeError } = await service
     .from("players")
@@ -605,9 +663,37 @@ export async function updateAdminMember(input: {
     throw new AdminApiError("선택한 팀의 구성원이 아닙니다.", 400);
   }
 
+  let targetRole: {
+    id: string;
+    team_id: string | null;
+    role_key: string;
+    name: string;
+  } | null = null;
+  if (input.roleId) {
+    const { data: roleRow, error: roleError } = await service
+      .from("roles")
+      .select("id, team_id, role_key, name, status")
+      .eq("id", input.roleId)
+      .eq("status", "active")
+      .maybeSingle();
+    if (roleError && isIdentitySchemaUnavailable(roleError)) {
+      throw new AdminApiError("V32 역할·권한 마이그레이션이 필요합니다.", 503);
+    }
+    if (roleError) throw roleError;
+    if (
+      !roleRow ||
+      (roleRow.team_id !== null && roleRow.team_id !== input.teamId)
+    ) {
+      throw new AdminApiError("이 팀에 배정할 수 없는 역할입니다.", 400);
+    }
+    targetRole = roleRow;
+  }
+
   const removesOwnAccess =
     before.email === bootstrap.identity.email &&
-    (input.role === "member" || input.status === "suspended");
+    (Boolean(input.roleId) ||
+      input.role === "member" ||
+      input.status === "suspended");
   if (removesOwnAccess) {
     throw new AdminApiError(
       "자신의 관리자 권한은 직접 해제할 수 없습니다.",
@@ -617,7 +703,9 @@ export async function updateAdminMember(input: {
 
   if (
     before.role === "admin" &&
-    (input.role === "member" || input.status === "suspended")
+    (input.role === "member" ||
+      (targetRole && targetRole.role_key !== "team_admin") ||
+      input.status === "suspended")
   ) {
     const { count, error: countError } = await service
       .from("players")
@@ -635,9 +723,44 @@ export async function updateAdminMember(input: {
     ...(input.role ? { role: input.role } : {}),
     ...(input.status ? { status: input.status } : {}),
   };
-  if (Object.keys(changes).length === 0) {
+  if (Object.keys(changes).length === 0 && !input.roleId) {
     throw new AdminApiError("변경할 항목이 없습니다.", 400);
   }
+
+  if (input.roleId) {
+    const { error: rpcError } = await service.rpc(
+      "admin_update_member_access",
+      {
+        p_player_id: input.id,
+        p_role_id: input.roleId,
+        p_status: input.status ?? null,
+      },
+    );
+    if (rpcError && isIdentitySchemaUnavailable(rpcError)) {
+      throw new AdminApiError("V32 역할·권한 마이그레이션이 필요합니다.", 503);
+    }
+    if (rpcError) throw rpcError;
+
+    const { data: afterPlayer, error: afterError } = await service
+      .from("players")
+      .select("id, name, email, team_id, role, status")
+      .eq("id", input.id)
+      .maybeSingle();
+    if (afterError) throw afterError;
+
+    await writeAdminAudit({
+      actorEmail: bootstrap.identity.email,
+      action: "member.updated",
+      teamId: input.teamId,
+      targetType: "player",
+      targetId: String(input.id),
+      targetLabel: before.name || before.email || String(input.id),
+      beforeState: before,
+      afterState: { ...afterPlayer, assignedRole: targetRole },
+    });
+    return afterPlayer;
+  }
+
   const { data, error } = await service
     .from("players")
     .update(changes)
@@ -660,7 +783,7 @@ export async function updateAdminMember(input: {
 }
 
 export async function listTeamsWithCounts() {
-  const bootstrap = await requireAdminSession(null);
+  const bootstrap = await requireAdminSession(null, "teams.read");
   const effectiveTeamId = bootstrap.currentScope.teamId;
   const allTeams = await loadTeams();
   const members = await queryAdminMembers(effectiveTeamId, allTeams);
@@ -688,7 +811,7 @@ export async function createAdminTeam(input: {
   name: string;
   description?: string;
 }) {
-  const bootstrap = await requireAdminSession(null);
+  const bootstrap = await requireAdminSession(null, "teams.manage");
   if (!bootstrap.identity.isOrganizationAdmin) {
     throw new AdminApiError("조직 관리자만 팀을 만들 수 있습니다.", 403);
   }
@@ -740,7 +863,7 @@ export async function createAdminTeam(input: {
 }
 
 async function requireOrganizationAdmin() {
-  const bootstrap = await requireAdminSession(null);
+  const bootstrap = await requireAdminSession(null, "teams.manage");
   if (!bootstrap.identity.isOrganizationAdmin) {
     throw new AdminApiError("조직 관리자만 팀을 변경할 수 있습니다.", 403);
   }
@@ -917,7 +1040,7 @@ export async function deleteAdminTeam(teamId: string) {
 }
 
 export async function getIntegrationOverview(teamId: string | null) {
-  const bootstrap = await requireAdminSession(teamId);
+  const bootstrap = await requireAdminSession(teamId, "integrations.read");
   const effectiveTeamId = bootstrap.currentScope.teamId;
   const service = createServiceSupabaseClient();
 

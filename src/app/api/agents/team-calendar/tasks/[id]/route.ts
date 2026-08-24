@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { TEAM_ID } from "@/lib/constants";
 import {
     createServiceSupabaseClient,
     getServerUserRole,
@@ -19,11 +18,12 @@ type RouteContext = {
 async function getCurrentPlayer(
     supabase: ReturnType<typeof createServiceSupabaseClient>,
     email: string,
+    teamId: string,
 ) {
     const { data, error } = await supabase
         .from("players")
         .select("name, role")
-        .eq("team_id", TEAM_ID)
+        .eq("team_id", teamId)
         .eq("email", email)
         .maybeSingle();
     if (error) throw error;
@@ -43,13 +43,14 @@ function canManageTask(params: {
 
 async function loadTeamCalendarContext(
     supabase: ReturnType<typeof createServiceSupabaseClient>,
+    teamId: string,
     member?: string | null,
     existingCalendarId?: string | null,
 ) {
     const { data: setting, error: settingError } = await supabase
         .from("agent_team_calendar_settings")
         .select("calendar_id, connection_email")
-        .eq("team_id", TEAM_ID)
+        .eq("team_id", teamId)
         .maybeSingle();
     if (settingError) throw settingError;
     if (!setting?.calendar_id || !setting.connection_email) {
@@ -62,7 +63,7 @@ async function loadTeamCalendarContext(
             await supabase
                 .from("agent_member_calendar_settings")
                 .select("calendar_id")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .eq("member", member)
                 .maybeSingle();
         if (memberCalendarError) throw memberCalendarError;
@@ -75,7 +76,7 @@ async function loadTeamCalendarContext(
     const { data: connection, error: connectionError } = await supabase
         .from("agent_calendar_connections")
         .select("member, email, access_token, refresh_token, expires_at")
-        .eq("team_id", TEAM_ID)
+        .eq("team_id", teamId)
         .eq("email", setting.connection_email)
         .maybeSingle();
     if (connectionError) throw connectionError;
@@ -85,7 +86,7 @@ async function loadTeamCalendarContext(
 
     const accessToken = await getTeamCalendarAccessToken(
         supabase,
-        TEAM_ID,
+        teamId,
         connection as GoogleCalendarConnection,
     );
 
@@ -103,21 +104,15 @@ async function loadTask(
     const { data, error } = await supabase
         .from("tasks")
         .select(
-            "id, member, proj, content, status, start_date, end_date, show_on_team_calendar, team_calendar_event_id, team_calendar_id",
+            "id, team_id, member, proj, content, status, start_date, end_date, show_on_team_calendar, team_calendar_event_id, team_calendar_id",
         )
-        .eq("team_id", TEAM_ID)
         .eq("id", id)
         .maybeSingle();
     if (error) throw error;
-    return data as TeamCalendarTaskInput | null;
+    return data as (TeamCalendarTaskInput & { team_id: string }) | null;
 }
 
 export async function POST(_req: NextRequest, context: RouteContext) {
-    const { user, role } = await getServerUserRole(TEAM_ID);
-    if (!user?.email) {
-        return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-    }
-
     const { id: rawId } = await context.params;
     const taskId = Number(rawId);
     if (!Number.isFinite(taskId)) {
@@ -125,15 +120,19 @@ export async function POST(_req: NextRequest, context: RouteContext) {
     }
 
     const supabase = createServiceSupabaseClient();
+    let authorizedTeamId: string | null = null;
 
     try {
-        const [player, task] = await Promise.all([
-            getCurrentPlayer(supabase, user.email),
-            loadTask(supabase, taskId),
-        ]);
+        const task = await loadTask(supabase, taskId);
         if (!task) {
             return NextResponse.json({ message: "Task not found" }, { status: 404 });
         }
+        const { user, role } = await getServerUserRole(task.team_id);
+        if (!user?.email || !role) {
+            return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+        }
+        authorizedTeamId = task.team_id;
+        const player = await getCurrentPlayer(supabase, user.email, task.team_id);
         if (
             !canManageTask({
                 role,
@@ -146,6 +145,7 @@ export async function POST(_req: NextRequest, context: RouteContext) {
 
         const { calendarId, sharedCalendarId, accessToken } = await loadTeamCalendarContext(
             supabase,
+            task.team_id,
             task.member,
             task.team_calendar_id,
         );
@@ -178,7 +178,7 @@ export async function POST(_req: NextRequest, context: RouteContext) {
                 team_calendar_synced_at: new Date().toISOString(),
                 team_calendar_sync_error: null,
             })
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", task.team_id)
             .eq("id", taskId);
         if (error) throw error;
 
@@ -190,21 +190,18 @@ export async function POST(_req: NextRequest, context: RouteContext) {
     } catch (err) {
         const message =
             err instanceof Error ? err.message : "Failed to sync team calendar";
-        await supabase
-            .from("tasks")
-            .update({ team_calendar_sync_error: message })
-            .eq("team_id", TEAM_ID)
-            .eq("id", taskId);
+        if (authorizedTeamId) {
+            await supabase
+                .from("tasks")
+                .update({ team_calendar_sync_error: message })
+                .eq("team_id", authorizedTeamId)
+                .eq("id", taskId);
+        }
         return NextResponse.json({ message }, { status: 500 });
     }
 }
 
 export async function DELETE(_req: NextRequest, context: RouteContext) {
-    const { user, role } = await getServerUserRole(TEAM_ID);
-    if (!user?.email) {
-        return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-    }
-
     const { id: rawId } = await context.params;
     const taskId = Number(rawId);
     if (!Number.isFinite(taskId)) {
@@ -214,11 +211,13 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
     const supabase = createServiceSupabaseClient();
 
     try {
-        const [player, task] = await Promise.all([
-            getCurrentPlayer(supabase, user.email),
-            loadTask(supabase, taskId),
-        ]);
+        const task = await loadTask(supabase, taskId);
         if (!task) return NextResponse.json({ deleted: false });
+        const { user, role } = await getServerUserRole(task.team_id);
+        if (!user?.email || !role) {
+            return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+        }
+        const player = await getCurrentPlayer(supabase, user.email, task.team_id);
         if (
             !canManageTask({
                 role,
@@ -233,6 +232,7 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
             const { calendarId, accessToken } =
                 await loadTeamCalendarContext(
                     supabase,
+                    task.team_id,
                     task.member,
                     task.team_calendar_id,
                 );

@@ -1,10 +1,14 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { getMemberName } from "@/lib/auth";
-import { LEADER, TEAM_ID } from "@/lib/constants";
+import type {
+    TeamMemberOption,
+    TeamContextOption,
+    TeamContextResponse,
+} from "@/features/team-context/types";
 
 type AuthContextType = {
     user: User | null;
@@ -12,6 +16,13 @@ type AuthContextType = {
     avatarUrl: string | null;
     loading: boolean;
     role: "admin" | "member" | "guest";
+    teamId: string | null;
+    playerId: number | null;
+    teams: TeamContextOption[];
+    members: string[];
+    memberOptions: TeamMemberOption[];
+    switchingTeam: boolean;
+    switchTeam: (teamId: string) => Promise<void>;
     refreshAvatar: () => void;
 };
 
@@ -21,6 +32,13 @@ const AuthContext = createContext<AuthContextType>({
     avatarUrl: null,
     loading: true,
     role: "member",
+    teamId: null,
+    playerId: null,
+    teams: [],
+    members: [],
+    memberOptions: [],
+    switchingTeam: false,
+    switchTeam: async () => {},
     refreshAvatar: () => {},
 });
 
@@ -52,8 +70,16 @@ function looksLikeInvalidRefreshOrJwt(message: string | undefined) {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
+    const [teamContextLoading, setTeamContextLoading] = useState(true);
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
     const [role, setRole] = useState<"admin" | "member" | "guest">("member");
+    const [resolvedMember, setResolvedMember] = useState<string | null>(null);
+    const [teamId, setTeamId] = useState<string | null>(null);
+    const [playerId, setPlayerId] = useState<number | null>(null);
+    const [teams, setTeams] = useState<TeamContextOption[]>([]);
+    const [members, setMembers] = useState<string[]>([]);
+    const [memberOptions, setMemberOptions] = useState<TeamMemberOption[]>([]);
+    const [switchingTeam, setSwitchingTeam] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
@@ -119,50 +145,109 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
     }, []);
 
-    const member = getMemberName(user?.email || "");
+    const legacyMember = getMemberName(user?.email || "");
+    const member = user ? resolvedMember : legacyMember;
 
-    async function loadAvatar(memberName: string) {
-        if (memberName === "GUEST") {
+    const applyTeamContext = useCallback((context: TeamContextResponse) => {
+        setResolvedMember(context.member);
+        setAvatarUrl(context.avatarUrl);
+        setRole(context.role);
+        setTeamId(context.teamId);
+        setPlayerId(context.playerId);
+        setTeams(context.teams);
+        setMembers(context.members);
+        setMemberOptions(context.memberOptions);
+    }, []);
+
+    const loadTeamContext = useCallback(async () => {
+        setTeamContextLoading(true);
+        try {
+            const response = await fetch("/api/team-context", {
+                cache: "no-store",
+            });
+            if (!response.ok) {
+                setResolvedMember(null);
+                setAvatarUrl(null);
+                setRole("guest");
+                setTeamId(null);
+                setPlayerId(null);
+                setTeams([]);
+                setMembers([]);
+                setMemberOptions([]);
+                return;
+            }
+            applyTeamContext((await response.json()) as TeamContextResponse);
+        } catch (error) {
+            console.error("[auth] Failed to load team context", error);
+            setResolvedMember(null);
             setAvatarUrl(null);
             setRole("guest");
-            return;
+            setTeamId(null);
+            setPlayerId(null);
+            setTeams([]);
+            setMembers([]);
+            setMemberOptions([]);
+        } finally {
+            setTeamContextLoading(false);
         }
-        const { data } = await supabase
-            .from("players")
-            .select("avatar_url, role, status")
-            .eq("team_id", TEAM_ID)
-            .eq("name", memberName)
-            .maybeSingle();
-        setAvatarUrl(data?.avatar_url || null);
-        if (data?.status !== "active") {
-            setRole("guest");
-            return;
-        }
-        setRole(
-            data?.role === "admin" || memberName === LEADER
-                ? "admin"
-                : "member",
-        );
-    }
+    }, [applyTeamContext]);
 
     useEffect(() => {
         const timer = window.setTimeout(() => {
-            if (member) loadAvatar(member);
+            if (user) void loadTeamContext();
             else {
+                setTeamContextLoading(false);
+                setResolvedMember(null);
                 setAvatarUrl(null);
                 setRole("member");
+                setTeamId(null);
+                setPlayerId(null);
+                setTeams([]);
+                setMembers([]);
+                setMemberOptions([]);
             }
         }, 0);
         return () => window.clearTimeout(timer);
-    }, [member]);
+    }, [loadTeamContext, user]);
+
+    async function switchTeam(nextTeamId: string) {
+        if (!nextTeamId || nextTeamId === teamId || switchingTeam) return;
+        setSwitchingTeam(true);
+        try {
+            const response = await fetch("/api/team-context", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ teamId: nextTeamId }),
+            });
+            if (!response.ok) throw new Error("Failed to switch team");
+            applyTeamContext((await response.json()) as TeamContextResponse);
+            window.location.reload();
+        } finally {
+            setSwitchingTeam(false);
+        }
+    }
 
     function refreshAvatar() {
-        if (member) loadAvatar(member);
+        if (user) void loadTeamContext();
     }
 
     return (
         <AuthContext.Provider
-            value={{ user, member, avatarUrl, loading, role, refreshAvatar }}
+            value={{
+                user,
+                member,
+                avatarUrl,
+                loading: loading || (Boolean(user) && teamContextLoading),
+                role,
+                teamId,
+                playerId,
+                teams,
+                members,
+                memberOptions,
+                switchingTeam,
+                switchTeam,
+                refreshAvatar,
+            }}
         >
             {children}
         </AuthContext.Provider>

@@ -6,7 +6,7 @@ import { useAuth } from './AuthProvider'
 import { signOut } from '@/lib/auth'
 
 export default function UserMenu() {
-  const { member, avatarUrl } = useAuth()
+  const { member, avatarUrl, teamId, teams } = useAuth()
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -62,7 +62,9 @@ export default function UserMenu() {
                   </span>
                 )}
               </div>
-              <p className="text-xs text-stone-400">UD</p>
+              <p className="text-xs text-stone-400">
+                {teams.find(team => team.id === teamId)?.name ?? teamId}
+              </p>
             </div>
           </div>
           <button

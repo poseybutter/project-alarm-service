@@ -13,6 +13,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Typography from "@tiptap/extension-typography";
 import UserMenu from "@/components/UserMenu";
+import TeamSwitcher from "@/components/TeamSwitcher";
 import Avatar from "@/components/Avatar";
 import { supabase } from "@/lib/supabase";
 import AuthGuard from "@/components/AuthGuard";
@@ -21,7 +22,7 @@ import NotificationButton from "@/components/NotificationButton";
 import { useAuth } from "@/components/AuthProvider";
 import { PageSpinner } from "@/components/Spinner";
 import type { Task } from "@/lib/types";
-import { LEADER, MEMBERS, TEAM_ID, normalizeStatus } from "@/lib/constants";
+import { LEADER, normalizeStatus } from "@/lib/constants";
 import { toLocalYmd } from "@/lib/toLocalYmd";
 import TiptapSectionEditor from "@/components/TiptapSectionEditor";
 import Tooltip from "@/components/Tooltip";
@@ -615,7 +616,7 @@ const EMPTY_ASSIGN_FORM: {
 };
 
 export default function ReportPage() {
-    const { member: currentMember, role } = useAuth();
+    const { member: currentMember, members, role, teamId } = useAuth();
     const isGuest = currentMember === "GUEST" || role === "guest";
     const [mode, setMode] = useState<"weekly" | "monthly">("weekly");
     // 콘텐츠 탭: 현황 보드(브리핑+배정) / 공지(확인·OKR·전달사항)
@@ -726,6 +727,7 @@ export default function ReportPage() {
     const mn = getMonthWin(mOff);
 
     const loadBriefing = useCallback(async () => {
+        if (!teamId) return;
         const offsetAtStart = wOffRef.current;
         const weekStart = getWeekWin(offsetAtStart).from;
         const { data, error } = await supabase
@@ -733,7 +735,7 @@ export default function ReportPage() {
             .select(
                 "project, maintenance, etc, notice, checklist, okr, in_progress, waiting, not_started, delayed, done, is_locked, edited_by, updated_at",
             )
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("week_start", weekStart)
             .maybeSingle();
 
@@ -771,7 +773,7 @@ export default function ReportPage() {
         const { data: prevData } = await supabase
             .from("briefings")
             .select("notice, checklist, okr")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .lt("week_start", weekStart)
             .order("week_start", { ascending: false })
             .limit(1)
@@ -824,17 +826,18 @@ export default function ReportPage() {
             edited_by: null,
             updated_at: null,
         });
-    }, []);
+    }, [teamId]);
 
     const loadAssignments = useCallback(async () => {
+        if (!teamId) return;
         const { data } = await supabase
             .from("assignments")
             .select("*")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .order("sort_order", { ascending: true })
             .order("created_at", { ascending: true });
         setAssignments((data as Assignment[]) || []);
-    }, []);
+    }, [teamId]);
 
     useEffect(() => {
         void loadAssignments();
@@ -857,13 +860,14 @@ export default function ReportPage() {
     }, [loadAssignments, channelId]);
 
     const loadTasks = useCallback(async () => {
+        if (!teamId) return;
         const { data } = await supabase
             .from("tasks")
             .select("*")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .order("created_at", { ascending: false });
         setTasks(data || []);
-    }, []);
+    }, [teamId]);
 
     useEffect(() => {
         setLoading(true);
@@ -907,7 +911,7 @@ export default function ReportPage() {
         const week = getWeekWin(wOffRef.current).from;
         try {
             const res = await fetch(
-                `/api/briefing-tasks?week=${encodeURIComponent(week)}`,
+                `/api/briefing-tasks?week=${encodeURIComponent(week)}&teamId=${encodeURIComponent(teamId ?? "")}`,
             );
             if (!res.ok) return;
             const json = (await res.json()) as {
@@ -923,7 +927,7 @@ export default function ReportPage() {
         } catch (e) {
             console.error("[loadBriefingTasks]", e);
         }
-    }, [wOff]);
+    }, [wOff, teamId]);
 
     useEffect(() => {
         if (mode !== "weekly") return;
@@ -990,6 +994,7 @@ export default function ReportPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     week,
+                    teamId,
                     task_id: taskId,
                     edited_content: content,
                 }),
@@ -1011,6 +1016,7 @@ export default function ReportPage() {
     }
 
     async function saveNotice() {
+        if (!teamId) return;
         setSavingNotice(true);
         try {
             const noticeHtml = editNoticeDraftRef.current;
@@ -1029,9 +1035,9 @@ export default function ReportPage() {
                     is_locked: briefing?.is_locked ?? false,
                     edited_by: currentMember ?? null,
                     updated_at: new Date().toISOString(),
-                    team_id: TEAM_ID,
+                    team_id: teamId,
                 },
-                { onConflict: "week_start" },
+                { onConflict: "team_id,week_start" },
             );
             if (error) {
                 console.error(error);
@@ -1047,6 +1053,7 @@ export default function ReportPage() {
     }
 
     async function saveChecklist() {
+        if (!teamId) return;
         setSavingChecklist(true);
         try {
             const checklistHtml = editChecklistDraftRef.current;
@@ -1065,9 +1072,9 @@ export default function ReportPage() {
                     is_locked: briefing?.is_locked ?? false,
                     edited_by: currentMember ?? null,
                     updated_at: new Date().toISOString(),
-                    team_id: TEAM_ID,
+                    team_id: teamId,
                 },
-                { onConflict: "week_start" },
+                { onConflict: "team_id,week_start" },
             );
             if (error) {
                 console.error(error);
@@ -1083,6 +1090,7 @@ export default function ReportPage() {
     }
 
     async function saveOkr() {
+        if (!teamId) return;
         setSavingOkr(true);
         try {
             const okrHtml = editOkrDraftRef.current;
@@ -1099,9 +1107,9 @@ export default function ReportPage() {
                     is_locked: briefing?.is_locked ?? false,
                     edited_by: currentMember ?? null,
                     updated_at: new Date().toISOString(),
-                    team_id: TEAM_ID,
+                    team_id: teamId,
                 },
-                { onConflict: "week_start" },
+                { onConflict: "team_id,week_start" },
             );
             if (error) {
                 console.error(error);
@@ -1325,8 +1333,8 @@ export default function ReportPage() {
     function openEditAssignment(a: Assignment) {
         setEditAssignment(a);
         const raw = Array.isArray(a.members) ? [...a.members] : [];
-        const core = raw.filter((x) => MEMBERS.includes(x));
-        const extra = raw.filter((x) => !MEMBERS.includes(x));
+        const core = raw.filter((x) => members.includes(x));
+        const extra = raw.filter((x) => !members.includes(x));
         setAssignForm({
             type: a.type || "프로젝트",
             name: a.name || "",
@@ -1374,6 +1382,7 @@ export default function ReportPage() {
     }
 
     async function saveAssignment() {
+        if (!teamId) return;
         if (!assignForm.name.trim()) {
             alert("프로젝트명을 입력해주세요");
             return;
@@ -1413,7 +1422,7 @@ export default function ReportPage() {
             const { error } = await supabase.from("assignments").insert({
                 ...payload,
                 sort_order: maxSort + 1,
-                team_id: TEAM_ID,
+                team_id: teamId,
             });
             if (error) {
                 alert("추가 실패: " + error.message);
@@ -1456,6 +1465,7 @@ export default function ReportPage() {
                             리포트
                         </h1>
                         <div className="flex items-center gap-2">
+                            <TeamSwitcher />
                             <AgentButton />
                             <NotificationButton />
                             <UserMenu />
@@ -2518,7 +2528,7 @@ export default function ReportPage() {
                                         담당자
                                     </label>
                                     <div className="grid grid-cols-5 gap-2">
-                                        {MEMBERS.map((name) => {
+                                        {members.map((name) => {
                                             const on =
                                                 assignForm.members.includes(
                                                     name,

@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { TEAM_ID } from "@/lib/constants";
-import { getServerUser } from "@/lib/serverSupabase";
+import { getServerUserRole } from "@/lib/serverSupabase";
 
 /**
  * 주간 브리핑 업무별 편집 내용(briefing_tasks) API.
@@ -10,8 +9,15 @@ import { getServerUser } from "@/lib/serverSupabase";
  * 인증/RLS: 로그인 세션을 먼저 확인하고, row 권한은 Supabase RLS에 맡긴다.
  */
 export async function GET(req: NextRequest) {
-    const { supabase, user } = await getServerUser();
-    if (!user?.email) {
+    const teamId = req.nextUrl.searchParams.get("teamId")?.trim();
+    if (!teamId) {
+        return NextResponse.json(
+            { message: "teamId is required" },
+            { status: 400 },
+        );
+    }
+    const { supabase, user, role } = await getServerUserRole(teamId);
+    if (!user?.email || !role) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
@@ -27,7 +33,7 @@ export async function GET(req: NextRequest) {
     const { data: brief, error: bErr } = await supabase
         .from("briefings")
         .select("id")
-        .eq("team_id", TEAM_ID)
+        .eq("team_id", teamId)
         .eq("week_start", week)
         .maybeSingle();
 
@@ -41,7 +47,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await supabase
         .from("briefing_tasks")
         .select("task_id, edited_content")
-        .eq("team_id", TEAM_ID)
+        .eq("team_id", teamId)
         .eq("briefing_id", brief.id);
 
     if (error) {
@@ -52,13 +58,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-    const { supabase, user } = await getServerUser();
-    if (!user?.email) {
-        return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-    }
-
     let body: {
         week?: string;
+        teamId?: string;
         task_id?: number;
         edited_content?: string | null;
     };
@@ -72,19 +74,25 @@ export async function POST(req: NextRequest) {
     }
 
     const { week, task_id, edited_content } = body;
-    if (!week || typeof task_id !== "number") {
+    const teamId = body.teamId?.trim();
+    if (!week || !teamId || typeof task_id !== "number") {
         return NextResponse.json(
             { message: "week와 task_id가 필요해요." },
             { status: 400 },
         );
     }
 
+    const { supabase, user, role } = await getServerUserRole(teamId);
+    if (!user?.email || !role) {
+        return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+
     // 이번 주 briefings 행 id 확보 (없으면 생성). week_start 유니크 기준 upsert.
     const { data: brief, error: bErr } = await supabase
         .from("briefings")
         .upsert(
-            { week_start: week, team_id: TEAM_ID, is_locked: false },
-            { onConflict: "week_start" },
+            { week_start: week, team_id: teamId, is_locked: false },
+            { onConflict: "team_id,week_start" },
         )
         .select("id")
         .maybeSingle();
@@ -101,7 +109,7 @@ export async function POST(req: NextRequest) {
             briefing_id: brief.id,
             task_id,
             edited_content: edited_content ?? null,
-            team_id: TEAM_ID,
+            team_id: teamId,
             updated_at: new Date().toISOString(),
         },
         { onConflict: "briefing_id,task_id" },

@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
-import { TEAM_ID } from "@/lib/constants";
 import {
     createServiceSupabaseClient,
-    getServerUser,
+    getServerCurrentTeamRole,
 } from "@/lib/serverSupabase";
 
 export async function GET() {
-    const { user } = await getServerUser();
-    if (!user?.email) {
+    const { user, role, teamId } = await getServerCurrentTeamRole();
+    if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
@@ -16,7 +15,7 @@ export async function GET() {
         const { data, error } = await serviceSupabase
             .from("agent_calendar_connections")
             .select("member, email, google_email, connected_at, updated_at")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("email", user.email)
             .maybeSingle();
 

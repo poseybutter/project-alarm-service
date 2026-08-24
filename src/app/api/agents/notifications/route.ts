@@ -1,12 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { TEAM_ID } from "@/lib/constants";
 import { buildAccessibilityReminderSuggestions } from "@/lib/agents/accessibilityReminderAgent";
 import { buildNotificationSuggestions } from "@/lib/agents/notificationAgent";
 import {
     listRecentlyDeliveredDedupeKeys,
 } from "@/lib/agents/notificationDeliveries";
 import { createAgentSuggestions } from "@/lib/agents/suggestions";
-import { getServerUserRole } from "@/lib/serverSupabase";
+import { getServerCurrentTeamRole } from "@/lib/serverSupabase";
 import type { Accessibility, Task } from "@/lib/types";
 import type {
     CalendarEventInput,
@@ -24,8 +23,8 @@ function excludeRecentlyDelivered<T extends { dedupe_key: string | null }>(
 }
 
 export async function POST(req: NextRequest) {
-    const { supabase, user, role } = await getServerUserRole(TEAM_ID);
-    if (!user) {
+    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    if (!user || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
     if (role !== "admin") {
@@ -44,24 +43,24 @@ export async function POST(req: NextRequest) {
             supabase
                 .from("tasks")
                 .select("*")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .order("end_date", { ascending: true }),
             supabase
                 .from("accessibility")
                 .select("*")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .order("end_date", { ascending: true }),
             supabase
                 .from("agent_calendar_events")
                 .select(
                     "id, member, email, title, starts_at, ends_at, all_day, location, html_link",
                 )
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .order("starts_at", { ascending: true }),
             supabase
                 .from("quests")
                 .select("id, member, content, proj, end_date, task_id, status")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .is("task_id", null)
                 .order("order_index", { ascending: true, nullsFirst: false })
                 .order("created_at", { ascending: true }),
@@ -84,7 +83,7 @@ export async function POST(req: NextRequest) {
     let deliveredKeys: Set<string>;
     try {
         deliveredKeys = await listRecentlyDeliveredDedupeKeys(supabase, {
-            teamId: TEAM_ID,
+            teamId,
         });
     } catch (err) {
         const message =
@@ -97,6 +96,7 @@ export async function POST(req: NextRequest) {
     const suggestions = excludeRecentlyDelivered(
         [
             ...buildNotificationSuggestions({
+                teamId,
                 tasks: (tasks ?? []) as Task[],
                 accessibility: (accessibility ?? []) as Accessibility[],
                 calendarEvents: (calendarEvents ?? []) as CalendarEventInput[],
@@ -104,6 +104,7 @@ export async function POST(req: NextRequest) {
                 createdBy: user.email ?? null,
             }),
             ...buildAccessibilityReminderSuggestions({
+                teamId,
                 accessibility: (accessibility ?? []) as Accessibility[],
                 createdBy: user.email ?? null,
             }),

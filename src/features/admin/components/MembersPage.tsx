@@ -15,7 +15,11 @@ import {
   SuccessMessage,
 } from "@/features/admin/components/AdminUi";
 import { useAdminResource } from "@/features/admin/hooks/useAdminResource";
-import type { AdminMember, ApiFailure } from "@/features/admin/types";
+import type {
+  AdminMember,
+  AdminRoleCatalog,
+  ApiFailure,
+} from "@/features/admin/types";
 
 type MembersResponse = { members: AdminMember[] };
 type MemberFilter = "all" | "active" | "suspended" | "pending";
@@ -24,10 +28,12 @@ export function MembersPage() {
   const { identity } = useAdmin();
   const { data, error, loading, reload } =
     useAdminResource<MembersResponse>("/api/admin/members");
+  const { data: roleCatalog } =
+    useAdminResource<AdminRoleCatalog>("/api/admin/roles");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<MemberFilter>("all");
   const [selected, setSelected] = useState<AdminMember | null>(null);
-  const [draftRole, setDraftRole] = useState<"admin" | "member">("member");
+  const [draftRoleId, setDraftRoleId] = useState("legacy:member");
   const [draftStatus, setDraftStatus] = useState<"active" | "suspended">(
     "active",
   );
@@ -51,12 +57,13 @@ export function MembersPage() {
 
   const dirty = Boolean(
     selected &&
-    (selected.role !== draftRole || selected.status !== draftStatus),
+    ((selected.roleId ?? `legacy:${selected.role}`) !== draftRoleId ||
+      selected.status !== draftStatus),
   );
 
   function openMember(member: AdminMember) {
     setSelected(member);
-    setDraftRole(member.role === "admin" ? "admin" : "member");
+    setDraftRoleId(member.roleId ?? `legacy:${member.role}`);
     setDraftStatus(member.status === "suspended" ? "suspended" : "active");
     setSaveError(null);
     setDiscardPrompt(false);
@@ -83,7 +90,11 @@ export function MembersPage() {
         body: JSON.stringify({
           id: selected.id,
           teamId: selected.teamId,
-          role: draftRole,
+          ...(roleCatalog?.schemaReady && !draftRoleId.startsWith("legacy:")
+            ? { roleId: draftRoleId }
+            : {
+                role: draftRoleId === "legacy:admin" ? "admin" : "member",
+              }),
           status: draftStatus,
         }),
       });
@@ -117,7 +128,7 @@ export function MembersPage() {
             size={15}
           />
           <input
-            className="admin-input w-full pl-9"
+            className="admin-input admin-search-input w-full"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="이름, 이메일, 팀 검색"
@@ -199,7 +210,9 @@ export function MembersPage() {
                     {member.teamName}
                   </td>
                   <td className="px-3 py-3">
-                    <StatusBadge status={member.role} />
+                    <span className="inline-flex min-h-5 items-center rounded border border-stone-200 bg-stone-50 px-1.5 text-[10px] font-extrabold text-stone-700">
+                      {member.roleName}
+                    </span>
                   </td>
                   <td className="px-3 py-3">
                     <StatusBadge status={member.status} />
@@ -260,15 +273,36 @@ export function MembersPage() {
                   </span>
                   <select
                     className="admin-select w-full"
-                    value={draftRole}
-                    onChange={(event) =>
-                      setDraftRole(event.target.value as "admin" | "member")
-                    }
+                    value={draftRoleId}
+                    onChange={(event) => setDraftRoleId(event.target.value)}
                     disabled={selected.email === identity.email}
                   >
-                    <option value="member">구성원</option>
-                    <option value="admin">관리자</option>
+                    {roleCatalog?.schemaReady ? (
+                      roleCatalog.roles
+                        .filter(
+                          (role) =>
+                            role.status === "active" &&
+                            (role.teamId === null ||
+                              role.teamId === selected.teamId),
+                        )
+                        .map((role) => (
+                          <option key={role.id} value={role.id}>
+                            {role.name}
+                            {role.teamId ? " · 팀 전용" : ""}
+                          </option>
+                        ))
+                    ) : (
+                      <>
+                        <option value="legacy:member">구성원</option>
+                        <option value="legacy:admin">팀 관리자</option>
+                      </>
+                    )}
                   </select>
+                  {roleCatalog?.schemaReady && (
+                    <span className="mt-1.5 block text-[11px] leading-4 text-stone-500">
+                      역할별 세부 권한은 역할 및 권한 화면에서 관리합니다.
+                    </span>
+                  )}
                 </label>
                 <label className="block">
                   <span className="mb-1.5 block text-xs font-bold text-stone-600">

@@ -18,7 +18,8 @@ Browser
 - API: `src/app/api/admin`
 - 권한과 데이터 접근: `src/features/admin/server`
 - DB 기반: `db/V29_admin_foundation.sql`, `db/V30_admin_team_crud.sql`,
-  `db/V31_identity_membership_foundation.sql`
+  `db/V31_identity_membership_foundation.sql`, `db/V32_roles_permissions.sql`,
+  `db/V33_team_context_foundation.sql`, `db/V34_work_relation_fk_compatibility.sql`
 - 서버 전용 키는 `adminRepository` 아래에서만 사용한다.
 - 클라이언트가 보낸 `team` 값은 신뢰하지 않고 매 요청마다 관리 가능 범위를 다시 확인한다.
 
@@ -79,6 +80,19 @@ V31 전환 기간에는 기존 쓰기 경로가 `players`를 계속 사용하고
 6. 기존 조직 관리자 이메일이 `organization_admins`에 들어갔는지 확인한다.
 7. 관리자 화면에서 구성원 역할을 한 번 변경하고 감사 로그와
    `team_memberships`가 함께 갱신되는지 확인한다.
+8. `V32_roles_permissions.sql`과 `V32_roles_permissions_audit.sql`을 적용한다.
+9. 로컬에서 `node tools/verify-v32.mjs`를 실행해 모든 감사 항목이 0인지
+   재확인한다.
+10. `V33_team_context_foundation.sql`을 적용한 뒤
+    `V33_team_context_audit.sql`의 모든 `issue_count`가 0인지 확인한다.
+    로컬에서는 `node tools/verify-v33.mjs`로 같은 핵심 정합성을 재검증한다.
+11. `V34_work_relation_fk_compatibility.sql`을 적용한다. 이 단계는 기존
+    `member`/`proj` 문자열 컬럼을 유지하면서 FK를 백필하고 양방향 호환 트리거를
+    설치한다.
+12. `V34_work_relation_fk_audit.sql`의 모든 `issue_count`가 0인지 확인한 뒤,
+    로컬에서 `node tools/verify-v34.mjs`를 실행해 재검증한다. 과거 데이터 중
+    연결 대상을 찾을 수 없는 행은 `relation_migration_exceptions`에 보존되며
+    검증 결과의 `tracked_exceptions`로 별도 집계된다.
 
 V29~V31은 기존 `players`, `tasks`, `projects` 데이터를 삭제하거나 이동하지 않는다.
 V31은 정규화 테이블을 추가하고 호환 트리거로 동기화할 뿐 기존 업무·리포트
@@ -146,10 +160,41 @@ V31에서 사용자 프로필과 팀 소속의 분리를 시작한다.
 4. V31 미적용 또는 스키마 캐시 지연 시에는 `players` 읽기로 폴백한다.
 5. 정합성 검증이 끝나기 전에는 `players`나 기존 외래 키를 제거하지 않는다.
 
-다음 전환은 `roles`, `permissions`, `role_permissions`를 추가해 역할과 권한을
-분리하고, 클라이언트에 현재 팀 컨텍스트와 팀 전환 UI를 도입하는 것이다. 이후
+V32는 `roles`, `permissions`, `role_permissions`를 추가하고
+`team_memberships.role_id`를 권위 있는 역할 연결로 사용한다. 역할·권한과 구성원
+역할 변경은 서버 API에서 평가하며, 시스템 역할은 수정·삭제할 수 없다. 기존
+`players.role`은 사용자 화면과 RLS 호환을 위해 `admin/member` 값만 계속 동기화한다.
+
+다음 전환은 클라이언트에 현재 팀 컨텍스트와 팀 전환 UI를 도입하는 것이다. 이후
 쓰기 경로를 `team_memberships` 중심으로 전환한 뒤 마지막 단계에서만 레거시
 `players.team_id`, `players.role` 의존성을 제거한다.
 
 `roles` 계층은 팀 관리자와 조직 관리자를 혼합하지 않는다. 조직 관리자는 계속
 `organization_admins`에서 별도로 관리하고, 팀 역할은 소속 단위로 평가한다.
+
+## Team context boundary
+
+- `current_team_id`는 HTTP-only 쿠키이며 로그인 사용자의 활성 소속일 때만 인정한다.
+- 클라이언트 조회와 사용자 호출형 에이전트 API는 동일한 팀 컨텍스트를 사용한다.
+- V33은 브리핑 저장 키를 `week_start`에서 `(team_id, week_start)`로 바꿔 팀 간
+  리포트 덮어쓰기를 차단한다.
+- 모닝 cron은 로그인 팀 쿠키가 없는 배치 경계다. 팀별 스케줄 설정을 도입하기
+  전까지 기존 기본 운영팀을 명시적으로 처리한다.
+
+## Work relation compatibility
+
+- V34는 `tasks`, `quests`, `attendance`, `accessibility`의 구성원 관계를
+  `player_id` FK로 정규화한다.
+- 프로젝트 관계가 있는 `tasks`, `quests`, `accessibility`에는 `project_id` FK를
+  사용한다.
+- 현재 Next.js 저장 경로는 `player_id`/`project_id`와 `member`/`proj`를 함께
+  전송한다. DB 트리거는 두 값이 같은 팀의 동일한 대상을 가리키는지 검증하고
+  레거시 문자열 전용 요청도 계속 지원한다.
+- 구성원명과 프로젝트명 변경은 연결된 레거시 표시 문자열에도 전파해 기존
+  업무·리포트 조회 결과를 유지한다.
+- 기존 연결 대상이 없는 과거 행은 임의의 구성원으로 연결하거나 삭제하지 않고
+  `relation_migration_exceptions`에 기록한다.
+- 업무·리포트·알림 조회는 호환 기간 동안 표시 문자열을 유지한다. 저장 경로의
+  운영 검증이 끝난 뒤 조회 조건을 FK 중심으로 바꾼다.
+- V34 감사와 클라이언트 전환이 끝나기 전에는 `member`/`proj` 컬럼을 제거하거나
+  `player_id`/`project_id`를 `not null`로 바꾸지 않는다.

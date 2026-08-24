@@ -21,6 +21,7 @@ export async function PATCH(request: NextRequest) {
       id?: unknown;
       teamId?: unknown;
       role?: unknown;
+      roleId?: unknown;
       status?: unknown;
     };
     if (!Number.isInteger(body.id) || typeof body.teamId !== "string") {
@@ -40,6 +41,7 @@ export async function PATCH(request: NextRequest) {
         id: body.id as number,
         teamId: body.teamId,
         role,
+        roleId: typeof body.roleId === "string" ? body.roleId : undefined,
         status,
       }),
     });

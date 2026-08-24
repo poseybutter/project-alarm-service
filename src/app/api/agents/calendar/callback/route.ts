@@ -1,9 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
-import { TEAM_ID } from "@/lib/constants";
 import {
     createServiceSupabaseClient,
-    getServerUser,
+    getServerUserRole,
 } from "@/lib/serverSupabase";
 import { exchangeGoogleCalendarCode } from "@/lib/server/googleCalendar";
 
@@ -13,13 +12,14 @@ export async function GET(req: NextRequest) {
     const state = req.nextUrl.searchParams.get("state");
     const store = await cookies();
     const expectedState = store.get("google_calendar_oauth_state")?.value;
+    const teamId = store.get("google_calendar_oauth_team")?.value;
 
-    if (!code || !state || state !== expectedState) {
+    if (!code || !state || state !== expectedState || !teamId) {
         return NextResponse.redirect(`${origin}/agents?calendar=invalid_state`);
     }
 
-    const { supabase, user } = await getServerUser();
-    if (!user?.email) {
+    const { supabase, user, role } = await getServerUserRole(teamId);
+    if (!user?.email || !role) {
         return NextResponse.redirect(`${origin}/login`);
     }
 
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
         const { data: player, error: playerError } = await supabase
             .from("players")
             .select("name")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("email", user.email)
             .maybeSingle();
 
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
             .from("agent_calendar_connections")
             .upsert(
                 {
-                    team_id: TEAM_ID,
+                    team_id: teamId,
                     member: player.name,
                     email: user.email,
                     google_email: user.email,
@@ -64,6 +64,10 @@ export async function GET(req: NextRequest) {
 
         const res = NextResponse.redirect(`${origin}/agents?calendar=connected`);
         res.cookies.set("google_calendar_oauth_state", "", {
+            path: "/",
+            maxAge: 0,
+        });
+        res.cookies.set("google_calendar_oauth_team", "", {
             path: "/",
             maxAge: 0,
         });

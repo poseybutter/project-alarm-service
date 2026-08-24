@@ -20,6 +20,7 @@ import Header from "@/components/Header";
 import Tooltip from "@/components/Tooltip";
 import type { Quest, Player, Task, Project } from "@/lib/types";
 import {
+    findProjectId,
     getDiff,
     formatWorkload,
     normalizeProject,
@@ -35,7 +36,6 @@ import {
     STATUS_COLORS,
     MEMBERS,
     WORKLOAD_PRESETS,
-    TEAM_ID,
 } from "@/lib/constants";
 import Avatar from "@/components/Avatar";
 import LevelUpOverlay from "@/components/LevelUpOverlay";
@@ -802,7 +802,13 @@ function SortableQuestItem({
 }
 
 export default function HomePage() {
-    const { member, loading: authLoading } = useAuth();
+    const {
+        member,
+        playerId,
+        teamId,
+        teams,
+        loading: authLoading,
+    } = useAuth();
     const router = useRouter();
     const isGuest = member === "GUEST";
 
@@ -951,7 +957,7 @@ export default function HomePage() {
     }, [authLoading, member]);
 
     useEffect(() => {
-        if (member) {
+        if (member && teamId) {
             loadData();
 
             // Realtime 援щ룆
@@ -984,11 +990,11 @@ export default function HomePage() {
                 supabase.removeChannel(channel).catch(console.error);
             };
         }
-    }, [member]);
+    }, [member, teamId]);
 
     useEffect(() => {
         if (typeof window === "undefined") return;
-        if (!member || member === "GUEST" || authLoading) return;
+        if (!member || !teamId || member === "GUEST" || authLoading) return;
 
         const today = new Date();
         if (today.getDay() !== 1) return;
@@ -1014,7 +1020,7 @@ export default function HomePage() {
                 const { data: players, error: pErr } = await supabase
                     .from("players")
                     .select("*")
-                    .eq("team_id", TEAM_ID);
+                    .eq("team_id", teamId);
                 if (pErr || !players?.length) {
                     sessionStorage.removeItem(lockKey);
                     return;
@@ -1023,7 +1029,7 @@ export default function HomePage() {
                 const { data: tasks, error: tErr } = await supabase
                     .from("tasks")
                     .select("member, end_date")
-                    .eq("team_id", TEAM_ID)
+                    .eq("team_id", teamId)
                     .eq("status", "완료")
                     .not("end_date", "is", null)
                     .gte("end_date", startYmd)
@@ -1077,7 +1083,7 @@ export default function HomePage() {
                 sessionStorage.removeItem(lockKey);
             }
         })();
-    }, [member, authLoading]);
+    }, [member, teamId, authLoading]);
 
     // myTasks/quests 蹂寃????듯빀 紐⑸줉 ?ш뎄??(?쒕옒洹?以묒뿉??allQuestItems留?蹂寃쎈릺誘濡?deps 遺덈?)
     useEffect(() => {
@@ -1100,6 +1106,7 @@ export default function HomePage() {
     if (!member) return null;
 
     async function loadData() {
+        if (!teamId) return;
         setLoading(true);
         const [
             { data: playerData },
@@ -1111,13 +1118,13 @@ export default function HomePage() {
             supabase
                 .from("players")
                 .select("*")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .eq("name", member)
                 .maybeSingle(),
             supabase
                 .from("quests")
                 .select("*")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .eq("member", member)
                 .neq("status", "완료")
                 .order("order_index", { ascending: true, nullsFirst: false })
@@ -1125,20 +1132,20 @@ export default function HomePage() {
             supabase
                 .from("tasks")
                 .select("*")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .eq("member", member)
                 .order("end_date", { ascending: true }),
             isGuest
                 ? supabase
                       .from("tasks")
                       .select("*")
-                      .eq("team_id", TEAM_ID)
+                      .eq("team_id", teamId)
                       .order("end_date", { ascending: true })
                 : Promise.resolve({ data: [] as Task[] }),
             supabase
                 .from("projects")
                 .select("*")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .order("name", { ascending: true }),
         ]);
         setPlayer(playerData);
@@ -1233,8 +1240,18 @@ export default function HomePage() {
     }
 
     async function addQuest() {
+        if (!teamId) return;
         if (questRichTextIsEffectivelyEmpty(questForm.content))
             return alert("퀘스트 내용은 필수예요");
+        if (!member || playerId === null) {
+            showToastMsg("현재 팀의 담당자 정보를 찾을 수 없어요");
+            return;
+        }
+        const selectedProjectId = findProjectId(projects, questForm.proj);
+        if (questForm.proj && selectedProjectId === null) {
+            showToastMsg("현재 팀의 프로젝트를 다시 선택해주세요");
+            return;
+        }
         const maxOrder = quests.reduce(
             (m, q) => Math.max(m, q.order_index ?? 0),
             0,
@@ -1242,13 +1259,15 @@ export default function HomePage() {
         await supabase.from("quests").insert([
             {
                 member: member,
+                player_id: playerId,
                 content: questForm.content,
                 proj: questForm.proj || null,
+                project_id: selectedProjectId,
                 end_date: questForm.end_date || null,
                 task_id: null,
                 status: "대기",
                 order_index: maxOrder + 1,
-                team_id: TEAM_ID,
+                team_id: teamId,
             },
         ]);
         setShowAddQuest(false);
@@ -1307,11 +1326,17 @@ export default function HomePage() {
 
     async function saveEditQuest() {
         if (!editTarget) return;
+        const selectedProjectId = findProjectId(projects, questForm.proj);
+        if (questForm.proj && selectedProjectId === null) {
+            showToastMsg("현재 팀의 프로젝트를 다시 선택해주세요");
+            return;
+        }
         await supabase
             .from("quests")
             .update({
                 content: questForm.content,
                 proj: questForm.proj || null,
+                project_id: selectedProjectId,
                 end_date: questForm.end_date || null,
                 task_id: editTarget.task_id ?? null,
             })
@@ -1442,6 +1467,11 @@ export default function HomePage() {
 
     async function saveEditTask() {
         if (!editTask) return;
+        const selectedProjectId = findProjectId(projects, editForm.proj);
+        if (selectedProjectId === null) {
+            showToastMsg("현재 팀의 프로젝트를 다시 선택해주세요");
+            return;
+        }
         if (!editDateRange?.from && !editDateRange?.to) {
             alert("업무 캘린더 등록을 위해 기간 또는 마감일을 선택해주세요");
             return;
@@ -1451,6 +1481,7 @@ export default function HomePage() {
             .update({
                 type: editForm.type,
                 proj: editForm.proj,
+                project_id: selectedProjectId,
                 content: editForm.content,
                 priority: editForm.priority || null,
                 start_date: editDateRange?.from
@@ -1541,7 +1572,9 @@ export default function HomePage() {
                 onDragEnd={onQuestDragEnd}
             >
                 <div className="min-h-screen bg-[#f7f6f3]">
-                    <Header title="UD2 업무" />
+                    <Header
+                        title={`${teams.find((team) => team.id === teamId)?.name ?? teamId} 업무`}
+                    />
 
                     <div className="max-w-2xl mx-auto px-4 pt-3 pb-24">
                         {/* ?꾨줈??移대뱶 */}

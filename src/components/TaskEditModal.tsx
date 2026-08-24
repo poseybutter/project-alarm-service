@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
 import type { Task, Project } from "@/lib/types";
-import { formatWorkload, normalizeProject } from "@/lib/utils";
-import { WORKLOAD_PRESETS, TEAM_ID } from "@/lib/constants";
+import { findProjectId, formatWorkload, normalizeProject } from "@/lib/utils";
+import { WORKLOAD_PRESETS } from "@/lib/constants";
+import { useAuth } from "@/components/AuthProvider";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { DayPicker, DateRange } from "react-day-picker";
 import { ko } from "date-fns/locale";
@@ -103,6 +104,7 @@ export default function TaskEditModal({
     onClose,
     onSaved,
 }: TaskEditModalProps) {
+    const { teamId } = useAuth();
     const [projects, setProjects] = useState<Project[]>([]);
     const [editForm, setEditForm] = useState(EMPTY_EDIT);
     const [editDateRange, setEditDateRange] = useState<DateRange | undefined>();
@@ -116,7 +118,7 @@ export default function TaskEditModal({
     }
 
     useEffect(() => {
-        if (!task) return;
+        if (!task || !teamId) return;
         setEditProjTab("mine");
         setEditForm({
             type: task.type || "",
@@ -148,7 +150,7 @@ export default function TaskEditModal({
             const { data } = await supabase
                 .from("projects")
                 .select("*")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .order("name");
             if (cancelled) return;
             setProjects(
@@ -160,7 +162,7 @@ export default function TaskEditModal({
         return () => {
             cancelled = true;
         };
-    }, [task?.id]);
+    }, [task?.id, teamId]);
 
     const editMember = task?.member ?? "";
 
@@ -221,6 +223,11 @@ export default function TaskEditModal({
 
     async function saveEdit() {
         if (!task) return;
+        const selectedProjectId = findProjectId(projects, editForm.proj);
+        if (selectedProjectId === null) {
+            showToast("현재 팀의 프로젝트를 다시 선택해주세요");
+            return;
+        }
         if (
             !editDateRange?.from &&
             !editDateRange?.to
@@ -233,6 +240,7 @@ export default function TaskEditModal({
             .update({
                 type: editForm.type,
                 proj: editForm.proj,
+                project_id: selectedProjectId,
                 content: editForm.content,
                 priority: editForm.priority || null,
                 start_date: editDateRange?.from

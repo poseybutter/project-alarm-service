@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { TEAM_ID } from "@/lib/constants";
 import {
     createServiceSupabaseClient,
-    getServerUser,
+    getServerCurrentTeamRole,
 } from "@/lib/serverSupabase";
 import {
     syncTodayGoogleCalendarEvents,
@@ -17,8 +16,8 @@ import { createAgentSuggestions } from "@/lib/agents/suggestions";
 import type { Accessibility, Task } from "@/lib/types";
 
 export async function POST() {
-    const { user } = await getServerUser();
-    if (!user?.email) {
+    const { user, role, teamId } = await getServerCurrentTeamRole();
+    if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
@@ -26,7 +25,7 @@ export async function POST() {
     const { data, error } = await serviceSupabase
         .from("agent_calendar_connections")
         .select("member, email, access_token, refresh_token, expires_at")
-        .eq("team_id", TEAM_ID)
+        .eq("team_id", teamId)
         .eq("email", user.email)
         .maybeSingle();
 
@@ -43,24 +42,24 @@ export async function POST() {
     try {
         const connection = data as GoogleCalendarConnection;
         const rows = await syncTodayGoogleCalendarEvents(serviceSupabase, {
-            teamId: TEAM_ID,
+            teamId,
             connection,
         });
         const teamRows = await syncTodayTeamCalendarEvents(serviceSupabase, {
-            teamId: TEAM_ID,
+            teamId,
         });
 
         const { data: tasks, error: taskError } = await serviceSupabase
             .from("tasks")
             .select("*")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("member", connection.member);
         if (taskError) throw taskError;
 
         const { data: accessibility, error: accError } = await serviceSupabase
             .from("accessibility")
             .select("*")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("member", connection.member)
             .order("end_date", { ascending: true });
         if (accError) throw accError;
@@ -68,7 +67,7 @@ export async function POST() {
         const { data: quests, error: questError } = await serviceSupabase
             .from("quests")
             .select("id, member, content, proj, end_date, task_id, status")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("member", connection.member)
             .is("task_id", null)
             .order("order_index", { ascending: true, nullsFirst: false })
@@ -76,6 +75,7 @@ export async function POST() {
         if (questError) throw questError;
 
         const suggestions = buildNotificationSuggestions({
+            teamId,
             tasks: (tasks ?? []) as Task[],
             accessibility: (accessibility ?? []) as Accessibility[],
             calendarEvents: [...rows, ...teamRows].map((row) => ({

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { TEAM_ID } from "@/lib/constants";
 import {
     createServiceSupabaseClient,
-    getServerUserRole,
+    getServerCurrentTeamRole,
 } from "@/lib/serverSupabase";
 import {
     buildNotificationSuggestions,
@@ -17,8 +16,8 @@ import {
 import type { Accessibility, Task } from "@/lib/types";
 
 export async function POST() {
-    const { supabase, user } = await getServerUserRole(TEAM_ID);
-    if (!user?.email) {
+    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
@@ -27,7 +26,7 @@ export async function POST() {
         const { data: player, error: playerError } = await supabase
             .from("players")
             .select("name")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("email", user.email)
             .maybeSingle();
         if (playerError) throw playerError;
@@ -42,20 +41,20 @@ export async function POST() {
             await serviceSupabase
                 .from("agent_calendar_connections")
                 .select("member, email, access_token, refresh_token, expires_at")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .eq("email", user.email)
                 .maybeSingle();
         if (connectionError) throw connectionError;
 
         const personalCalendarEvents = calendarConnection
             ? await syncTodayGoogleCalendarEvents(serviceSupabase, {
-                  teamId: TEAM_ID,
+                  teamId,
                   connection: calendarConnection as GoogleCalendarConnection,
               })
             : [];
         const teamCalendarEvents = await syncTodayTeamCalendarEvents(
             serviceSupabase,
-            { teamId: TEAM_ID },
+            { teamId },
         );
 
         const [
@@ -66,18 +65,18 @@ export async function POST() {
             serviceSupabase
                 .from("tasks")
                 .select("*")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .eq("member", player.name),
             serviceSupabase
                 .from("accessibility")
                 .select("*")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .eq("member", player.name)
                 .order("end_date", { ascending: true }),
             serviceSupabase
                 .from("quests")
                 .select("id, member, content, proj, end_date, task_id, status")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .eq("member", player.name)
                 .is("task_id", null)
                 .order("order_index", { ascending: true, nullsFirst: false })
@@ -89,6 +88,7 @@ export async function POST() {
         }
 
         const suggestions = buildNotificationSuggestions({
+            teamId,
             tasks: (tasks ?? []) as Task[],
             accessibility: (accessibility ?? []) as Accessibility[],
             calendarEvents: [
@@ -114,7 +114,7 @@ export async function POST() {
                     reviewed_by: user.email,
                     reviewed_at: new Date().toISOString(),
                 })
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .eq("agent_type", "notification")
                 .eq("status", "pending")
                 .eq("payload->>recipientMember", player.name);
@@ -136,7 +136,7 @@ export async function POST() {
                 reviewed_by: user.email,
                 reviewed_at: new Date().toISOString(),
             })
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("agent_type", "notification")
             .eq("status", "pending")
             .eq("payload->>recipientMember", player.name);

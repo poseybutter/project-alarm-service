@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { TEAM_ID } from "@/lib/constants";
-import { getServerUserRole } from "@/lib/serverSupabase";
+import { getServerCurrentTeamRole } from "@/lib/serverSupabase";
 import {
     createAgentSuggestions,
     listAgentSuggestions,
@@ -22,8 +21,8 @@ const STATUSES = new Set<AgentSuggestionStatus>([
 ]);
 
 export async function GET(req: NextRequest) {
-    const { supabase, user, role } = await getServerUserRole(TEAM_ID);
-    if (!user) {
+    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    if (!user || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
@@ -43,7 +42,7 @@ export async function GET(req: NextRequest) {
 
     try {
         let suggestions = await listAgentSuggestions(supabase, {
-            teamId: TEAM_ID,
+            teamId,
             status,
             agentType,
             limit: Number.isFinite(limitParam) ? limitParam : 50,
@@ -54,7 +53,7 @@ export async function GET(req: NextRequest) {
             const { data: player, error: playerError } = await supabase
                 .from("players")
                 .select("name")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .eq("email", user.email)
                 .maybeSingle();
 
@@ -75,8 +74,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-    const { supabase, user, role } = await getServerUserRole(TEAM_ID);
-    if (!user) {
+    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    if (!user || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
     if (role !== "admin") {
@@ -110,7 +109,7 @@ export async function POST(req: NextRequest) {
             supabase,
             suggestions.map((item) => ({
                 ...(item as Record<string, unknown>),
-                team_id: TEAM_ID,
+                team_id: teamId,
                 created_by: user.email ?? null,
             })) as Parameters<typeof createAgentSuggestions>[1],
         );

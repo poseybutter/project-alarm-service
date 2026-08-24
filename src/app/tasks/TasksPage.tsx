@@ -4,13 +4,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
 import type { Task, Project } from "@/lib/types";
-import { getDiff, formatWorkload, normalizeProject } from "@/lib/utils";
 import {
-    MEMBERS,
+    findProjectId,
+    findTeamMemberId,
+    getDiff,
+    formatWorkload,
+    normalizeProject,
+} from "@/lib/utils";
+import {
     TYPE_COLORS,
     STATUS_COLORS,
     WORKLOAD_PRESETS,
-    TEAM_ID,
     normalizeStatus,
 } from "@/lib/constants";
 import { rpcSetTaskStatus } from "@/lib/maple";
@@ -18,6 +22,7 @@ import AuthGuard from "@/components/AuthGuard";
 import { useAuth } from "@/components/AuthProvider";
 import Tooltip from "@/components/Tooltip";
 import UserMenu from "@/components/UserMenu";
+import TeamSwitcher from "@/components/TeamSwitcher";
 import Avatar from "@/components/Avatar";
 import LevelUpOverlay from "@/components/LevelUpOverlay";
 import ExpPopup, { type ExpPopupType } from "@/components/ExpPopup";
@@ -170,12 +175,18 @@ function TaskStatusBadgeSelect({
 }
 
 export default function TasksPage() {
-    const { member: currentMember, role } = useAuth();
+    const {
+        member: currentMember,
+        members,
+        memberOptions,
+        role,
+        teamId,
+    } = useAuth();
     const isGuest = role === "guest";
     const canEditOrDelete = (taskMember: string) =>
         role !== "guest" && (role === "admin" || taskMember === currentMember);
     const assignableMembers =
-        role === "admin" ? MEMBERS : [currentMember || ""];
+        role === "admin" ? members : [currentMember || ""];
 
     const [tasks, setTasks] = useState<Task[]>([]);
     const [toast, setToast] = useState("");
@@ -232,6 +243,7 @@ export default function TasksPage() {
     }, []);
 
     useEffect(() => {
+        if (!teamId) return;
         loadTasks();
         loadProjects();
 
@@ -244,7 +256,7 @@ export default function TasksPage() {
                     const { data } = await supabase
                         .from("tasks")
                         .select("*")
-                        .eq("team_id", TEAM_ID)
+                        .eq("team_id", teamId)
                         .order("created_at", { ascending: false });
                     setTasks(data || []);
                 },
@@ -254,24 +266,26 @@ export default function TasksPage() {
         return () => {
             supabase.removeChannel(channel).catch(console.error);
         };
-    }, []);
+    }, [teamId]);
 
     async function loadTasks() {
+        if (!teamId) return;
         setLoading(true);
         const { data } = await supabase
             .from("tasks")
             .select("*")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .order("created_at", { ascending: false });
         setTasks(data || []);
         setLoading(false);
     }
 
     async function loadProjects() {
+        if (!teamId) return;
         const { data } = await supabase
             .from("projects")
             .select("*")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .order("name");
         setProjects(
             (data || []).map((row) =>
@@ -349,8 +363,15 @@ export default function TasksPage() {
     }
 
     async function addTask() {
+        if (!teamId) return;
         if (!form.member || !form.proj)
             return alert("담당자와 프로젝트명은 필수예요");
+        const selectedPlayerId = findTeamMemberId(memberOptions, form.member);
+        const selectedProjectId = findProjectId(projects, form.proj);
+        if (selectedPlayerId === null || selectedProjectId === null) {
+            showToastMsg("현재 팀의 담당자와 프로젝트를 다시 선택해주세요");
+            return;
+        }
         if (
             !formDateRange?.from &&
             !formDateRange?.to
@@ -363,8 +384,10 @@ export default function TasksPage() {
             .insert([
                 {
                     member: form.member,
+                    player_id: selectedPlayerId,
                     type: form.type,
                     proj: form.proj,
+                    project_id: selectedProjectId,
                     content: form.content,
                     priority: form.priority || null,
                     start_date: formDateRange?.from
@@ -379,7 +402,7 @@ export default function TasksPage() {
                     is_plan: form.is_plan ?? false,
                     is_starred: form.is_starred ?? false,
                     show_on_team_calendar: true,
-                    team_id: TEAM_ID,
+                    team_id: teamId,
                 },
             ])
             .select("id")
@@ -487,7 +510,7 @@ export default function TasksPage() {
             return true;
         });
 
-    const grouped = MEMBERS.reduce(
+    const grouped = members.reduce(
         (acc, m) => {
             const mt = filtered.filter((t) => t.member === m);
             if (mt.length > 0) acc[m] = mt;
@@ -521,6 +544,7 @@ export default function TasksPage() {
                             </p>
                         </div>
                         <div className="flex items-center gap-2">
+                            <TeamSwitcher />
                             {!isGuest && (
                                 <button
                                     onClick={() => {
@@ -550,7 +574,7 @@ export default function TasksPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 px-4 py-3">
                         <div className="min-w-0">
                             <Select
-                                options={MEMBERS.map((m) => ({
+                                options={members.map((m) => ({
                                     value: m,
                                     label: m,
                                 }))}

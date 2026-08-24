@@ -8,9 +8,10 @@ import {
     badgeSelectStyles,
     modalFormSelectStyles,
 } from "@/lib/reactSelectStyles";
-import { TEAM_ID } from "@/lib/constants";
+import { useAuth } from "@/components/AuthProvider";
+import type { Project } from "@/lib/types";
+import { findProjectId, findTeamMemberId, normalizeProject } from "@/lib/utils";
 
-const MEMBERS = ["TEAM_MEMBER_1", "TEAM_MEMBER_2", "TEAM_MEMBER_3", "TEAM_MEMBER_4"];
 const INSPECTION_STATUS = ["갱신완료", "신청완료", "신청불필요"];
 const INSPECTION_OPTIONS = INSPECTION_STATUS.map((s) => ({
     value: s,
@@ -55,6 +56,8 @@ function InspectionBadgeSelect({
 
 type Accessibility = {
     id: number;
+    player_id?: number | null;
+    project_id?: number | null;
     proj: string;
     member: string;
     start_date: string | null;
@@ -73,7 +76,9 @@ function getDiff(dateStr: string | null) {
 }
 
 export default function AccessibilityPage() {
+    const { members, memberOptions, teamId } = useAuth();
     const [items, setItems] = useState<Accessibility[]>([]);
+    const [projects, setProjects] = useState<Project[]>([]);
     const [filter, setFilter] = useState("전체");
     const [showModal, setShowModal] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -87,16 +92,24 @@ export default function AccessibilityPage() {
     });
 
     useEffect(() => {
-        loadItems();
-    }, []);
+        if (teamId) void loadItems();
+    }, [teamId]);
 
     async function loadItems() {
+        if (!teamId) return;
         setLoading(true);
-        const { data } = await supabase
-            .from("accessibility")
-            .select("*")
-            .eq("team_id", TEAM_ID)
-            .order("end_date");
+        const [{ data }, { data: projectRows }] = await Promise.all([
+            supabase
+                .from("accessibility")
+                .select("*")
+                .eq("team_id", teamId)
+                .order("end_date"),
+            supabase
+                .from("projects")
+                .select("*")
+                .eq("team_id", teamId)
+                .order("name"),
+        ]);
         setItems(
             (data || []).map((row) => ({
                 ...row,
@@ -106,21 +119,39 @@ export default function AccessibilityPage() {
                         : row.inspection_status,
             })),
         );
+        setProjects(
+            (projectRows || [])
+                .map((row) => normalizeProject(row as Record<string, unknown>))
+                .filter((project) => !project.is_archived),
+        );
         setLoading(false);
     }
 
     async function addItem() {
+        if (!teamId) return;
         if (!form.proj || !form.member)
             return alert("프로젝트명과 담당자는 필수예요");
-        await supabase.from("accessibility").insert([
+        const selectedPlayerId = findTeamMemberId(memberOptions, form.member);
+        const selectedProjectId = findProjectId(projects, form.proj);
+        if (selectedPlayerId === null || selectedProjectId === null) {
+            alert("현재 팀의 담당자와 프로젝트를 다시 선택해주세요");
+            return;
+        }
+        const { error } = await supabase.from("accessibility").insert([
             {
                 ...form,
+                player_id: selectedPlayerId,
+                project_id: selectedProjectId,
                 start_date: form.start_date || null,
                 end_date: form.end_date || null,
                 note: form.note || null,
-                team_id: TEAM_ID,
+                team_id: teamId,
             },
         ]);
+        if (error) {
+            alert("접근성 항목 등록에 실패했어요");
+            return;
+        }
         setShowModal(false);
         setForm({
             proj: "",
@@ -184,7 +215,7 @@ export default function AccessibilityPage() {
             <div className="max-w-2xl mx-auto">
                 {/* 필터 */}
                 <div className="flex gap-2 px-4 py-3 overflow-x-auto scrollbar-hide bg-white border-b border-stone-200">
-                    {["전체", ...MEMBERS].map((m) => (
+                    {["전체", ...members].map((m) => (
                         <button
                             key={m}
                             onClick={() => setFilter(m)}
@@ -333,7 +364,7 @@ export default function AccessibilityPage() {
                                     담당자
                                 </label>
                                 <Select
-                                    options={MEMBERS.map((m) => ({
+                                    options={members.map((m) => ({
                                         value: m,
                                         label: m,
                                     }))}
@@ -366,15 +397,36 @@ export default function AccessibilityPage() {
                                 <label className="text-xs font-medium text-stone-500 block mb-1.5">
                                     프로젝트명
                                 </label>
-                                <input
-                                    className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                                    placeholder="예) 한국한의학연구원"
-                                    value={form.proj}
-                                    onChange={(e) =>
+                                <Select
+                                    options={projects.map((project) => ({
+                                        value: project.name,
+                                        label: project.name,
+                                    }))}
+                                    value={
+                                        form.proj
+                                            ? {
+                                                  value: form.proj,
+                                                  label: form.proj,
+                                              }
+                                            : null
+                                    }
+                                    onChange={(opt) =>
                                         setForm({
                                             ...form,
-                                            proj: e.target.value,
+                                            proj: opt?.value ?? "",
                                         })
+                                    }
+                                    placeholder="프로젝트 검색"
+                                    isSearchable
+                                    isClearable={false}
+                                    styles={modalFormSelectStyles}
+                                    menuPortalTarget={
+                                        typeof document !== "undefined"
+                                            ? document.body
+                                            : null
+                                    }
+                                    noOptionsMessage={() =>
+                                        "검색 결과가 없어요"
                                     }
                                 />
                             </div>

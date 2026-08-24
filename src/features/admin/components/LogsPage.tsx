@@ -44,7 +44,7 @@ export function LogsPage() {
           size={15}
         />
         <input
-          className="admin-input w-full pl-9"
+          className="admin-input admin-search-input w-full"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="작업, 대상, 관리자 이메일 검색"

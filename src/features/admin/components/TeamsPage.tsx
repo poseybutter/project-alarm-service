@@ -312,7 +312,7 @@ export function TeamsPage() {
             size={15}
           />
           <input
-            className="admin-input w-full pl-9"
+            className="admin-input admin-search-input w-full"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="팀 이름, ID, 설명 검색"
