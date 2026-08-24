@@ -43,9 +43,6 @@ async function loadTeamContext(requestedTeamId?: string, strictTeamSelection = f
     const membershipByTeam = new Map(
         memberships.map((membership) => [membership.teamId, membership]),
     );
-    if (strictTeamSelection && requestedTeamId && !membershipByTeam.has(requestedTeamId)) {
-        return { error: "Not a member of this team", status: 403 } as const;
-    }
 
     const { data: teamRows, error: teamsError } = await supabase
         .from("teams")
@@ -73,6 +70,13 @@ async function loadTeamContext(requestedTeamId?: string, strictTeamSelection = f
 
     if (teams.length === 0) {
         return { error: "No active team", status: 403 } as const;
+    }
+    if (
+        strictTeamSelection &&
+        requestedTeamId &&
+        !teams.some((team) => team.id === requestedTeamId)
+    ) {
+        return { error: "Not a member of this team", status: 403 } as const;
     }
 
     const storedTeamId = requestedTeamId;

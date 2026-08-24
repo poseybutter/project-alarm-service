@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServerUserRole } from "@/lib/serverSupabase";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
 
 /**
  * 주간 브리핑 업무별 편집 내용(briefing_tasks) API.
@@ -38,7 +39,11 @@ export async function GET(req: NextRequest) {
         .maybeSingle();
 
     if (bErr) {
-        return NextResponse.json({ message: bErr.message }, { status: 500 });
+        return internalErrorResponse(
+            "briefing-tasks-get-briefing",
+            bErr,
+            "브리핑을 불러오지 못했습니다.",
+        );
     }
     if (!brief?.id) {
         return NextResponse.json({ tasks: [] });
@@ -51,7 +56,11 @@ export async function GET(req: NextRequest) {
         .eq("briefing_id", brief.id);
 
     if (error) {
-        return NextResponse.json({ message: error.message }, { status: 500 });
+        return internalErrorResponse(
+            "briefing-tasks-get",
+            error,
+            "브리핑 업무를 불러오지 못했습니다.",
+        );
     }
 
     return NextResponse.json({ tasks: data ?? [] });
@@ -86,6 +95,9 @@ export async function POST(req: NextRequest) {
     if (!user?.email || !role) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
+    if (role !== "admin" && role !== "member") {
+        return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+    }
 
     const { data: task, error: taskError } = await supabase
         .from("tasks")
@@ -94,7 +106,11 @@ export async function POST(req: NextRequest) {
         .eq("team_id", teamId)
         .maybeSingle();
     if (taskError) {
-        return NextResponse.json({ message: taskError.message }, { status: 500 });
+        return internalErrorResponse(
+            "briefing-tasks-load-task",
+            taskError,
+            "업무를 확인하지 못했습니다.",
+        );
     }
     if (!task) {
         return NextResponse.json({ message: "Task not found in this team" }, { status: 404 });
@@ -111,9 +127,10 @@ export async function POST(req: NextRequest) {
         .maybeSingle();
 
     if (bErr || !brief?.id) {
-        return NextResponse.json(
-            { message: bErr?.message ?? "브리핑 행을 만들지 못했어요." },
-            { status: 500 },
+        return internalErrorResponse(
+            "briefing-tasks-upsert-briefing",
+            bErr ?? new Error("briefing row missing"),
+            "브리핑 행을 만들지 못했어요.",
         );
     }
 
@@ -129,7 +146,11 @@ export async function POST(req: NextRequest) {
     );
 
     if (error) {
-        return NextResponse.json({ message: error.message }, { status: 500 });
+        return internalErrorResponse(
+            "briefing-tasks-upsert",
+            error,
+            "브리핑 업무를 저장하지 못했습니다.",
+        );
     }
 
     return NextResponse.json({ ok: true });
