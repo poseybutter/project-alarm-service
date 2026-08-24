@@ -1,5 +1,13 @@
 -- V32 적용 후 역할·권한 연결 정합성을 확인한다.
 
+drop function if exists public.audit_v32_roles_permissions();
+create or replace function public.audit_v32_roles_permissions()
+returns table (issue text, issue_count bigint)
+language sql
+stable
+security definer
+set search_path = public
+as $$
 with audit as (
     select 'membership_without_role'::text as issue, count(*)::bigint as issue_count
     from public.team_memberships
@@ -52,3 +60,9 @@ with audit as (
 select issue, issue_count
 from audit
 order by issue;
+$$;
+
+revoke all on function public.audit_v32_roles_permissions() from public, anon, authenticated;
+grant execute on function public.audit_v32_roles_permissions() to service_role;
+
+select * from public.audit_v32_roles_permissions();
