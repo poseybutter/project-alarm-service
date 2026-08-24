@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: ko-KR
+early_access: false
+
+reviews:
+  profile: assertive
+  request_changes_workflow: true
+  high_level_summary: true
+  review_status: true
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 10
+    base_branches:
+      - develop
+      - main
+  path_filters:
+    - "!**/.next/**"
+    - "!**/node_modules/**"
+    - "!**/coverage/**"
+    - "!**/*.lock"
+  path_instructions:
+    - path: "src/app/api/**/*.ts"
+      instructions: |
+        인증과 권한 검사를 우선 확인한다. service role key, webhook, cron secret이
+        클라이언트에 노출되지 않는지와 외부 호출의 실패 처리 및 중복 실행 가능성을 검토한다.
+    - path: "db/**/*.sql"
+      instructions: |
+        RLS 활성화 여부, 정책의 USING/WITH CHECK 조건, SECURITY DEFINER 함수의
+        search_path 고정 여부와 기존 데이터에 미치는 영향을 검토한다.
+    - path: "src/**/*.{ts,tsx}"
+      instructions: |
+        Asia/Seoul 기준 날짜 경계, 업무 기간 필터, 역할별 접근 권한의 회귀를 집중적으로 확인한다.
+
+chat:
+  auto_reply: true
