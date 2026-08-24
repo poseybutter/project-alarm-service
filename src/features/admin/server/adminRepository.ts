@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { LEADER, TEAM_ID } from "@/lib/constants";
+import { TEAM_ID } from "@/lib/constants";
 import {
   createServiceSupabaseClient,
   getServerUser,
@@ -148,7 +148,7 @@ async function loadActor(email: string) {
   return (data ?? []) as PlayerRow[];
 }
 
-async function loadOrganizationAdmin(email: string, memberships: PlayerRow[]) {
+async function loadOrganizationAdmin(email: string) {
   const service = createServiceSupabaseClient();
   const { data, error } = await service
     .from("organization_admins")
@@ -182,7 +182,6 @@ export async function requireAdminSession(
   );
   const isOrganizationAdmin = await loadOrganizationAdmin(
     user.email,
-    activeMemberships,
   );
   if (!isOrganizationAdmin && adminMemberships.length === 0) {
     throw new AdminApiError("관리자 권한이 없습니다.", 403);
@@ -256,7 +255,7 @@ export async function requireAdminSession(
 
 function membershipPermissions(membership: PlayerRow): AdminPermission[] {
   if (membership.authorization) return membership.authorization.permissions;
-  return membership.role === "admin" || membership.name === LEADER
+  return membership.role === "admin"
     ? [...ALL_ADMIN_PERMISSIONS]
     : [];
 }

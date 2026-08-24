@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { MEMBER_COLORS } from '@/lib/constants'
+import { getMemberColors } from '@/lib/constants'
 import { useAuth } from '@/components/AuthProvider'
 
 // 전역 캐시
@@ -20,7 +20,7 @@ export default function Avatar({
   const { teamId } = useAuth()
   const cacheKey = `${teamId ?? 'none'}:${name}`
   const [url, setUrl] = useState<string | null>(avatarCache[cacheKey] ?? null)
-  const c = MEMBER_COLORS[name] || { bg: 'bg-stone-100', text: 'text-stone-600' }
+  const c = getMemberColors(name)
 
   useEffect(() => {
     let cancelled = false

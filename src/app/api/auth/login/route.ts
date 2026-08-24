@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { ApiError, login } from "@/lib/api";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
+import {
+    consumeRateLimit,
+    rateLimitResponse,
+    requestRateLimitKey,
+} from "@/lib/server/rateLimit";
 
 const ACCESS_COOKIE = "accessToken";
 const REFRESH_COOKIE = "refreshToken";
@@ -23,6 +29,12 @@ export async function POST(req: Request) {
             { status: 400 },
         );
     }
+
+    const rate = consumeRateLimit(
+        requestRateLimitKey(req, "auth-login", email),
+        { limit: 10, windowMs: 10 * 60 * 1000 },
+    );
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
 
     try {
         const data = await login(email, password);
@@ -53,13 +65,15 @@ export async function POST(req: Request) {
         return res;
     } catch (err) {
         if (err instanceof ApiError) {
+            const message =
+                err.status === 401
+                    ? "이메일 또는 비밀번호를 확인해주세요."
+                    : "로그인 요청을 처리하지 못했습니다.";
             return NextResponse.json(
-                { message: err.message },
+                { message },
                 { status: err.status },
             );
         }
-        const message =
-            err instanceof Error ? err.message : "로그인에 실패했어요";
-        return NextResponse.json({ message }, { status: 500 });
+        return internalErrorResponse("auth-login", err, "로그인에 실패했어요.");
     }
 }

@@ -54,7 +54,5 @@ export function getMemberName(email: string | undefined) {
             .filter(Boolean)
             .map((pair) => pair.split(":")),
     );
-    if (map[email]) return map[email];
-    if (email.endsWith("@example.com")) return "GUEST";
-    return null;
+    return map[email] ?? null;
 }

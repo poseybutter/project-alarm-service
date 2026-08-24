@@ -33,6 +33,7 @@ export type Player = {
     month_exp: number;
     week_exp?: number;
     level: number;
+    role?: string | null;
     icons: string[];
     attend_last: string | null;
     attend_streak: number;

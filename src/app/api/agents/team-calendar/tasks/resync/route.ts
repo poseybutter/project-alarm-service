@@ -10,6 +10,7 @@ import {
     type TeamCalendarTaskInput,
     upsertTeamCalendarTaskEvent,
 } from "@/lib/server/googleCalendar";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
 
 export async function POST() {
     const { user, role, teamId } = await getServerCurrentTeamRole();
@@ -130,10 +131,8 @@ export async function POST() {
                 if (updateError) throw updateError;
                 synced += 1;
             } catch (err) {
-                const message =
-                    err instanceof Error
-                        ? err.message
-                        : "팀 캘린더 재동기화 실패";
+                console.error(`[team-calendar-resync-task:${task.id}]`, err);
+                const message = "팀 캘린더 재동기화 실패";
                 errors.push({ id: task.id, message });
                 await supabase
                     .from("tasks")
@@ -149,9 +148,11 @@ export async function POST() {
             failed: errors.length,
             errors,
         });
-    } catch (err) {
-        const message =
-            err instanceof Error ? err.message : "팀 캘린더 재동기화 실패";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "team-calendar-resync",
+            error,
+            "팀 캘린더 재동기화에 실패했습니다.",
+        );
     }
 }

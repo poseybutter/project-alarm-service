@@ -28,7 +28,7 @@ import type { Player, Task, Quest } from "@/lib/types";
 import { formatWorkload } from "@/lib/utils";
 import {
     BAR_COLORS,
-    MEMBER_COLORS,
+    getMemberColors,
     normalizeStatus,
 } from "@/lib/constants";
 import { toLocalYmd } from "@/lib/toLocalYmd";
@@ -126,8 +126,31 @@ function taskOverlapsRange(task: Task, start: Date, end: Date) {
     return taskStart <= end && taskEnd >= start;
 }
 
+function avatarStoragePath(publicUrl: string | null | undefined) {
+    if (!publicUrl) return null;
+    try {
+        const marker = "/storage/v1/object/public/avatars/";
+        const path = new URL(publicUrl).pathname;
+        const markerIndex = path.indexOf(marker);
+        if (markerIndex < 0) return null;
+        const objectPath = decodeURIComponent(path.slice(markerIndex + marker.length));
+        if (!objectPath || objectPath.includes("..")) return null;
+        return objectPath;
+    } catch {
+        return null;
+    }
+}
+
 export default function ProfilePage() {
-    const { member, members, refreshAvatar, role, teamId } = useAuth();
+    const {
+        member,
+        members,
+        refreshAvatar,
+        role,
+        teamId,
+        playerId,
+        avatarUrl,
+    } = useAuth();
     const isGuest = member === "GUEST" || role === "guest";
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -236,15 +259,23 @@ export default function ProfilePage() {
     }
 
     async function uploadAvatar(file: File) {
-        if (!member || !teamId) return;
-        const ext = file.name.split(".").pop();
-        const memberEn: Record<string, string> = {
-            TEAM_MEMBER_1: "hs",
-            TEAM_MEMBER_2: "jy",
-            TEAM_MEMBER_3: "hh",
-            TEAM_MEMBER_4: "je",
+        if (!member || !teamId || !playerId) return;
+        const allowedTypes: Record<string, string> = {
+            "image/jpeg": "jpg",
+            "image/png": "png",
+            "image/webp": "webp",
+            "image/gif": "gif",
         };
-        const fileName = `${memberEn[member] || member}.${ext}`;
+        const ext = allowedTypes[file.type];
+        if (!ext) {
+            showToastMsg("JPG, PNG, WEBP, GIF 이미지만 업로드할 수 있어요.");
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            showToastMsg("프로필 이미지는 5MB 이하여야 해요.");
+            return;
+        }
+        const fileName = `player-${playerId}.${ext}`;
 
         const { error: uploadError } = await supabase.storage
             .from("avatars")
@@ -264,28 +295,22 @@ export default function ProfilePage() {
             .from("players")
             .update({ avatar_url: url })
             .eq("team_id", teamId)
-            .eq("name", member);
+            .eq("id", playerId);
+
+        const previousPath = avatarStoragePath(avatarUrl);
+        if (previousPath && previousPath !== fileName) {
+            await supabase.storage.from("avatars").remove([previousPath]);
+        }
         showToastMsg("프로필 이미지 업데이트 완료!");
         refreshAvatar();
         loadAll();
     }
 
     async function deleteAvatar() {
-        if (!member || !teamId) return;
-        const memberEn: Record<string, string> = {
-            TEAM_MEMBER_1: "hs",
-            TEAM_MEMBER_2: "jy",
-            TEAM_MEMBER_3: "hh",
-            TEAM_MEMBER_4: "je",
-        };
-
-        // Storage에서 파일 삭제 (확장자 모름 → 여러 형식 시도)
-        const exts = ["jpg", "jpeg", "png", "webp", "gif"];
-        const fileName = memberEn[member] || member;
-        for (const ext of exts) {
-            await supabase.storage
-                .from("avatars")
-                .remove([`${fileName}.${ext}`]);
+        if (!member || !teamId || !playerId) return;
+        const objectPath = avatarStoragePath(avatarUrl);
+        if (objectPath) {
+            await supabase.storage.from("avatars").remove([objectPath]);
         }
 
         // players 테이블 avatar_url 초기화
@@ -293,7 +318,7 @@ export default function ProfilePage() {
             .from("players")
             .update({ avatar_url: null })
             .eq("team_id", teamId)
-            .eq("name", member);
+            .eq("id", playerId);
         showToastMsg("프로필 이미지 삭제 완료!");
         refreshAvatar();
         loadAll();
@@ -659,8 +684,7 @@ export default function ProfilePage() {
                                                 "🏅",
                                             ];
                                             const plv = calcLevel(p.exp);
-                                            const isLeader =
-                                                p.name === "TEAM_MEMBER_1";
+                                            const isLeader = p.role === "admin";
                                             return (
                                                 <div
                                                     key={p.name}
@@ -738,7 +762,7 @@ export default function ProfilePage() {
                                             ),
                                             1,
                                         );
-                                        const c = MEMBER_COLORS[m] ?? { bar: "#a8a29e" };
+                                        const c = getMemberColors(m);
                                         return (
                                             <div
                                                 key={m}

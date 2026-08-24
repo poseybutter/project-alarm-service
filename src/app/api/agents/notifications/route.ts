@@ -5,7 +5,11 @@ import {
     listRecentlyDeliveredDedupeKeys,
 } from "@/lib/agents/notificationDeliveries";
 import { createAgentSuggestions } from "@/lib/agents/suggestions";
-import { getServerCurrentTeamRole } from "@/lib/serverSupabase";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
+import {
+    createServiceSupabaseClient,
+    getServerCurrentTeamRole,
+} from "@/lib/serverSupabase";
 import type { Accessibility, Task } from "@/lib/types";
 import type {
     CalendarEventInput,
@@ -23,7 +27,7 @@ function excludeRecentlyDelivered<T extends { dedupe_key: string | null }>(
 }
 
 export async function POST(req: NextRequest) {
-    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    const { user, role, teamId } = await getServerCurrentTeamRole();
     if (!user || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
@@ -32,6 +36,7 @@ export async function POST(req: NextRequest) {
     }
 
     const save = req.nextUrl.searchParams.get("save") !== "false";
+    const service = createServiceSupabaseClient();
 
     const [
         { data: tasks, error: taskError },
@@ -40,24 +45,24 @@ export async function POST(req: NextRequest) {
         { data: quests, error: questError },
     ] =
         await Promise.all([
-            supabase
+            service
                 .from("tasks")
                 .select("*")
                 .eq("team_id", teamId)
                 .order("end_date", { ascending: true }),
-            supabase
+            service
                 .from("accessibility")
                 .select("*")
                 .eq("team_id", teamId)
                 .order("end_date", { ascending: true }),
-            supabase
+            service
                 .from("agent_calendar_events")
                 .select(
                     "id, member, email, title, starts_at, ends_at, all_day, location, html_link",
                 )
                 .eq("team_id", teamId)
                 .order("starts_at", { ascending: true }),
-            supabase
+            service
                 .from("quests")
                 .select("id, member, content, proj, end_date, task_id, status")
                 .eq("team_id", teamId)
@@ -67,30 +72,24 @@ export async function POST(req: NextRequest) {
         ]);
 
     if (taskError || accError || calendarError || questError) {
-        return NextResponse.json(
-            {
-                message:
-                    taskError?.message ??
-                    accError?.message ??
-                    calendarError?.message ??
-                    questError?.message ??
-                    "Failed to load notification inputs",
-            },
-            { status: 500 },
+        return internalErrorResponse(
+            "agent-notifications-inputs",
+            taskError ?? accError ?? calendarError ?? questError,
+            "알림 생성에 필요한 정보를 불러오지 못했습니다.",
         );
     }
 
     let deliveredKeys: Set<string>;
     try {
-        deliveredKeys = await listRecentlyDeliveredDedupeKeys(supabase, {
+        deliveredKeys = await listRecentlyDeliveredDedupeKeys(service, {
             teamId,
         });
-    } catch (err) {
-        const message =
-            err instanceof Error
-                ? err.message
-                : "Failed to load notification delivery history";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "agent-notifications-history",
+            error,
+            "알림 발송 이력을 확인하지 못했습니다.",
+        );
     }
 
     const suggestions = excludeRecentlyDelivered(
@@ -117,13 +116,13 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-        const created = await createAgentSuggestions(supabase, suggestions);
+        const created = await createAgentSuggestions(service, suggestions);
         return NextResponse.json({ suggestions: created, saved: true });
-    } catch (err) {
-        const message =
-            err instanceof Error
-                ? err.message
-                : "Failed to save notification suggestions";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "agent-notifications-save",
+            error,
+            "알림 제안을 저장하지 못했습니다.",
+        );
     }
 }

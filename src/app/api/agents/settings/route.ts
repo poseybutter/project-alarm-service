@@ -1,5 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getServerCurrentTeamRole } from "@/lib/serverSupabase";
+import { requireAdminSession } from "@/features/admin/server/adminRepository";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
+import {
+    createServiceSupabaseClient,
+    getServerCurrentTeamRole,
+} from "@/lib/serverSupabase";
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DEFAULT_MORNING_SEND_TIME = "08:30";
@@ -20,13 +25,14 @@ async function getCurrentPlayer(
 }
 
 export async function GET() {
-    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    const { user, role, teamId } = await getServerCurrentTeamRole();
     if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
     try {
-        const player = await getCurrentPlayer(supabase, user.email, teamId);
+        const service = createServiceSupabaseClient();
+        const player = await getCurrentPlayer(service, user.email, teamId);
         if (!player?.name) {
             return NextResponse.json(
                 { message: "Player not found" },
@@ -34,7 +40,7 @@ export async function GET() {
             );
         }
 
-        const { data, error } = await supabase
+        const { data, error } = await service
             .from("agent_member_notification_settings")
             .select("morning_send_time, morning_enabled")
             .eq("team_id", teamId)
@@ -42,22 +48,31 @@ export async function GET() {
             .maybeSingle();
         if (error) throw error;
 
-        const { data: teamCalendarData, error: teamCalendarError } =
-            await supabase
-                .from("agent_team_calendar_settings")
-                .select("calendar_id, connection_email, updated_at")
-                .eq("team_id", teamId)
-                .maybeSingle();
-        if (teamCalendarError) throw teamCalendarError;
-        const teamCalendar = teamCalendarData;
-
-        const { data: memberCalendars, error: memberCalendarError } =
-            await supabase
-                .from("agent_member_calendar_settings")
-                .select("member, calendar_id, updated_at")
-                .eq("team_id", teamId)
-                .order("member", { ascending: true });
-        if (memberCalendarError) throw memberCalendarError;
+        let teamCalendar = null;
+        let memberCalendars: Array<{
+            member: string;
+            calendar_id: string;
+            updated_at: string;
+        }> = [];
+        if (role === "admin") {
+            await requireAdminSession(teamId, "integrations.read");
+            const [teamResult, memberResult] = await Promise.all([
+                service
+                    .from("agent_team_calendar_settings")
+                    .select("calendar_id, connection_email, updated_at")
+                    .eq("team_id", teamId)
+                    .maybeSingle(),
+                service
+                    .from("agent_member_calendar_settings")
+                    .select("member, calendar_id, updated_at")
+                    .eq("team_id", teamId)
+                    .order("member", { ascending: true }),
+            ]);
+            if (teamResult.error) throw teamResult.error;
+            if (memberResult.error) throw memberResult.error;
+            teamCalendar = teamResult.data;
+            memberCalendars = memberResult.data ?? [];
+        }
 
         return NextResponse.json({
             settings: data ?? {
@@ -65,17 +80,19 @@ export async function GET() {
                 morning_enabled: true,
             },
             teamCalendar,
-            memberCalendars: memberCalendars ?? [],
+            memberCalendars,
         });
-    } catch (err) {
-        const message =
-            err instanceof Error ? err.message : "Failed to load settings";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "agent-settings-get",
+            error,
+            "알림 설정을 불러오지 못했습니다.",
+        );
     }
 }
 
 export async function PUT(req: NextRequest) {
-    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    const { user, role, teamId } = await getServerCurrentTeamRole();
     if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
@@ -101,7 +118,8 @@ export async function PUT(req: NextRequest) {
     }
 
     try {
-        const player = await getCurrentPlayer(supabase, user.email, teamId);
+        const service = createServiceSupabaseClient();
+        const player = await getCurrentPlayer(service, user.email, teamId);
         if (!player?.name) {
             return NextResponse.json(
                 { message: "Player not found" },
@@ -109,7 +127,7 @@ export async function PUT(req: NextRequest) {
             );
         }
 
-        const { data, error } = await supabase
+        const { data, error } = await service
             .from("agent_member_notification_settings")
             .upsert(
                 {
@@ -130,21 +148,16 @@ export async function PUT(req: NextRequest) {
         let teamCalendar = null;
         const teamCalendarId = body.teamCalendarId?.trim();
         if (teamCalendarId !== undefined) {
-            if (role !== "admin") {
-                return NextResponse.json(
-                    { message: "Only admins can save team calendar settings" },
-                    { status: 403 },
-                );
-            }
+            await requireAdminSession(teamId, "integrations.manage");
             if (teamCalendarId.length === 0) {
-                const { error: deleteError } = await supabase
+                const { error: deleteError } = await service
                     .from("agent_team_calendar_settings")
                     .delete()
                     .eq("team_id", teamId);
                 if (deleteError) throw deleteError;
             } else {
                 const { data: savedTeamCalendar, error: teamCalendarError } =
-                    await supabase
+                    await service
                         .from("agent_team_calendar_settings")
                         .upsert(
                             {
@@ -164,24 +177,35 @@ export async function PUT(req: NextRequest) {
 
         let memberCalendars = null;
         if (body.memberCalendarIds !== undefined) {
-            if (role !== "admin") {
-                return NextResponse.json(
-                    { message: "Only admins can save member calendar settings" },
-                    { status: 403 },
-                );
-            }
+            await requireAdminSession(teamId, "integrations.manage");
+
+            const { data: activePlayers, error: playersError } = await service
+                .from("players")
+                .select("name")
+                .eq("team_id", teamId)
+                .eq("status", "active");
+            if (playersError) throw playersError;
+            const allowedMembers = new Set(
+                (activePlayers ?? []).map((row) => String(row.name)),
+            );
 
             const entries = Object.entries(body.memberCalendarIds).map(
                 ([member, calendarId]) => ({
-                    member,
+                    member: member.trim(),
                     calendarId: calendarId.trim(),
                 }),
             );
+            if (entries.some((entry) => !allowedMembers.has(entry.member))) {
+                return NextResponse.json(
+                    { message: "팀에 속하지 않은 구성원이 포함되어 있습니다." },
+                    { status: 400 },
+                );
+            }
             const emptyMembers = entries
                 .filter((entry) => entry.calendarId.length === 0)
                 .map((entry) => entry.member);
             if (emptyMembers.length > 0) {
-                const { error: deleteError } = await supabase
+                const { error: deleteError } = await service
                     .from("agent_member_calendar_settings")
                     .delete()
                     .eq("team_id", teamId)
@@ -198,14 +222,14 @@ export async function PUT(req: NextRequest) {
                     updated_at: new Date().toISOString(),
                 }));
             if (rows.length > 0) {
-                const { error: upsertError } = await supabase
+                const { error: upsertError } = await service
                     .from("agent_member_calendar_settings")
                     .upsert(rows, { onConflict: "team_id,member" });
                 if (upsertError) throw upsertError;
             }
 
             const { data: savedMemberCalendars, error: memberCalendarError } =
-                await supabase
+                await service
                     .from("agent_member_calendar_settings")
                     .select("member, calendar_id, updated_at")
                     .eq("team_id", teamId)
@@ -215,9 +239,11 @@ export async function PUT(req: NextRequest) {
         }
 
         return NextResponse.json({ settings: data, teamCalendar, memberCalendars });
-    } catch (err) {
-        const message =
-            err instanceof Error ? err.message : "Failed to save settings";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "agent-settings-put",
+            error,
+            "알림 설정을 저장하지 못했습니다.",
+        );
     }
 }
