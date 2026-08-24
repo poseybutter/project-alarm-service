@@ -169,6 +169,7 @@ async function buildFreshSuggestion(
     }
 
     return buildNotificationSuggestions({
+        teamId: TEAM_ID,
         tasks: (tasks ?? []) as Task[],
         accessibility: (accessibility ?? []) as Accessibility[],
         calendarEvents: [

@@ -6,7 +6,7 @@ import { useAuth } from './AuthProvider'
 import { signOut } from '@/lib/auth'
 
 export default function UserMenu() {
-  const { member, avatarUrl } = useAuth()
+  const { member, avatarUrl, teamId, teams, role } = useAuth()
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -49,20 +49,22 @@ export default function UserMenu() {
                   {member.slice(1)}
                 </div>
               )}
-              {member === 'TEAM_MEMBER_1' && (
+              {role === 'admin' && (
                 <div className="absolute -top-2 left-1/2 -translate-x-1/2 text-xs">👑</div>
               )}
             </div>
             <div>
               <div className="flex items-center gap-1.5">
                 <p className="text-sm font-bold text-stone-800">{member}</p>
-                {member === 'TEAM_MEMBER_1' && (
+                {role === 'admin' && (
                   <span className="text-xs px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded font-medium border border-yellow-200">
-                    리더
+                    관리자
                   </span>
                 )}
               </div>
-              <p className="text-xs text-stone-400">UD</p>
+              <p className="text-xs text-stone-400">
+                {teams.find(team => team.id === teamId)?.name ?? teamId}
+              </p>
             </div>
           </div>
           <button
@@ -77,6 +79,14 @@ export default function UserMenu() {
           >
             <span>🏠</span> 홈으로
           </button>
+          {role === 'admin' && (
+            <button
+              onClick={() => { router.push('/admin'); setOpen(false) }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-stone-700 hover:bg-amber-50 transition-colors"
+            >
+              <span aria-hidden="true">🛡️</span> 관리자 콘솔
+            </button>
+          )}
           <div className="border-t border-stone-100" />
           <button
             onClick={async () => {

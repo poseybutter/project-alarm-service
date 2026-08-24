@@ -6,9 +6,10 @@ import { rpcSetQuestDone } from '@/lib/maple'
 import Tooltip from '@/components/Tooltip'
 import Select from 'react-select'
 import { modalFormSelectStyles } from '@/lib/reactSelectStyles'
-import { TEAM_ID } from '@/lib/constants'
+import { useAuth } from '@/components/AuthProvider'
+import type { Project } from '@/lib/types'
+import { findProjectId, findTeamMemberId, normalizeProject } from '@/lib/utils'
 
-const MEMBERS = ['TEAM_MEMBER_1', 'TEAM_MEMBER_2', 'TEAM_MEMBER_3', 'TEAM_MEMBER_4']
 const MEMBER_COLORS: Record<string, string> = {
   'TEAM_MEMBER_1': 'bg-purple-100 text-purple-700',
   'TEAM_MEMBER_2': 'bg-green-100 text-green-700',
@@ -18,6 +19,8 @@ const MEMBER_COLORS: Record<string, string> = {
 
 type Quest = {
   id: number
+  player_id?: number | null
+  project_id?: number | null
   member: string
   proj: string | null
   content: string
@@ -35,26 +38,55 @@ function getDiff(dateStr: string | null) {
 }
 
 export default function QuestsPage() {
+  const { member, members, memberOptions, teamId } = useAuth()
   const [quests, setQuests]     = useState<Quest[]>([])
-  const [filter, setFilter]     = useState('TEAM_MEMBER_4')
+  const [projects, setProjects] = useState<Project[]>([])
+  const [filter, setFilter]     = useState('')
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading]   = useState(true)
   const [toast, setToast]       = useState('')
   const [form, setForm]         = useState({
-    member: 'TEAM_MEMBER_4', proj: '', content: '', end_date: ''
+    member: '', proj: '', content: '', end_date: ''
   })
 
-  useEffect(() => { loadQuests() }, [])
+  useEffect(() => {
+    if (!teamId) return
+    const nextMember = member ?? members[0] ?? ''
+    if (nextMember) {
+      setFilter(nextMember)
+      setForm(current => ({ ...current, member: nextMember }))
+    }
+    void loadQuests()
+    void loadProjects()
+  }, [member, teamId])
 
   async function loadQuests() {
+    if (!teamId) return
     setLoading(true)
+    try {
+      const { data } = await supabase
+        .from('quests')
+        .select('*')
+        .eq('team_id', teamId)
+        .order('created_at', { ascending: false })
+      setQuests(data || [])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function loadProjects() {
+    if (!teamId) return
     const { data } = await supabase
-      .from('quests')
+      .from('projects')
       .select('*')
-      .eq('team_id', TEAM_ID)
-      .order('created_at', { ascending: false })
-    setQuests(data || [])
-    setLoading(false)
+      .eq('team_id', teamId)
+      .order('name')
+    setProjects(
+      (data || [])
+        .map(row => normalizeProject(row as Record<string, unknown>))
+        .filter(project => !project.is_archived),
+    )
   }
 
   function showToastMsg(msg: string) {
@@ -63,15 +95,32 @@ export default function QuestsPage() {
   }
 
   async function addQuest() {
+    if (!teamId) return
     if (!form.content) return alert('할 일 내용은 필수예요')
-    await supabase.from('quests').insert([{
+    const selectedPlayerId = findTeamMemberId(memberOptions, form.member)
+    const selectedProjectId = findProjectId(projects, form.proj)
+    if (selectedPlayerId === null) {
+      showToastMsg('현재 팀의 담당자를 다시 선택해주세요')
+      return
+    }
+    if (form.proj && selectedProjectId === null) {
+      showToastMsg('현재 팀의 프로젝트를 다시 선택해주세요')
+      return
+    }
+    const { error } = await supabase.from('quests').insert([{
       member  : form.member,
+      player_id: selectedPlayerId,
       proj    : form.proj || null,
+      project_id: selectedProjectId,
       content : form.content,
       status  : '대기',
       end_date: form.end_date || null,
-      team_id : TEAM_ID,
+      team_id : teamId,
     }])
+    if (error) {
+      showToastMsg('퀘스트 등록에 실패했어요')
+      return
+    }
     setShowModal(false)
     setForm({ member: filter, proj: '', content: '', end_date: '' })
     loadQuests()
@@ -124,7 +173,7 @@ export default function QuestsPage() {
       <div className="max-w-2xl mx-auto">
         {/* 팀원 선택 */}
         <div className="flex gap-2 px-4 py-3 overflow-x-auto scrollbar-hide bg-white border-b border-stone-200">
-          {MEMBERS.map(m => (
+          {members.map(m => (
             <button
               key={m}
               onClick={() => setFilter(m)}
@@ -237,7 +286,7 @@ export default function QuestsPage() {
               <div>
                 <label className="text-xs font-medium text-stone-500 block mb-1.5">담당자</label>
                 <Select
-                  options={MEMBERS.map(m => ({ value: m, label: m }))}
+                  options={members.map(m => ({ value: m, label: m }))}
                   value={form.member ? { value: form.member, label: form.member } : null}
                   onChange={opt => setForm({ ...form, member: opt?.value ?? '' })}
                   placeholder="담당자 선택"
@@ -258,11 +307,19 @@ export default function QuestsPage() {
               </div>
               <div>
                 <label className="text-xs font-medium text-stone-500 block mb-1.5">관련 프로젝트 (선택)</label>
-                <input
-                  className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                  placeholder="예) 사이버견본주택"
-                  value={form.proj}
-                  onChange={e => setForm({...form, proj: e.target.value})}
+                <Select
+                  options={projects.map(project => ({
+                    value: project.name,
+                    label: project.name,
+                  }))}
+                  value={form.proj ? { value: form.proj, label: form.proj } : null}
+                  onChange={opt => setForm({...form, proj: opt?.value ?? ''})}
+                  placeholder="프로젝트 검색"
+                  isClearable
+                  isSearchable
+                  styles={modalFormSelectStyles}
+                  menuPortalTarget={typeof document !== 'undefined' ? document.body : null}
+                  noOptionsMessage={() => '검색 결과가 없어요'}
                 />
               </div>
               <div>

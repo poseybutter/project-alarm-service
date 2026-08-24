@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { TEAM_ID } from "@/lib/constants";
-import { getServerUserRole } from "@/lib/serverSupabase";
+import { getServerCurrentTeamRole } from "@/lib/serverSupabase";
 import type { AgentSuggestion, NotificationSuggestionPayload } from "@/lib/agents/types";
 import {
     hasRecentNotificationDelivery,
@@ -20,8 +19,8 @@ function isNotificationPayload(
 }
 
 export async function POST(req: NextRequest) {
-    const { supabase, user, role } = await getServerUserRole(TEAM_ID);
-    if (!user?.email) {
+    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    if (!user?.email || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
     if (role !== "admin") {
@@ -42,7 +41,7 @@ export async function POST(req: NextRequest) {
     const { data, error } = await supabase
         .from("agent_suggestions")
         .select("*")
-        .eq("team_id", TEAM_ID)
+        .eq("team_id", teamId)
         .eq("id", body.id)
         .in("agent_type", ["notification", "accessibility_reminder"])
         .eq("status", "approved")
@@ -70,7 +69,7 @@ export async function POST(req: NextRequest) {
         if (
             suggestion.dedupe_key &&
             (await hasRecentNotificationDelivery(supabase, {
-                teamId: TEAM_ID,
+                teamId,
                 dedupeKey: suggestion.dedupe_key,
             }))
         ) {
@@ -88,7 +87,7 @@ export async function POST(req: NextRequest) {
             const { data: webhookRow, error: webhookError } = await supabase
                 .from("agent_member_webhooks")
                 .select("webhook_url")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .eq("member", suggestion.payload.recipientMember)
                 .maybeSingle();
 
@@ -105,7 +104,7 @@ export async function POST(req: NextRequest) {
         });
         const updated = await updateAgentSuggestionStatus(supabase, {
             id: suggestion.id,
-            teamId: TEAM_ID,
+            teamId,
             status: "applied",
             reviewedBy: user.email,
         });

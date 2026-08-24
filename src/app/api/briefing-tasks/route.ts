@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { TEAM_ID } from "@/lib/constants";
-import { getServerUser } from "@/lib/serverSupabase";
+import { getServerUserRole } from "@/lib/serverSupabase";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
 
 /**
  * 주간 브리핑 업무별 편집 내용(briefing_tasks) API.
@@ -10,8 +10,15 @@ import { getServerUser } from "@/lib/serverSupabase";
  * 인증/RLS: 로그인 세션을 먼저 확인하고, row 권한은 Supabase RLS에 맡긴다.
  */
 export async function GET(req: NextRequest) {
-    const { supabase, user } = await getServerUser();
-    if (!user?.email) {
+    const teamId = req.nextUrl.searchParams.get("teamId")?.trim();
+    if (!teamId) {
+        return NextResponse.json(
+            { message: "teamId is required" },
+            { status: 400 },
+        );
+    }
+    const { supabase, user, role } = await getServerUserRole(teamId);
+    if (!user?.email || !role) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
@@ -27,12 +34,16 @@ export async function GET(req: NextRequest) {
     const { data: brief, error: bErr } = await supabase
         .from("briefings")
         .select("id")
-        .eq("team_id", TEAM_ID)
+        .eq("team_id", teamId)
         .eq("week_start", week)
         .maybeSingle();
 
     if (bErr) {
-        return NextResponse.json({ message: bErr.message }, { status: 500 });
+        return internalErrorResponse(
+            "briefing-tasks-get-briefing",
+            bErr,
+            "브리핑을 불러오지 못했습니다.",
+        );
     }
     if (!brief?.id) {
         return NextResponse.json({ tasks: [] });
@@ -41,24 +52,24 @@ export async function GET(req: NextRequest) {
     const { data, error } = await supabase
         .from("briefing_tasks")
         .select("task_id, edited_content")
-        .eq("team_id", TEAM_ID)
+        .eq("team_id", teamId)
         .eq("briefing_id", brief.id);
 
     if (error) {
-        return NextResponse.json({ message: error.message }, { status: 500 });
+        return internalErrorResponse(
+            "briefing-tasks-get",
+            error,
+            "브리핑 업무를 불러오지 못했습니다.",
+        );
     }
 
     return NextResponse.json({ tasks: data ?? [] });
 }
 
 export async function POST(req: NextRequest) {
-    const { supabase, user } = await getServerUser();
-    if (!user?.email) {
-        return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-    }
-
     let body: {
         week?: string;
+        teamId?: string;
         task_id?: number;
         edited_content?: string | null;
     };
@@ -72,27 +83,54 @@ export async function POST(req: NextRequest) {
     }
 
     const { week, task_id, edited_content } = body;
-    if (!week || typeof task_id !== "number") {
+    const teamId = body.teamId?.trim();
+    if (!week || !teamId || typeof task_id !== "number") {
         return NextResponse.json(
             { message: "week와 task_id가 필요해요." },
             { status: 400 },
         );
     }
 
+    const { supabase, user, role } = await getServerUserRole(teamId);
+    if (!user?.email || !role) {
+        return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+    if (role !== "admin" && role !== "member") {
+        return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+    }
+
+    const { data: task, error: taskError } = await supabase
+        .from("tasks")
+        .select("id")
+        .eq("id", task_id)
+        .eq("team_id", teamId)
+        .maybeSingle();
+    if (taskError) {
+        return internalErrorResponse(
+            "briefing-tasks-load-task",
+            taskError,
+            "업무를 확인하지 못했습니다.",
+        );
+    }
+    if (!task) {
+        return NextResponse.json({ message: "Task not found in this team" }, { status: 404 });
+    }
+
     // 이번 주 briefings 행 id 확보 (없으면 생성). week_start 유니크 기준 upsert.
     const { data: brief, error: bErr } = await supabase
         .from("briefings")
         .upsert(
-            { week_start: week, team_id: TEAM_ID, is_locked: false },
-            { onConflict: "week_start" },
+            { week_start: week, team_id: teamId, is_locked: false },
+            { onConflict: "team_id,week_start" },
         )
         .select("id")
         .maybeSingle();
 
     if (bErr || !brief?.id) {
-        return NextResponse.json(
-            { message: bErr?.message ?? "브리핑 행을 만들지 못했어요." },
-            { status: 500 },
+        return internalErrorResponse(
+            "briefing-tasks-upsert-briefing",
+            bErr ?? new Error("briefing row missing"),
+            "브리핑 행을 만들지 못했어요.",
         );
     }
 
@@ -101,14 +139,18 @@ export async function POST(req: NextRequest) {
             briefing_id: brief.id,
             task_id,
             edited_content: edited_content ?? null,
-            team_id: TEAM_ID,
+            team_id: teamId,
             updated_at: new Date().toISOString(),
         },
         { onConflict: "briefing_id,task_id" },
     );
 
     if (error) {
-        return NextResponse.json({ message: error.message }, { status: 500 });
+        return internalErrorResponse(
+            "briefing-tasks-upsert",
+            error,
+            "브리핑 업무를 저장하지 못했습니다.",
+        );
     }
 
     return NextResponse.json({ ok: true });

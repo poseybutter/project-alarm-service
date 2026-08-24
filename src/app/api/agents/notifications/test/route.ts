@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { TEAM_ID } from "@/lib/constants";
 import {
     createServiceSupabaseClient,
-    getServerUserRole,
+    getServerCurrentTeamRole,
 } from "@/lib/serverSupabase";
 import {
     buildNotificationSuggestions,
@@ -34,9 +33,16 @@ function todayKstYmd(now = new Date()) {
 
 async function buildFreshSuggestion(
     supabase: ReturnType<typeof createServiceSupabaseClient>,
-    params: { member: string; email: string },
+    params: {
+        member: string;
+        email: string;
+        teamId: string;
+        canSyncTeamCalendar: boolean;
+    },
 ) {
-    await syncTodayTeamCalendarEvents(supabase, { teamId: TEAM_ID });
+    if (params.canSyncTeamCalendar) {
+        await syncTodayTeamCalendarEvents(supabase, { teamId: params.teamId });
+    }
 
     const [
         { data: tasks, error: taskError },
@@ -47,12 +53,12 @@ async function buildFreshSuggestion(
         supabase
             .from("tasks")
             .select("*")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", params.teamId)
             .eq("member", params.member),
         supabase
             .from("accessibility")
             .select("*")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", params.teamId)
             .eq("member", params.member)
             .order("end_date", { ascending: true }),
         supabase
@@ -60,13 +66,13 @@ async function buildFreshSuggestion(
             .select(
                 "id, member, email, title, starts_at, ends_at, all_day, location, html_link",
             )
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", params.teamId)
             .eq("email", params.email)
             .order("starts_at", { ascending: true }),
         supabase
             .from("quests")
             .select("id, member, content, proj, end_date, task_id, status")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", params.teamId)
             .eq("member", params.member)
             .is("task_id", null)
             .order("order_index", { ascending: true, nullsFirst: false })
@@ -78,6 +84,7 @@ async function buildFreshSuggestion(
     }
 
     return buildNotificationSuggestions({
+        teamId: params.teamId,
         tasks: (tasks ?? []) as Task[],
         accessibility: (accessibility ?? []) as Accessibility[],
         calendarEvents: (calendarEvents ?? []) as CalendarEventInput[],
@@ -90,8 +97,8 @@ async function buildFreshSuggestion(
 }
 
 export async function POST() {
-    const { supabase, user } = await getServerUserRole(TEAM_ID);
-    if (!user?.email) {
+    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
@@ -100,7 +107,7 @@ export async function POST() {
         const { data: player, error: playerError } = await supabase
             .from("players")
             .select("name")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("email", user.email)
             .maybeSingle();
         if (playerError) throw playerError;
@@ -114,7 +121,7 @@ export async function POST() {
         const { data: webhookRow, error: webhookError } = await serviceSupabase
             .from("agent_member_webhooks")
             .select("webhook_url")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("email", user.email)
             .maybeSingle();
         if (webhookError) throw webhookError;
@@ -129,7 +136,7 @@ export async function POST() {
             await serviceSupabase
                 .from("agent_suggestions")
                 .select("*")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .eq("agent_type", "notification")
                 .eq("status", "pending")
                 .eq("payload->>recipientMember", player.name)
@@ -143,6 +150,8 @@ export async function POST() {
             const fresh = await buildFreshSuggestion(serviceSupabase, {
                 member: player.name,
                 email: user.email,
+                teamId,
+                canSyncTeamCalendar: role === "admin",
             });
             if (!fresh) {
                 return NextResponse.json(
@@ -168,6 +177,8 @@ export async function POST() {
         const fresh = await buildFreshSuggestion(serviceSupabase, {
             member: player.name,
             email: user.email,
+            teamId,
+            canSyncTeamCalendar: role === "admin",
         });
         if (!fresh) {
             return NextResponse.json(
@@ -206,7 +217,7 @@ export async function POST() {
                 reviewed_by: user.email,
                 reviewed_at: new Date().toISOString(),
             })
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("agent_type", "notification")
             .eq("status", "pending")
             .eq("payload->>recipientMember", player.name)

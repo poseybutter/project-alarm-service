@@ -1,4 +1,3 @@
-import { TEAM_ID } from "@/lib/constants";
 import type { Accessibility, Task } from "@/lib/types";
 import { getDiff } from "@/lib/utils";
 import type {
@@ -391,6 +390,7 @@ function digestSignature(digest: MemberDigest) {
 }
 
 export function buildNotificationSuggestions(input: {
+    teamId: string;
     tasks: Task[];
     accessibility?: Accessibility[];
     calendarEvents?: CalendarEventInput[];
@@ -513,7 +513,7 @@ export function buildNotificationSuggestions(input: {
         ].filter(Boolean);
 
         return {
-            team_id: TEAM_ID,
+            team_id: input.teamId,
             agent_type: "notification",
             dedupe_key: `notification:member:${member}:${today}:${signature}`,
             title: `${member} 모닝 기상나팔`,

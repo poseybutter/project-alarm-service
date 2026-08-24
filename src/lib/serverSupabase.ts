@@ -1,7 +1,8 @@
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
-import { LEADER } from "@/lib/constants";
+import { TEAM_ID } from "@/lib/constants";
+import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
 
 export async function createCookieSupabaseClient() {
     const store = await cookies();
@@ -15,9 +16,14 @@ export async function createCookieSupabaseClient() {
                     return store.getAll();
                 },
                 setAll(cookiesToSet) {
-                    cookiesToSet.forEach(({ name, value, options }) => {
-                        store.set(name, value, options);
-                    });
+                    try {
+                        cookiesToSet.forEach(({ name, value, options }) => {
+                            store.set(name, value, options);
+                        });
+                    } catch {
+                        // Server Components cannot mutate cookies. Route Handlers
+                        // still persist refreshed sessions through this callback.
+                    }
                 },
             },
         },
@@ -44,9 +50,24 @@ export async function getServerUserRole(teamId: string) {
         return { supabase, user, role: null };
     }
 
+    const normalized = await loadNormalizedIdentity(supabase, user.email);
+    if (normalized?.profile && normalized.memberships.length > 0) {
+        const membership = normalized.memberships.find(
+            (item) => item.teamId === teamId,
+        );
+        const active =
+            normalized.profile.accountStatus === "active" &&
+            membership?.status === "active";
+        return {
+            supabase,
+            user,
+            role: !active ? null : membership.role,
+        };
+    }
+
     const { data } = await supabase
         .from("players")
-        .select("name, role")
+        .select("name, role, status")
         .eq("team_id", teamId)
         .eq("email", user.email)
         .maybeSingle();
@@ -55,9 +76,55 @@ export async function getServerUserRole(teamId: string) {
         supabase,
         user,
         role:
-            data?.role === "admin" || data?.name === LEADER
-                ? "admin"
-                : "member",
+            data?.status !== "active"
+                ? null
+                : data?.role ?? "member",
+    };
+}
+
+export async function getServerCurrentTeamRole() {
+    const { supabase, user } = await getServerUser();
+    if (!user?.email) {
+        return { supabase, user, role: null, teamId: null };
+    }
+
+    const store = await cookies();
+    const cookieTeamId = store.get("current_team_id")?.value;
+    const normalized = await loadNormalizedIdentity(supabase, user.email);
+    if (normalized?.profile) {
+        const activeMemberships = normalized.memberships.filter(
+            (membership) => membership.status === "active",
+        );
+        const membership = cookieTeamId
+            ? activeMemberships.find((item) => item.teamId === cookieTeamId)
+            : activeMemberships.find((item) => item.isDefault) ??
+              activeMemberships.find((item) => item.teamId === TEAM_ID) ??
+              activeMemberships[0];
+        const active =
+            normalized.profile.accountStatus === "active" && Boolean(membership);
+        return {
+            supabase,
+            user,
+            teamId: membership?.teamId ?? null,
+            role: !active ? null : membership?.role ?? null,
+        };
+    }
+
+    const teamId = cookieTeamId || TEAM_ID;
+    const { data } = await supabase
+        .from("players")
+        .select("name, role, status")
+        .eq("team_id", teamId)
+        .eq("email", user.email)
+        .maybeSingle();
+    return {
+        supabase,
+        user,
+        teamId,
+        role:
+            data?.status !== "active"
+                ? null
+                : data?.role ?? "member",
     };
 }
 
