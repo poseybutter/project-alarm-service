@@ -1130,46 +1130,51 @@ export default function HomePage() {
         if (!teamId) return;
         const generation = ++loadGenerationRef.current;
         setLoading(true);
-        const [
-            { data: playerData },
-            { data: questData },
-            { data: myTaskData },
-            { data: guestTaskData },
-            { data: projData },
-        ] = await Promise.all([
-            supabase
-                .from("players")
-                .select("*")
-                .eq("team_id", teamId)
-                .eq("name", member)
-                .maybeSingle(),
-            supabase
-                .from("quests")
-                .select("*")
-                .eq("team_id", teamId)
-                .eq("member", member)
-                .neq("status", "완료")
-                .order("order_index", { ascending: true, nullsFirst: false })
-                .order("created_at", { ascending: true }),
-            supabase
-                .from("tasks")
-                .select("*")
-                .eq("team_id", teamId)
-                .eq("member", member)
-                .order("end_date", { ascending: true }),
-            isGuest
-                ? supabase
-                      .from("tasks")
-                      .select("*")
-                      .eq("team_id", teamId)
-                      .order("end_date", { ascending: true })
-                : Promise.resolve({ data: [] as Task[] }),
-            supabase
-                .from("projects")
-                .select("*")
-                .eq("team_id", teamId)
-                .order("name", { ascending: true }),
-        ]);
+        let playerData, questData, myTaskData, guestTaskData, projData;
+        try {
+            [
+                { data: playerData },
+                { data: questData },
+                { data: myTaskData },
+                { data: guestTaskData },
+                { data: projData },
+            ] = await Promise.all([
+                supabase
+                    .from("players")
+                    .select("*")
+                    .eq("team_id", teamId)
+                    .eq("name", member)
+                    .maybeSingle(),
+                supabase
+                    .from("quests")
+                    .select("*")
+                    .eq("team_id", teamId)
+                    .eq("member", member)
+                    .neq("status", "완료")
+                    .order("order_index", { ascending: true, nullsFirst: false })
+                    .order("created_at", { ascending: true }),
+                supabase
+                    .from("tasks")
+                    .select("*")
+                    .eq("team_id", teamId)
+                    .eq("member", member)
+                    .order("end_date", { ascending: true }),
+                isGuest
+                    ? supabase
+                          .from("tasks")
+                          .select("*")
+                          .eq("team_id", teamId)
+                          .order("end_date", { ascending: true })
+                    : Promise.resolve({ data: [] as Task[] }),
+                supabase
+                    .from("projects")
+                    .select("*")
+                    .eq("team_id", teamId)
+                    .order("name", { ascending: true }),
+            ]);
+        } finally {
+            if (generation === loadGenerationRef.current) setLoading(false);
+        }
         if (generation !== loadGenerationRef.current) return;
         setPlayer(playerData);
         setQuests(questData || []);
@@ -1180,7 +1185,6 @@ export default function HomePage() {
                 normalizeProject(row as Record<string, unknown>),
             ),
         );
-        setLoading(false);
     }
 
     function showToastMsg(msg: string) {
