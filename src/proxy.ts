@@ -29,14 +29,6 @@ export function proxy(req: NextRequest) {
     const hasAccessToken = Boolean(req.cookies.get("accessToken")?.value);
     const isAuthed = hasAccessToken || hasSupabaseSession(req);
 
-    if (isAuthed && pathname === "/login") {
-        const url = req.nextUrl.clone();
-        const next = req.nextUrl.searchParams.get("next");
-        url.pathname = next?.startsWith("/") ? next : "/home";
-        url.search = "";
-        return NextResponse.redirect(url);
-    }
-
     if (!isAuthed && !isPublicPath(pathname)) {
         const url = req.nextUrl.clone();
         const next = `${pathname}${req.nextUrl.search}`;

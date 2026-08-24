@@ -19,7 +19,7 @@ const ICON_CACHE = "v=2";
 
 export const metadata: Metadata = {
     title: "UD2팀 업무 관리",
-    description: "UD2 퍼블리싱팀 전용 업무 관리 앱",
+    description: "UD2팀 업무 관리 앱",
     manifest: `/manifest.json?${ICON_CACHE}`,
     icons: {
         icon: [
@@ -48,7 +48,7 @@ export const metadata: Metadata = {
     openGraph: {
         type: "website",
         title: "UD2팀 업무 관리",
-        description: "UD2 퍼블리싱팀 전용 업무 관리 앱",
+        description: "UD2팀 업무 관리 앱",
     },
 };
 
@@ -57,8 +57,7 @@ export const viewport: Viewport = {
     colorScheme: "light",
     width: "device-width",
     initialScale: 1,
-    maximumScale: 1,
-    userScalable: false,
+    userScalable: true,
 };
 
 export default function RootLayout({

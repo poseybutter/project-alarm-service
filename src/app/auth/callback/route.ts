@@ -1,16 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
+import { isIdentitySchemaUnavailable } from "@/features/identity/server/identityRepository";
 
 /**
  * Supabase OAuth (Google) 콜백.
  *
  * 1. PKCE code 를 세션으로 교환 (서버에서 처리해야 쿠키가 안정적으로 설정됨)
- * 2. players 테이블 조회 후 status 분기:
+ * 2. profiles 계정 상태를 우선 확인하고, 전환 중 스키마에서는 players 상태로 폴백:
  *    - active   → /
  *    - pending  → /pending
  *    - rejected → /login?error=rejected
- * 3. players 에 없으면 status=pending 으로 INSERT 한 뒤 /pending 으로 이동
+ * 3. 양쪽에 사용자 정보가 없으면 players에 status=pending으로 INSERT 후 /pending 이동
  *    (관리자 승인 플로우 진입)
  */
 export async function GET(req: NextRequest) {
@@ -82,28 +83,50 @@ export async function GET(req: NextRequest) {
         console.error("[auth/callback] audit_logs insert failed:", auditError);
     }
 
-    const { data: existing, error: selectError } = await supabase
+    const { data: normalizedProfile, error: normalizedProfileError } =
+        await supabase
+            .from("profiles")
+            .select("account_status")
+            .eq("auth_user_id", user.id)
+            .maybeSingle();
+    if (
+        normalizedProfileError &&
+        !isIdentitySchemaUnavailable(normalizedProfileError)
+    ) {
+        console.error(
+            "[auth/callback] normalized profile select failed:",
+            normalizedProfileError,
+        );
+    }
+
+    const { data: memberships, error: selectError } = await supabase
         .from("players")
         .select("status")
-        .eq("email", email)
-        .maybeSingle();
+        .eq("email", email);
 
     if (selectError) {
         console.error("[auth/callback] players select failed:", selectError);
         return NextResponse.redirect(`${origin}/login?error=db_error`);
     }
 
-    if (existing) {
-        switch (existing.status) {
-            case "active":
-                return NextResponse.redirect(`${origin}${nextPath}`);
-            case "rejected":
-                await supabase.auth.signOut();
-                return NextResponse.redirect(`${origin}/login?error=rejected`);
-            case "pending":
-            default:
-                return NextResponse.redirect(`${origin}/pending`);
-        }
+    const normalizedStatus = normalizedProfile?.account_status;
+    if (
+        normalizedStatus
+            ? normalizedStatus === "active"
+            : memberships?.some((membership) => membership.status === "active")
+    ) {
+        return NextResponse.redirect(`${origin}${nextPath}`);
+    }
+    if (
+        normalizedStatus
+            ? normalizedStatus === "pending"
+            : memberships?.some((membership) => membership.status === "pending")
+    ) {
+        return NextResponse.redirect(`${origin}/pending`);
+    }
+    if (normalizedStatus || (memberships && memberships.length > 0)) {
+        await supabase.auth.signOut();
+        return NextResponse.redirect(`${origin}/login?error=rejected`);
     }
 
     const { error: insertError } = await supabase.from("players").insert({

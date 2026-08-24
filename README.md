@@ -4,8 +4,8 @@
 > 업무 등록 → 자동 취합 → 주간 브리핑까지 한 곳에서
 
 **🔗 배포 URL:** https://project-alarm-service.vercel.app  
-**🔒 접근:** 허가된 UD2팀 구글 계정으로 로그인 (현재 운영)  
-> 🚧 초대코드 회원가입 → 관리자 승인 방식은 **개발 진행 중**이라 아직 출시되지 않았어요.
+**🔒 접근:** 회사 구글 계정 로그인 → 미등록 사용자는 관리자 승인 후 이용
+
 **📱 PWA:** 홈 화면 / 작업 표시줄에 앱으로 설치 가능
 
 ---
@@ -21,7 +21,6 @@ flowchart TD
     Start(["📱 앱 접속"]) --> Authed{"로그인 상태?"}
     Authed -->|"아니오"| Login["🔑 로그인 화면"]
     Login ==>|"현재 운영 · 구글 로그인"| Home
-    Login -.->|"🚧 개발중 · 초대코드 가입·승인"| Home
     Authed -->|"예"| Home
 
     Home["🏠 홈"]
@@ -216,7 +215,8 @@ Google Apps Script 중심 알림은 앱 내부 알림 에이전트로 전환 중
 > **현재 운영(main 출시본)** 은 클라이언트가 **Supabase에 직접 쿼리**(supabase-js + Realtime + RLS)하고,
 > 로그인은 **Supabase 구글 OAuth**를 씁니다.
 > 단, **점수(EXP·레벨·출석·잔디) 쓰기는 DB의 `SECURITY DEFINER` RPC**(`set_task_status`·`set_quest_done`·`attendance_check`)를 통해서만 이뤄져요 — 클라이언트의 점수 직접 쓰기는 차단(위조 방지).
-> 🚧 점선·노란 블록(**Spring Boot 인증**)은 별도 브랜치에서 **개발 진행 중**이라 아직 출시되지 않았어요.
+> 관리자 변경 작업은 Next.js Route Handler를 경계로 처리하며, Spring Boot 전환 시
+> 이 API 계약을 유지한 채 서버 구현만 단계적으로 교체합니다.
 
 ```mermaid
 graph TB
@@ -235,12 +235,12 @@ graph TB
 
     subgraph NextAPI["⚙️ Next.js Route Handlers · /api"]
         Notify["/api/notify · 구글챗 프록시"]
-        AuthAPI["/api/auth/* · 인증 프록시"]
+        AdminAPI["/api/admin/* · 관리자 권한/변경"]
         AgentAPI["/api/agents/* · 알림 에이전트"]
     end
 
-    subgraph Spring["☕ Spring Boot :8080 — 🚧 개발 진행중"]
-        JWT["JWT 인증 · 초대코드 가입/승인<br/>토큰 발급"]
+    subgraph Spring["☕ Spring Boot — 단계적 이전 예정"]
+        AdminCore["Supabase 토큰 검증<br/>관리자 유스케이스 API"]
     end
 
     subgraph Ext["🤖 외부 자동화"]
@@ -257,8 +257,8 @@ graph TB
     UI --> MW
     UI -->|"레벨업 알림"| Notify --> Chat
     UI -->|"브리핑·웹훅 설정"| AgentAPI
-    UI -.->|"🚧 가입·로그인"| AuthAPI
-    AuthAPI -.->|"🚧 프록시"| JWT
+    UI -->|"관리자 변경"| AdminAPI
+    AdminAPI -.->|"향후 내부 호출"| AdminCore
     VercelCron --> AgentAPI
     AgentAPI -->|"service_role · 서버 전용"| DB
     AgentAPI --> Calendar
@@ -272,8 +272,8 @@ graph TB
     classDef ext fill:#fbcfe8,stroke:#db2777,color:#831843,stroke-width:1.5px;
 
     class UI,MW,AP client;
-    class AuthAPI,Notify,AgentAPI api;
-    class JWT wip;
+    class AdminAPI,Notify,AgentAPI api;
+    class AdminCore wip;
     class SAuth,DB,RT,Store data;
     class VercelCron,Calendar,Cron,Chat ext;
 
@@ -284,44 +284,35 @@ graph TB
     style Ext fill:#fdf2f8,stroke:#db2777;
 ```
 
-### 🔐 인증 흐름 — 🚧 개발 진행중 (출시 전)
+### 🔐 인증 및 접근 승인 흐름
 
-> ⚠️ 아래 **초대코드 가입 → 승인 → JWT** 흐름은 별도 브랜치에서 개발 중이며,
-> **아직 사용자에게 적용되지 않았어요.** 현재 main 출시본의 로그인은 **Supabase 구글 OAuth**입니다.
+현재 인증은 Supabase Google OAuth를 사용한다. 처음 로그인한 사용자는 접근 요청으로
+등록되고, 관리자가 팀과 역할을 지정해 승인한 뒤 워크스페이스에 진입한다.
 
 ```mermaid
 sequenceDiagram
     actor U as 사용자
     participant N as 브라우저 (Next.js)
-    participant R as Route Handler<br/>/api/auth
-    participant S as Spring Boot :8080
-    participant DB as Supabase
+    participant O as Supabase Auth<br/>Google OAuth
+    participant C as /auth/callback
+    participant DB as Supabase PostgreSQL
+    participant A as 관리자
 
-    Note over U,DB: ① 회원가입 — 초대코드 기반
-    U->>N: 이메일·비번·이름·초대코드 입력
-    N->>R: POST /api/auth/signup
-    R->>S: signup 프록시
-    S-->>R: 가입 신청 완료 (status=pending)
-    R-->>N: "승인 대기" 안내 → /pending
-
-    Note over U,DB: ② 승인 대기 — 15초 폴링
-    loop 15초마다
-        N->>R: GET /api/auth/me
-        R->>S: Bearer 토큰 검증
-        S-->>R: status (pending / active / rejected)
+    U->>N: Google 로그인
+    N->>O: OAuth 인증
+    O->>C: PKCE callback
+    C->>DB: profile / players 상태 확인
+    alt 활성 사용자
+        C-->>N: 워크스페이스 이동
+    else 최초 사용자
+        C->>DB: pending 사용자·접근 요청 생성
+        C-->>N: 승인 대기 화면
+        A->>DB: 팀·역할 지정 후 승인
+        U->>N: 다시 로그인
+        C-->>N: 워크스페이스 이동
+    else 거절·정지 사용자
+        C-->>N: 세션 종료 및 접근 차단
     end
-    Note right of S: 관리자가 승인하면 status=active
-
-    Note over U,DB: ③ 로그인 — JWT 발급
-    U->>N: 이메일·비번 입력
-    N->>R: POST /api/auth/login
-    R->>S: login 프록시
-    S-->>R: accessToken · refreshToken
-    R-->>N: httpOnly 쿠키로 저장
-    N->>N: proxy 미들웨어가 쿠키 확인 후 통과
-
-    Note over U,DB: ④ 이후 데이터는 Supabase 직접 조회
-    N->>DB: supabase-js 쿼리 + Realtime 구독 (RLS 적용)
 ```
 
 ### 🗄 DB ER 다이어그램
@@ -329,7 +320,7 @@ sequenceDiagram
 > 실선(`||--o{`)은 외래키(FK) 관계, 점선(`||..o{`)은 이름·프로젝트명 문자열로 느슨하게 연결되는 관계예요.
 > 대부분의 테이블은 `team_id`(text)로 팀을 구분합니다.
 >
-> 🚧 **FK 정규화 진행 중:** 점선(이름 문자열 조인) 관계를 `player_id`/`project_id` FK로 전환하는 작업이 진행 중이에요(Phase 1 완료 — `tasks`·`quests`·`attendance`·`accessibility`에 FK 컬럼 추가·백필·검증·동기화 트리거). 클라이언트 전환·텍스트 컬럼 제거가 끝나면 아래 점선들이 실선 FK로 바뀝니다.
+> 🚧 **FK 정규화 진행 중:** `db/V34_work_relation_fk_compatibility.sql`이 `tasks`·`quests`·`attendance`·`accessibility`에 FK 컬럼, 백필, 검증 장부와 호환 트리거를 추가합니다. 운영 DB 감사 통과 후 클라이언트 저장 경로도 `player_id`/`project_id`와 기존 표시 문자열을 함께 기록하도록 전환했습니다. 조회·리포트 호환 검증이 끝날 때까지 문자열 컬럼은 유지합니다.
 
 ```mermaid
 erDiagram
@@ -503,7 +494,7 @@ erDiagram
 | 스타일링 | Tailwind CSS |
 | 데이터베이스 | Supabase (PostgreSQL) |
 | 인증 (현재 운영) | Supabase Auth (Google OAuth) |
-| 인증 (🚧 개발중) | Spring Boot JWT · 초대코드 가입/승인 + Route Handler 프록시 |
+| 관리자 서버 경계 | Next.js Route Handler, 이후 Spring Boot로 계약 유지 이전 |
 | 실시간 | Supabase Realtime |
 | 배포 | Vercel (프론트) |
 | 자동화 | Vercel Cron, Next.js Route Handler, GitHub Actions |
@@ -530,11 +521,12 @@ src/
 │   ├── manage/               # 관리 (프로젝트, 접근성)
 │   ├── agents/               # 알림 에이전트 (브리핑, 웹훅, 캘린더)
 │   ├── changelog/            # 배포/버전 업데이트 소식
-│   ├── login/ · signup/      # 로그인 / 초대코드 회원가입
-│   ├── pending/page.tsx      # 승인 대기 (15초 폴링 → /api/auth/me)
+│   ├── login/ · pending/     # 구글 로그인 / 접근 승인 대기
+│   ├── signup/               # 미사용 레거시 초대코드 화면
+│   ├── admin/                # 관리자 대시보드·요청·구성원·팀·권한
 │   ├── auth/callback/route.ts
 │   └── api/
-│       ├── auth/             # login·signup·me·refresh·logout → Spring Boot 프록시
+│       ├── admin/            # 관리자 조회·승인·역할·팀 변경 API
 │       ├── agents/           # 알림 에이전트, Google Calendar, webhook API
 │       ├── notify/route.ts   # 구글챗 웹훅 프록시
 │       └── briefing-tasks/route.ts
@@ -550,7 +542,7 @@ src/
 ├── hooks/useNotifications.ts # 배포 알림 구독/읽음
 └── lib/
     ├── supabase.ts           # Supabase 클라이언트 (데이터 직접 쿼리)
-    ├── api.ts                # Spring Boot 백엔드 fetch 래퍼 (인증 전용)
+    ├── serverSupabase.ts     # 서버 세션·권한 및 service role 클라이언트
     ├── auth.ts               # 인증 유틸 (이메일→팀원명, GUEST 처리)
     ├── maple.ts              # EXP/레벨/잔디 로직
     ├── types.ts · constants.ts · utils.ts
@@ -568,6 +560,13 @@ src/
 |--------|------|
 | `tasks` | 업무 목록 (`is_plan`은 이번주 리포트 포함 여부) |
 | `players` | 팀원 EXP / 레벨 / 칭호 / 주간 EXP |
+| `profiles` | 인증 사용자 프로필과 계정 상태 (V31 호환 전환) |
+| `team_memberships` | 사용자-팀 N:M 소속, 기본 팀과 팀별 역할 |
+| `access_requests` | 신규 사용자의 팀·역할 접근 승인 요청 |
+| `roles` / `permissions` / `role_permissions` | 팀 역할과 세부 권한 매트릭스 |
+| `current_team_id` | 활성 소속 검증 후 저장되는 현재 팀 HTTP-only 쿠키 |
+| `teams` / `organization_admins` | 팀 생명주기와 조직 관리자 |
+| `admin_audit_logs` | 관리자 변경 감사 로그 |
 | `projects` | 프로젝트 목록 (멀티 담당자, 메타데이터) |
 | `accessibility` | 웹 접근성 인증 관리 (is_new, 상태 4종) |
 | `quests` | 오늘의 퀘스트 (task_id 연동) |
@@ -593,9 +592,14 @@ src/
 
 | 역할 | 조건 | 권한 |
 |------|------|------|
-| `admin` | players.role = 'admin' | 전체 수정/삭제, 브리핑 잠금, 전달사항 편집 |
-| `member` | players.role = 'member' | 본인 업무/퀘스트 수정, 프로젝트/접근성 추가 |
+| 조직 관리자 | `organization_admins` 등록 | 모든 팀과 관리자 설정 |
+| 팀 `admin` | `team_memberships.role = 'admin'` | 해당 팀 구성원·팀 운영 관리 |
+| 팀 `member` | `team_memberships.role = 'member'` | 본인 업무/퀘스트 수정 |
+| 팀 `viewer` | `team_memberships.role = 'viewer'` | 소속 팀 읽기 전용(전환 예정) |
 | `guest` | @example.com 도메인, MEMBER_EMAILS 미포함 | 읽기 전용 |
+
+V31 호환 기간에는 기존 화면이 `players.role`을 계속 사용하고, DB 트리거가
+`team_memberships`와 동기화한다.
 
 ---
 
@@ -605,11 +609,10 @@ src/
 > (✅ 현재 운영 / 🚧 개발 진행중 표기)
 
 ### 인증 · 세션
-- ✅ **미들웨어 인증 게이트** (`src/proxy.ts`) — `/login`·`/signup`·`/pending`·`/auth/callback` 외 모든 경로는 로그인 세션이 없으면 자동 차단·리다이렉트
+- ✅ **미들웨어 인증 게이트** (`src/proxy.ts`) — `/login`·`/signup`(레거시)·`/pending`·`/auth/callback` 외 모든 경로는 로그인 세션이 없으면 자동 차단·리다이렉트
 - ✅ **회사 도메인 + 멤버 화이트리스트 기반 접근** — `@example.com` 외 차단, 명단 미포함자는 읽기 전용 GUEST로 강등 (`src/lib/auth.ts`)
-- 🚧 **JWT를 `httpOnly` + `secure`(prod) + `sameSite=lax` 쿠키로 저장** — JS로 토큰 탈취(XSS) 불가, CSRF 완화 (`src/app/api/auth/login·refresh`)
-- 🚧 **토큰을 브라우저에 직접 노출하지 않음** — Next.js Route Handler가 Spring Boot로 프록시, 토큰은 서버 경유만 (`src/lib/api.ts`)
-- 🚧 **초대코드 가입 → 관리자 승인(pending) 2단계** — 무단 가입 차단, 승인 전엔 워크스페이스 진입 불가
+- ✅ **Supabase SSR 세션 쿠키 사용** — OAuth 세션을 서버 콜백과 미들웨어에서 검증
+- ✅ **Google OAuth → 관리자 승인(pending) 2단계** — 미등록 사용자는 승인 전 워크스페이스 진입 불가
 
 ### 인가 · 데이터 격리
 - ✅ **역할 기반 접근 제어 (admin / member / guest)** — 본인 업무·퀘스트만 수정, 관리자만 전체 편집·브리핑 잠금 (`AuthProvider`, `AuthGuard`)
@@ -648,7 +651,7 @@ GOOGLE_CALENDAR_REDIRECT_URI=
 # Vercel Cron
 CRON_SECRET=
 
-# Spring Boot 인증 백엔드 (🚧 개발중)
+# Spring Boot 내부 API (단계적 이전 시 사용)
 API_URL=                       # 서버사이드용 내부 URL (예: http://api:8080)
 NEXT_PUBLIC_API_URL=           # 클라이언트 fallback URL
 NEXT_PUBLIC_SITE_URL=          # OAuth 콜백 등 사이트 베이스 URL

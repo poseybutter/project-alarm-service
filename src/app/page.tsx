@@ -20,6 +20,7 @@ import Header from "@/components/Header";
 import Tooltip from "@/components/Tooltip";
 import type { Quest, Player, Task, Project } from "@/lib/types";
 import {
+    findProjectId,
     getDiff,
     formatWorkload,
     normalizeProject,
@@ -33,9 +34,7 @@ import {
     BAR_COLORS,
     TYPE_COLORS,
     STATUS_COLORS,
-    MEMBERS,
     WORKLOAD_PRESETS,
-    TEAM_ID,
 } from "@/lib/constants";
 import Avatar from "@/components/Avatar";
 import LevelUpOverlay from "@/components/LevelUpOverlay";
@@ -68,7 +67,7 @@ import {
     modalFormSelectStyles,
     badgeSelectStyles,
 } from "@/lib/reactSelectStyles";
-import { toLocalYmd, getThisMonday } from "@/lib/toLocalYmd";
+import { toLocalYmd } from "@/lib/toLocalYmd";
 import TiptapQuestContentEditor from "@/components/TiptapQuestContentEditor";
 import TaskContentInputs from "@/components/TaskContentInputs";
 import TaskContentList from "@/components/TaskContentList";
@@ -128,6 +127,23 @@ type QuestFormModalProps = {
     projects: Project[];
     editorMountKey: string;
 };
+
+function toSeoulYmd(date: Date = new Date()) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).formatToParts(date);
+    const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${value.year}-${value.month}-${value.day}`;
+}
+
+function addDaysToYmd(ymd: string, days: number) {
+    const date = new Date(`${ymd}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
+}
 
 function QuestFormModal({
     title,
@@ -802,11 +818,19 @@ function SortableQuestItem({
 }
 
 export default function HomePage() {
-    const { member, loading: authLoading } = useAuth();
+    const {
+        member,
+        members,
+        playerId,
+        teamId,
+        teams,
+        loading: authLoading,
+    } = useAuth();
     const router = useRouter();
     const isGuest = member === "GUEST";
 
     const channelIdRef = useRef(Math.random().toString(36).slice(2));
+    const loadGenerationRef = useRef(0);
     const [player, setPlayer] = useState<Player | null>(null);
     const [quests, setQuests] = useState<Quest[]>([]);
     const [myTasks, setMyTasks] = useState<Task[]>([]);
@@ -951,7 +975,7 @@ export default function HomePage() {
     }, [authLoading, member]);
 
     useEffect(() => {
-        if (member) {
+        if (member && teamId) {
             loadData();
 
             // Realtime 援щ룆
@@ -984,37 +1008,36 @@ export default function HomePage() {
                 supabase.removeChannel(channel).catch(console.error);
             };
         }
-    }, [member]);
+    }, [member, teamId]);
 
     useEffect(() => {
         if (typeof window === "undefined") return;
-        if (!member || member === "GUEST" || authLoading) return;
+        if (!member || !teamId || member === "GUEST" || authLoading) return;
+        let cancelled = false;
 
-        const today = new Date();
-        if (today.getDay() !== 1) return;
+        const todayYmd = toSeoulYmd();
+        const today = new Date(`${todayYmd}T00:00:00Z`);
+        if (today.getUTCDay() !== 1) return;
 
         // ?대쾲 二??붿슂?쇱뿉 ?대? ?レ븯?쇰㈃ ?ㅼ떆 ?꾩슦吏 ?딆쓬
-        const thisMonday = getThisMonday(today);
-        if (localStorage.getItem("mvp_popup_dismissed_week") === thisMonday)
+        const thisMonday = todayYmd;
+        const dismissedKey = `mvp_popup_dismissed_week_${teamId}`;
+        if (localStorage.getItem(dismissedKey) === thisMonday)
             return;
 
-        const lockKey = `mvp_lock_${thisMonday}`;
+        const lockKey = `mvp_lock_${teamId}_${thisMonday}`;
         if (sessionStorage.getItem(lockKey)) return;
         sessionStorage.setItem(lockKey, "1");
 
-        const lastMonday = new Date(today);
-        lastMonday.setDate(today.getDate() - 7);
-        const lastSunday = new Date(today);
-        lastSunday.setDate(today.getDate() - 1);
-        const startYmd = toLocalYmd(lastMonday);
-        const endYmd = toLocalYmd(lastSunday);
+        const startYmd = addDaysToYmd(todayYmd, -7);
+        const endYmd = addDaysToYmd(todayYmd, -1);
 
         void (async () => {
             try {
                 const { data: players, error: pErr } = await supabase
                     .from("players")
                     .select("*")
-                    .eq("team_id", TEAM_ID);
+                    .eq("team_id", teamId);
                 if (pErr || !players?.length) {
                     sessionStorage.removeItem(lockKey);
                     return;
@@ -1023,7 +1046,7 @@ export default function HomePage() {
                 const { data: tasks, error: tErr } = await supabase
                     .from("tasks")
                     .select("member, end_date")
-                    .eq("team_id", TEAM_ID)
+                    .eq("team_id", teamId)
                     .eq("status", "완료")
                     .not("end_date", "is", null)
                     .gte("end_date", startYmd)
@@ -1067,6 +1090,7 @@ export default function HomePage() {
                     return;
                 }
 
+                if (cancelled) return;
                 setMvpInfo({
                     show: true,
                     name: best.name,
@@ -1077,7 +1101,10 @@ export default function HomePage() {
                 sessionStorage.removeItem(lockKey);
             }
         })();
-    }, [member, authLoading]);
+        return () => {
+            cancelled = true;
+        };
+    }, [member, teamId, authLoading]);
 
     // myTasks/quests 蹂寃????듯빀 紐⑸줉 ?ш뎄??(?쒕옒洹?以묒뿉??allQuestItems留?蹂寃쎈릺誘濡?deps 遺덈?)
     useEffect(() => {
@@ -1100,47 +1127,55 @@ export default function HomePage() {
     if (!member) return null;
 
     async function loadData() {
+        if (!teamId) return;
+        const generation = ++loadGenerationRef.current;
         setLoading(true);
-        const [
-            { data: playerData },
-            { data: questData },
-            { data: myTaskData },
-            { data: guestTaskData },
-            { data: projData },
-        ] = await Promise.all([
-            supabase
-                .from("players")
-                .select("*")
-                .eq("team_id", TEAM_ID)
-                .eq("name", member)
-                .maybeSingle(),
-            supabase
-                .from("quests")
-                .select("*")
-                .eq("team_id", TEAM_ID)
-                .eq("member", member)
-                .neq("status", "완료")
-                .order("order_index", { ascending: true, nullsFirst: false })
-                .order("created_at", { ascending: true }),
-            supabase
-                .from("tasks")
-                .select("*")
-                .eq("team_id", TEAM_ID)
-                .eq("member", member)
-                .order("end_date", { ascending: true }),
-            isGuest
-                ? supabase
-                      .from("tasks")
-                      .select("*")
-                      .eq("team_id", TEAM_ID)
-                      .order("end_date", { ascending: true })
-                : Promise.resolve({ data: [] as Task[] }),
-            supabase
-                .from("projects")
-                .select("*")
-                .eq("team_id", TEAM_ID)
-                .order("name", { ascending: true }),
-        ]);
+        let playerData, questData, myTaskData, guestTaskData, projData;
+        try {
+            [
+                { data: playerData },
+                { data: questData },
+                { data: myTaskData },
+                { data: guestTaskData },
+                { data: projData },
+            ] = await Promise.all([
+                supabase
+                    .from("players")
+                    .select("*")
+                    .eq("team_id", teamId)
+                    .eq("name", member)
+                    .maybeSingle(),
+                supabase
+                    .from("quests")
+                    .select("*")
+                    .eq("team_id", teamId)
+                    .eq("member", member)
+                    .neq("status", "완료")
+                    .order("order_index", { ascending: true, nullsFirst: false })
+                    .order("created_at", { ascending: true }),
+                supabase
+                    .from("tasks")
+                    .select("*")
+                    .eq("team_id", teamId)
+                    .eq("member", member)
+                    .order("end_date", { ascending: true }),
+                isGuest
+                    ? supabase
+                          .from("tasks")
+                          .select("*")
+                          .eq("team_id", teamId)
+                          .order("end_date", { ascending: true })
+                    : Promise.resolve({ data: [] as Task[] }),
+                supabase
+                    .from("projects")
+                    .select("*")
+                    .eq("team_id", teamId)
+                    .order("name", { ascending: true }),
+            ]);
+        } finally {
+            if (generation === loadGenerationRef.current) setLoading(false);
+        }
+        if (generation !== loadGenerationRef.current) return;
         setPlayer(playerData);
         setQuests(questData || []);
         setMyTasks(myTaskData || []);
@@ -1150,7 +1185,6 @@ export default function HomePage() {
                 normalizeProject(row as Record<string, unknown>),
             ),
         );
-        setLoading(false);
     }
 
     function showToastMsg(msg: string) {
@@ -1233,8 +1267,18 @@ export default function HomePage() {
     }
 
     async function addQuest() {
+        if (!teamId) return;
         if (questRichTextIsEffectivelyEmpty(questForm.content))
             return alert("퀘스트 내용은 필수예요");
+        if (!member || playerId === null) {
+            showToastMsg("현재 팀의 담당자 정보를 찾을 수 없어요");
+            return;
+        }
+        const selectedProjectId = findProjectId(projects, questForm.proj);
+        if (questForm.proj && selectedProjectId === null) {
+            showToastMsg("현재 팀의 프로젝트를 다시 선택해주세요");
+            return;
+        }
         const maxOrder = quests.reduce(
             (m, q) => Math.max(m, q.order_index ?? 0),
             0,
@@ -1242,13 +1286,15 @@ export default function HomePage() {
         await supabase.from("quests").insert([
             {
                 member: member,
+                player_id: playerId,
                 content: questForm.content,
                 proj: questForm.proj || null,
+                project_id: selectedProjectId,
                 end_date: questForm.end_date || null,
                 task_id: null,
                 status: "대기",
                 order_index: maxOrder + 1,
-                team_id: TEAM_ID,
+                team_id: teamId,
             },
         ]);
         setShowAddQuest(false);
@@ -1307,11 +1353,17 @@ export default function HomePage() {
 
     async function saveEditQuest() {
         if (!editTarget) return;
+        const selectedProjectId = findProjectId(projects, questForm.proj);
+        if (questForm.proj && selectedProjectId === null) {
+            showToastMsg("현재 팀의 프로젝트를 다시 선택해주세요");
+            return;
+        }
         await supabase
             .from("quests")
             .update({
                 content: questForm.content,
                 proj: questForm.proj || null,
+                project_id: selectedProjectId,
                 end_date: questForm.end_date || null,
                 task_id: editTarget.task_id ?? null,
             })
@@ -1442,6 +1494,11 @@ export default function HomePage() {
 
     async function saveEditTask() {
         if (!editTask) return;
+        const selectedProjectId = findProjectId(projects, editForm.proj);
+        if (selectedProjectId === null) {
+            showToastMsg("현재 팀의 프로젝트를 다시 선택해주세요");
+            return;
+        }
         if (!editDateRange?.from && !editDateRange?.to) {
             alert("업무 캘린더 등록을 위해 기간 또는 마감일을 선택해주세요");
             return;
@@ -1451,6 +1508,7 @@ export default function HomePage() {
             .update({
                 type: editForm.type,
                 proj: editForm.proj,
+                project_id: selectedProjectId,
                 content: editForm.content,
                 priority: editForm.priority || null,
                 start_date: editDateRange?.from
@@ -1501,7 +1559,7 @@ export default function HomePage() {
         exp: player?.month_exp || 0,
     };
 
-    const guestTeamSummary = MEMBERS.map((name) => {
+    const guestTeamSummary = members.map((name) => {
         const memberTasks = guestTeamTasks.filter((t) => t.member === name);
         const doingCount = memberTasks.filter(
             (t) => t.status !== "완료",
@@ -1541,7 +1599,9 @@ export default function HomePage() {
                 onDragEnd={onQuestDragEnd}
             >
                 <div className="min-h-screen bg-[#f7f6f3]">
-                    <Header title="UD2 업무" />
+                    <Header
+                        title={`${teams.find((team) => team.id === teamId)?.name ?? teamId} 업무`}
+                    />
 
                     <div className="max-w-2xl mx-auto px-4 pt-3 pb-24">
                         {/* ?꾨줈??移대뱶 */}
@@ -2436,8 +2496,8 @@ export default function HomePage() {
                             onClose={() => {
                                 try {
                                     localStorage.setItem(
-                                        "mvp_popup_dismissed_week",
-                                        getThisMonday(),
+                                        `mvp_popup_dismissed_week_${teamId}`,
+                                        toSeoulYmd(),
                                     );
                                 } catch {
                                     /* ignore */

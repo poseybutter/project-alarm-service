@@ -1,17 +1,36 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import {
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useState,
+} from "react";
 import { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { getMemberName } from "@/lib/auth";
-import { LEADER, TEAM_ID } from "@/lib/constants";
+import type {
+    TeamMemberOption,
+    TeamContextOption,
+    TeamContextResponse,
+} from "@/features/team-context/types";
 
 type AuthContextType = {
     user: User | null;
     member: string | null;
     avatarUrl: string | null;
     loading: boolean;
-    role: "admin" | "member" | "guest";
+    role: "admin" | "member" | "viewer" | "guest";
+    teamId: string | null;
+    playerId: number | null;
+    teams: TeamContextOption[];
+    members: string[];
+    memberOptions: TeamMemberOption[];
+    switchingTeam: boolean;
+    teamSwitchError: string | null;
+    switchTeam: (teamId: string) => Promise<void>;
     refreshAvatar: () => void;
 };
 
@@ -21,6 +40,14 @@ const AuthContext = createContext<AuthContextType>({
     avatarUrl: null,
     loading: true,
     role: "member",
+    teamId: null,
+    playerId: null,
+    teams: [],
+    members: [],
+    memberOptions: [],
+    switchingTeam: false,
+    teamSwitchError: null,
+    switchTeam: async () => {},
     refreshAvatar: () => {},
 });
 
@@ -52,8 +79,17 @@ function looksLikeInvalidRefreshOrJwt(message: string | undefined) {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
+    const [teamContextLoading, setTeamContextLoading] = useState(true);
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-    const [role, setRole] = useState<"admin" | "member" | "guest">("member");
+    const [role, setRole] = useState<"admin" | "member" | "viewer" | "guest">("member");
+    const [resolvedMember, setResolvedMember] = useState<string | null>(null);
+    const [teamId, setTeamId] = useState<string | null>(null);
+    const [playerId, setPlayerId] = useState<number | null>(null);
+    const [teams, setTeams] = useState<TeamContextOption[]>([]);
+    const [members, setMembers] = useState<string[]>([]);
+    const [memberOptions, setMemberOptions] = useState<TeamMemberOption[]>([]);
+    const [switchingTeam, setSwitchingTeam] = useState(false);
+    const [teamSwitchError, setTeamSwitchError] = useState<string | null>(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -119,47 +155,143 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
     }, []);
 
-    const member = getMemberName(user?.email || "");
+    const legacyMember = getMemberName(user?.email || "");
+    const member = user ? resolvedMember : legacyMember;
 
-    async function loadAvatar(memberName: string) {
-        if (memberName === "GUEST") {
+    const applyTeamContext = useCallback((context: TeamContextResponse) => {
+        setResolvedMember(context.member);
+        setAvatarUrl(context.avatarUrl);
+        setRole(context.role);
+        setTeamId(context.teamId);
+        setPlayerId(context.playerId);
+        setTeams(context.teams);
+        setMembers(context.members);
+        setMemberOptions(context.memberOptions);
+    }, []);
+
+    const loadTeamContext = useCallback(async () => {
+        setTeamContextLoading(true);
+        try {
+            const response = await fetch("/api/team-context", {
+                cache: "no-store",
+            });
+            if (!response.ok) {
+                setResolvedMember(null);
+                setAvatarUrl(null);
+                setRole("guest");
+                setTeamId(null);
+                setPlayerId(null);
+                setTeams([]);
+                setMembers([]);
+                setMemberOptions([]);
+                return;
+            }
+            applyTeamContext((await response.json()) as TeamContextResponse);
+        } catch (error) {
+            console.error("[auth] Failed to load team context", error);
+            setResolvedMember(null);
             setAvatarUrl(null);
             setRole("guest");
-            return;
+            setTeamId(null);
+            setPlayerId(null);
+            setTeams([]);
+            setMembers([]);
+            setMemberOptions([]);
+        } finally {
+            setTeamContextLoading(false);
         }
-        const { data } = await supabase
-            .from("players")
-            .select("avatar_url, role")
-            .eq("team_id", TEAM_ID)
-            .eq("name", memberName)
-            .maybeSingle();
-        setAvatarUrl(data?.avatar_url || null);
-        setRole(
-            data?.role === "admin" || memberName === LEADER
-                ? "admin"
-                : "member",
-        );
-    }
+    }, [applyTeamContext]);
 
     useEffect(() => {
         const timer = window.setTimeout(() => {
-            if (member) loadAvatar(member);
+            if (user) void loadTeamContext();
             else {
+                setTeamContextLoading(false);
+                setResolvedMember(null);
                 setAvatarUrl(null);
                 setRole("member");
+                setTeamId(null);
+                setPlayerId(null);
+                setTeams([]);
+                setMembers([]);
+                setMemberOptions([]);
             }
         }, 0);
         return () => window.clearTimeout(timer);
-    }, [member]);
+    }, [loadTeamContext, user]);
 
-    function refreshAvatar() {
-        if (member) loadAvatar(member);
-    }
+    const switchTeam = useCallback(async (nextTeamId: string) => {
+        if (!nextTeamId || nextTeamId === teamId || switchingTeam) return;
+        setSwitchingTeam(true);
+        setTeamSwitchError(null);
+        try {
+            const response = await fetch("/api/team-context", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ teamId: nextTeamId }),
+            });
+            if (!response.ok) {
+                const body = (await response.json().catch(() => null)) as
+                    | { message?: string }
+                    | null;
+                throw new Error(body?.message || "팀 전환에 실패했습니다.");
+            }
+            applyTeamContext((await response.json()) as TeamContextResponse);
+            window.location.reload();
+        } catch (error) {
+            const message =
+                error instanceof Error
+                    ? error.message
+                    : "팀 전환에 실패했습니다.";
+            setTeamSwitchError(message);
+            throw error;
+        } finally {
+            setSwitchingTeam(false);
+        }
+    }, [applyTeamContext, switchingTeam, teamId]);
+
+    const refreshAvatar = useCallback(() => {
+        if (user) void loadTeamContext();
+    }, [loadTeamContext, user]);
+
+    const contextValue = useMemo<AuthContextType>(
+        () => ({
+            user,
+            member,
+            avatarUrl,
+            loading: loading || (Boolean(user) && teamContextLoading),
+            role,
+            teamId,
+            playerId,
+            teams,
+            members,
+            memberOptions,
+            switchingTeam,
+            teamSwitchError,
+            switchTeam,
+            refreshAvatar,
+        }),
+        [
+            avatarUrl,
+            loading,
+            member,
+            memberOptions,
+            members,
+            playerId,
+            refreshAvatar,
+            role,
+            switchTeam,
+            switchingTeam,
+            teamContextLoading,
+            teamId,
+            teams,
+            teamSwitchError,
+            user,
+        ],
+    );
 
     return (
-        <AuthContext.Provider
-            value={{ user, member, avatarUrl, loading, role, refreshAvatar }}
-        >
+        <AuthContext.Provider value={contextValue}>
             {children}
         </AuthContext.Provider>
     );

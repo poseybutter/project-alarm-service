@@ -34,6 +34,10 @@ const nextConfig: NextConfig = {
     turbopack: {
         root: projectRoot,
     },
+    experimental: {
+        // Next.js 16.3 dev server expects this object to exist while rendering.
+        instantInsights: { validationLevel: "warning" },
+    },
     async redirects() {
         return [
             {

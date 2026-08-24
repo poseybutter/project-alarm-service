@@ -1,18 +1,18 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { TEAM_ID } from "@/lib/constants";
-import { getServerUserRole } from "@/lib/serverSupabase";
+import { getServerCurrentTeamRole } from "@/lib/serverSupabase";
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DEFAULT_MORNING_SEND_TIME = "08:30";
 
 async function getCurrentPlayer(
-    supabase: Awaited<ReturnType<typeof getServerUserRole>>["supabase"],
+    supabase: Awaited<ReturnType<typeof getServerCurrentTeamRole>>["supabase"],
     email: string,
+    teamId: string,
 ) {
     const { data, error } = await supabase
         .from("players")
         .select("name")
-        .eq("team_id", TEAM_ID)
+        .eq("team_id", teamId)
         .eq("email", email)
         .maybeSingle();
     if (error) throw error;
@@ -20,13 +20,13 @@ async function getCurrentPlayer(
 }
 
 export async function GET() {
-    const { supabase, user, role } = await getServerUserRole(TEAM_ID);
-    if (!user?.email) {
+    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
     try {
-        const player = await getCurrentPlayer(supabase, user.email);
+        const player = await getCurrentPlayer(supabase, user.email, teamId);
         if (!player?.name) {
             return NextResponse.json(
                 { message: "Player not found" },
@@ -37,7 +37,7 @@ export async function GET() {
         const { data, error } = await supabase
             .from("agent_member_notification_settings")
             .select("morning_send_time, morning_enabled")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("email", user.email)
             .maybeSingle();
         if (error) throw error;
@@ -46,7 +46,7 @@ export async function GET() {
             await supabase
                 .from("agent_team_calendar_settings")
                 .select("calendar_id, connection_email, updated_at")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .maybeSingle();
         if (teamCalendarError) throw teamCalendarError;
         const teamCalendar = teamCalendarData;
@@ -55,7 +55,7 @@ export async function GET() {
             await supabase
                 .from("agent_member_calendar_settings")
                 .select("member, calendar_id, updated_at")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .order("member", { ascending: true });
         if (memberCalendarError) throw memberCalendarError;
 
@@ -75,8 +75,8 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
-    const { supabase, user, role } = await getServerUserRole(TEAM_ID);
-    if (!user?.email) {
+    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
@@ -101,7 +101,7 @@ export async function PUT(req: NextRequest) {
     }
 
     try {
-        const player = await getCurrentPlayer(supabase, user.email);
+        const player = await getCurrentPlayer(supabase, user.email, teamId);
         if (!player?.name) {
             return NextResponse.json(
                 { message: "Player not found" },
@@ -113,7 +113,7 @@ export async function PUT(req: NextRequest) {
             .from("agent_member_notification_settings")
             .upsert(
                 {
-                    team_id: TEAM_ID,
+                    team_id: teamId,
                     member: player.name,
                     email: user.email,
                     morning_send_time: morningSendTime,
@@ -140,7 +140,7 @@ export async function PUT(req: NextRequest) {
                 const { error: deleteError } = await supabase
                     .from("agent_team_calendar_settings")
                     .delete()
-                    .eq("team_id", TEAM_ID);
+                    .eq("team_id", teamId);
                 if (deleteError) throw deleteError;
             } else {
                 const { data: savedTeamCalendar, error: teamCalendarError } =
@@ -148,7 +148,7 @@ export async function PUT(req: NextRequest) {
                         .from("agent_team_calendar_settings")
                         .upsert(
                             {
-                                team_id: TEAM_ID,
+                                team_id: teamId,
                                 calendar_id: teamCalendarId,
                                 connection_email: user.email,
                                 updated_at: new Date().toISOString(),
@@ -184,7 +184,7 @@ export async function PUT(req: NextRequest) {
                 const { error: deleteError } = await supabase
                     .from("agent_member_calendar_settings")
                     .delete()
-                    .eq("team_id", TEAM_ID)
+                    .eq("team_id", teamId)
                     .in("member", emptyMembers);
                 if (deleteError) throw deleteError;
             }
@@ -192,7 +192,7 @@ export async function PUT(req: NextRequest) {
             const rows = entries
                 .filter((entry) => entry.calendarId.length > 0)
                 .map((entry) => ({
-                    team_id: TEAM_ID,
+                    team_id: teamId,
                     member: entry.member,
                     calendar_id: entry.calendarId,
                     updated_at: new Date().toISOString(),
@@ -208,7 +208,7 @@ export async function PUT(req: NextRequest) {
                 await supabase
                     .from("agent_member_calendar_settings")
                     .select("member, calendar_id, updated_at")
-                    .eq("team_id", TEAM_ID)
+                    .eq("team_id", teamId)
                     .order("member", { ascending: true });
             if (memberCalendarError) throw memberCalendarError;
             memberCalendars = savedMemberCalendars ?? [];

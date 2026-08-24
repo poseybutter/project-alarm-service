@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { toLocalYmd } from "@/lib/toLocalYmd";
-import { TEAM_ID } from "@/lib/constants";
+import { useAuth } from "@/components/AuthProvider";
 
 type AttendanceHeatmapProps = {
     member: string;
@@ -104,6 +104,7 @@ const LEGEND_SWATCHES = [
 ] as const;
 
 export default function AttendanceHeatmap({ member }: AttendanceHeatmapProps) {
+    const { teamId } = useAuth();
     const today = useMemo(
         () => toLocalYmd(new Date()),
         [],
@@ -118,7 +119,7 @@ export default function AttendanceHeatmap({ member }: AttendanceHeatmapProps) {
     const [loading, setLoading] = useState(true);
 
     const loadData = useCallback(async () => {
-        if (!member) {
+        if (!member || !teamId) {
             setCounts({});
             setLoading(false);
             return;
@@ -130,7 +131,7 @@ export default function AttendanceHeatmap({ member }: AttendanceHeatmapProps) {
         const { data, error } = await supabase
             .from("attendance")
             .select("date, activity_count")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("member", member)
             .gte("date", min)
             .lte("date", max);
@@ -146,10 +147,10 @@ export default function AttendanceHeatmap({ member }: AttendanceHeatmapProps) {
             setCounts(next);
         }
         setLoading(false);
-    }, [member, grid]);
+    }, [member, teamId, grid]);
 
     useEffect(() => {
-        if (!member) {
+        if (!member || !teamId) {
             setCounts({});
             setLoading(false);
             return;

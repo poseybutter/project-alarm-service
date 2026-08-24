@@ -4,13 +4,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
 import type { Task, Project } from "@/lib/types";
-import { getDiff, formatWorkload, normalizeProject } from "@/lib/utils";
 import {
-    MEMBERS,
+    findProjectId,
+    findTeamMemberId,
+    getDiff,
+    formatWorkload,
+    normalizeProject,
+} from "@/lib/utils";
+import {
     TYPE_COLORS,
     STATUS_COLORS,
     WORKLOAD_PRESETS,
-    TEAM_ID,
+    MEMBER_COLORS,
     normalizeStatus,
 } from "@/lib/constants";
 import { rpcSetTaskStatus } from "@/lib/maple";
@@ -18,6 +23,7 @@ import AuthGuard from "@/components/AuthGuard";
 import { useAuth } from "@/components/AuthProvider";
 import Tooltip from "@/components/Tooltip";
 import UserMenu from "@/components/UserMenu";
+import TeamSwitcher from "@/components/TeamSwitcher";
 import Avatar from "@/components/Avatar";
 import LevelUpOverlay from "@/components/LevelUpOverlay";
 import ExpPopup, { type ExpPopupType } from "@/components/ExpPopup";
@@ -39,13 +45,6 @@ import {
     badgeSelectStyles,
 } from "@/lib/reactSelectStyles";
 import { toLocalYmd } from "@/lib/toLocalYmd";
-
-const MEMBER_BORDER: Record<string, string> = {
-    TEAM_MEMBER_1: "border-purple-400 bg-purple-100 text-purple-700",
-    TEAM_MEMBER_2: "border-green-400 bg-green-100 text-green-700",
-    TEAM_MEMBER_3: "border-amber-400 bg-amber-100 text-amber-700",
-    TEAM_MEMBER_4: "border-orange-400 bg-orange-100 text-orange-700",
-};
 
 /** 추가/수정 모달 기간 버튼 라벨 */
 function periodButtonLabel(range: DateRange | undefined): {
@@ -170,12 +169,18 @@ function TaskStatusBadgeSelect({
 }
 
 export default function TasksPage() {
-    const { member: currentMember, role } = useAuth();
+    const {
+        member: currentMember,
+        members,
+        memberOptions,
+        role,
+        teamId,
+    } = useAuth();
     const isGuest = role === "guest";
     const canEditOrDelete = (taskMember: string) =>
         role !== "guest" && (role === "admin" || taskMember === currentMember);
     const assignableMembers =
-        role === "admin" ? MEMBERS : [currentMember || ""];
+        role === "admin" ? members : [currentMember || ""];
 
     const [tasks, setTasks] = useState<Task[]>([]);
     const [toast, setToast] = useState("");
@@ -232,8 +237,10 @@ export default function TasksPage() {
     }, []);
 
     useEffect(() => {
-        loadTasks();
-        loadProjects();
+        if (!teamId) return;
+        let cancelled = false;
+        void loadTasks(teamId, () => cancelled);
+        void loadProjects(teamId, () => cancelled);
 
         const channel = supabase
             .channel("tasks-changes-" + Math.random())
@@ -244,35 +251,44 @@ export default function TasksPage() {
                     const { data } = await supabase
                         .from("tasks")
                         .select("*")
-                        .eq("team_id", TEAM_ID)
+                        .eq("team_id", teamId)
                         .order("created_at", { ascending: false });
-                    setTasks(data || []);
+                    if (!cancelled) setTasks(data || []);
                 },
             )
             .subscribe();
 
         return () => {
+            cancelled = true;
             supabase.removeChannel(channel).catch(console.error);
         };
-    }, []);
+    }, [teamId]);
 
-    async function loadTasks() {
+    async function loadTasks(requestedTeamId = teamId, isCancelled = () => false) {
+        if (!requestedTeamId) return;
         setLoading(true);
-        const { data } = await supabase
-            .from("tasks")
-            .select("*")
-            .eq("team_id", TEAM_ID)
-            .order("created_at", { ascending: false });
-        setTasks(data || []);
-        setLoading(false);
+        try {
+            const { data } = await supabase
+                .from("tasks")
+                .select("*")
+                .eq("team_id", requestedTeamId)
+                .order("created_at", { ascending: false });
+            if (!isCancelled()) {
+                setTasks(data || []);
+            }
+        } finally {
+            if (!isCancelled()) setLoading(false);
+        }
     }
 
-    async function loadProjects() {
+    async function loadProjects(requestedTeamId = teamId, isCancelled = () => false) {
+        if (!requestedTeamId) return;
         const { data } = await supabase
             .from("projects")
             .select("*")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", requestedTeamId)
             .order("name");
+        if (isCancelled()) return;
         setProjects(
             (data || []).map((row) =>
                 normalizeProject(row as Record<string, unknown>),
@@ -349,8 +365,15 @@ export default function TasksPage() {
     }
 
     async function addTask() {
+        if (!teamId) return;
         if (!form.member || !form.proj)
             return alert("담당자와 프로젝트명은 필수예요");
+        const selectedPlayerId = findTeamMemberId(memberOptions, form.member);
+        const selectedProjectId = findProjectId(projects, form.proj);
+        if (selectedPlayerId === null || selectedProjectId === null) {
+            showToastMsg("현재 팀의 담당자와 프로젝트를 다시 선택해주세요");
+            return;
+        }
         if (
             !formDateRange?.from &&
             !formDateRange?.to
@@ -363,8 +386,10 @@ export default function TasksPage() {
             .insert([
                 {
                     member: form.member,
+                    player_id: selectedPlayerId,
                     type: form.type,
                     proj: form.proj,
+                    project_id: selectedProjectId,
                     content: form.content,
                     priority: form.priority || null,
                     start_date: formDateRange?.from
@@ -379,7 +404,7 @@ export default function TasksPage() {
                     is_plan: form.is_plan ?? false,
                     is_starred: form.is_starred ?? false,
                     show_on_team_calendar: true,
-                    team_id: TEAM_ID,
+                    team_id: teamId,
                 },
             ])
             .select("id")
@@ -487,7 +512,7 @@ export default function TasksPage() {
             return true;
         });
 
-    const grouped = MEMBERS.reduce(
+    const grouped = members.reduce(
         (acc, m) => {
             const mt = filtered.filter((t) => t.member === m);
             if (mt.length > 0) acc[m] = mt;
@@ -521,6 +546,7 @@ export default function TasksPage() {
                             </p>
                         </div>
                         <div className="flex items-center gap-2">
+                            <TeamSwitcher />
                             {!isGuest && (
                                 <button
                                     onClick={() => {
@@ -550,7 +576,7 @@ export default function TasksPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 px-4 py-3">
                         <div className="min-w-0">
                             <Select
-                                options={MEMBERS.map((m) => ({
+                                options={members.map((m) => ({
                                     value: m,
                                     label: m,
                                 }))}
@@ -913,7 +939,7 @@ export default function TasksPage() {
                                                     });
                                                 }}
                                                 className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border-2 transition-all
-                          ${form.member === m ? MEMBER_BORDER[m] : "bg-stone-50 border-stone-200 text-stone-400"}`}
+                          ${form.member === m ? `${MEMBER_COLORS[m]?.border ?? "border-stone-400"} ${MEMBER_COLORS[m]?.bg ?? "bg-stone-100"} ${MEMBER_COLORS[m]?.text ?? "text-stone-700"}` : "bg-stone-50 border-stone-200 text-stone-400"}`}
                                             >
                                                 <Avatar name={m} size={36} />
                                                 <span className="text-xs font-medium">
