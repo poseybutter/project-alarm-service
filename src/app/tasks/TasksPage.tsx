@@ -15,6 +15,7 @@ import {
     TYPE_COLORS,
     STATUS_COLORS,
     WORKLOAD_PRESETS,
+    getMemberColors,
     normalizeStatus,
 } from "@/lib/constants";
 import { rpcSetTaskStatus } from "@/lib/maple";
@@ -44,13 +45,6 @@ import {
     badgeSelectStyles,
 } from "@/lib/reactSelectStyles";
 import { toLocalYmd } from "@/lib/toLocalYmd";
-
-const MEMBER_BORDER: Record<string, string> = {
-    TEAM_MEMBER_1: "border-purple-400 bg-purple-100 text-purple-700",
-    TEAM_MEMBER_2: "border-green-400 bg-green-100 text-green-700",
-    TEAM_MEMBER_3: "border-amber-400 bg-amber-100 text-amber-700",
-    TEAM_MEMBER_4: "border-orange-400 bg-orange-100 text-orange-700",
-};
 
 /** 추가/수정 모달 기간 버튼 라벨 */
 function periodButtonLabel(range: DateRange | undefined): {
@@ -273,14 +267,17 @@ export default function TasksPage() {
     async function loadTasks(requestedTeamId = teamId, isCancelled = () => false) {
         if (!requestedTeamId) return;
         setLoading(true);
-        const { data } = await supabase
-            .from("tasks")
-            .select("*")
-            .eq("team_id", requestedTeamId)
-            .order("created_at", { ascending: false });
-        if (!isCancelled()) {
-            setTasks(data || []);
-            setLoading(false);
+        try {
+            const { data } = await supabase
+                .from("tasks")
+                .select("*")
+                .eq("team_id", requestedTeamId)
+                .order("created_at", { ascending: false });
+            if (!isCancelled()) {
+                setTasks(data || []);
+            }
+        } finally {
+            if (!isCancelled()) setLoading(false);
         }
     }
 
@@ -942,7 +939,7 @@ export default function TasksPage() {
                                                     });
                                                 }}
                                                 className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border-2 transition-all
-                          ${form.member === m ? MEMBER_BORDER[m] : "bg-stone-50 border-stone-200 text-stone-400"}`}
+                          ${form.member === m ? `${getMemberColors(m).border} ${getMemberColors(m).bg} ${getMemberColors(m).text}` : "bg-stone-50 border-stone-200 text-stone-400"}`}
                                             >
                                                 <Avatar name={m} size={36} />
                                                 <span className="text-xs font-medium">

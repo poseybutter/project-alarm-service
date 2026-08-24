@@ -34,7 +34,7 @@ import {
 import { toLocalYmd } from "@/lib/toLocalYmd";
 
 const MAINTENANCE_STATUS_URL =
-    "https://docs.google.com/spreadsheets/d/1ACScLXCcap3Vvz9eH7sXX0yOcZKcV8blH53h6C63ObE/edit?pli=1&gid=487201690#gid=487201690";
+    process.env.NEXT_PUBLIC_MAINTENANCE_STATUS_URL?.trim() ?? "";
 
 const EMPTY_PROJ_FORM = {
     name: "",
@@ -293,18 +293,23 @@ export default function ManagePage() {
         if (!teamId) return;
         const generation = ++loadGenerationRef.current;
         setLoading(true);
-        const [{ data: projData }, { data: accData }] = await Promise.all([
-            supabase
-                .from("projects")
-                .select("*")
-                .eq("team_id", teamId)
-                .order("name", { ascending: true }),
-            supabase
-                .from("accessibility")
-                .select("*")
-                .eq("team_id", teamId)
-                .order("end_date", { ascending: true }),
-        ]);
+        let projData, accData;
+        try {
+            [{ data: projData }, { data: accData }] = await Promise.all([
+                supabase
+                    .from("projects")
+                    .select("*")
+                    .eq("team_id", teamId)
+                    .order("name", { ascending: true }),
+                supabase
+                    .from("accessibility")
+                    .select("*")
+                    .eq("team_id", teamId)
+                    .order("end_date", { ascending: true }),
+            ]);
+        } finally {
+            if (generation === loadGenerationRef.current) setLoading(false);
+        }
         if (generation !== loadGenerationRef.current) return;
         setProjects(
             (projData || []).map((row) =>
@@ -322,7 +327,6 @@ export default function ManagePage() {
                 is_new: row.is_new ?? false,
             })) as Accessibility[];
         setAccessibility(normalizedAccessibility);
-        setLoading(false);
 
         if (typeof window !== "undefined") {
             const params = new URLSearchParams(window.location.search);
@@ -906,18 +910,20 @@ export default function ManagePage() {
                                     총 {filteredProjects.length}개
                                 </span>
                                 <div className="flex items-center gap-2 shrink-0">
-                                    <a
-                                        href={MAINTENANCE_STATUS_URL}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs font-medium text-stone-600 transition-colors hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
-                                    >
-                                        <span className="hidden sm:inline">
-                                            퍼블팀 통합 유지보수 현황
-                                        </span>
-                                        <span className="sm:hidden">유지보수 현황</span>
-                                        <span aria-hidden="true">↗</span>
-                                    </a>
+                                    {MAINTENANCE_STATUS_URL && (
+                                        <a
+                                            href={MAINTENANCE_STATUS_URL}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs font-medium text-stone-600 transition-colors hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
+                                        >
+                                            <span className="hidden sm:inline">
+                                                통합 유지보수 현황
+                                            </span>
+                                            <span className="sm:hidden">유지보수 현황</span>
+                                            <span aria-hidden="true">↗</span>
+                                        </a>
+                                    )}
                                     <button
                                         type="button"
                                         onClick={() =>
