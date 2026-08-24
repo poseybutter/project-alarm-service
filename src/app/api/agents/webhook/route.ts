@@ -1,12 +1,33 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getServerCurrentTeamRole } from "@/lib/serverSupabase";
+import { requireAdminSession } from "@/features/admin/server/adminRepository";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
+import {
+    createServiceSupabaseClient,
+    getServerCurrentTeamRole,
+} from "@/lib/serverSupabase";
+import {
+    decryptIntegrationToken,
+    encryptIntegrationToken,
+} from "@/lib/server/tokenEncryption";
 
 function validateWebhookUrl(value: string) {
     if (!value.trim()) return "Webhook URL is required";
-    if (!value.startsWith("https://chat.googleapis.com/")) {
-        return "Google Chat webhook URL must start with https://chat.googleapis.com/";
+    try {
+        const url = new URL(value);
+        const isGoogleChatWebhook =
+            url.protocol === "https:" &&
+            url.hostname === "chat.googleapis.com" &&
+            !url.username &&
+            !url.password &&
+            (!url.port || url.port === "443") &&
+            /^\/v1\/spaces\/[^/]+\/messages$/.test(url.pathname) &&
+            Boolean(url.searchParams.get("key")) &&
+            Boolean(url.searchParams.get("token"));
+        if (isGoogleChatWebhook) return null;
+    } catch {
+        // The fixed validation message below is intentionally non-specific.
     }
-    return null;
+    return "올바른 Google Chat Webhook URL을 입력해주세요.";
 }
 
 async function getCurrentPlayer(
@@ -26,13 +47,14 @@ async function getCurrentPlayer(
 }
 
 export async function GET() {
-    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    const { user, role, teamId } = await getServerCurrentTeamRole();
     if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
     try {
-        const player = await getCurrentPlayer(supabase, user.email, teamId);
+        const service = createServiceSupabaseClient();
+        const player = await getCurrentPlayer(service, user.email, teamId);
         if (!player?.name) {
             return NextResponse.json(
                 { message: "Player not found" },
@@ -40,7 +62,7 @@ export async function GET() {
             );
         }
 
-        const { data, error } = await supabase
+        const { data, error } = await service
             .from("agent_member_webhooks")
             .select("webhook_url, updated_at")
             .eq("team_id", teamId)
@@ -48,16 +70,30 @@ export async function GET() {
             .maybeSingle();
 
         if (error) throw error;
+        const ownWebhookUrl = decryptIntegrationToken(data?.webhook_url) ?? "";
+        const encryptedOwnWebhookUrl = encryptIntegrationToken(ownWebhookUrl);
+        if (data?.webhook_url && encryptedOwnWebhookUrl !== data.webhook_url) {
+            const { error: encryptionError } = await service
+                .from("agent_member_webhooks")
+                .update({
+                    webhook_url: encryptedOwnWebhookUrl,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq("team_id", teamId)
+                .eq("email", user.email);
+            if (encryptionError) throw encryptionError;
+        }
 
         if (role === "admin") {
+            await requireAdminSession(teamId, "integrations.read");
             const [{ data: players, error: playersError }, { data: hooks, error: hooksError }] =
                 await Promise.all([
-                    supabase
+                    service
                         .from("players")
                         .select("name, email, role")
                         .eq("team_id", teamId)
                         .order("name"),
-                    supabase
+                    service
                         .from("agent_member_webhooks")
                         .select("member, email, webhook_url, updated_at")
                         .eq("team_id", teamId),
@@ -72,8 +108,8 @@ export async function GET() {
 
             return NextResponse.json({
                 member: player.name,
-                configured: Boolean(data?.webhook_url),
-                webhookUrl: data?.webhook_url ?? "",
+                configured: Boolean(ownWebhookUrl),
+                webhookUrl: "",
                 updatedAt: data?.updated_at ?? null,
                 members: (players ?? []).map((row) => {
                     const hook = hookByMember.get(row.name);
@@ -90,19 +126,21 @@ export async function GET() {
 
         return NextResponse.json({
             member: player.name,
-            configured: Boolean(data?.webhook_url),
-            webhookUrl: data?.webhook_url ?? "",
+            configured: Boolean(ownWebhookUrl),
+            webhookUrl: "",
             updatedAt: data?.updated_at ?? null,
         });
-    } catch (err) {
-        const message =
-            err instanceof Error ? err.message : "Failed to load webhook";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "agent-webhook-get",
+            error,
+            "Webhook 설정을 불러오지 못했습니다.",
+        );
     }
 }
 
 export async function PUT(req: NextRequest) {
-    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    const { user, role, teamId } = await getServerCurrentTeamRole();
     if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
@@ -121,7 +159,8 @@ export async function PUT(req: NextRequest) {
     }
 
     try {
-        const player = await getCurrentPlayer(supabase, user.email, teamId);
+        const service = createServiceSupabaseClient();
+        const player = await getCurrentPlayer(service, user.email, teamId);
         if (!player?.name) {
             return NextResponse.json(
                 { message: "Player not found" },
@@ -133,8 +172,12 @@ export async function PUT(req: NextRequest) {
             role === "admin" && body.member?.trim()
                 ? body.member.trim()
                 : player.name;
+        const isOwnWebhook = targetMember === player.name;
+        if (!isOwnWebhook) {
+            await requireAdminSession(teamId, "integrations.manage");
+        }
 
-        const { data: targetPlayer, error: targetError } = await supabase
+        const { data: targetPlayer, error: targetError } = await service
             .from("players")
             .select("name, email")
             .eq("team_id", teamId)
@@ -149,19 +192,19 @@ export async function PUT(req: NextRequest) {
             );
         }
 
-        const { data, error } = await supabase
+        const { data, error } = await service
             .from("agent_member_webhooks")
             .upsert(
                 {
                     team_id: teamId,
                     member: targetPlayer.name,
                     email: targetPlayer.email,
-                    webhook_url: webhookUrl,
+                    webhook_url: encryptIntegrationToken(webhookUrl),
                     updated_at: new Date().toISOString(),
                 },
                 { onConflict: "team_id,email" },
             )
-            .select("webhook_url, updated_at")
+            .select("updated_at")
             .maybeSingle();
 
         if (error) throw error;
@@ -169,12 +212,64 @@ export async function PUT(req: NextRequest) {
         return NextResponse.json({
             member: targetPlayer.name,
             configured: true,
-            webhookUrl: data?.webhook_url ?? webhookUrl,
+            webhookUrl: "",
             updatedAt: data?.updated_at ?? null,
         });
-    } catch (err) {
-        const message =
-            err instanceof Error ? err.message : "Failed to save webhook";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "agent-webhook-put",
+            error,
+            "Webhook 설정을 저장하지 못했습니다.",
+        );
+    }
+}
+
+export async function DELETE(req: NextRequest) {
+    const { user, role, teamId } = await getServerCurrentTeamRole();
+    if (!user?.email || !role || !teamId) {
+        return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+
+    let requestedMember = "";
+    try {
+        const body = (await req.json()) as { member?: unknown };
+        requestedMember =
+            typeof body.member === "string" ? body.member.trim() : "";
+    } catch {
+        // An empty DELETE body means the current member's webhook.
+    }
+
+    try {
+        const service = createServiceSupabaseClient();
+        const player = await getCurrentPlayer(service, user.email, teamId);
+        if (!player?.name) {
+            return NextResponse.json(
+                { message: "Player not found" },
+                { status: 404 },
+            );
+        }
+
+        const targetMember =
+            role === "admin" && requestedMember
+                ? requestedMember
+                : player.name;
+        if (targetMember !== player.name) {
+            await requireAdminSession(teamId, "integrations.manage");
+        }
+
+        const { error } = await service
+            .from("agent_member_webhooks")
+            .delete()
+            .eq("team_id", teamId)
+            .eq("member", targetMember);
+        if (error) throw error;
+
+        return NextResponse.json({ deleted: true, member: targetMember });
+    } catch (error) {
+        return internalErrorResponse(
+            "agent-webhook-delete",
+            error,
+            "Webhook 설정을 삭제하지 못했습니다.",
+        );
     }
 }

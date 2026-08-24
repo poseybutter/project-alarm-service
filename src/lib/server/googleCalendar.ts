@@ -1,4 +1,10 @@
+import "server-only";
+
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+    decryptIntegrationToken,
+    encryptIntegrationToken,
+} from "@/lib/server/tokenEncryption";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -83,12 +89,15 @@ type MemberCalendarSetting = {
     calendar_id: string;
 };
 
-const MEMBER_EVENT_COLOR_IDS: Record<string, string> = {
-    TEAM_MEMBER_4: "5", // banana / yellow
-    TEAM_MEMBER_1: "2", // sage / light green
-    TEAM_MEMBER_2: "9", // blueberry / blue
-    TEAM_MEMBER_3: "6", // tangerine / orange
-};
+const MEMBER_EVENT_COLOR_IDS = ["2", "5", "6", "9", "10", "11"] as const;
+
+function memberEventColorId(member: string) {
+    let hash = 0;
+    for (const char of member.normalize("NFKC")) {
+        hash = (hash * 31 + (char.codePointAt(0) ?? 0)) >>> 0;
+    }
+    return MEMBER_EVENT_COLOR_IDS[hash % MEMBER_EVENT_COLOR_IDS.length];
+}
 
 export function getGoogleCalendarConfig() {
     const clientId = process.env.GOOGLE_CALENDAR_CLIENT_ID || "";
@@ -115,8 +124,6 @@ export function buildGoogleCalendarAuthUrl(state: string) {
         scope: [
             "https://www.googleapis.com/auth/calendar.readonly",
             "https://www.googleapis.com/auth/calendar.events.owned",
-            "openid",
-            "email",
         ].join(" "),
         access_type: "offline",
         prompt: "consent",
@@ -139,7 +146,25 @@ async function getValidCalendarAccessToken(
     teamId: string,
     connection: GoogleCalendarConnection,
 ) {
-    let accessToken = connection.access_token;
+    let accessToken = decryptIntegrationToken(connection.access_token);
+    const refreshToken = decryptIntegrationToken(connection.refresh_token);
+    const encryptedAccessToken = encryptIntegrationToken(accessToken);
+    const encryptedRefreshToken = encryptIntegrationToken(refreshToken);
+    if (
+        encryptedAccessToken !== connection.access_token ||
+        encryptedRefreshToken !== connection.refresh_token
+    ) {
+        const { error } = await supabase
+            .from("agent_calendar_connections")
+            .update({
+                access_token: encryptedAccessToken,
+                refresh_token: encryptedRefreshToken,
+                updated_at: new Date().toISOString(),
+            })
+            .eq("team_id", teamId)
+            .eq("email", connection.email);
+        if (error) throw new Error(error.message);
+    }
     const expiresAt = connection.expires_at
         ? new Date(connection.expires_at).getTime()
         : 0;
@@ -148,16 +173,16 @@ async function getValidCalendarAccessToken(
         return accessToken;
     }
 
-    if (!connection.refresh_token) {
+    if (!refreshToken) {
         throw new Error("Calendar refresh token is missing");
     }
 
-    const refreshed = await refreshGoogleCalendarToken(connection.refresh_token);
+    const refreshed = await refreshGoogleCalendarToken(refreshToken);
     accessToken = refreshed.access_token;
     const { error } = await supabase
         .from("agent_calendar_connections")
         .update({
-            access_token: refreshed.access_token,
+            access_token: encryptIntegrationToken(refreshed.access_token),
             expires_at: new Date(
                 Date.now() + refreshed.expires_in * 1000,
             ).toISOString(),
@@ -613,7 +638,7 @@ function buildTeamCalendarEvent(task: TeamCalendarTaskInput) {
                 taskId: String(task.id),
             },
         },
-        colorId: MEMBER_EVENT_COLOR_IDS[task.member] ?? undefined,
+        colorId: memberEventColorId(task.member),
     };
 }
 

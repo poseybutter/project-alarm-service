@@ -10,6 +10,7 @@ import {
     type TeamCalendarTaskInput,
     upsertTeamCalendarTaskEvent,
 } from "@/lib/server/googleCalendar";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
 
 type RouteContext = {
     params: Promise<{ id: string }>;
@@ -187,9 +188,8 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             eventId: event.id,
             htmlLink: event.htmlLink ?? null,
         });
-    } catch (err) {
-        const message =
-            err instanceof Error ? err.message : "Failed to sync team calendar";
+    } catch (error) {
+        const message = "팀 캘린더 동기화에 실패했습니다.";
         if (authorizedTeamId) {
             await supabase
                 .from("tasks")
@@ -197,7 +197,11 @@ export async function POST(_req: NextRequest, context: RouteContext) {
                 .eq("team_id", authorizedTeamId)
                 .eq("id", taskId);
         }
-        return NextResponse.json({ message }, { status: 500 });
+        return internalErrorResponse(
+            "team-calendar-task-sync",
+            error,
+            message,
+        );
     }
 }
 
@@ -244,9 +248,11 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
         }
 
         return NextResponse.json({ deleted: true });
-    } catch (err) {
-        const message =
-            err instanceof Error ? err.message : "Failed to delete team calendar event";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "team-calendar-task-delete",
+            error,
+            "팀 캘린더 일정을 삭제하지 못했습니다.",
+        );
     }
 }

@@ -156,7 +156,7 @@ function SignupV2() {
               <div className="flex flex-col gap-3">
                 <Field label="이름" placeholder="홍길동" icon={I.user()} value={name} onChange={setName}
                   hint={name.length >= 2 ? <span className="text-emerald-600 font-bold">✓ 확인</span> : "2자 이상"} autoFocus />
-                <Field label="이메일" placeholder="name@ud2.co" icon={I.mail()} value={email} onChange={setEmail}
+                <Field label="이메일" placeholder="name@example.com" icon={I.mail()} value={email} onChange={setEmail}
                   hint={/\S+@\S+\.\S+/.test(email) ? <span className="text-emerald-600 font-bold">✓ 확인</span> : "회사 이메일 권장"} />
                 <div>
                   <Field

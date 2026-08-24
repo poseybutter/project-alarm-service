@@ -2,21 +2,21 @@
 const { useState: useStateAdminV2, useMemo: useMemoAdminV2 } = React;
 
 const PENDING_V2 = [
-  { id: 1, name: "박지훈", email: "jihoon@ud2.co", invitedBy: "김유정", role: "Frontend / Markup",
+  { id: 1, name: "사용자 A", email: "user-a@example.com", invitedBy: "운영 관리자", role: "Frontend / Markup",
     appliedAt: "오늘 14:22", elapsed: "8분 전", code: "Q3R7-K2MN",
     note: "디자인팀 추천으로 신청합니다. 퍼블리싱 8년차예요.",
     risk: "low", domain: true,
   },
-  { id: 2, name: "이수민", email: "sumin@ud2.co", invitedBy: "김유정", role: "QA",
+  { id: 2, name: "사용자 B", email: "user-b@example.com", invitedBy: "운영 관리자", role: "QA",
     appliedAt: "오늘 11:08", elapsed: "3시간 전", code: "BG8T-V1WS",
     note: "", risk: "low", domain: true,
   },
-  { id: 3, name: "Alex Kim", email: "alex.kim@gmail.com", invitedBy: "박민서", role: "외부 협력자",
+  { id: 3, name: "외부 사용자", email: "external-user@example.net", invitedBy: "운영 관리자", role: "외부 협력자",
     appliedAt: "어제 18:41", elapsed: "20시간 전", code: "ZZ00-1111",
     note: "프리랜서로 같이 작업했던 분이에요.",
     risk: "high", domain: false,
   },
-  { id: 4, name: "최유나", email: "yuna@ud2.co", invitedBy: "김유정", role: "Markup",
+  { id: 4, name: "사용자 C", email: "user-c@example.com", invitedBy: "운영 관리자", role: "Markup",
     appliedAt: "어제 09:30", elapsed: "30시간 전", code: "M4VC-X5LO",
     note: "신입입니다. 잘 부탁드려요!",
     risk: "low", domain: true,
@@ -71,7 +71,7 @@ function AdminV2() {
         <div className="flex items-center gap-3">
           <ChipG tone="amber" icon="🔥">14일</ChipG>
           <CharBox name="유" color="#f59e0b" size={32} level={12} />
-          <div className="text-[12px] font-extrabold">김유정 <span className="text-stone-500 font-normal">· 길드장</span></div>
+          <div className="text-[12px] font-extrabold">운영 관리자 <span className="text-stone-500 font-normal">· 길드장</span></div>
         </div>
       </div>
 
@@ -193,7 +193,7 @@ function AdminV2() {
                 <div className="text-[11px] text-stone-700 font-extrabold mb-2 tracking-widest flex items-center gap-1.5">🛡️ 자동 보안 검증</div>
                 <div className="rounded-md bg-white border-2 border-stone-300 divide-y-2 divide-stone-100">
                   {[
-                    { ok: cur.domain, label: "회사 도메인 (@ud2.co)", detail: cur.domain ? "확인됨" : "외부 도메인 — 신중히 검토 필요" },
+                    { ok: cur.domain, label: "허용 도메인 (@example.com)", detail: cur.domain ? "확인됨" : "외부 도메인 — 신중히 검토 필요" },
                     { ok: true, label: "유효한 열쇠 코드", detail: `${cur.invitedBy} 발급 · 만료 전` },
                     { ok: true, label: "신청 IP", detail: "한국, 서울 · 차단 이력 없음" },
                     { ok: cur.risk === "low", label: "중복 신청 없음", detail: cur.risk === "low" ? "확인됨" : "동일 이메일 2회 시도 — 이전 거절 이력" },

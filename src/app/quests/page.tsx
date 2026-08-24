@@ -10,13 +10,6 @@ import { useAuth } from '@/components/AuthProvider'
 import type { Project } from '@/lib/types'
 import { findProjectId, findTeamMemberId, normalizeProject } from '@/lib/utils'
 
-const MEMBER_COLORS: Record<string, string> = {
-  'TEAM_MEMBER_1': 'bg-purple-100 text-purple-700',
-  'TEAM_MEMBER_2': 'bg-green-100 text-green-700',
-  'TEAM_MEMBER_3': 'bg-amber-100 text-amber-700',
-  'TEAM_MEMBER_4': 'bg-orange-100 text-orange-700',
-}
-
 type Quest = {
   id: number
   player_id?: number | null

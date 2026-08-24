@@ -596,7 +596,7 @@ src/
 | 팀 `admin` | `team_memberships.role = 'admin'` | 해당 팀 구성원·팀 운영 관리 |
 | 팀 `member` | `team_memberships.role = 'member'` | 본인 업무/퀘스트 수정 |
 | 팀 `viewer` | `team_memberships.role = 'viewer'` | 소속 팀 읽기 전용(전환 예정) |
-| `guest` | @example.com 도메인, MEMBER_EMAILS 미포함 | 읽기 전용 |
+| `guest` | 제한된 소속 또는 초대 상태 | 읽기 전용 |
 
 V31 호환 기간에는 기존 화면이 `players.role`을 계속 사용하고, DB 트리거가
 `team_memberships`와 동기화한다.
@@ -610,7 +610,7 @@ V31 호환 기간에는 기존 화면이 `players.role`을 계속 사용하고, 
 
 ### 인증 · 세션
 - ✅ **미들웨어 인증 게이트** (`src/proxy.ts`) — `/login`·`/signup`(레거시)·`/pending`·`/auth/callback` 외 모든 경로는 로그인 세션이 없으면 자동 차단·리다이렉트
-- ✅ **회사 도메인 + 멤버 화이트리스트 기반 접근** — `@example.com` 외 차단, 명단 미포함자는 읽기 전용 GUEST로 강등 (`src/lib/auth.ts`)
+- ✅ **팀 멤버십 기반 접근** — 활성 프로필과 팀 멤버십을 서버에서 검증하고, 제한된 소속은 읽기 전용으로 처리
 - ✅ **Supabase SSR 세션 쿠키 사용** — OAuth 세션을 서버 콜백과 미들웨어에서 검증
 - ✅ **Google OAuth → 관리자 승인(pending) 2단계** — 미등록 사용자는 승인 전 워크스페이스 진입 불가
 
@@ -710,11 +710,7 @@ Chrome 메뉴(⋮) → 앱 설치
 
 ---
 
-## 👥 팀원
+## 👥 기여
 
-| 이름 | 역할 |
-|------|------|
-| [TEAM_MEMBER_1](https://github.com/hyunseokzzang) | 리더 / 관리자 |
-| TEAM_MEMBER_4 | 개발 / 관리자 |
-| TEAM_MEMBER_2 | 팀원 |
-| TEAM_MEMBER_3 | 팀원 |
+프로젝트 참여자 정보는 소스 코드에 고정하지 않습니다. 운영 환경의 팀·역할
+설정과 GitHub의 기여 기록을 기준으로 관리합니다.

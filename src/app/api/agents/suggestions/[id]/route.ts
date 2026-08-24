@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getServerCurrentTeamRole } from "@/lib/serverSupabase";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
+import {
+    createServiceSupabaseClient,
+    getServerCurrentTeamRole,
+} from "@/lib/serverSupabase";
 import { updateAgentSuggestionStatus } from "@/lib/agents/suggestions";
 import type {
     AgentSuggestionStatus,
@@ -72,7 +76,7 @@ function escapeGChatText(value: string) {
 }
 
 export async function PATCH(req: NextRequest, context: RouteContext) {
-    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    const { user, role, teamId } = await getServerCurrentTeamRole();
     if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
@@ -91,7 +95,8 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     }
 
     try {
-        const { data: player, error: playerError } = await supabase
+        const service = createServiceSupabaseClient();
+        const { data: player, error: playerError } = await service
             .from("players")
             .select("name")
             .eq("team_id", teamId)
@@ -99,7 +104,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
             .maybeSingle();
         if (playerError) throw playerError;
 
-        const { data: existing, error: existingError } = await supabase
+        const { data: existing, error: existingError } = await service
             .from("agent_suggestions")
             .select("*")
             .eq("team_id", teamId)
@@ -185,7 +190,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
                 text: cardToPlainText(nextCard),
             };
 
-            const { data: updated, error: updateError } = await supabase
+            const { data: updated, error: updateError } = await service
                 .from("agent_suggestions")
                 .update({
                     payload: nextPayload,
@@ -216,16 +221,18 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
             }
         }
 
-        const suggestion = await updateAgentSuggestionStatus(supabase, {
+        const suggestion = await updateAgentSuggestionStatus(service, {
             id: suggestionId,
             teamId,
             status: body.status as Exclude<AgentSuggestionStatus, "pending">,
             reviewedBy: user.email,
         });
         return NextResponse.json({ suggestion });
-    } catch (err) {
-        const message =
-            err instanceof Error ? err.message : "Failed to update suggestion";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "agent-suggestion-patch",
+            error,
+            "에이전트 제안을 변경하지 못했습니다.",
+        );
     }
 }

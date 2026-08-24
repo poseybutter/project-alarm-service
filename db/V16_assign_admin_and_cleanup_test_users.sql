@@ -1,57 +1,28 @@
--- V16: assign the team admin role and clean legacy admin/test users.
+-- V16: optional first administrator bootstrap.
 --
--- This migration intentionally uses email-based predicates to avoid Korean
--- string encoding issues in SQL editors and terminals.
+-- Do not commit a real person's email address to a migration. Environments
+-- that need a first administrator can set the transaction-local PostgreSQL
+-- setting before running this migration:
+--   select set_config('app.bootstrap_admin_email', 'admin@example.com', true);
 
--- ---------------------------------------------------------------------------
--- 1) Preview current team users.
--- ---------------------------------------------------------------------------
-select id, team_id, name, email, role, status
-from public.players
-where team_id = 'ud2'
-order by id;
+do $$
+declare
+    bootstrap_admin_email text := lower(
+        nullif(current_setting('app.bootstrap_admin_email', true), '')
+    );
+begin
+    if bootstrap_admin_email is null then
+        raise notice 'app.bootstrap_admin_email is not set; skipping admin bootstrap';
+        return;
+    end if;
 
--- ---------------------------------------------------------------------------
--- 2) Preview rows that will be deleted.
--- ---------------------------------------------------------------------------
-select id, team_id, name, email, role, status
-from public.players
-where team_id = 'ud2'
-  and (
-    email = 'admin@example.com'
-    or lower(coalesce(email, '')) like '%test%'
-  )
-order by id;
+    update public.players
+    set role = 'admin',
+        status = 'active'
+    where lower(email) = bootstrap_admin_email;
 
--- ---------------------------------------------------------------------------
--- 3) Apply changes.
--- ---------------------------------------------------------------------------
-
--- Keep only member4@example.com as admin for team operations.
-update public.players
-set role = 'member'
-where team_id = 'ud2'
-  and role = 'admin'
-  and email <> 'member4@example.com';
-
-update public.players
-set role = 'admin',
-    status = 'active'
-where team_id = 'ud2'
-  and email = 'member4@example.com';
-
--- Remove the legacy admin/test player rows.
-delete from public.players
-where team_id = 'ud2'
-  and (
-    email = 'admin@example.com'
-    or lower(coalesce(email, '')) like '%test%'
-  );
-
--- ---------------------------------------------------------------------------
--- 4) Verify.
--- ---------------------------------------------------------------------------
-select id, team_id, name, email, role, status
-from public.players
-where team_id = 'ud2'
-order by role, name;
+    if not found then
+        raise notice 'bootstrap administrator does not match an existing player';
+    end if;
+end
+$$;

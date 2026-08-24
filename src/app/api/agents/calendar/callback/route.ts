@@ -5,6 +5,7 @@ import {
     getServerUserRole,
 } from "@/lib/serverSupabase";
 import { exchangeGoogleCalendarCode } from "@/lib/server/googleCalendar";
+import { encryptIntegrationToken } from "@/lib/server/tokenEncryption";
 
 export async function GET(req: NextRequest) {
     const origin = req.nextUrl.origin;
@@ -50,8 +51,14 @@ export async function GET(req: NextRequest) {
                     member: player.name,
                     email: user.email,
                     google_email: user.email,
-                    access_token: token.access_token,
-                    refresh_token: token.refresh_token,
+                    access_token: encryptIntegrationToken(token.access_token),
+                    ...(token.refresh_token
+                        ? {
+                              refresh_token: encryptIntegrationToken(
+                                  token.refresh_token,
+                              ),
+                          }
+                        : {}),
                     token_type: token.token_type ?? null,
                     scope: token.scope ?? null,
                     expires_at: expiresAt,
@@ -72,9 +79,11 @@ export async function GET(req: NextRequest) {
             maxAge: 0,
         });
         return res;
-    } catch (err) {
-        const message =
-            err instanceof Error ? encodeURIComponent(err.message) : "failed";
-        return NextResponse.redirect(`${origin}/agents?calendar=${message}`);
+    } catch (error) {
+        const requestId = crypto.randomUUID();
+        console.error(`[google-calendar-callback:${requestId}]`, error);
+        return NextResponse.redirect(
+            `${origin}/agents?calendar=connection_failed&requestId=${encodeURIComponent(requestId)}`,
+        );
     }
 }

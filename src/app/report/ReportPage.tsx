@@ -22,7 +22,7 @@ import NotificationButton from "@/components/NotificationButton";
 import { useAuth } from "@/components/AuthProvider";
 import { PageSpinner } from "@/components/Spinner";
 import type { Task } from "@/lib/types";
-import { LEADER, normalizeStatus } from "@/lib/constants";
+import { normalizeStatus } from "@/lib/constants";
 import { toLocalYmd } from "@/lib/toLocalYmd";
 import TiptapSectionEditor from "@/components/TiptapSectionEditor";
 import Tooltip from "@/components/Tooltip";
@@ -1453,7 +1453,7 @@ export default function ReportPage() {
         });
     }
 
-    const isLeader = role === "admin" || currentMember === LEADER;
+    const isLeader = role === "admin";
 
     return (
         <AuthGuard>

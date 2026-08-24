@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { ApiError, signup } from "@/lib/api";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
+import {
+    consumeRateLimit,
+    rateLimitResponse,
+    requestRateLimitKey,
+} from "@/lib/server/rateLimit";
 
 export async function POST(req: Request) {
     let payload: {
@@ -29,6 +35,12 @@ export async function POST(req: Request) {
         );
     }
 
+    const rate = consumeRateLimit(
+        requestRateLimitKey(req, "auth-signup", email),
+        { limit: 5, windowMs: 60 * 60 * 1000 },
+    );
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
+
     try {
         await signup(email, password, name, invitationCode);
         return NextResponse.json({
@@ -38,12 +50,10 @@ export async function POST(req: Request) {
     } catch (err) {
         if (err instanceof ApiError) {
             return NextResponse.json(
-                { message: err.message },
+                { message: "가입 정보를 확인하거나 잠시 후 다시 시도해주세요." },
                 { status: err.status },
             );
         }
-        const message =
-            err instanceof Error ? err.message : "가입에 실패했어요";
-        return NextResponse.json({ message }, { status: 500 });
+        return internalErrorResponse("auth-signup", err, "가입에 실패했어요.");
     }
 }
