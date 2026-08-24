@@ -1,3 +1,12 @@
+-- Run the entire post-migration audit inside one transaction/snapshot.
+drop function if exists public.audit_v34_work_relations();
+create or replace function public.audit_v34_work_relations()
+returns table (issue text, issue_count bigint)
+language sql
+stable
+security definer
+set search_path = public
+as $$
 with player_relation as (
     select 'tasks'::text as table_name, id::bigint as row_id,
         team_id, member, player_id
@@ -206,3 +215,9 @@ issues as (
 select issue, issue_count
 from issues
 order by issue;
+$$;
+
+revoke all on function public.audit_v34_work_relations() from public, anon, authenticated;
+grant execute on function public.audit_v34_work_relations() to service_role;
+
+select * from public.audit_v34_work_relations();
