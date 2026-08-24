@@ -10,7 +10,6 @@ import {
 } from "@/lib/agents/notificationAgent";
 import {
     syncTodayGoogleCalendarEvents,
-    syncTodayTeamCalendarEvents,
     type GoogleCalendarConnection,
 } from "@/lib/server/googleCalendar";
 import type { Accessibility, Task } from "@/lib/types";
@@ -52,10 +51,7 @@ export async function POST() {
                   connection: calendarConnection as GoogleCalendarConnection,
               })
             : [];
-        const teamCalendarEvents = await syncTodayTeamCalendarEvents(
-            serviceSupabase,
-            { teamId },
-        );
+        const teamCalendarEvents: CalendarEventInput[] = [];
 
         const [
             { data: tasks, error: taskError },

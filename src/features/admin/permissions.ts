@@ -27,6 +27,7 @@ const ROLE_PERMISSIONS: Record<AdminRole, readonly AdminPermission[]> = {
     ...ALL_ADMIN_PERMISSIONS,
   ],
   member: [],
+  viewer: [],
   guest: [],
 };
 
@@ -49,12 +50,12 @@ export function isActiveAdmin(
 }
 
 export function normalizeAdminRole(value: unknown): AdminRole {
-  return value === "admin" || value === "guest" ? value : "member";
+  return value === "admin" || value === "viewer" || value === "guest" ? value : "member";
 }
 
 export function normalizeMemberStatus(value: unknown): MemberStatus {
-  if (value === "pending" || value === "suspended" || value === "rejected") {
+  if (value === "active" || value === "pending" || value === "suspended" || value === "rejected") {
     return value;
   }
-  return "active";
+  return "suspended";
 }

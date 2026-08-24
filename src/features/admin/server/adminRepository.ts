@@ -142,7 +142,7 @@ async function loadActor(email: string) {
   const { data, error } = await service
     .from("players")
     .select("id, name, email, avatar_url, team_id, role, status, level, exp")
-    .eq("email", email)
+    .eq("email", email.toLowerCase())
     .eq("status", "active");
   if (error) throw error;
   return (data ?? []) as PlayerRow[];
@@ -156,7 +156,7 @@ async function loadOrganizationAdmin(email: string, memberships: PlayerRow[]) {
     .eq("email", email.toLowerCase())
     .maybeSingle();
   if (error?.code === "42P01" || error?.code === "42703") {
-    return memberships.some((membership) => membership.role === "admin");
+    return false;
   }
   if (error) throw error;
   return Boolean(data);
@@ -725,6 +725,10 @@ export async function updateAdminMember(input: {
   };
   if (Object.keys(changes).length === 0 && !input.roleId) {
     throw new AdminApiError("변경할 항목이 없습니다.", 400);
+  }
+
+  if (input.roleId && input.role) {
+    throw new AdminApiError("roleId와 role은 함께 변경할 수 없습니다.", 400);
   }
 
   if (input.roleId) {

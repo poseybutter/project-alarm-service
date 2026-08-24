@@ -87,6 +87,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
+    const { data: task, error: taskError } = await supabase
+        .from("tasks")
+        .select("id")
+        .eq("id", task_id)
+        .eq("team_id", teamId)
+        .maybeSingle();
+    if (taskError) {
+        return NextResponse.json({ message: taskError.message }, { status: 500 });
+    }
+    if (!task) {
+        return NextResponse.json({ message: "Task not found in this team" }, { status: 404 });
+    }
+
     // 이번 주 briefings 행 id 확보 (없으면 생성). week_start 유니크 기준 upsert.
     const { data: brief, error: bErr } = await supabase
         .from("briefings")

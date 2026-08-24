@@ -23,17 +23,23 @@ export default function Avatar({
   const c = MEMBER_COLORS[name] || { bg: 'bg-stone-100', text: 'text-stone-600' }
 
   useEffect(() => {
-    if (!teamId) return
+    let cancelled = false
+    if (!teamId) {
+      setUrl(null)
+      return () => { cancelled = true }
+    }
+    setUrl(avatarCache[cacheKey] ?? null)
     if (avatarCache[cacheKey] !== undefined) {
       setUrl(avatarCache[cacheKey])
-      return
+      return () => { cancelled = true }
     }
     supabase.from('players').select('avatar_url').eq('team_id', teamId).eq('name', name).single()
       .then(({ data }) => {
         const u = data?.avatar_url || null
         avatarCache[cacheKey] = u
-        setUrl(u)
+        if (!cancelled) setUrl(u)
       })
+    return () => { cancelled = true }
   }, [cacheKey, name, teamId])
 
   const sz = `${size}px`

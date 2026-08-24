@@ -24,7 +24,7 @@ function setTeamCookie(response: NextResponse, teamId: string) {
     });
 }
 
-async function loadTeamContext(requestedTeamId?: string) {
+async function loadTeamContext(requestedTeamId?: string, strictTeamSelection = false) {
     const { supabase, user } = await getServerUser();
     if (!user?.email) return null;
 
@@ -43,7 +43,7 @@ async function loadTeamContext(requestedTeamId?: string) {
     const membershipByTeam = new Map(
         memberships.map((membership) => [membership.teamId, membership]),
     );
-    if (requestedTeamId && !membershipByTeam.has(requestedTeamId)) {
+    if (strictTeamSelection && requestedTeamId && !membershipByTeam.has(requestedTeamId)) {
         return { error: "Not a member of this team", status: 403 } as const;
     }
 
@@ -109,16 +109,14 @@ async function loadTeamContext(requestedTeamId?: string) {
                 ? player.id
                 : (membership?.legacyPlayerId ?? null),
         avatarUrl: player?.avatar_url || identity.profile.avatarUrl,
-        role: membership?.role === "admin" ? "admin" : "member",
+        role: membership?.role ?? "viewer",
     };
     return { body } as const;
 }
 
 export async function GET(request: NextRequest) {
     try {
-        const result = await loadTeamContext(
-            request.cookies.get(CURRENT_TEAM_COOKIE)?.value,
-        );
+        const result = await loadTeamContext(request.cookies.get(CURRENT_TEAM_COOKIE)?.value);
         if (!result) return unauthorized();
         if ("error" in result) {
             return NextResponse.json(
@@ -151,7 +149,7 @@ export async function PUT(request: NextRequest) {
             );
         }
 
-        const result = await loadTeamContext(teamId);
+        const result = await loadTeamContext(teamId, true);
         if (!result) return unauthorized();
         if ("error" in result) {
             return NextResponse.json(

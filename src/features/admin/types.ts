@@ -1,4 +1,4 @@
-export type AdminRole = "admin" | "member" | "guest";
+export type AdminRole = "admin" | "member" | "viewer" | "guest";
 export type MemberStatus = "active" | "pending" | "suspended" | "rejected";
 export type AdminScopeKind = "organization" | "team";
 export type AdminPermission =

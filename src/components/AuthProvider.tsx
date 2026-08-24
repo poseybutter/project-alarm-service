@@ -15,7 +15,7 @@ type AuthContextType = {
     member: string | null;
     avatarUrl: string | null;
     loading: boolean;
-    role: "admin" | "member" | "guest";
+    role: "admin" | "member" | "viewer" | "guest";
     teamId: string | null;
     playerId: number | null;
     teams: TeamContextOption[];
@@ -72,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [loading, setLoading] = useState(true);
     const [teamContextLoading, setTeamContextLoading] = useState(true);
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-    const [role, setRole] = useState<"admin" | "member" | "guest">("member");
+    const [role, setRole] = useState<"admin" | "member" | "viewer" | "guest">("member");
     const [resolvedMember, setResolvedMember] = useState<string | null>(null);
     const [teamId, setTeamId] = useState<string | null>(null);
     const [playerId, setPlayerId] = useState<number | null>(null);

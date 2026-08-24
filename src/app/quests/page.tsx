@@ -41,19 +41,20 @@ export default function QuestsPage() {
   const { member, members, memberOptions, teamId } = useAuth()
   const [quests, setQuests]     = useState<Quest[]>([])
   const [projects, setProjects] = useState<Project[]>([])
-  const [filter, setFilter]     = useState('TEAM_MEMBER_4')
+  const [filter, setFilter]     = useState('')
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading]   = useState(true)
   const [toast, setToast]       = useState('')
   const [form, setForm]         = useState({
-    member: 'TEAM_MEMBER_4', proj: '', content: '', end_date: ''
+    member: '', proj: '', content: '', end_date: ''
   })
 
   useEffect(() => {
     if (!teamId) return
-    if (member) {
-      setFilter(member)
-      setForm(current => ({ ...current, member }))
+    const nextMember = member ?? members[0] ?? ''
+    if (nextMember) {
+      setFilter(nextMember)
+      setForm(current => ({ ...current, member: nextMember }))
     }
     void loadQuests()
     void loadProjects()
@@ -62,13 +63,16 @@ export default function QuestsPage() {
   async function loadQuests() {
     if (!teamId) return
     setLoading(true)
-    const { data } = await supabase
-      .from('quests')
-      .select('*')
-      .eq('team_id', teamId)
-      .order('created_at', { ascending: false })
-    setQuests(data || [])
-    setLoading(false)
+    try {
+      const { data } = await supabase
+        .from('quests')
+        .select('*')
+        .eq('team_id', teamId)
+        .order('created_at', { ascending: false })
+      setQuests(data || [])
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function loadProjects() {
