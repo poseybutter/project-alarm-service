@@ -166,9 +166,9 @@ begin
       and (
           membership.role_id is null
           or exists (
-              select 1 from public.roles current_role
-              where current_role.id = membership.role_id
-                and current_role.is_system
+              select 1 from public.roles current_role_row
+              where current_role_row.id = membership.role_id
+                and current_role_row.is_system
           )
       )
       and role.team_id is null
