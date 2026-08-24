@@ -155,7 +155,12 @@ begin
     end;
 
     update public.team_memberships membership
-    set role_id = role.id
+    set role_id = role.id,
+        role = case
+            when v_role_key = 'team_admin' then 'admin'
+            when v_role_key = 'team_viewer' then 'viewer'
+            else 'member'
+        end
     from public.roles role
     where membership.legacy_player_id = new.id
       and (
