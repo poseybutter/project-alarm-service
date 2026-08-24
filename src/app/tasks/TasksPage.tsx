@@ -15,7 +15,7 @@ import {
     TYPE_COLORS,
     STATUS_COLORS,
     WORKLOAD_PRESETS,
-    getMemberColors,
+    MEMBER_COLORS,
     normalizeStatus,
 } from "@/lib/constants";
 import { rpcSetTaskStatus } from "@/lib/maple";
@@ -939,7 +939,7 @@ export default function TasksPage() {
                                                     });
                                                 }}
                                                 className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl border-2 transition-all
-                          ${form.member === m ? `${getMemberColors(m).border} ${getMemberColors(m).bg} ${getMemberColors(m).text}` : "bg-stone-50 border-stone-200 text-stone-400"}`}
+                          ${form.member === m ? `${MEMBER_COLORS[m]?.border ?? "border-stone-400"} ${MEMBER_COLORS[m]?.bg ?? "bg-stone-100"} ${MEMBER_COLORS[m]?.text ?? "text-stone-700"}` : "bg-stone-50 border-stone-200 text-stone-400"}`}
                                             >
                                                 <Avatar name={m} size={36} />
                                                 <span className="text-xs font-medium">
