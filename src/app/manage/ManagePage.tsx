@@ -11,6 +11,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import UserMenu from "@/components/UserMenu";
+import TeamSwitcher from "@/components/TeamSwitcher";
 import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
@@ -18,8 +19,13 @@ import Avatar from "@/components/Avatar";
 import Tooltip from "@/components/Tooltip";
 import { PageSpinner } from "@/components/Spinner";
 import type { Accessibility, Project } from "@/lib/types";
-import { getDiff, normalizeProject, getProjectMembers } from "@/lib/utils";
-import { MEMBERS, TEAM_ID } from "@/lib/constants";
+import {
+    findProjectId,
+    findTeamMemberId,
+    getDiff,
+    normalizeProject,
+    getProjectMembers,
+} from "@/lib/utils";
 import Select from "react-select";
 import {
     selectStyles,
@@ -144,7 +150,7 @@ function AccInspectionBadgeSelect({
 }
 
 export default function ManagePage() {
-    const { member, role } = useAuth();
+    const { member, members, memberOptions, role, teamId } = useAuth();
     const isGuest = member === "GUEST" || role === "guest";
     const isAdmin = role === "admin";
 
@@ -203,10 +209,10 @@ export default function ManagePage() {
     } as const;
 
     useEffect(() => {
-        if (member) void loadData();
+        if (member && teamId) void loadData();
         // loadData is intentionally defined as a local page action.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [member]);
+    }, [member, teamId]);
 
     useEffect(() => {
         function handleAccessibilityChanged() {
@@ -285,17 +291,18 @@ export default function ManagePage() {
     );
 
     async function loadData() {
+        if (!teamId) return;
         setLoading(true);
         const [{ data: projData }, { data: accData }] = await Promise.all([
             supabase
                 .from("projects")
                 .select("*")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .order("name", { ascending: true }),
             supabase
                 .from("accessibility")
                 .select("*")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .order("end_date", { ascending: true }),
         ]);
         setProjects(
@@ -426,7 +433,8 @@ export default function ManagePage() {
                 return;
             }
         } else {
-            const { error } = await supabase.from("projects").insert([{ ...payload, team_id: TEAM_ID }]);
+            if (!teamId) return;
+            const { error } = await supabase.from("projects").insert([{ ...payload, team_id: teamId }]);
             if (error) {
                 alert("추가 실패: " + error.message);
                 return;
@@ -487,8 +495,20 @@ export default function ManagePage() {
     async function saveAccessibility() {
         if (!accForm.proj) return alert("프로젝트명은 필수예요");
         if (isGuest) return;
+        const selectedProjectId = findProjectId(projects, accForm.proj);
+        if (selectedProjectId === null) {
+            showToastMsg("현재 팀의 프로젝트를 다시 선택해주세요");
+            return;
+        }
 
         if (editAcc) {
+            const selectedPlayerId =
+                editAcc.player_id ??
+                findTeamMemberId(memberOptions, editAcc.member);
+            if (selectedPlayerId === null) {
+                showToastMsg("현재 팀의 담당자를 다시 선택해주세요");
+                return;
+            }
             const canChangeStatus = await prepareAccStatusTransition(
                 editAcc,
                 accForm.inspection_status,
@@ -498,6 +518,8 @@ export default function ManagePage() {
                 .from("accessibility")
                 .update({
                     proj: accForm.proj,
+                    project_id: selectedProjectId,
+                    player_id: selectedPlayerId,
                     start_date: accForm.start_date || null,
                     end_date: accForm.end_date || null,
                     inspection_status: accForm.inspection_status,
@@ -509,7 +531,7 @@ export default function ManagePage() {
                     note: accForm.note || null,
                     is_new: accForm.is_new,
                 })
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .eq("id", editAcc.id);
             if (error) {
                 showToastMsg("저장 실패: " + error.message);
@@ -518,10 +540,20 @@ export default function ManagePage() {
         } else {
             const assignee =
                 role === "admin" ? accForm.accMember : member ?? "";
+            const selectedPlayerId = findTeamMemberId(
+                memberOptions,
+                assignee,
+            );
+            if (selectedPlayerId === null) {
+                showToastMsg("현재 팀의 담당자를 다시 선택해주세요");
+                return;
+            }
             const { error } = await supabase.from("accessibility").insert([
                 {
                     proj: accForm.proj,
+                    project_id: selectedProjectId,
                     member: assignee,
+                    player_id: selectedPlayerId,
                     start_date: accForm.start_date || null,
                     end_date: accForm.end_date || null,
                     note: accForm.note || null,
@@ -530,7 +562,7 @@ export default function ManagePage() {
                     status_updated_at: new Date().toISOString(),
                     status_updated_by: member ?? null,
                     is_new: accForm.is_new,
-                    team_id: TEAM_ID,
+                    team_id: teamId,
                 },
             ]);
             if (error) {
@@ -553,6 +585,7 @@ export default function ManagePage() {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
+                    teamId,
                     accessibilityId: row.id,
                     keys: [
                         ...accMissionSnoozeKeys(row, "신청필요", "apply"),
@@ -577,6 +610,7 @@ export default function ManagePage() {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
+                    teamId,
                     accessibilityId: row.id,
                     keys: accMissionSnoozeKeys(
                         row,
@@ -601,6 +635,7 @@ export default function ManagePage() {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
+                    teamId,
                     accessibilityId: row.id,
                     keys: [`${row.id}:신청완료:result`],
                     snoozedUntil,
@@ -630,7 +665,7 @@ export default function ManagePage() {
                 inspection_status: status,
                 ...accStatusAuditPayload(row, status, member),
             })
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("id", id);
         if (error) {
             showToastMsg(error.message || "상태 변경에 실패했어요");
@@ -723,6 +758,7 @@ export default function ManagePage() {
                             관리
                         </h1>
                         <div className="flex items-center gap-2 shrink-0">
+                            <TeamSwitcher />
                             {manageTab === "project" && !isGuest && (
                                 <button
                                     type="button"
@@ -829,7 +865,7 @@ export default function ManagePage() {
                                 <div className="min-w-0 shrink max-w-[38%] sm:max-w-none">
                                     <Select
                                         aria-label="담당자 필터"
-                                        options={MEMBERS.map((m) => ({
+                                        options={members.map((m) => ({
                                             value: m,
                                             label: m,
                                         }))}
@@ -1257,7 +1293,7 @@ export default function ManagePage() {
                                 <div className="min-w-0 shrink">
                                     <Select
                                         aria-label="담당자 필터"
-                                        options={MEMBERS.map((m) => ({
+                                        options={members.map((m) => ({
                                             value: m,
                                             label: m,
                                         }))}
@@ -1569,7 +1605,7 @@ export default function ManagePage() {
                                         담당자 (복수 선택)
                                     </label>
                                     <div className="grid grid-cols-4 gap-2">
-                                        {MEMBERS.map((name) => {
+                                        {members.map((name) => {
                                             const on =
                                                 projForm.members.includes(name);
                                             return (
@@ -1788,7 +1824,7 @@ export default function ManagePage() {
                                             담당자
                                         </label>
                                         <div className="grid grid-cols-4 gap-2">
-                                            {MEMBERS.map((name) => {
+                                            {members.map((name) => {
                                                 const on =
                                                     accForm.accMember === name;
                                                 return (

@@ -320,7 +320,7 @@ sequenceDiagram
 > 실선(`||--o{`)은 외래키(FK) 관계, 점선(`||..o{`)은 이름·프로젝트명 문자열로 느슨하게 연결되는 관계예요.
 > 대부분의 테이블은 `team_id`(text)로 팀을 구분합니다.
 >
-> 🚧 **FK 정규화 진행 중:** 점선(이름 문자열 조인) 관계를 `player_id`/`project_id` FK로 전환하는 작업이 진행 중이에요(Phase 1 완료 — `tasks`·`quests`·`attendance`·`accessibility`에 FK 컬럼 추가·백필·검증·동기화 트리거). 클라이언트 전환·텍스트 컬럼 제거가 끝나면 아래 점선들이 실선 FK로 바뀝니다.
+> 🚧 **FK 정규화 진행 중:** `db/V34_work_relation_fk_compatibility.sql`이 `tasks`·`quests`·`attendance`·`accessibility`에 FK 컬럼, 백필, 검증 장부와 호환 트리거를 추가합니다. 운영 DB 감사 통과 후 클라이언트 저장 경로도 `player_id`/`project_id`와 기존 표시 문자열을 함께 기록하도록 전환했습니다. 조회·리포트 호환 검증이 끝날 때까지 문자열 컬럼은 유지합니다.
 
 ```mermaid
 erDiagram
@@ -563,6 +563,8 @@ src/
 | `profiles` | 인증 사용자 프로필과 계정 상태 (V31 호환 전환) |
 | `team_memberships` | 사용자-팀 N:M 소속, 기본 팀과 팀별 역할 |
 | `access_requests` | 신규 사용자의 팀·역할 접근 승인 요청 |
+| `roles` / `permissions` / `role_permissions` | 팀 역할과 세부 권한 매트릭스 |
+| `current_team_id` | 활성 소속 검증 후 저장되는 현재 팀 HTTP-only 쿠키 |
 | `teams` / `organization_admins` | 팀 생명주기와 조직 관리자 |
 | `admin_audit_logs` | 관리자 변경 감사 로그 |
 | `projects` | 프로젝트 목록 (멀티 담당자, 메타데이터) |

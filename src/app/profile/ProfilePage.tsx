@@ -14,6 +14,7 @@ import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import Tooltip from "@/components/Tooltip";
 import UserMenu from "@/components/UserMenu";
+import TeamSwitcher from "@/components/TeamSwitcher";
 import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import Avatar from "@/components/Avatar";
@@ -27,9 +28,7 @@ import type { Player, Task, Quest } from "@/lib/types";
 import { formatWorkload } from "@/lib/utils";
 import {
     BAR_COLORS,
-    MEMBERS,
     MEMBER_COLORS,
-    TEAM_ID,
     normalizeStatus,
 } from "@/lib/constants";
 import { toLocalYmd } from "@/lib/toLocalYmd";
@@ -128,7 +127,7 @@ function taskOverlapsRange(task: Task, start: Date, end: Date) {
 }
 
 export default function ProfilePage() {
-    const { member, refreshAvatar, role } = useAuth();
+    const { member, members, refreshAvatar, role, teamId } = useAuth();
     const isGuest = member === "GUEST" || role === "guest";
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -155,30 +154,31 @@ export default function ProfilePage() {
         !isGuest && (role === "admin" || taskMember === member);
 
     useEffect(() => {
-        if (member) loadAll();
-    }, [member]); // member 있을 때만 실행
+        if (member && teamId) loadAll();
+    }, [member, teamId]); // member와 현재 팀이 준비된 뒤 실행
 
     async function loadAll() {
+        if (!teamId) return;
         const [
             { data: playerData },
             { data: taskData },
             { data: teamTaskData },
             { data: completedQuestData },
         ] = await Promise.all([
-            supabase.from("players").select("*").eq("team_id", TEAM_ID),
+            supabase.from("players").select("*").eq("team_id", teamId),
             supabase
                 .from("tasks")
                 .select("*")
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .eq("member", member)
                 .order("created_at", { ascending: false }),
-            supabase.from("tasks").select("*").eq("team_id", TEAM_ID).in("member", MEMBERS),
+            supabase.from("tasks").select("*").eq("team_id", teamId).in("member", members),
             isGuest
                 ? Promise.resolve({ data: [] as Quest[] })
                 : supabase
                       .from("quests")
                       .select("*")
-                      .eq("team_id", TEAM_ID)
+                      .eq("team_id", teamId)
                       .eq("member", member)
                       .eq("status", "완료")
                       .order("created_at", { ascending: false }),
@@ -236,7 +236,7 @@ export default function ProfilePage() {
     }
 
     async function uploadAvatar(file: File) {
-        if (!member) return;
+        if (!member || !teamId) return;
         const ext = file.name.split(".").pop();
         const memberEn: Record<string, string> = {
             TEAM_MEMBER_1: "hs",
@@ -263,6 +263,7 @@ export default function ProfilePage() {
         await supabase
             .from("players")
             .update({ avatar_url: url })
+            .eq("team_id", teamId)
             .eq("name", member);
         showToastMsg("프로필 이미지 업데이트 완료!");
         refreshAvatar();
@@ -270,7 +271,7 @@ export default function ProfilePage() {
     }
 
     async function deleteAvatar() {
-        if (!member) return;
+        if (!member || !teamId) return;
         const memberEn: Record<string, string> = {
             TEAM_MEMBER_1: "hs",
             TEAM_MEMBER_2: "jy",
@@ -291,6 +292,7 @@ export default function ProfilePage() {
         await supabase
             .from("players")
             .update({ avatar_url: null })
+            .eq("team_id", teamId)
             .eq("name", member);
         showToastMsg("프로필 이미지 삭제 완료!");
         refreshAvatar();
@@ -380,6 +382,7 @@ export default function ProfilePage() {
                             내 프로필
                         </h1>
                         <div className="flex items-center gap-2">
+                            <TeamSwitcher />
                             <AgentButton />
                             <NotificationButton />
                             <UserMenu />
@@ -713,7 +716,7 @@ export default function ProfilePage() {
                                     이번 주 팀원별 공수
                                 </p>
                                 <div className="space-y-3">
-                                    {MEMBERS.map((m) => {
+                                    {members.map((m) => {
                                         const mWL = weekTasks
                                             .filter((t) => t.member === m && !t.is_plan)
                                             .reduce(
@@ -721,7 +724,7 @@ export default function ProfilePage() {
                                                 0,
                                             );
                                         const maxWL = Math.max(
-                                            ...MEMBERS.map((mem) =>
+                                            ...members.map((mem) =>
                                                 weekTasks
                                                     .filter(
                                                         (t) => t.member === mem && !t.is_plan,

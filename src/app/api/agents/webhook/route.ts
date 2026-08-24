@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { TEAM_ID } from "@/lib/constants";
-import { getServerUser } from "@/lib/serverSupabase";
+import { getServerCurrentTeamRole } from "@/lib/serverSupabase";
 
 function validateWebhookUrl(value: string) {
     if (!value.trim()) return "Webhook URL is required";
@@ -11,13 +10,14 @@ function validateWebhookUrl(value: string) {
 }
 
 async function getCurrentPlayer(
-    supabase: Awaited<ReturnType<typeof getServerUser>>["supabase"],
+    supabase: Awaited<ReturnType<typeof getServerCurrentTeamRole>>["supabase"],
     email: string,
+    teamId: string,
 ) {
     const { data, error } = await supabase
         .from("players")
         .select("name, role")
-        .eq("team_id", TEAM_ID)
+        .eq("team_id", teamId)
         .eq("email", email)
         .maybeSingle();
 
@@ -26,13 +26,13 @@ async function getCurrentPlayer(
 }
 
 export async function GET() {
-    const { supabase, user } = await getServerUser();
-    if (!user?.email) {
+    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
     try {
-        const player = await getCurrentPlayer(supabase, user.email);
+        const player = await getCurrentPlayer(supabase, user.email, teamId);
         if (!player?.name) {
             return NextResponse.json(
                 { message: "Player not found" },
@@ -43,7 +43,7 @@ export async function GET() {
         const { data, error } = await supabase
             .from("agent_member_webhooks")
             .select("webhook_url, updated_at")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("email", user.email)
             .maybeSingle();
 
@@ -55,12 +55,12 @@ export async function GET() {
                     supabase
                         .from("players")
                         .select("name, email, role")
-                        .eq("team_id", TEAM_ID)
+                        .eq("team_id", teamId)
                         .order("name"),
                     supabase
                         .from("agent_member_webhooks")
                         .select("member, email, webhook_url, updated_at")
-                        .eq("team_id", TEAM_ID),
+                        .eq("team_id", teamId),
                 ]);
 
             if (playersError) throw playersError;
@@ -102,8 +102,8 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
-    const { supabase, user } = await getServerUser();
-    if (!user?.email) {
+    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
@@ -121,7 +121,7 @@ export async function PUT(req: NextRequest) {
     }
 
     try {
-        const player = await getCurrentPlayer(supabase, user.email);
+        const player = await getCurrentPlayer(supabase, user.email, teamId);
         if (!player?.name) {
             return NextResponse.json(
                 { message: "Player not found" },
@@ -137,7 +137,7 @@ export async function PUT(req: NextRequest) {
         const { data: targetPlayer, error: targetError } = await supabase
             .from("players")
             .select("name, email")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("name", targetMember)
             .maybeSingle();
 
@@ -153,7 +153,7 @@ export async function PUT(req: NextRequest) {
             .from("agent_member_webhooks")
             .upsert(
                 {
-                    team_id: TEAM_ID,
+                    team_id: teamId,
                     member: targetPlayer.name,
                     email: targetPlayer.email,
                     webhook_url: webhookUrl,

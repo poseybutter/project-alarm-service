@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
-import { TEAM_ID } from "@/lib/constants";
 import { getDiff } from "@/lib/utils";
 import type { Accessibility } from "@/lib/types";
 
@@ -126,7 +125,7 @@ function legacyMissionKey(
 export default function AccessibilityMissionPopup() {
     const pathname = usePathname();
     const router = useRouter();
-    const { user, member, role, loading } = useAuth();
+    const { user, member, role, teamId, loading } = useAuth();
     const [items, setItems] = useState<Accessibility[]>([]);
     const [snoozedUntilByKey, setSnoozedUntilByKey] =
         useState<Record<string, number>>({});
@@ -149,7 +148,7 @@ export default function AccessibilityMissionPopup() {
     }, []);
 
     const loadItems = useCallback(async () => {
-        if (!member || isGuest || !isActivePath) {
+        if (!member || !teamId || isGuest || !isActivePath) {
             setItems([]);
             return;
         }
@@ -157,7 +156,7 @@ export default function AccessibilityMissionPopup() {
         const { data, error } = await supabase
             .from("accessibility")
             .select("*")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("member", member)
             .order("end_date", { ascending: true });
 
@@ -166,10 +165,10 @@ export default function AccessibilityMissionPopup() {
             return;
         }
         setItems((data ?? []) as Accessibility[]);
-    }, [isActivePath, isGuest, member]);
+    }, [isActivePath, isGuest, member, teamId]);
 
     const loadSnoozes = useCallback(async () => {
-        if (!userEmail || !member || isGuest || !isActivePath) {
+        if (!userEmail || !member || !teamId || isGuest || !isActivePath) {
             setSnoozedUntilByKey({});
             setSnoozesLoaded(true);
             return;
@@ -179,7 +178,7 @@ export default function AccessibilityMissionPopup() {
         const { data, error } = await supabase
             .from("agent_accessibility_mission_snoozes")
             .select("snooze_key, snoozed_until")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("email", userEmail)
             .gt("snoozed_until", new Date().toISOString());
 
@@ -199,7 +198,7 @@ export default function AccessibilityMissionPopup() {
             ),
         );
         setSnoozesLoaded(true);
-    }, [isActivePath, isGuest, member, userEmail]);
+    }, [isActivePath, isGuest, member, teamId, userEmail]);
 
     useEffect(() => {
         if (loading) return;
@@ -279,7 +278,7 @@ export default function AccessibilityMissionPopup() {
         : "";
 
     async function snoozeMissionKeys(keys: string[], delayMs: number) {
-        if (!userEmail || !member || isGuest) {
+        if (!userEmail || !member || !teamId || isGuest) {
             throw new Error("다시 알림을 저장할 사용자 정보가 없어요");
         }
         const uniqueKeys = [...new Set(keys.map((key) => key.trim()))].filter(
@@ -293,7 +292,7 @@ export default function AccessibilityMissionPopup() {
             .from("agent_accessibility_mission_snoozes")
             .upsert(
                 uniqueKeys.map((key) => ({
-                    team_id: TEAM_ID,
+                    team_id: teamId,
                     member,
                     email: userEmail,
                     snooze_key: key,

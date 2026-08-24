@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { MEMBER_COLORS, TEAM_ID } from '@/lib/constants'
+import { MEMBER_COLORS } from '@/lib/constants'
+import { useAuth } from '@/components/AuthProvider'
 
 // 전역 캐시
 const avatarCache: Record<string, string | null> = {}
@@ -16,21 +17,24 @@ export default function Avatar({
   size?: number
   showName?: boolean
 }) {
-  const [url, setUrl] = useState<string | null>(avatarCache[name] ?? null)
+  const { teamId } = useAuth()
+  const cacheKey = `${teamId ?? 'none'}:${name}`
+  const [url, setUrl] = useState<string | null>(avatarCache[cacheKey] ?? null)
   const c = MEMBER_COLORS[name] || { bg: 'bg-stone-100', text: 'text-stone-600' }
 
   useEffect(() => {
-    if (avatarCache[name] !== undefined) {
-      setUrl(avatarCache[name])
+    if (!teamId) return
+    if (avatarCache[cacheKey] !== undefined) {
+      setUrl(avatarCache[cacheKey])
       return
     }
-    supabase.from('players').select('avatar_url').eq('team_id', TEAM_ID).eq('name', name).single()
+    supabase.from('players').select('avatar_url').eq('team_id', teamId).eq('name', name).single()
       .then(({ data }) => {
         const u = data?.avatar_url || null
-        avatarCache[name] = u
+        avatarCache[cacheKey] = u
         setUrl(u)
       })
-  }, [name])
+  }, [cacheKey, name, teamId])
 
   const sz = `${size}px`
 

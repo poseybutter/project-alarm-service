@@ -107,7 +107,7 @@ export function RequestsPage() {
             size={15}
           />
           <input
-            className="admin-input w-full pl-9"
+            className="admin-input admin-search-input w-full"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="이름 또는 이메일 검색"

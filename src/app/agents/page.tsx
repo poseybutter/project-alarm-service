@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import AuthGuard from "@/components/AuthGuard";
 import NotificationButton from "@/components/NotificationButton";
 import UserMenu from "@/components/UserMenu";
+import TeamSwitcher from "@/components/TeamSwitcher";
 import AgentButton from "@/components/AgentButton";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { DayPicker } from "react-day-picker";
@@ -769,6 +770,7 @@ export default function AgentsPage() {
                             </button>
                             <AgentButton />
                             <NotificationButton />
+                            <TeamSwitcher />
                             <UserMenu />
                         </div>
                     </div>

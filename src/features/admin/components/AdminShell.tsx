@@ -16,7 +16,11 @@ import {
   Users,
   X,
 } from "lucide-react";
-import type { AdminBootstrap, AdminScope } from "@/features/admin/types";
+import type {
+  AdminBootstrap,
+  AdminPermission,
+  AdminScope,
+} from "@/features/admin/types";
 
 type AdminContextValue = AdminBootstrap & {
   selectedTeamId: string | null;
@@ -29,22 +33,53 @@ const NAVIGATION = [
   {
     label: "운영",
     items: [
-      { href: "/admin", label: "대시보드", icon: LayoutDashboard },
+      {
+        href: "/admin",
+        label: "대시보드",
+        icon: LayoutDashboard,
+        permission: "admin.read",
+      },
       {
         href: "/admin/requests",
         label: "접근 요청",
         icon: ClipboardList,
+        permission: "requests.review",
       },
-      { href: "/admin/members", label: "구성원", icon: Users },
-      { href: "/admin/teams", label: "팀", icon: Blocks },
+      {
+        href: "/admin/members",
+        label: "구성원",
+        icon: Users,
+        permission: "members.read",
+      },
+      {
+        href: "/admin/teams",
+        label: "팀",
+        icon: Blocks,
+        permission: "teams.read",
+      },
     ],
   },
   {
     label: "보안 및 시스템",
     items: [
-      { href: "/admin/roles", label: "역할 및 권한", icon: ShieldCheck },
-      { href: "/admin/logs", label: "감사 로그", icon: FileClock },
-      { href: "/admin/integrations", label: "연동", icon: Cable },
+      {
+        href: "/admin/roles",
+        label: "역할 및 권한",
+        icon: ShieldCheck,
+        permission: "roles.read",
+      },
+      {
+        href: "/admin/logs",
+        label: "감사 로그",
+        icon: FileClock,
+        permission: "audit.read",
+      },
+      {
+        href: "/admin/integrations",
+        label: "연동",
+        icon: Cable,
+        permission: "integrations.read",
+      },
     ],
   },
 ] as const;
@@ -94,7 +129,7 @@ export function AdminShell({
           본문으로 건너뛰기
         </a>
         <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 border-r border-stone-200 bg-white lg:flex lg:flex-col">
-          <Brand />
+          <Brand scope={selectedScope} />
           <div className="border-b border-stone-200 p-3">
             <ScopeSelect
               scopes={bootstrap.scopes}
@@ -105,6 +140,7 @@ export function AdminShell({
           <AdminNavigation
             pathname={pathname}
             query={searchParams.toString()}
+            permissions={selectedScope.permissions}
           />
           <AccountFooter bootstrap={bootstrap} />
         </aside>
@@ -154,7 +190,7 @@ export function AdminShell({
             />
             <aside className="relative flex h-full w-[min(86vw,320px)] flex-col border-r-2 border-stone-900 bg-white shadow-xl">
               <div className="flex items-center border-b border-stone-200 pr-3">
-                <Brand />
+                <Brand scope={selectedScope} />
                 <button
                   type="button"
                   className="admin-icon-button ml-auto"
@@ -174,6 +210,7 @@ export function AdminShell({
               <AdminNavigation
                 pathname={pathname}
                 query={searchParams.toString()}
+                permissions={selectedScope.permissions}
                 onNavigate={() => setMobileMenuOpen(false)}
               />
               <AccountFooter bootstrap={bootstrap} />
@@ -185,14 +222,22 @@ export function AdminShell({
   );
 }
 
-function Brand() {
+function Brand({ scope }: { scope: AdminScope }) {
+  const scopeName = scope.label.trim() || "조직";
+  const mark = Array.from(scopeName.replace(/\s+/g, ""))
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
   return (
-    <div className="flex h-14 items-center gap-2 px-4">
-      <span className="grid size-7 place-items-center rounded bg-stone-900 font-mono text-[11px] font-black text-amber-400">
-        UD
+    <div className="flex h-14 min-w-0 items-center gap-2 px-4">
+      <span className="grid size-7 shrink-0 place-items-center rounded bg-stone-900 font-mono text-[11px] font-black text-amber-400">
+        {mark}
       </span>
-      <strong className="text-sm">UD2 업무 관리</strong>
-      <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-800">
+      <strong className="min-w-0 flex-1 truncate text-sm" title={`${scopeName} 업무 관리`}>
+        {scopeName} 업무 관리
+      </strong>
+      <span className="shrink-0 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-800">
         관리자
       </span>
     </div>
@@ -239,10 +284,12 @@ function ScopeSelect({
 function AdminNavigation({
   pathname,
   query,
+  permissions,
   onNavigate,
 }: {
   pathname: string;
   query: string;
+  permissions: AdminPermission[];
   onNavigate?: () => void;
 }) {
   return (
@@ -253,7 +300,9 @@ function AdminNavigation({
             {group.label}
           </p>
           <div className="space-y-0.5">
-            {group.items.map((item) => {
+            {group.items
+              .filter((item) => permissions.includes(item.permission))
+              .map((item) => {
               const active =
                 item.href === "/admin"
                   ? pathname === item.href
@@ -278,7 +327,7 @@ function AdminNavigation({
                   {item.label}
                 </Link>
               );
-            })}
+              })}
           </div>
         </div>
       ))}

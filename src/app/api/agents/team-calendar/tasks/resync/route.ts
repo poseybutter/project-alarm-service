@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { TEAM_ID } from "@/lib/constants";
 import {
     createServiceSupabaseClient,
-    getServerUserRole,
+    getServerCurrentTeamRole,
 } from "@/lib/serverSupabase";
 import {
     deleteTeamCalendarTaskEvent,
@@ -13,8 +12,8 @@ import {
 } from "@/lib/server/googleCalendar";
 
 export async function POST() {
-    const { user, role } = await getServerUserRole(TEAM_ID);
-    if (!user?.email) {
+    const { user, role, teamId } = await getServerCurrentTeamRole();
+    if (!user?.email || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
     if (role !== "admin") {
@@ -27,7 +26,7 @@ export async function POST() {
         const { data: setting, error: settingError } = await supabase
             .from("agent_team_calendar_settings")
             .select("calendar_id, connection_email")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .maybeSingle();
         if (settingError) throw settingError;
         if (!setting?.calendar_id || !setting.connection_email) {
@@ -41,7 +40,7 @@ export async function POST() {
             await supabase
                 .from("agent_member_calendar_settings")
                 .select("member, calendar_id")
-                .eq("team_id", TEAM_ID);
+                .eq("team_id", teamId);
         if (memberCalendarError) throw memberCalendarError;
 
         const calendarByMember = new Map(
@@ -51,7 +50,7 @@ export async function POST() {
         const { data: connection, error: connectionError } = await supabase
             .from("agent_calendar_connections")
             .select("member, email, access_token, refresh_token, expires_at")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("email", setting.connection_email)
             .maybeSingle();
         if (connectionError) throw connectionError;
@@ -64,7 +63,7 @@ export async function POST() {
 
         const accessToken = await getTeamCalendarAccessToken(
             supabase,
-            TEAM_ID,
+            teamId,
             connection as GoogleCalendarConnection,
         );
 
@@ -73,7 +72,7 @@ export async function POST() {
             .select(
                 "id, member, proj, content, status, start_date, end_date, show_on_team_calendar, team_calendar_event_id, team_calendar_id",
             )
-            .eq("team_id", TEAM_ID);
+            .eq("team_id", teamId);
         if (taskError) throw taskError;
 
         let synced = 0;
@@ -89,7 +88,7 @@ export async function POST() {
                 await supabase
                     .from("tasks")
                     .update({ team_calendar_sync_error: message })
-                    .eq("team_id", TEAM_ID)
+                    .eq("team_id", teamId)
                     .eq("id", task.id);
                 continue;
             }
@@ -126,7 +125,7 @@ export async function POST() {
                         team_calendar_synced_at: new Date().toISOString(),
                         team_calendar_sync_error: null,
                     })
-                    .eq("team_id", TEAM_ID)
+                    .eq("team_id", teamId)
                     .eq("id", task.id);
                 if (updateError) throw updateError;
                 synced += 1;
@@ -139,7 +138,7 @@ export async function POST() {
                 await supabase
                     .from("tasks")
                     .update({ team_calendar_sync_error: message })
-                    .eq("team_id", TEAM_ID)
+                    .eq("team_id", teamId)
                     .eq("id", task.id);
             }
         }

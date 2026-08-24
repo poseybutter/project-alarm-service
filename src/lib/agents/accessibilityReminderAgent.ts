@@ -18,6 +18,7 @@ function notificationPayload(
 }
 
 export function buildAccessibilityReminderSuggestions(input: {
+    teamId?: string;
     accessibility: Accessibility[];
     createdBy: string | null;
     now?: Date;
@@ -33,7 +34,7 @@ export function buildAccessibilityReminderSuggestions(input: {
         const overdue = diff < 0;
         const severity = overdue || diff <= 14 ? "high" : "medium";
         suggestions.push({
-            team_id: TEAM_ID,
+            team_id: input.teamId ?? TEAM_ID,
             agent_type: "accessibility_reminder",
             dedupe_key: `accessibility-reminder:${row.id}:${overdue ? "overdue" : "due-soon"}`,
             title: `접근성 인증 알림: ${row.proj}`,

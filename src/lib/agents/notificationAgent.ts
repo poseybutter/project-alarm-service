@@ -391,6 +391,7 @@ function digestSignature(digest: MemberDigest) {
 }
 
 export function buildNotificationSuggestions(input: {
+    teamId?: string;
     tasks: Task[];
     accessibility?: Accessibility[];
     calendarEvents?: CalendarEventInput[];
@@ -513,7 +514,7 @@ export function buildNotificationSuggestions(input: {
         ].filter(Boolean);
 
         return {
-            team_id: TEAM_ID,
+            team_id: input.teamId ?? TEAM_ID,
             agent_type: "notification",
             dedupe_key: `notification:member:${member}:${today}:${signature}`,
             title: `${member} 모닝 기상나팔`,

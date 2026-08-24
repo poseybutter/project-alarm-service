@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { TEAM_ID } from "@/lib/constants";
-import { getServerUserRole } from "@/lib/serverSupabase";
+import { getServerCurrentTeamRole } from "@/lib/serverSupabase";
 import { updateAgentSuggestionStatus } from "@/lib/agents/suggestions";
 import type {
     AgentSuggestionStatus,
@@ -73,8 +72,8 @@ function escapeGChatText(value: string) {
 }
 
 export async function PATCH(req: NextRequest, context: RouteContext) {
-    const { supabase, user, role } = await getServerUserRole(TEAM_ID);
-    if (!user?.email) {
+    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
@@ -95,7 +94,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
         const { data: player, error: playerError } = await supabase
             .from("players")
             .select("name")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("email", user.email)
             .maybeSingle();
         if (playerError) throw playerError;
@@ -103,7 +102,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
         const { data: existing, error: existingError } = await supabase
             .from("agent_suggestions")
             .select("*")
-            .eq("team_id", TEAM_ID)
+            .eq("team_id", teamId)
             .eq("id", suggestionId)
             .maybeSingle();
         if (existingError) throw existingError;
@@ -193,7 +192,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
                     reviewed_by: user.email,
                     reviewed_at: new Date().toISOString(),
                 })
-                .eq("team_id", TEAM_ID)
+                .eq("team_id", teamId)
                 .eq("id", suggestionId)
                 .select("*")
                 .maybeSingle();
@@ -219,7 +218,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
 
         const suggestion = await updateAgentSuggestionStatus(supabase, {
             id: suggestionId,
-            teamId: TEAM_ID,
+            teamId,
             status: body.status as Exclude<AgentSuggestionStatus, "pending">,
             reviewedBy: user.email,
         });

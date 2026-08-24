@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
-import { LEADER } from "@/lib/constants";
+import { LEADER, TEAM_ID } from "@/lib/constants";
 import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
 
 export async function createCookieSupabaseClient() {
@@ -63,8 +63,7 @@ export async function getServerUserRole(teamId: string) {
             user,
             role: !active
                 ? null
-                : membership.role === "admin" ||
-                    normalized.profile.displayName === LEADER
+                : membership.role === "admin"
                   ? "admin"
                   : "member",
         };
@@ -86,6 +85,58 @@ export async function getServerUserRole(teamId: string) {
                 : data?.role === "admin" || data?.name === LEADER
                 ? "admin"
                 : "member",
+    };
+}
+
+export async function getServerCurrentTeamRole() {
+    const { supabase, user } = await getServerUser();
+    if (!user?.email) {
+        return { supabase, user, role: null, teamId: null };
+    }
+
+    const store = await cookies();
+    const cookieTeamId = store.get("current_team_id")?.value;
+    const normalized = await loadNormalizedIdentity(supabase, user.email);
+    if (normalized?.profile) {
+        const activeMemberships = normalized.memberships.filter(
+            (membership) => membership.status === "active",
+        );
+        const membership = cookieTeamId
+            ? activeMemberships.find((item) => item.teamId === cookieTeamId)
+            : activeMemberships.find((item) => item.isDefault) ??
+              activeMemberships.find((item) => item.teamId === TEAM_ID) ??
+              activeMemberships[0];
+        const active =
+            normalized.profile.accountStatus === "active" && Boolean(membership);
+        return {
+            supabase,
+            user,
+            teamId: membership?.teamId ?? cookieTeamId ?? null,
+            role: !active
+                ? null
+                : membership?.role === "admin"
+                  ? "admin"
+                  : "member",
+        };
+    }
+
+    const teamId = cookieTeamId || TEAM_ID;
+    const { data } = await supabase
+        .from("players")
+        .select("name, role, status")
+        .eq("team_id", teamId)
+        .eq("email", user.email)
+        .maybeSingle();
+    return {
+        supabase,
+        user,
+        teamId,
+        role:
+            data?.status !== "active"
+                ? null
+                : data?.role === "admin" || data?.name === LEADER
+                  ? "admin"
+                  : "member",
     };
 }
 

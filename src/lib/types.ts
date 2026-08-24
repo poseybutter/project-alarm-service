@@ -1,5 +1,8 @@
 export type Task = {
     id: number;
+    team_id?: string;
+    player_id?: number | null;
+    project_id?: number | null;
     member: string;
     type: string;
     proj: string;
@@ -24,6 +27,7 @@ export type Task = {
 
 export type Player = {
     id: number;
+    team_id?: string;
     name: string;
     exp: number;
     month_exp: number;
@@ -40,6 +44,7 @@ export type Player = {
 
 export type Project = {
     id: number;
+    team_id?: string;
     name: string;
     client: string | null;
     type: string | null;
@@ -58,6 +63,9 @@ export type Project = {
 
 export type Accessibility = {
     id: number;
+    team_id?: string;
+    player_id?: number | null;
+    project_id?: number | null;
     proj: string;
     member: string;
     start_date: string | null;
@@ -72,6 +80,9 @@ export type Accessibility = {
 
 export type Quest = {
     id: number;
+    team_id?: string;
+    player_id?: number | null;
+    project_id?: number | null;
     member: string;
     proj: string | null;
     content: string;

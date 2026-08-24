@@ -24,6 +24,22 @@ export function getProjectMembers(p: Project): string[] {
     return [];
 }
 
+export function findTeamMemberId(
+    members: readonly { id: number; name: string }[],
+    name: string | null | undefined,
+) {
+    if (!name) return null;
+    return members.find((member) => member.name === name)?.id ?? null;
+}
+
+export function findProjectId(
+    projects: readonly Pick<Project, "id" | "name">[],
+    name: string | null | undefined,
+) {
+    if (!name) return null;
+    return projects.find((project) => project.name === name)?.id ?? null;
+}
+
 export function getDiff(dateStr: string | null) {
     if (!dateStr) return null;
     const d = new Date(dateStr);
