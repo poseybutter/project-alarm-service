@@ -2,6 +2,8 @@
 
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { ChevronRight, ShieldCheck } from "lucide-react";
 import { DayPicker } from "react-day-picker";
 import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
@@ -26,6 +28,9 @@ import {
     badgeSelectStyles,
 } from "@/lib/reactSelectStyles";
 import { toLocalYmd } from "@/lib/toLocalYmd";
+
+const MAINTENANCE_STATUS_URL =
+    "https://docs.google.com/spreadsheets/d/1ACScLXCcap3Vvz9eH7sXX0yOcZKcV8blH53h6C63ObE/edit?pli=1&gid=487201690#gid=487201690";
 
 const EMPTY_PROJ_FORM = {
     name: "",
@@ -763,6 +768,30 @@ export default function ManagePage() {
                         </button>
                     </div>
 
+                    {isAdmin && (
+                        <Link
+                            href="/admin"
+                            className="mb-4 flex min-h-14 items-center gap-3 rounded-lg border-2 border-stone-800 bg-white px-3 py-2.5 text-left shadow-[0_2px_0_0_#1c1917] transition-colors hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
+                        >
+                            <span className="grid size-8 shrink-0 place-items-center rounded-md border border-amber-200 bg-amber-50 text-amber-700">
+                                <ShieldCheck size={17} aria-hidden="true" />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                                <strong className="block text-sm text-stone-900">
+                                    관리자 영역
+                                </strong>
+                                <span className="mt-0.5 block text-[11px] text-stone-500">
+                                    접근 요청, 구성원, 팀, 권한 관리
+                                </span>
+                            </span>
+                            <ChevronRight
+                                size={16}
+                                className="shrink-0 text-stone-400"
+                                aria-hidden="true"
+                            />
+                        </Link>
+                    )}
+
                     {loading ? (
                         <PageSpinner />
                     ) : manageTab === "project" ? (
@@ -864,6 +893,18 @@ export default function ManagePage() {
                                     총 {filteredProjects.length}개
                                 </span>
                                 <div className="flex items-center gap-2 shrink-0">
+                                    <a
+                                        href={MAINTENANCE_STATUS_URL}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs font-medium text-stone-600 transition-colors hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
+                                    >
+                                        <span className="hidden sm:inline">
+                                            퍼블팀 통합 유지보수 현황
+                                        </span>
+                                        <span className="sm:hidden">유지보수 현황</span>
+                                        <span aria-hidden="true">↗</span>
+                                    </a>
                                     <button
                                         type="button"
                                         onClick={() =>

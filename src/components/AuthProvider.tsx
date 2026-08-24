@@ -129,11 +129,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         const { data } = await supabase
             .from("players")
-            .select("avatar_url, role")
+            .select("avatar_url, role, status")
             .eq("team_id", TEAM_ID)
             .eq("name", memberName)
             .maybeSingle();
         setAvatarUrl(data?.avatar_url || null);
+        if (data?.status !== "active") {
+            setRole("guest");
+            return;
+        }
         setRole(
             data?.role === "admin" || memberName === LEADER
                 ? "admin"

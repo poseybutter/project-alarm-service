@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { LEADER } from "@/lib/constants";
+import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
 
 export async function createCookieSupabaseClient() {
     const store = await cookies();
@@ -15,9 +16,14 @@ export async function createCookieSupabaseClient() {
                     return store.getAll();
                 },
                 setAll(cookiesToSet) {
-                    cookiesToSet.forEach(({ name, value, options }) => {
-                        store.set(name, value, options);
-                    });
+                    try {
+                        cookiesToSet.forEach(({ name, value, options }) => {
+                            store.set(name, value, options);
+                        });
+                    } catch {
+                        // Server Components cannot mutate cookies. Route Handlers
+                        // still persist refreshed sessions through this callback.
+                    }
                 },
             },
         },
@@ -44,9 +50,29 @@ export async function getServerUserRole(teamId: string) {
         return { supabase, user, role: null };
     }
 
+    const normalized = await loadNormalizedIdentity(supabase, user.email);
+    if (normalized?.profile) {
+        const membership = normalized.memberships.find(
+            (item) => item.teamId === teamId,
+        );
+        const active =
+            normalized.profile.accountStatus === "active" &&
+            membership?.status === "active";
+        return {
+            supabase,
+            user,
+            role: !active
+                ? null
+                : membership.role === "admin" ||
+                    normalized.profile.displayName === LEADER
+                  ? "admin"
+                  : "member",
+        };
+    }
+
     const { data } = await supabase
         .from("players")
-        .select("name, role")
+        .select("name, role, status")
         .eq("team_id", teamId)
         .eq("email", user.email)
         .maybeSingle();
@@ -55,7 +81,9 @@ export async function getServerUserRole(teamId: string) {
         supabase,
         user,
         role:
-            data?.role === "admin" || data?.name === LEADER
+            data?.status !== "active"
+                ? null
+                : data?.role === "admin" || data?.name === LEADER
                 ? "admin"
                 : "member",
     };
