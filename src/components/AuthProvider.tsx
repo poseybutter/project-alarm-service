@@ -203,6 +203,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, [applyTeamContext]);
 
     useEffect(() => {
+        // 세션 부팅(boot)이 끝나기 전에는 판단하지 않는다.
+        // 부팅 전 user는 항상 null이라, 여기서 teamContextLoading을 false로 내리면
+        // boot 직후 "authLoading=false && member=null" 창이 열려
+        // 로그인 상태인데도 페이지가 /login으로 리다이렉트된다.
+        if (loading) return;
+
         const timer = window.setTimeout(() => {
             if (user) void loadTeamContext();
             else {
@@ -218,7 +224,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
         }, 0);
         return () => window.clearTimeout(timer);
-    }, [loadTeamContext, user]);
+    }, [loadTeamContext, loading, user]);
 
     const switchTeam = useCallback(async (nextTeamId: string) => {
         if (!nextTeamId || nextTeamId === teamId || switchingTeam) return;
