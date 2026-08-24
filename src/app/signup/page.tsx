@@ -314,7 +314,7 @@ export default function SignupPage() {
                                 />
                                 <AuthField
                                     label="이메일"
-                                    placeholder="name@ud2.co"
+                                    placeholder="name@example.com"
                                     icon={Icons.mail()}
                                     value={email}
                                     onChange={setEmail}

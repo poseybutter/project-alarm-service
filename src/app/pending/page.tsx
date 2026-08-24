@@ -209,7 +209,7 @@ export default function PendingPage() {
                                         </Chip>
                                     </div>
                                     <div className="text-[12px] text-stone-500 mt-0.5">
-                                        yujin@ud2.co
+                                        user@example.com
                                     </div>
                                 </div>
                                 <GameButton

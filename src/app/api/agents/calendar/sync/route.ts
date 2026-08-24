@@ -14,12 +14,23 @@ import {
 } from "@/lib/agents/notificationAgent";
 import { createAgentSuggestions } from "@/lib/agents/suggestions";
 import type { Accessibility, Task } from "@/lib/types";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
+import {
+    consumeRateLimit,
+    rateLimitResponse,
+    requestRateLimitKey,
+} from "@/lib/server/rateLimit";
 
-export async function POST() {
+export async function POST(request: Request) {
     const { user, role, teamId } = await getServerCurrentTeamRole();
     if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
+    const rate = consumeRateLimit(
+        requestRateLimitKey(request, "calendar-sync", user.email),
+        { limit: 10, windowMs: 5 * 60 * 1000 },
+    );
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
 
     const serviceSupabase = createServiceSupabaseClient();
     const { data, error } = await serviceSupabase
@@ -30,7 +41,11 @@ export async function POST() {
         .maybeSingle();
 
     if (error) {
-        return NextResponse.json({ message: error.message }, { status: 500 });
+        return internalErrorResponse(
+            "google-calendar-sync-load",
+            error,
+            "캘린더 연결 정보를 불러오지 못했습니다.",
+        );
     }
     if (!data) {
         return NextResponse.json(
@@ -105,9 +120,11 @@ export async function POST() {
             suggestions: createdSuggestions,
             suggestionCount: createdSuggestions.length,
         });
-    } catch (err) {
-        const message =
-            err instanceof Error ? err.message : "Failed to sync calendar";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "google-calendar-sync",
+            error,
+            "캘린더를 동기화하지 못했습니다.",
+        );
     }
 }

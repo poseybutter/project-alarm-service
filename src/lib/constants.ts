@@ -1,13 +1,35 @@
 export const TEAM_ID = 'ud2'
 
-export const MEMBERS = ['TEAM_MEMBER_1', 'TEAM_MEMBER_2', 'TEAM_MEMBER_3', 'TEAM_MEMBER_4']
-export const LEADER  = 'TEAM_MEMBER_1'
+export type MemberColors = {
+  bg: string
+  text: string
+  bar: string
+  border: string
+}
 
-export const MEMBER_COLORS: Record<string, { bg: string; text: string; bar: string; border: string }> = {
-  'TEAM_MEMBER_1': { bg: 'bg-purple-100', text: 'text-purple-700', bar: '#7C3AED', border: 'border-purple-400' },
-  'TEAM_MEMBER_2': { bg: 'bg-green-100',  text: 'text-green-700',  bar: '#059669', border: 'border-green-400'  },
-  'TEAM_MEMBER_3': { bg: 'bg-amber-100',  text: 'text-amber-700',  bar: '#D97706', border: 'border-amber-400'  },
-  'TEAM_MEMBER_4': { bg: 'bg-orange-100', text: 'text-orange-700', bar: '#EA580C', border: 'border-orange-400' },
+const MEMBER_COLOR_PALETTE: readonly MemberColors[] = [
+  { bg: 'bg-purple-100', text: 'text-purple-700', bar: '#7C3AED', border: 'border-purple-400' },
+  { bg: 'bg-green-100', text: 'text-green-700', bar: '#059669', border: 'border-green-400' },
+  { bg: 'bg-amber-100', text: 'text-amber-700', bar: '#D97706', border: 'border-amber-400' },
+  { bg: 'bg-orange-100', text: 'text-orange-700', bar: '#EA580C', border: 'border-orange-400' },
+  { bg: 'bg-sky-100', text: 'text-sky-700', bar: '#0284C7', border: 'border-sky-400' },
+  { bg: 'bg-rose-100', text: 'text-rose-700', bar: '#E11D48', border: 'border-rose-400' },
+  { bg: 'bg-teal-100', text: 'text-teal-700', bar: '#0F766E', border: 'border-teal-400' },
+  { bg: 'bg-indigo-100', text: 'text-indigo-700', bar: '#4F46E5', border: 'border-indigo-400' },
+]
+
+function stableStringHash(value: string) {
+  let hash = 0
+  for (const char of value.normalize('NFKC')) {
+    hash = (hash * 31 + (char.codePointAt(0) ?? 0)) >>> 0
+  }
+  return hash
+}
+
+export function getMemberColors(memberKey: string): MemberColors {
+  return MEMBER_COLOR_PALETTE[
+    stableStringHash(memberKey) % MEMBER_COLOR_PALETTE.length
+  ]
 }
 
 export const TYPE_COLORS: Record<string, string> = {

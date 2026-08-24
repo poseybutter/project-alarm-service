@@ -1,3 +1,5 @@
+import "server-only";
+
 import type { AgentSuggestion, NotificationSuggestionPayload } from "./types";
 import type { SupabaseLike } from "./suggestions";
 

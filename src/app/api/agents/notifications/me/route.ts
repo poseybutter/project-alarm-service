@@ -13,6 +13,7 @@ import {
     type GoogleCalendarConnection,
 } from "@/lib/server/googleCalendar";
 import type { Accessibility, Task } from "@/lib/types";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
 
 export async function POST() {
     const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
@@ -145,9 +146,11 @@ export async function POST() {
         if (cleanupError) throw cleanupError;
 
         return NextResponse.json({ suggestions: refreshed ?? [] });
-    } catch (err) {
-        const message =
-            err instanceof Error ? err.message : "Failed to refresh briefing";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "personal-briefing-refresh",
+            error,
+            "개인 브리핑을 갱신하지 못했습니다.",
+        );
     }
 }

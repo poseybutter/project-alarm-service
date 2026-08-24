@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getServerCurrentTeamRole } from "@/lib/serverSupabase";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
+import {
+    createServiceSupabaseClient,
+    getServerCurrentTeamRole,
+} from "@/lib/serverSupabase";
 import type { AgentSuggestion, NotificationSuggestionPayload } from "@/lib/agents/types";
 import {
     hasRecentNotificationDelivery,
@@ -7,6 +11,7 @@ import {
 } from "@/lib/agents/notificationDeliveries";
 import { updateAgentSuggestionStatus } from "@/lib/agents/suggestions";
 import { sendGoogleChatMessage } from "@/lib/server/googleChat";
+import { decryptIntegrationToken } from "@/lib/server/tokenEncryption";
 
 type SendRequest = {
     id?: number;
@@ -19,7 +24,7 @@ function isNotificationPayload(
 }
 
 export async function POST(req: NextRequest) {
-    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    const { user, role, teamId } = await getServerCurrentTeamRole();
     if (!user?.email || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
@@ -38,7 +43,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ message: "id is required" }, { status: 400 });
     }
 
-    const { data, error } = await supabase
+    const service = createServiceSupabaseClient();
+    const { data, error } = await service
         .from("agent_suggestions")
         .select("*")
         .eq("team_id", teamId)
@@ -48,7 +54,11 @@ export async function POST(req: NextRequest) {
         .maybeSingle();
 
     if (error) {
-        return NextResponse.json({ message: error.message }, { status: 500 });
+        return internalErrorResponse(
+            "agent-notification-send-load",
+            error,
+            "알림 제안을 불러오지 못했습니다.",
+        );
     }
     if (!data) {
         return NextResponse.json(
@@ -68,7 +78,7 @@ export async function POST(req: NextRequest) {
     try {
         if (
             suggestion.dedupe_key &&
-            (await hasRecentNotificationDelivery(supabase, {
+            (await hasRecentNotificationDelivery(service, {
                 teamId,
                 dedupeKey: suggestion.dedupe_key,
             }))
@@ -84,7 +94,7 @@ export async function POST(req: NextRequest) {
             suggestion.payload.channel === "personal_dm" &&
             suggestion.payload.recipientMember
         ) {
-            const { data: webhookRow, error: webhookError } = await supabase
+            const { data: webhookRow, error: webhookError } = await service
                 .from("agent_member_webhooks")
                 .select("webhook_url")
                 .eq("team_id", teamId)
@@ -92,7 +102,7 @@ export async function POST(req: NextRequest) {
                 .maybeSingle();
 
             if (webhookError) throw webhookError;
-            webhookUrl = webhookRow?.webhook_url ?? null;
+            webhookUrl = decryptIntegrationToken(webhookRow?.webhook_url);
         }
 
         await sendGoogleChatMessage({
@@ -102,7 +112,7 @@ export async function POST(req: NextRequest) {
             recipientMember: suggestion.payload.recipientMember,
             webhookUrl,
         });
-        const updated = await updateAgentSuggestionStatus(supabase, {
+        const updated = await updateAgentSuggestionStatus(service, {
             id: suggestion.id,
             teamId,
             status: "applied",
@@ -110,23 +120,25 @@ export async function POST(req: NextRequest) {
         });
 
         try {
-            await recordNotificationDelivery(supabase, {
+            await recordNotificationDelivery(service, {
                 suggestion,
                 payload: suggestion.payload,
                 sentBy: user.email,
             });
         } catch (deliveryErr) {
-            const warning =
-                deliveryErr instanceof Error
-                    ? deliveryErr.message
-                    : "Failed to record notification delivery";
-            return NextResponse.json({ suggestion: updated, warning });
+            console.error("[agent-notification-delivery-record]", deliveryErr);
+            return NextResponse.json({
+                suggestion: updated,
+                warning: "발송 이력을 기록하지 못했습니다.",
+            });
         }
 
         return NextResponse.json({ suggestion: updated });
-    } catch (err) {
-        const message =
-            err instanceof Error ? err.message : "Failed to send notification";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "agent-notification-send",
+            error,
+            "알림을 발송하지 못했습니다.",
+        );
     }
 }

@@ -15,6 +15,8 @@ import {
 } from "@/lib/server/googleCalendar";
 import type { AgentSuggestion, NotificationSuggestionPayload } from "@/lib/agents/types";
 import type { Accessibility, Task } from "@/lib/types";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
+import { decryptIntegrationToken } from "@/lib/server/tokenEncryption";
 
 type NotificationSetting = {
     member: string;
@@ -359,7 +361,7 @@ async function handleMorningBriefings(req: NextRequest) {
                     card: suggestion.payload.card,
                     channel: "personal_dm",
                     recipientMember: setting.member,
-                    webhookUrl: webhookRow.webhook_url,
+                    webhookUrl: decryptIntegrationToken(webhookRow.webhook_url),
                 });
 
                 const { error: deliveryError } = await supabase
@@ -391,23 +393,21 @@ async function handleMorningBriefings(req: NextRequest) {
 
                 sent.push({ member: setting.member, title: suggestion.title });
             } catch (err) {
+                console.error("[morning-briefing-member]", err);
                 skipped.push({
                     member: setting.member,
-                    reason:
-                        err instanceof Error
-                            ? `error:${err.message}`
-                            : "error:unknown",
+                    reason: "delivery_failed",
                 });
             }
         }
 
         return NextResponse.json({ sent, skipped });
-    } catch (err) {
-        const message =
-            err instanceof Error
-                ? err.message
-                : "Failed to send morning briefings";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "morning-briefings",
+            error,
+            "아침 브리핑을 발송하지 못했습니다.",
+        );
     }
 }
 

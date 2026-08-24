@@ -3,6 +3,7 @@ import {
     createServiceSupabaseClient,
     getServerUserRole,
 } from "@/lib/serverSupabase";
+import { internalErrorResponse } from "@/lib/server/apiResponse";
 
 type SnoozeBody = {
     teamId?: string;
@@ -162,10 +163,12 @@ export async function POST(req: NextRequest) {
         if (upsertError) throw upsertError;
 
         return NextResponse.json({ ok: true });
-    } catch (err) {
-        const message =
-            err instanceof Error ? err.message : "Failed to save snooze";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "accessibility-snooze-save",
+            error,
+            "다시 알림 설정을 저장하지 못했습니다.",
+        );
     }
 }
 
@@ -227,9 +230,11 @@ export async function DELETE(req: NextRequest) {
         if (error) throw error;
 
         return NextResponse.json({ ok: true });
-    } catch (err) {
-        const message =
-            err instanceof Error ? err.message : "Failed to clear snooze";
-        return NextResponse.json({ message }, { status: 500 });
+    } catch (error) {
+        return internalErrorResponse(
+            "accessibility-snooze-clear",
+            error,
+            "다시 알림 설정을 해제하지 못했습니다.",
+        );
     }
 }
