@@ -25,6 +25,27 @@ grant usage, select on sequence public.relation_migration_exceptions_id_seq
 
 -- Legacy clients resolve relations by team and display name, so that pair must
 -- stay unambiguous until every write path sends normalized IDs.
+do $$
+begin
+    if exists (
+        select 1 from public.players
+        where team_id is not null
+        group by team_id, name having count(*) > 1
+    ) then
+        raise exception 'Duplicate player names exist within a team'
+            using errcode = '23505';
+    end if;
+    if exists (
+        select 1 from public.projects
+        where team_id is not null
+        group by team_id, name having count(*) > 1
+    ) then
+        raise exception 'Duplicate project names exist within a team'
+            using errcode = '23505';
+    end if;
+end;
+$$;
+
 create unique index if not exists players_team_name_uidx
     on public.players (team_id, name);
 create unique index if not exists projects_team_name_uidx
@@ -337,6 +358,11 @@ begin
             using errcode = '23503';
     end if;
 
+    if new.member is not null and new.member is distinct from resolved_player.name then
+        raise exception 'Player name does not match player_id for team %', new.team_id
+            using errcode = '23503';
+    end if;
+
     new.player_id := resolved_player.id;
     new.member := resolved_player.name;
     delete from public.relation_migration_exceptions
@@ -418,6 +444,11 @@ begin
 
     if not found then
         raise exception 'Project reference is not valid for team %', new.team_id
+            using errcode = '23503';
+    end if;
+
+    if new.proj is not null and new.proj is distinct from resolved_project.name then
+        raise exception 'Project name does not match project_id for team %', new.team_id
             using errcode = '23503';
     end if;
 

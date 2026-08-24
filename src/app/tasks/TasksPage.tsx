@@ -244,8 +244,9 @@ export default function TasksPage() {
 
     useEffect(() => {
         if (!teamId) return;
-        loadTasks();
-        loadProjects();
+        let cancelled = false;
+        void loadTasks(teamId, () => cancelled);
+        void loadProjects(teamId, () => cancelled);
 
         const channel = supabase
             .channel("tasks-changes-" + Math.random())
@@ -258,35 +259,39 @@ export default function TasksPage() {
                         .select("*")
                         .eq("team_id", teamId)
                         .order("created_at", { ascending: false });
-                    setTasks(data || []);
+                    if (!cancelled) setTasks(data || []);
                 },
             )
             .subscribe();
 
         return () => {
+            cancelled = true;
             supabase.removeChannel(channel).catch(console.error);
         };
     }, [teamId]);
 
-    async function loadTasks() {
-        if (!teamId) return;
+    async function loadTasks(requestedTeamId = teamId, isCancelled = () => false) {
+        if (!requestedTeamId) return;
         setLoading(true);
         const { data } = await supabase
             .from("tasks")
             .select("*")
-            .eq("team_id", teamId)
+            .eq("team_id", requestedTeamId)
             .order("created_at", { ascending: false });
-        setTasks(data || []);
-        setLoading(false);
+        if (!isCancelled()) {
+            setTasks(data || []);
+            setLoading(false);
+        }
     }
 
-    async function loadProjects() {
-        if (!teamId) return;
+    async function loadProjects(requestedTeamId = teamId, isCancelled = () => false) {
+        if (!requestedTeamId) return;
         const { data } = await supabase
             .from("projects")
             .select("*")
-            .eq("team_id", teamId)
+            .eq("team_id", requestedTeamId)
             .order("name");
+        if (isCancelled()) return;
         setProjects(
             (data || []).map((row) =>
                 normalizeProject(row as Record<string, unknown>),

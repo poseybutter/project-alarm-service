@@ -424,6 +424,21 @@ async function countScopedRows(table: string, teamId: string | null) {
   return count ?? 0;
 }
 
+async function countOpenTasks(teamId: string | null) {
+  const service = createServiceSupabaseClient();
+  let query = service
+    .from("tasks")
+    .select("id", { count: "exact", head: true })
+    .neq("status", "완료");
+  query = applyScope(query, teamId);
+  const { count, error } = await query;
+  if (error) {
+    if (error.code === "42P01" || error.code === "42703") return 0;
+    throw error;
+  }
+  return count ?? 0;
+}
+
 async function queryAdminAuditLogs(
   teamId: string | null,
 ): Promise<AdminActivity[]> {
@@ -463,7 +478,7 @@ export async function getAdminDashboard(
     await Promise.all([
       queryAdminMembers(effectiveTeamId, teams),
       countScopedRows("projects", effectiveTeamId),
-      countScopedRows("tasks", effectiveTeamId),
+      countOpenTasks(effectiveTeamId),
       queryAdminAuditLogs(effectiveTeamId),
     ]);
 

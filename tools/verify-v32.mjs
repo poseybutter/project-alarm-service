@@ -14,9 +14,17 @@ function loadLocalEnv() {
 }
 
 async function rows(client, table, columns) {
-  const { data, error } = await client.from(table).select(columns);
-  if (error) throw error;
-  return data ?? [];
+  const result = [];
+  const selectedColumns = columns.split(",").map((column) => column.trim());
+  const orderColumns = selectedColumns.includes("id") ? ["id"] : selectedColumns;
+  for (let from = 0; ; from += 1000) {
+    let query = client.from(table).select(columns);
+    for (const column of orderColumns) query = query.order(column);
+    const { data, error } = await query.range(from, from + 999);
+    if (error) throw error;
+    result.push(...(data ?? []));
+    if (!data || data.length < 1000) return result;
+  }
 }
 
 const env = loadLocalEnv();
@@ -34,7 +42,7 @@ const [permissions, roles, rolePermissions, memberships] = await Promise.all([
   rows(supabase, "permissions", "key"),
   rows(supabase, "roles", "id,team_id,role_key,is_system,status"),
   rows(supabase, "role_permissions", "role_id,permission_key"),
-  rows(supabase, "team_memberships", "team_id,role_id"),
+  rows(supabase, "team_memberships", "id,team_id,role_id"),
 ]);
 
 const roleById = new Map(roles.map((role) => [role.id, role]));

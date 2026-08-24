@@ -34,7 +34,6 @@ import {
     BAR_COLORS,
     TYPE_COLORS,
     STATUS_COLORS,
-    MEMBERS,
     WORKLOAD_PRESETS,
 } from "@/lib/constants";
 import Avatar from "@/components/Avatar";
@@ -68,7 +67,7 @@ import {
     modalFormSelectStyles,
     badgeSelectStyles,
 } from "@/lib/reactSelectStyles";
-import { toLocalYmd, getThisMonday } from "@/lib/toLocalYmd";
+import { toLocalYmd } from "@/lib/toLocalYmd";
 import TiptapQuestContentEditor from "@/components/TiptapQuestContentEditor";
 import TaskContentInputs from "@/components/TaskContentInputs";
 import TaskContentList from "@/components/TaskContentList";
@@ -128,6 +127,23 @@ type QuestFormModalProps = {
     projects: Project[];
     editorMountKey: string;
 };
+
+function toSeoulYmd(date: Date = new Date()) {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).formatToParts(date);
+    const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${value.year}-${value.month}-${value.day}`;
+}
+
+function addDaysToYmd(ymd: string, days: number) {
+    const date = new Date(`${ymd}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
+}
 
 function QuestFormModal({
     title,
@@ -804,6 +820,7 @@ function SortableQuestItem({
 export default function HomePage() {
     const {
         member,
+        members,
         playerId,
         teamId,
         teams,
@@ -813,6 +830,7 @@ export default function HomePage() {
     const isGuest = member === "GUEST";
 
     const channelIdRef = useRef(Math.random().toString(36).slice(2));
+    const loadGenerationRef = useRef(0);
     const [player, setPlayer] = useState<Player | null>(null);
     const [quests, setQuests] = useState<Quest[]>([]);
     const [myTasks, setMyTasks] = useState<Task[]>([]);
@@ -995,25 +1013,24 @@ export default function HomePage() {
     useEffect(() => {
         if (typeof window === "undefined") return;
         if (!member || !teamId || member === "GUEST" || authLoading) return;
+        let cancelled = false;
 
-        const today = new Date();
-        if (today.getDay() !== 1) return;
+        const todayYmd = toSeoulYmd();
+        const today = new Date(`${todayYmd}T00:00:00Z`);
+        if (today.getUTCDay() !== 1) return;
 
         // ?대쾲 二??붿슂?쇱뿉 ?대? ?レ븯?쇰㈃ ?ㅼ떆 ?꾩슦吏 ?딆쓬
-        const thisMonday = getThisMonday(today);
-        if (localStorage.getItem("mvp_popup_dismissed_week") === thisMonday)
+        const thisMonday = todayYmd;
+        const dismissedKey = `mvp_popup_dismissed_week_${teamId}`;
+        if (localStorage.getItem(dismissedKey) === thisMonday)
             return;
 
-        const lockKey = `mvp_lock_${thisMonday}`;
+        const lockKey = `mvp_lock_${teamId}_${thisMonday}`;
         if (sessionStorage.getItem(lockKey)) return;
         sessionStorage.setItem(lockKey, "1");
 
-        const lastMonday = new Date(today);
-        lastMonday.setDate(today.getDate() - 7);
-        const lastSunday = new Date(today);
-        lastSunday.setDate(today.getDate() - 1);
-        const startYmd = toLocalYmd(lastMonday);
-        const endYmd = toLocalYmd(lastSunday);
+        const startYmd = addDaysToYmd(todayYmd, -7);
+        const endYmd = addDaysToYmd(todayYmd, -1);
 
         void (async () => {
             try {
@@ -1073,6 +1090,7 @@ export default function HomePage() {
                     return;
                 }
 
+                if (cancelled) return;
                 setMvpInfo({
                     show: true,
                     name: best.name,
@@ -1083,6 +1101,9 @@ export default function HomePage() {
                 sessionStorage.removeItem(lockKey);
             }
         })();
+        return () => {
+            cancelled = true;
+        };
     }, [member, teamId, authLoading]);
 
     // myTasks/quests 蹂寃????듯빀 紐⑸줉 ?ш뎄??(?쒕옒洹?以묒뿉??allQuestItems留?蹂寃쎈릺誘濡?deps 遺덈?)
@@ -1107,6 +1128,7 @@ export default function HomePage() {
 
     async function loadData() {
         if (!teamId) return;
+        const generation = ++loadGenerationRef.current;
         setLoading(true);
         const [
             { data: playerData },
@@ -1148,6 +1170,7 @@ export default function HomePage() {
                 .eq("team_id", teamId)
                 .order("name", { ascending: true }),
         ]);
+        if (generation !== loadGenerationRef.current) return;
         setPlayer(playerData);
         setQuests(questData || []);
         setMyTasks(myTaskData || []);
@@ -1532,7 +1555,7 @@ export default function HomePage() {
         exp: player?.month_exp || 0,
     };
 
-    const guestTeamSummary = MEMBERS.map((name) => {
+    const guestTeamSummary = members.map((name) => {
         const memberTasks = guestTeamTasks.filter((t) => t.member === name);
         const doingCount = memberTasks.filter(
             (t) => t.status !== "완료",
@@ -2469,8 +2492,8 @@ export default function HomePage() {
                             onClose={() => {
                                 try {
                                     localStorage.setItem(
-                                        "mvp_popup_dismissed_week",
-                                        getThisMonday(),
+                                        `mvp_popup_dismissed_week_${teamId}`,
+                                        toSeoulYmd(),
                                     );
                                 } catch {
                                     /* ignore */

@@ -7,11 +7,11 @@ import { isIdentitySchemaUnavailable } from "@/features/identity/server/identity
  * Supabase OAuth (Google) 콜백.
  *
  * 1. PKCE code 를 세션으로 교환 (서버에서 처리해야 쿠키가 안정적으로 설정됨)
- * 2. players 테이블 조회 후 status 분기:
+ * 2. profiles 계정 상태를 우선 확인하고, 전환 중 스키마에서는 players 상태로 폴백:
  *    - active   → /
  *    - pending  → /pending
  *    - rejected → /login?error=rejected
- * 3. players 에 없으면 status=pending 으로 INSERT 한 뒤 /pending 으로 이동
+ * 3. 양쪽에 사용자 정보가 없으면 players에 status=pending으로 INSERT 후 /pending 이동
  *    (관리자 승인 플로우 진입)
  */
 export async function GET(req: NextRequest) {

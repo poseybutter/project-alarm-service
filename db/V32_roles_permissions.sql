@@ -95,6 +95,25 @@ where role.team_id is null
   and role.role_key = 'team_admin'
 on conflict do nothing;
 
+-- V31의 players 동기화 트리거는 새 membership을 먼저 만들 수 있다.
+-- 역할 기본값을 제공해 V32 적용 이후에도 NOT NULL 계약을 지킨다.
+create or replace function public.default_team_membership_role_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+    select id
+    from public.roles
+    where team_id is null
+      and role_key = 'team_member'
+    limit 1
+$$;
+
+alter table public.team_memberships
+    alter column role_id set default public.default_team_membership_role_id();
+
 update public.team_memberships membership
 set role_id = role.id
 from public.roles role
@@ -106,17 +125,8 @@ where membership.role_id is null
       else 'team_member'
   end;
 
-do $$
-begin
-    if not exists (
-        select 1
-        from public.team_memberships
-        where role_id is null
-    ) then
-        alter table public.team_memberships alter column role_id set not null;
-    end if;
-end;
-$$;
+alter table public.team_memberships
+    alter column role_id set not null;
 
 drop trigger if exists roles_set_updated_at on public.roles;
 create trigger roles_set_updated_at
@@ -140,6 +150,7 @@ begin
 
     v_role_key := case
         when new.role = 'admin' then 'team_admin'
+        when new.role = 'viewer' then 'team_viewer'
         else 'team_member'
     end;
 
@@ -147,6 +158,14 @@ begin
     set role_id = role.id
     from public.roles role
     where membership.legacy_player_id = new.id
+      and (
+          membership.role_id is null
+          or exists (
+              select 1 from public.roles current_role
+              where current_role.id = membership.role_id
+                and current_role.is_system
+          )
+      )
       and role.team_id is null
       and role.role_key = v_role_key;
 
@@ -356,7 +375,11 @@ exception
 end;
 $$;
 
-create or replace function public.admin_delete_role(p_role_id uuid)
+drop function if exists public.admin_delete_role(uuid);
+create or replace function public.admin_delete_role(
+    p_role_id uuid,
+    p_team_id text
+)
 returns void
 language plpgsql
 security definer
@@ -364,13 +387,17 @@ set search_path = public
 as $$
 begin
     if exists (
-        select 1 from public.team_memberships where role_id = p_role_id
+        select 1
+        from public.team_memberships membership
+        where membership.role_id = p_role_id
+          and membership.team_id = p_team_id
     ) then
         raise exception 'Role is assigned to members' using errcode = '23503';
     end if;
 
     delete from public.roles
     where id = p_role_id
+      and team_id = p_team_id
       and not is_system;
 
     if not found then
@@ -382,11 +409,11 @@ $$;
 revoke all on function public.admin_save_role(
     uuid, text, text, text, text, text[], text
 ) from public;
-revoke all on function public.admin_delete_role(uuid) from public;
+revoke all on function public.admin_delete_role(uuid, text) from public;
 grant execute on function public.admin_save_role(
     uuid, text, text, text, text, text[], text
 ) to service_role;
-grant execute on function public.admin_delete_role(uuid) to service_role;
+grant execute on function public.admin_delete_role(uuid, text) to service_role;
 
 alter table public.permissions enable row level security;
 alter table public.roles enable row level security;

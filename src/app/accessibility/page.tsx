@@ -92,24 +92,30 @@ export default function AccessibilityPage() {
     });
 
     useEffect(() => {
-        if (teamId) void loadItems();
+        if (!teamId) return;
+        let cancelled = false;
+        void loadItems(teamId, () => cancelled);
+        return () => {
+            cancelled = true;
+        };
     }, [teamId]);
 
-    async function loadItems() {
-        if (!teamId) return;
+    async function loadItems(requestedTeamId = teamId, isCancelled = () => false) {
+        if (!requestedTeamId) return;
         setLoading(true);
         const [{ data }, { data: projectRows }] = await Promise.all([
             supabase
                 .from("accessibility")
                 .select("*")
-                .eq("team_id", teamId)
+                .eq("team_id", requestedTeamId)
                 .order("end_date"),
             supabase
                 .from("projects")
                 .select("*")
-                .eq("team_id", teamId)
+                .eq("team_id", requestedTeamId)
                 .order("name"),
         ]);
+        if (isCancelled()) return;
         setItems(
             (data || []).map((row) => ({
                 ...row,

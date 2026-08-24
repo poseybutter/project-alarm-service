@@ -18,9 +18,17 @@ function loadLocalEnv() {
 }
 
 async function selectRows(client, table, columns) {
-  const { data, error } = await client.from(table).select(columns);
-  if (error) throw error;
-  return data ?? [];
+  const rows = [];
+  const selectedColumns = columns.split(",").map((column) => column.trim());
+  const orderColumns = selectedColumns.includes("id") ? ["id"] : selectedColumns;
+  for (let from = 0; ; from += 1000) {
+    let query = client.from(table).select(columns);
+    for (const column of orderColumns) query = query.order(column);
+    const { data, error } = await query.range(from, from + 999);
+    if (error) throw error;
+    rows.push(...(data ?? []));
+    if (!data || data.length < 1000) return rows;
+  }
 }
 
 async function countRows(client, table, applyFilters = (query) => query) {
@@ -49,9 +57,9 @@ const [profiles, memberships, requests, players] = await Promise.all([
   selectRows(
     supabase,
     "team_memberships",
-    "profile_id,team_id,is_default,legacy_player_id",
+    "id,profile_id,team_id,is_default,legacy_player_id",
   ),
-  selectRows(supabase, "access_requests", "profile_id,status"),
+  selectRows(supabase, "access_requests", "id,profile_id,status"),
   selectRows(supabase, "players", "id,email,team_id,status"),
 ]);
 

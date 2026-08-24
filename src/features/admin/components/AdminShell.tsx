@@ -21,6 +21,7 @@ import type {
   AdminPermission,
   AdminScope,
 } from "@/features/admin/types";
+import { AdminModal } from "@/features/admin/components/AdminUi";
 
 type AdminContextValue = AdminBootstrap & {
   selectedTeamId: string | null;
@@ -36,6 +37,7 @@ const NAVIGATION = [
       {
         href: "/admin",
         label: "대시보드",
+        title: "관리자 대시보드",
         icon: LayoutDashboard,
         permission: "admin.read",
       },
@@ -48,12 +50,14 @@ const NAVIGATION = [
       {
         href: "/admin/members",
         label: "구성원",
+        title: "구성원 관리",
         icon: Users,
         permission: "members.read",
       },
       {
         href: "/admin/teams",
         label: "팀",
+        title: "팀 관리",
         icon: Blocks,
         permission: "teams.read",
       },
@@ -77,6 +81,7 @@ const NAVIGATION = [
       {
         href: "/admin/integrations",
         label: "연동",
+        title: "연동 관리",
         icon: Cable,
         permission: "integrations.read",
       },
@@ -180,15 +185,17 @@ export function AdminShell({
           </main>
         </div>
 
-        {mobileMenuOpen && (
-          <div className="fixed inset-0 z-50 lg:hidden">
-            <button
-              type="button"
-              className="absolute inset-0 bg-stone-950/35"
-              aria-label="관리자 메뉴 닫기"
-              onClick={() => setMobileMenuOpen(false)}
-            />
-            <aside className="relative flex h-full w-[min(86vw,320px)] flex-col border-r-2 border-stone-900 bg-white shadow-xl">
+        <AdminModal
+          open={mobileMenuOpen}
+          labelledBy="admin-mobile-menu-title"
+          onClose={() => setMobileMenuOpen(false)}
+          containerClassName="flex justify-start p-0 lg:hidden"
+          className="h-dvh w-[min(86vw,320px)] border-r-2 border-stone-900 bg-white shadow-xl"
+        >
+            <aside className="relative flex h-full w-full flex-col bg-white">
+              <h2 id="admin-mobile-menu-title" className="sr-only">
+                관리자 메뉴
+              </h2>
               <div className="flex items-center border-b border-stone-200 pr-3">
                 <Brand scope={selectedScope} />
                 <button
@@ -215,8 +222,7 @@ export function AdminShell({
               />
               <AccountFooter bootstrap={bootstrap} />
             </aside>
-          </div>
-        )}
+        </AdminModal>
       </div>
     </AdminContext.Provider>
   );
@@ -362,11 +368,14 @@ function AccountFooter({ bootstrap }: { bootstrap: AdminBootstrap }) {
 }
 
 function pageTitle(pathname: string) {
-  if (pathname.startsWith("/admin/requests")) return "접근 요청";
-  if (pathname.startsWith("/admin/members")) return "구성원 관리";
-  if (pathname.startsWith("/admin/teams")) return "팀 관리";
-  if (pathname.startsWith("/admin/roles")) return "역할 및 권한";
-  if (pathname.startsWith("/admin/logs")) return "감사 로그";
-  if (pathname.startsWith("/admin/integrations")) return "연동 관리";
+  for (const group of NAVIGATION) {
+    for (const item of group.items) {
+      const matches =
+        item.href === "/admin"
+          ? pathname === item.href
+          : pathname.startsWith(item.href);
+      if (matches) return "title" in item ? item.title : item.label;
+    }
+  }
   return "관리자 대시보드";
 }

@@ -1,9 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ChevronRight, ShieldCheck } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DayPicker } from "react-day-picker";
 import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
@@ -166,6 +164,7 @@ export default function ManagePage() {
     const [accessibility, setAccessibility] = useState<Accessibility[]>([]);
     const [loading, setLoading] = useState(true);
     const [toast, setToast] = useState("");
+    const loadGenerationRef = useRef(0);
 
     const [showProjModal, setShowProjModal] = useState(false);
     const [showAccModal, setShowAccModal] = useState(false);
@@ -292,6 +291,7 @@ export default function ManagePage() {
 
     async function loadData() {
         if (!teamId) return;
+        const generation = ++loadGenerationRef.current;
         setLoading(true);
         const [{ data: projData }, { data: accData }] = await Promise.all([
             supabase
@@ -305,6 +305,7 @@ export default function ManagePage() {
                 .eq("team_id", teamId)
                 .order("end_date", { ascending: true }),
         ]);
+        if (generation !== loadGenerationRef.current) return;
         setProjects(
             (projData || []).map((row) =>
                 normalizeProject(row as Record<string, unknown>),
@@ -803,30 +804,6 @@ export default function ManagePage() {
                             접근성
                         </button>
                     </div>
-
-                    {isAdmin && (
-                        <Link
-                            href="/admin"
-                            className="mb-4 flex min-h-14 items-center gap-3 rounded-lg border-2 border-stone-800 bg-white px-3 py-2.5 text-left shadow-[0_2px_0_0_#1c1917] transition-colors hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
-                        >
-                            <span className="grid size-8 shrink-0 place-items-center rounded-md border border-amber-200 bg-amber-50 text-amber-700">
-                                <ShieldCheck size={17} aria-hidden="true" />
-                            </span>
-                            <span className="min-w-0 flex-1">
-                                <strong className="block text-sm text-stone-900">
-                                    관리자 영역
-                                </strong>
-                                <span className="mt-0.5 block text-[11px] text-stone-500">
-                                    접근 요청, 구성원, 팀, 권한 관리
-                                </span>
-                            </span>
-                            <ChevronRight
-                                size={16}
-                                className="shrink-0 text-stone-400"
-                                aria-hidden="true"
-                            />
-                        </Link>
-                    )}
 
                     {loading ? (
                         <PageSpinner />

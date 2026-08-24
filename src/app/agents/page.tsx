@@ -191,7 +191,7 @@ function cardHtmlToPlainText(value: string) {
 }
 
 export default function AgentsPage() {
-    const { role, member } = useAuth();
+    const { role, member, teamId } = useAuth();
     const isAdmin = role === "admin";
 
     const [suggestions, setSuggestions] = useState<AgentSuggestion[]>([]);
@@ -388,7 +388,7 @@ export default function AgentsPage() {
             }
         }, 0);
         return () => window.clearTimeout(timer);
-    }, [loadCalendarStatus, loadSettings, loadSuggestions, loadWebhook, showToast]);
+    }, [loadCalendarStatus, loadSettings, loadSuggestions, loadWebhook, showToast, teamId]);
 
     useEffect(() => {
         if (!member || !TEAM_EVENT_MEMBERS.includes(member)) return;

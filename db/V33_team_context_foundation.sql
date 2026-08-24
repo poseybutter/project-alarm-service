@@ -1,4 +1,5 @@
 -- Isolate weekly briefings by team before enabling team switching.
+begin;
 
 alter table public.briefings
     add column if not exists team_id text;
@@ -8,8 +9,10 @@ set team_id = 'ud2'
 where team_id is null;
 
 alter table public.briefings
-    alter column team_id set default 'ud2',
     alter column team_id set not null;
+
+alter table public.briefings
+    alter column team_id drop default;
 
 do $$
 declare
@@ -52,3 +55,5 @@ select
     count(*) filter (where team_id is null) as briefing_without_team,
     count(*) - count(distinct (team_id, week_start)) as duplicate_team_week
 from public.briefings;
+
+commit;

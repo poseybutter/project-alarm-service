@@ -14,9 +14,17 @@ function loadLocalEnv() {
 }
 
 async function rows(client, table, columns) {
-  const { data, error } = await client.from(table).select(columns);
-  if (error) throw error;
-  return data ?? [];
+  const result = [];
+  const selectedColumns = columns.split(",").map((column) => column.trim());
+  const orderColumns = selectedColumns.includes("id") ? ["id"] : selectedColumns;
+  for (let from = 0; ; from += 1000) {
+    let query = client.from(table).select(columns);
+    for (const column of orderColumns) query = query.order(column);
+    const { data, error } = await query.range(from, from + 999);
+    if (error) throw error;
+    result.push(...(data ?? []));
+    if (!data || data.length < 1000) return result;
+  }
 }
 
 function countDuplicateTeamNames(data) {

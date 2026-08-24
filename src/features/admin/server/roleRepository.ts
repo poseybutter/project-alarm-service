@@ -303,6 +303,14 @@ export async function saveRole(input: {
 }
 
 export async function deleteRole(roleId: string) {
+  const initialSession = await requireAdminSession(null);
+  if (
+    !initialSession.scopes.some((scope) =>
+      scope.permissions.includes("roles.manage"),
+    )
+  ) {
+    throw new AdminApiError("이 작업을 수행할 권한이 없습니다.", 403);
+  }
   const role = await loadRoleForMutation(roleId);
   if (role.is_system) {
     throw new AdminApiError("시스템 역할은 삭제할 수 없습니다.", 409);
@@ -314,6 +322,7 @@ export async function deleteRole(roleId: string) {
   const service = createServiceSupabaseClient();
   const { error } = await service.rpc("admin_delete_role", {
     p_role_id: roleId,
+    p_team_id: role.team_id,
   });
   if (error?.code === "23503") {
     throw new AdminApiError(

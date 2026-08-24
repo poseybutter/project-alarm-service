@@ -179,6 +179,94 @@ export function SuccessMessage({ children }: { children: ReactNode }) {
   );
 }
 
+export function AdminModal({
+  open,
+  labelledBy,
+  role = "dialog",
+  className = "",
+  containerClassName = "grid place-items-center p-4",
+  onClose,
+  children,
+}: {
+  open: boolean;
+  labelledBy: string;
+  role?: "dialog" | "alertdialog";
+  className?: string;
+  containerClassName?: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const modalRef = useRef<HTMLDivElement>(null);
+  const previousFocus = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    previousFocus.current = document.activeElement as HTMLElement | null;
+    const modal = modalRef.current;
+    const focusable = () =>
+      Array.from(
+        modal?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
+    window.setTimeout(() => focusable()[0]?.focus(), 0);
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (items.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previousFocus.current?.focus();
+    };
+  }, [open]);
+
+  if (!open) return null;
+  return (
+    <div
+      className={`fixed inset-0 z-[60] bg-stone-950/40 ${containerClassName}`}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCloseRef.current();
+      }}
+    >
+      <div
+        ref={modalRef}
+        role={role}
+        aria-modal="true"
+        aria-labelledby={labelledBy}
+        className={className}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export function AdminDrawer({
   open,
   title,
