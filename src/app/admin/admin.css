@@ -1,0 +1,94 @@
+.admin-root {
+  --admin-ink: #1c1917;
+  --admin-amber: #f59e0b;
+  font-family: "SUIT Variable", "Pretendard Variable", system-ui, sans-serif;
+  letter-spacing: 0;
+}
+
+.admin-root *,
+.admin-root *::before,
+.admin-root *::after {
+  letter-spacing: 0;
+}
+
+.admin-root :focus-visible {
+  outline: 2px solid var(--admin-amber);
+  outline-offset: 2px;
+}
+
+.admin-skip-link {
+  position: fixed;
+  left: 12px;
+  top: -50px;
+  z-index: 100;
+  border: 2px solid var(--admin-ink);
+  border-radius: 4px;
+  background: white;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.admin-skip-link:focus {
+  top: 12px;
+}
+
+.admin-icon-button {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #57534e;
+}
+
+.admin-icon-button:hover {
+  border-color: #d6d3d1;
+  background: #f5f5f4;
+  color: #1c1917;
+}
+
+.admin-select,
+.admin-input,
+.admin-textarea {
+  border: 1px solid #d6d3d1;
+  border-radius: 6px;
+  background: white;
+  color: #1c1917;
+  font-size: 13px;
+}
+
+.admin-select,
+.admin-input {
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.admin-textarea {
+  min-height: 84px;
+  padding: 9px 10px;
+  resize: vertical;
+}
+
+.admin-skeleton {
+  background: linear-gradient(90deg, #f5f5f4 25%, #e7e5e4 50%, #f5f5f4 75%);
+  background-size: 200% 100%;
+  animation: admin-skeleton 1.4s ease infinite;
+}
+
+@keyframes admin-skeleton {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-skeleton {
+    animation: none;
+  }
+}

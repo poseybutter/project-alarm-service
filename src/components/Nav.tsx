@@ -25,7 +25,7 @@ export default function Nav() {
     }, [pathname]);
 
     if (loading || !member) return null;
-    if (pathname === "/login") return null;
+    if (pathname === "/login" || pathname.startsWith("/admin")) return null;
 
     return (
         <nav

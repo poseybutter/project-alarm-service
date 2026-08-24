@@ -44,11 +44,12 @@ dev-server*.err
 *.tsbuildinfo
 next-env.d.ts
 
-# Claude / 로컬 프롬프트 (저장소에 포함하지 않음)
+# Claude, Codex
 /claude/
 CLAUDE.md
 claude.md
 .claude/
+.agents
 
 # DB migrations are tracked. Keep local dumps and private SQL out of Git.
 db/*.dump
