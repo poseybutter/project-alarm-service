@@ -183,34 +183,89 @@ begin
             else 'active'
         end;
 
-        insert into public.team_memberships (
-            profile_id,
-            team_id,
-            role,
-            status,
-            is_default,
-            legacy_player_id
-        )
-        values (
-            v_profile_id,
-            v_player.team_id,
-            v_role,
-            v_membership_status,
-            not exists (
-                select 1
-                from public.team_memberships tm
-                where tm.profile_id = v_profile_id
-                  and tm.is_default
-            ),
-            v_player.id
-        )
-        on conflict (profile_id, team_id) do update
-        set role = excluded.role,
-            status = excluded.status,
-            legacy_player_id = coalesce(
-                public.team_memberships.legacy_player_id,
-                excluded.legacy_player_id
-            );
+        -- V32는 team_memberships.role_id를 NOT NULL로 강제하고 컬럼 기본값
+        -- (default_team_membership_role_id)을 지정해두지만, 그 기본값이 조회하는
+        -- 'roles' 시스템 행이 비어있거나 role_id 기본값이 아직 갱신되기 전이면
+        -- 기본값 자체가 NULL을 반환해 insert가 NOT NULL 위반으로 실패할 수 있다.
+        -- roles/role_id가 존재하면 이 함수가 직접 role_id를 계산해서 넣어
+        -- 컬럼 기본값에 의존하지 않도록 한다. V32 적용 전(컬럼이 아직 없는)
+        -- 환경도 깨지지 않도록 존재 여부로 분기한다.
+        if to_regclass('public.roles') is not null
+           and exists (
+               select 1 from information_schema.columns
+               where table_schema = 'public'
+                 and table_name = 'team_memberships'
+                 and column_name = 'role_id'
+           ) then
+            insert into public.team_memberships (
+                profile_id,
+                team_id,
+                role,
+                role_id,
+                status,
+                is_default,
+                legacy_player_id
+            )
+            values (
+                v_profile_id,
+                v_player.team_id,
+                v_role,
+                (
+                    select role.id
+                    from public.roles role
+                    where role.team_id is null
+                      and role.role_key = case
+                          when v_role = 'admin' then 'team_admin'
+                          else 'team_member'
+                      end
+                ),
+                v_membership_status,
+                not exists (
+                    select 1
+                    from public.team_memberships tm
+                    where tm.profile_id = v_profile_id
+                      and tm.is_default
+                ),
+                v_player.id
+            )
+            on conflict (profile_id, team_id) do update
+            set role = excluded.role,
+                role_id = coalesce(excluded.role_id, public.team_memberships.role_id),
+                status = excluded.status,
+                legacy_player_id = coalesce(
+                    public.team_memberships.legacy_player_id,
+                    excluded.legacy_player_id
+                );
+        else
+            insert into public.team_memberships (
+                profile_id,
+                team_id,
+                role,
+                status,
+                is_default,
+                legacy_player_id
+            )
+            values (
+                v_profile_id,
+                v_player.team_id,
+                v_role,
+                v_membership_status,
+                not exists (
+                    select 1
+                    from public.team_memberships tm
+                    where tm.profile_id = v_profile_id
+                      and tm.is_default
+                ),
+                v_player.id
+            )
+            on conflict (profile_id, team_id) do update
+            set role = excluded.role,
+                status = excluded.status,
+                legacy_player_id = coalesce(
+                    public.team_memberships.legacy_player_id,
+                    excluded.legacy_player_id
+                );
+        end if;
     end if;
 
     if v_player.status = 'pending' then
