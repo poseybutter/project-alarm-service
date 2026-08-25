@@ -339,15 +339,18 @@ async function queryAdminMembersNormalized(teamId: string | null): Promise<Playe
   }
 
   return (tmRows ?? [])
-    .map((r) => {
+    .flatMap((r) => {
+      // legacy_player_id 없는 행은 건너뜀 (PATCH·React key 충돌 방지)
+      if (typeof r.legacy_player_id !== "number" || r.legacy_player_id <= 0) {
+        return [];
+      }
       const profile = r.profiles as unknown as {
         display_name: string;
         email: string;
         avatar_url: string | null;
         account_status: string;
       };
-      const legacyId =
-        typeof r.legacy_player_id === "number" ? r.legacy_player_id : 0;
+      const legacyId = r.legacy_player_id;
       const gm = levelMap.get(legacyId);
       const effectiveStatus =
         r.status === "active"
@@ -357,7 +360,7 @@ async function queryAdminMembersNormalized(teamId: string | null): Promise<Playe
             : profile.account_status === "rejected"
               ? "rejected"
               : "suspended";
-      return {
+      return [{
         id: legacyId,
         name: profile.display_name ?? null,
         email: profile.email ?? null,
@@ -367,7 +370,7 @@ async function queryAdminMembersNormalized(teamId: string | null): Promise<Playe
         status: effectiveStatus,
         level: gm?.level ?? null,
         exp: gm?.exp ?? null,
-      } as PlayerRow;
+      } as PlayerRow];
     })
     .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "ko"));
 }
@@ -873,9 +876,12 @@ export async function updateAdminMember(input: {
       p_role_id: null,
       p_status: input.status,
     });
-    if (rpcError && !isIdentitySchemaUnavailable(rpcError)) throw rpcError;
     if (rpcError) {
-      // V32 미적용 환경 폴백
+      // PGRST202: RPC 함수 미존재 (V32 미적용), 스키마 오류 → players 직접 폴백
+      const shouldFallback =
+        isIdentitySchemaUnavailable(rpcError) ||
+        (rpcError as { code?: string }).code === "PGRST202";
+      if (!shouldFallback) throw rpcError;
       const { error: fallbackError } = await service
         .from("players")
         .update(changes)

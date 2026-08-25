@@ -23,7 +23,15 @@ function encryptionKey() {
 export function encryptIntegrationToken(value: string | null | undefined) {
     if (!value || value.startsWith(`${PREFIX}:`)) return value ?? null;
     const key = encryptionKey();
-    if (!key) return value;
+    if (!key) {
+        if (process.env.NODE_ENV === "production") {
+            throw new Error(
+                "INTEGRATION_TOKEN_ENCRYPTION_KEY is not configured. OAuth tokens must be encrypted in production.",
+            );
+        }
+        console.warn("[integration-token] 암호화 키 미설정 — 개발 환경에서만 허용됩니다.");
+        return value;
+    }
 
     const iv = randomBytes(12);
     const cipher = createCipheriv("aes-256-gcm", key, iv);
