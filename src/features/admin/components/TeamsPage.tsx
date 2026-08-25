@@ -34,6 +34,11 @@ import type {
   AdminMember,
   AdminTeam,
   ApiFailure,
+  TeamModuleKey,
+} from "@/features/admin/types";
+import {
+  ALL_TEAM_MODULES,
+  TEAM_MODULE_LABELS,
 } from "@/features/admin/types";
 import { TEAM_ID } from "@/lib/constants";
 
@@ -59,8 +64,10 @@ export function TeamsPage() {
   const [teamId, setTeamId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [createModules, setCreateModules] = useState<Set<TeamModuleKey>>(new Set(ALL_TEAM_MODULES));
   const [draftName, setDraftName] = useState("");
   const [draftDescription, setDraftDescription] = useState("");
+  const [draftModules, setDraftModules] = useState<Set<TeamModuleKey>>(new Set(ALL_TEAM_MODULES));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<ApiFailure | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -87,7 +94,8 @@ export function TeamsPage() {
   const dirty = Boolean(
     selected &&
       (draftName.trim() !== selected.name ||
-        draftDescription.trim() !== (selected.description ?? "")),
+        draftDescription.trim() !== (selected.description ?? "") ||
+        ALL_TEAM_MODULES.some((m) => draftModules.has(m) !== selected.modules.includes(m))),
   );
   const selectedTeamMembers = (membersData?.members ?? []).filter(
     (member) =>
@@ -114,6 +122,7 @@ export function TeamsPage() {
     setTeamId("");
     setName("");
     setDescription("");
+    setCreateModules(new Set(ALL_TEAM_MODULES));
     setCreating(true);
   }
 
@@ -122,6 +131,7 @@ export function TeamsPage() {
     setSelected(team);
     setDraftName(team.name);
     setDraftDescription(team.description ?? "");
+    setDraftModules(new Set(team.modules));
   }
 
   function closeTeamDrawer() {
@@ -152,7 +162,12 @@ export function TeamsPage() {
       const response = await fetch("/api/admin/teams", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: teamId, name, description }),
+        body: JSON.stringify({
+          id: teamId,
+          name,
+          description,
+          modules: [...createModules],
+        }),
       });
       if (!response.ok) throw await readFailure(response);
       setSuccessMessage(`${name.trim()}을 생성했습니다.`);
@@ -186,6 +201,7 @@ export function TeamsPage() {
           name: draftName,
           description: draftDescription,
           status,
+          modules: [...draftModules],
         }),
       });
       if (!response.ok) throw await readFailure(response);
@@ -450,6 +466,7 @@ export function TeamsPage() {
             </span>
           </label>
           <TeamDescriptionField value={description} onChange={setDescription} />
+          <ModuleSelector modules={createModules} onChange={setCreateModules} />
           <RequestError error={saveError} />
           <div className="flex justify-end gap-2 border-t border-stone-200 pt-4">
             <AdminButton onClick={() => setCreating(false)} disabled={saving}>
@@ -650,6 +667,7 @@ export function TeamsPage() {
                   value={draftDescription}
                   onChange={setDraftDescription}
                 />
+                <ModuleSelector modules={draftModules} onChange={setDraftModules} />
               </fieldset>
             ) : (
               <div>
@@ -887,6 +905,53 @@ function TeamDescriptionField({
         {value.length}/200
       </span>
     </label>
+  );
+}
+
+function ModuleSelector({
+  modules,
+  onChange,
+}: {
+  modules: Set<TeamModuleKey>;
+  onChange: (modules: Set<TeamModuleKey>) => void;
+}) {
+  function toggle(module: TeamModuleKey) {
+    const next = new Set(modules);
+    if (next.has(module)) {
+      next.delete(module);
+    } else {
+      next.add(module);
+    }
+    onChange(next);
+  }
+
+  return (
+    <fieldset>
+      <legend className="mb-1.5 block text-xs font-bold text-stone-600">
+        활성 모듈
+      </legend>
+      <div className="space-y-1.5">
+        {ALL_TEAM_MODULES.map((module) => (
+          <label
+            key={module}
+            className="flex cursor-pointer items-center gap-2.5 rounded-md border border-stone-200 bg-white px-3 py-2.5 transition-colors hover:bg-stone-50"
+          >
+            <input
+              type="checkbox"
+              className="size-4 accent-amber-600"
+              checked={modules.has(module)}
+              onChange={() => toggle(module)}
+            />
+            <span className="text-xs font-medium text-stone-700">
+              {TEAM_MODULE_LABELS[module]}
+            </span>
+          </label>
+        ))}
+      </div>
+      <p className="mt-1.5 text-[11px] leading-4 text-stone-500">
+        비활성화된 모듈은 해당 팀 구성원의 하단 탭에서 숨겨집니다.
+      </p>
+    </fieldset>
   );
 }
 
