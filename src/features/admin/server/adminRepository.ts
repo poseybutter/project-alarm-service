@@ -298,6 +298,80 @@ function toAdminMember(
   };
 }
 
+/**
+ * team_memberships + profiles JOIN으로 구성원 조회 (정규화 경로).
+ * team_memberships.status + profiles.account_status를 조합해 실제 표시 상태 결정:
+ *   active    → active
+ *   suspended + account_status=pending   → pending
+ *   suspended + account_status=rejected  → rejected
+ *   suspended + account_status=active    → suspended
+ * gamification 데이터(level/exp)는 players에서 보완 (V31 호환 단계).
+ */
+async function queryAdminMembersNormalized(teamId: string | null): Promise<PlayerRow[]> {
+  const service = createServiceSupabaseClient();
+
+  let tmQuery = service
+    .from("team_memberships")
+    .select(
+      "legacy_player_id, team_id, role, status, profiles!inner(display_name, email, avatar_url, account_status)",
+    );
+  if (teamId) tmQuery = tmQuery.eq("team_id", teamId);
+  const { data: tmRows, error: tmError } = await tmQuery;
+  if (tmError) throw tmError;
+
+  // gamification 데이터는 players에서 보완 (team_memberships에 없음)
+  const legacyIds = (tmRows ?? [])
+    .map((r) => r.legacy_player_id)
+    .filter((id): id is number => typeof id === "number" && id > 0);
+
+  const levelMap = new Map<number, { level: number | null; exp: number | null }>();
+  if (legacyIds.length > 0) {
+    const { data: playerRows } = await service
+      .from("players")
+      .select("id, level, exp")
+      .in("id", legacyIds);
+    for (const p of playerRows ?? []) {
+      levelMap.set(Number(p.id), {
+        level: typeof p.level === "number" ? p.level : null,
+        exp: typeof p.exp === "number" ? p.exp : null,
+      });
+    }
+  }
+
+  return (tmRows ?? [])
+    .map((r) => {
+      const profile = r.profiles as unknown as {
+        display_name: string;
+        email: string;
+        avatar_url: string | null;
+        account_status: string;
+      };
+      const legacyId =
+        typeof r.legacy_player_id === "number" ? r.legacy_player_id : 0;
+      const gm = levelMap.get(legacyId);
+      const effectiveStatus =
+        r.status === "active"
+          ? "active"
+          : profile.account_status === "pending"
+            ? "pending"
+            : profile.account_status === "rejected"
+              ? "rejected"
+              : "suspended";
+      return {
+        id: legacyId,
+        name: profile.display_name ?? null,
+        email: profile.email ?? null,
+        avatar_url: profile.avatar_url ?? null,
+        team_id: r.team_id ? String(r.team_id) : null,
+        role: r.role ?? null,
+        status: effectiveStatus,
+        level: gm?.level ?? null,
+        exp: gm?.exp ?? null,
+      } as PlayerRow;
+    })
+    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "ko"));
+}
+
 async function queryAdminMembers(
   teamId: string | null,
   knownTeams?: TeamRow[],
@@ -305,16 +379,25 @@ async function queryAdminMembers(
   const service = createServiceSupabaseClient();
   const teams = knownTeams ?? (await loadTeams());
   const teamNames = new Map(teams.map((team) => [team.id, team.name]));
-  let query = service
-    .from("players")
-    .select("id, name, email, avatar_url, team_id, role, status, level, exp")
-    .order("name");
-  query = applyScope(query, teamId);
-  const { data, error } = await query;
-  if (error) throw error;
-  const rows = (data ?? []) as PlayerRow[];
+
+  let rows: PlayerRow[];
+  try {
+    rows = await queryAdminMembersNormalized(teamId);
+  } catch (err) {
+    if (!isIdentitySchemaUnavailable(err)) throw err;
+    // V31 미적용 환경 폴백: players 직접 조회
+    let legacyQuery = service
+      .from("players")
+      .select("id, name, email, avatar_url, team_id, role, status, level, exp")
+      .order("name");
+    legacyQuery = applyScope(legacyQuery, teamId);
+    const { data, error } = await legacyQuery;
+    if (error) throw error;
+    rows = (data ?? []) as PlayerRow[];
+  }
+
   const authorizationIndex = await loadMembershipAuthorizationIndex(service, {
-    legacyPlayerIds: rows.map((row) => row.id),
+    legacyPlayerIds: rows.map((row) => row.id).filter((id) => id > 0),
   });
   return rows.map((row) =>
     toAdminMember(
@@ -782,13 +865,37 @@ export async function updateAdminMember(input: {
     return afterPlayer;
   }
 
-  const { data, error } = await service
+  // 상태 변경만 있을 때: RPC로 players + team_memberships 동시 업데이트
+  // 역할 변경이 포함된 경우: players 직접 업데이트, V31 트리거가 team_memberships 동기화
+  if (input.status && !input.role) {
+    const { error: rpcError } = await service.rpc("admin_update_member_access", {
+      p_player_id: input.id,
+      p_role_id: null,
+      p_status: input.status,
+    });
+    if (rpcError && !isIdentitySchemaUnavailable(rpcError)) throw rpcError;
+    if (rpcError) {
+      // V32 미적용 환경 폴백
+      const { error: fallbackError } = await service
+        .from("players")
+        .update(changes)
+        .eq("id", input.id);
+      if (fallbackError) throw fallbackError;
+    }
+  } else {
+    const { error } = await service
+      .from("players")
+      .update(changes)
+      .eq("id", input.id);
+    if (error) throw error;
+  }
+
+  const { data, error: readError } = await service
     .from("players")
-    .update(changes)
-    .eq("id", input.id)
     .select("id, name, email, team_id, role, status")
+    .eq("id", input.id)
     .maybeSingle();
-  if (error) throw error;
+  if (readError) throw readError;
 
   await writeAdminAudit({
     actorEmail: bootstrap.identity.email,
