@@ -818,7 +818,7 @@ export function TeamsPage() {
                 </p>
                 <ul className="mt-2 space-y-0.5 text-xs text-stone-500">
                   <li>
-                    구성원{" "}
+                    활성 구성원{" "}
                     <strong className="text-stone-700">
                       {selected.memberCount}명
                     </strong>

@@ -148,17 +148,16 @@ async function getValidCalendarAccessToken(
 ) {
     let accessToken = decryptIntegrationToken(connection.access_token);
     const refreshToken = decryptIntegrationToken(connection.refresh_token);
-    const encryptedAccessToken = encryptIntegrationToken(accessToken);
-    const encryptedRefreshToken = encryptIntegrationToken(refreshToken);
-    if (
-        encryptedAccessToken !== connection.access_token ||
-        encryptedRefreshToken !== connection.refresh_token
-    ) {
+    // 암호화 접두사로 마이그레이션 필요 여부 판정 (매 호출마다 새 IV로 인한 무한 재암호화 방지)
+    const needsMigration =
+        (connection.access_token && !connection.access_token.startsWith("enc:v1:")) ||
+        (connection.refresh_token && !connection.refresh_token.startsWith("enc:v1:"));
+    if (needsMigration) {
         const { error } = await supabase
             .from("agent_calendar_connections")
             .update({
-                access_token: encryptedAccessToken,
-                refresh_token: encryptedRefreshToken,
+                access_token: encryptIntegrationToken(accessToken),
+                refresh_token: encryptIntegrationToken(refreshToken),
                 updated_at: new Date().toISOString(),
             })
             .eq("team_id", teamId)
@@ -561,7 +560,7 @@ export async function syncTodayTeamCalendarEvents(
                     email: player.email,
                     google_event_id: event.id,
                     calendar_id: calendar.calendar_id,
-                    title: event.summary || "(?쒕ぉ ?놁쓬)",
+                    title: event.summary || "(제목 없음)",
                     starts_at: start.at,
                     ends_at: end.at,
                     all_day: start.allDay,
@@ -604,8 +603,9 @@ export async function syncTodayTeamCalendarEvents(
 }
 
 function toGoogleAllDayEnd(date: string) {
-    const value = new Date(`${date}T00:00:00+09:00`);
-    value.setDate(value.getDate() + 1);
+    // UTC 기준으로 날짜 산술 수행 (KST 오프셋으로 인한 날짜 오차 방지)
+    const value = new Date(`${date}T00:00:00Z`);
+    value.setUTCDate(value.getUTCDate() + 1);
     return value.toISOString().slice(0, 10);
 }
 
