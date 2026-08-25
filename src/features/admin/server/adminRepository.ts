@@ -973,6 +973,9 @@ export async function updateAdminTeam(input: {
 }
 
 const TEAM_DEPENDENCY_TABLES = [
+  ["team_memberships", "팀 멤버십"],
+  ["roles", "역할"],
+  ["invitations", "초대"],
   ["players", "구성원"],
   ["projects", "프로젝트"],
   ["tasks", "업무"],
@@ -1040,8 +1043,8 @@ export async function deleteAdminTeam(teamId: string) {
   const { error } = await service.from("teams").delete().eq("id", teamId);
   if (error?.code === "23503") {
     throw new AdminApiError(
-      "감사 로그 보호 설정으로 삭제할 수 없습니다. V30 팀 관리 마이그레이션을 실행해 주세요.",
-      503,
+      "연결된 데이터가 남아 있어 팀을 삭제할 수 없습니다. 팀 멤버십·역할·초대 등을 먼저 정리해 주세요.",
+      409,
     );
   }
   if (error) throw error;
