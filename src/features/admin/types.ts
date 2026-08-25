@@ -28,6 +28,24 @@ export type AdminIdentity = {
   isOrganizationAdmin: boolean;
 };
 
+export type TeamModuleKey = "tasks" | "report" | "gamification" | "agent" | "manage";
+
+export const TEAM_MODULE_LABELS: Record<TeamModuleKey, string> = {
+  tasks: "업무 관리",
+  report: "브리핑·리포트",
+  gamification: "게이미피케이션",
+  agent: "알림 에이전트",
+  manage: "프로젝트·접근성 관리",
+};
+
+export const ALL_TEAM_MODULES: TeamModuleKey[] = [
+  "tasks",
+  "report",
+  "gamification",
+  "agent",
+  "manage",
+];
+
 export type AdminTeam = {
   id: string;
   name: string;
@@ -36,6 +54,7 @@ export type AdminTeam = {
   memberCount: number;
   adminCount: number;
   projectCount: number;
+  modules: TeamModuleKey[];
 };
 
 export type AdminMember = {
