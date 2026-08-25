@@ -56,28 +56,36 @@ export async function sendGoogleChatMessage(params: SendGoogleChatParams) {
         );
     }
 
-    const res = await fetch(webhook, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-            params.card
-                ? {
-                      cardsV2: [
-                          {
-                              cardId: "agent-notification",
-                              card: {
-                                  header: {
-                                      title: params.card.title,
-                                      subtitle: params.card.subtitle,
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    let res: Response;
+    try {
+        res = await fetch(webhook, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(
+                params.card
+                    ? {
+                          cardsV2: [
+                              {
+                                  cardId: "agent-notification",
+                                  card: {
+                                      header: {
+                                          title: params.card.title,
+                                          subtitle: params.card.subtitle,
+                                      },
+                                      sections: params.card.sections,
                                   },
-                                  sections: params.card.sections,
                               },
-                          },
-                      ],
-                  }
-                : { text: params.text },
-        ),
-    });
+                          ],
+                      }
+                    : { text: params.text },
+            ),
+            signal: controller.signal,
+        });
+    } finally {
+        clearTimeout(timer);
+    }
 
     if (!res.ok) {
         throw new Error(`Google Chat webhook failed: ${res.status}`);

@@ -4,13 +4,30 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
     decryptIntegrationToken,
     encryptIntegrationToken,
-} from "@/infrastructure/google-calendar/tokenEncryption";
+} from "@/infrastructure/security/tokenEncryption";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_EVENTS_URL =
     "https://www.googleapis.com/calendar/v3/calendars/primary/events";
 const GOOGLE_CALENDAR_BASE_URL = "https://www.googleapis.com/calendar/v3";
+
+const FETCH_TIMEOUT_MS = 15_000;
+
+/** 외부 Google API 호출에 로컬 취소 타임아웃을 적용합니다. */
+async function fetchWithTimeout(
+    url: string,
+    options: RequestInit,
+    timeoutMs = FETCH_TIMEOUT_MS,
+): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+}
 
 export type GoogleTokenResponse = {
     access_token: string;
@@ -196,7 +213,7 @@ async function getValidCalendarAccessToken(
 
 export async function exchangeGoogleCalendarCode(code: string) {
     const { clientId, clientSecret, redirectUri } = getGoogleCalendarConfig();
-    const res = await fetch(GOOGLE_TOKEN_URL, {
+    const res = await fetchWithTimeout(GOOGLE_TOKEN_URL, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
@@ -217,7 +234,7 @@ export async function exchangeGoogleCalendarCode(code: string) {
 
 export async function refreshGoogleCalendarToken(refreshToken: string) {
     const { clientId, clientSecret } = getGoogleCalendarConfig();
-    const res = await fetch(GOOGLE_TOKEN_URL, {
+    const res = await fetchWithTimeout(GOOGLE_TOKEN_URL, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
@@ -257,7 +274,7 @@ export async function fetchTodayGoogleCalendarEvents(accessToken: string) {
         timeMax,
     });
 
-    const res = await fetch(`${GOOGLE_EVENTS_URL}?${params.toString()}`, {
+    const res = await fetchWithTimeout(`${GOOGLE_EVENTS_URL}?${params.toString()}`, {
         headers: { Authorization: `Bearer ${accessToken}` },
     });
     const json = await res.json();
@@ -279,7 +296,7 @@ export async function fetchTodayGoogleCalendarEventsByCalendarId(
         timeMax,
     });
 
-    const res = await fetch(
+    const res = await fetchWithTimeout(
         `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`,
         {
             headers: { Authorization: `Bearer ${accessToken}` },
@@ -655,7 +672,7 @@ export async function upsertTeamCalendarTaskEvent(params: {
         ? `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodedCalendarId}/events/${encodeURIComponent(eventId)}`
         : `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodedCalendarId}/events`;
 
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
         method: eventId ? "PATCH" : "POST",
         headers: {
             Authorization: `Bearer ${accessToken}`,
@@ -676,7 +693,7 @@ export async function deleteTeamCalendarTaskEvent(params: {
     eventId: string;
 }) {
     const { accessToken, calendarId, eventId } = params;
-    const res = await fetch(
+    const res = await fetchWithTimeout(
         `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
         {
             method: "DELETE",
@@ -740,7 +757,7 @@ export async function createTeamCalendarEvent(params: {
         },
     };
 
-    const res = await fetch(
+    const res = await fetchWithTimeout(
         `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodeURIComponent(calendarId)}/events`,
         {
             method: "POST",
