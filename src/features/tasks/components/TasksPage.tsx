@@ -1,16 +1,16 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
-import type { Task, Project } from "@/lib/types";
+import type { Task } from "@/lib/types";
 import {
     findProjectId,
     findTeamMemberId,
     getDiff,
     formatWorkload,
-    normalizeProject,
 } from "@/lib/utils";
+import { useTasksData } from "@/features/tasks/hooks/useTasksData";
 import {
     TYPE_COLORS,
     STATUS_COLORS,
@@ -182,14 +182,13 @@ export default function TasksPage() {
     const assignableMembers =
         role === "admin" ? members : [currentMember || ""];
 
-    const [tasks, setTasks] = useState<Task[]>([]);
+    const { tasks, projects, loading, loadTasks, loadProjects } =
+        useTasksData(teamId);
     const [toast, setToast] = useState("");
     function showToastMsg(msg: string) {
         setToast(msg);
         setTimeout(() => setToast(""), 3000);
     }
-    const [projects, setProjects] = useState<Project[]>([]);
-    const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [editTask, setEditTask] = useState<Task | null>(null);
     const [form, setForm] = useState({
@@ -235,66 +234,6 @@ export default function TasksPage() {
     const removeExpPopup = useCallback((id: string) => {
         setExpPopups((prev) => prev.filter((p) => p.id !== id));
     }, []);
-
-    useEffect(() => {
-        if (!teamId) return;
-        let cancelled = false;
-        void loadTasks(teamId, () => cancelled);
-        void loadProjects(teamId, () => cancelled);
-
-        const channel = supabase
-            .channel("tasks-changes-" + Math.random())
-            .on(
-                "postgres_changes",
-                { event: "*", schema: "public", table: "tasks" },
-                async () => {
-                    const { data } = await supabase
-                        .from("tasks")
-                        .select("*")
-                        .eq("team_id", teamId)
-                        .order("created_at", { ascending: false });
-                    if (!cancelled) setTasks(data || []);
-                },
-            )
-            .subscribe();
-
-        return () => {
-            cancelled = true;
-            supabase.removeChannel(channel).catch(console.error);
-        };
-    }, [teamId]);
-
-    async function loadTasks(requestedTeamId = teamId, isCancelled = () => false) {
-        if (!requestedTeamId) return;
-        setLoading(true);
-        try {
-            const { data } = await supabase
-                .from("tasks")
-                .select("*")
-                .eq("team_id", requestedTeamId)
-                .order("created_at", { ascending: false });
-            if (!isCancelled()) {
-                setTasks(data || []);
-            }
-        } finally {
-            if (!isCancelled()) setLoading(false);
-        }
-    }
-
-    async function loadProjects(requestedTeamId = teamId, isCancelled = () => false) {
-        if (!requestedTeamId) return;
-        const { data } = await supabase
-            .from("projects")
-            .select("*")
-            .eq("team_id", requestedTeamId)
-            .order("name");
-        if (isCancelled()) return;
-        setProjects(
-            (data || []).map((row) =>
-                normalizeProject(row as Record<string, unknown>),
-            ),
-        );
-    }
 
     const allProjOptions = useMemo(
         () =>
