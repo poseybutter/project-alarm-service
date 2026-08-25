@@ -816,6 +816,20 @@ export function TeamsPage() {
                   이 작업은 되돌릴 수 없습니다. 연결 데이터가 발견되면 서버에서
                   삭제를 중단합니다.
                 </p>
+                <ul className="mt-2 space-y-0.5 text-xs text-stone-500">
+                  <li>
+                    구성원{" "}
+                    <strong className="text-stone-700">
+                      {selected.memberCount}명
+                    </strong>
+                  </li>
+                  <li>
+                    프로젝트{" "}
+                    <strong className="text-stone-700">
+                      {selected.projectCount}건
+                    </strong>
+                  </li>
+                </ul>
               </div>
             </div>
             <label className="mt-5 block">

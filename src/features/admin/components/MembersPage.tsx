@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Pause, Play, Save, Search, ShieldAlert } from "lucide-react";
+import { Pause, Play, Save, Search, ShieldAlert, X } from "lucide-react";
 import { useAdmin } from "@/features/admin/components/AdminShell";
 import {
   AdminButton,
   AdminDrawer,
+  AdminModal,
   AdminPage,
   EmptyState,
   ErrorState,
@@ -40,6 +41,7 @@ export function MembersPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<ApiFailure | null>(null);
   const [discardPrompt, setDiscardPrompt] = useState(false);
+  const [suspendConfirm, setSuspendConfirm] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const members = useMemo(() => {
@@ -389,7 +391,16 @@ export function MembersPage() {
                 </AdminButton>
                 <AdminButton
                   variant="primary"
-                  onClick={() => void saveMember()}
+                  onClick={() => {
+                    if (
+                      draftStatus === "suspended" &&
+                      selected.status !== "suspended"
+                    ) {
+                      setSuspendConfirm(true);
+                    } else {
+                      void saveMember();
+                    }
+                  }}
                   disabled={
                     !dirty || saving || selected.email === identity.email
                   }
@@ -407,6 +418,67 @@ export function MembersPage() {
           </div>
         )}
       </AdminDrawer>
+
+      {selected && (
+        <AdminModal
+          open={suspendConfirm}
+          role="alertdialog"
+          labelledBy="suspend-member-title"
+          onClose={() => !saving && setSuspendConfirm(false)}
+          className="m-auto w-[calc(100%_-_2rem)] max-w-md rounded-md border-2 border-stone-950 bg-white shadow-2xl"
+        >
+          <div className="relative p-5">
+            <button
+              type="button"
+              className="admin-icon-button absolute right-3 top-3"
+              aria-label="닫기"
+              onClick={() => setSuspendConfirm(false)}
+              disabled={saving}
+            >
+              <X size={18} />
+            </button>
+            <div className="flex gap-3 pr-9">
+              <span className="grid size-9 shrink-0 place-items-center rounded bg-amber-100 text-amber-700">
+                <Pause size={18} />
+              </span>
+              <div>
+                <h2 id="suspend-member-title" className="text-base font-extrabold">
+                  {selected.name} 계정 정지
+                </h2>
+                <p className="mt-1 text-xs leading-5 text-stone-600">
+                  정지하면 이 사용자는 즉시 로그인 후 업무 데이터에 접근할 수
+                  없습니다. 기존 데이터는 삭제되지 않으며, 언제든 활성 상태로
+                  복구할 수 있습니다.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2 border-t border-stone-200 pt-4">
+              <AdminButton
+                onClick={() => setSuspendConfirm(false)}
+                disabled={saving}
+              >
+                취소
+              </AdminButton>
+              <AdminButton
+                variant="danger"
+                onClick={() => {
+                  setSuspendConfirm(false);
+                  void saveMember();
+                }}
+                disabled={saving}
+              >
+                {saving ? (
+                  <SavingLabel label="정지 중" />
+                ) : (
+                  <>
+                    <Pause size={14} /> 계정 정지
+                  </>
+                )}
+              </AdminButton>
+            </div>
+          </div>
+        </AdminModal>
+      )}
     </AdminPage>
   );
 }
