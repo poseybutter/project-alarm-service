@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { LEVELS } from "@/lib/levels";
 import { internalErrorResponse } from "@/lib/server/apiResponse";
-import { sendGoogleChatMessage } from "@/lib/server/googleChat";
+import { DeliveryUnknownError, sendGoogleChatMessage } from "@/infrastructure/google-chat";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
@@ -96,9 +96,13 @@ export async function POST(request: NextRequest) {
                 channel: "team_room",
             });
         } catch (error) {
+            const failureCode =
+                error instanceof DeliveryUnknownError
+                    ? "delivery_unknown"
+                    : "delivery_failed";
             await service
                 .from("level_up_notification_events")
-                .update({ status: "pending", failure_code: "delivery_failed" })
+                .update({ status: "pending", failure_code: failureCode })
                 .eq("id", claimedEvent.id);
             throw error;
         }
