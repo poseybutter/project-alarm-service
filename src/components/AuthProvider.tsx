@@ -12,10 +12,12 @@ import { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { getMemberName } from "@/lib/auth";
 import type {
+    ModuleKey,
     TeamMemberOption,
     TeamContextOption,
     TeamContextResponse,
 } from "@/features/team-context/types";
+import { ALL_MODULES } from "@/features/team-context/types";
 
 type AuthContextType = {
     user: User | null;
@@ -28,6 +30,7 @@ type AuthContextType = {
     teams: TeamContextOption[];
     members: string[];
     memberOptions: TeamMemberOption[];
+    modules: Set<ModuleKey>;
     switchingTeam: boolean;
     teamSwitchError: string | null;
     switchTeam: (teamId: string) => Promise<void>;
@@ -45,6 +48,7 @@ const AuthContext = createContext<AuthContextType>({
     teams: [],
     members: [],
     memberOptions: [],
+    modules: new Set(ALL_MODULES),
     switchingTeam: false,
     teamSwitchError: null,
     switchTeam: async () => {},
@@ -88,6 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [teams, setTeams] = useState<TeamContextOption[]>([]);
     const [members, setMembers] = useState<string[]>([]);
     const [memberOptions, setMemberOptions] = useState<TeamMemberOption[]>([]);
+    const [modules, setModules] = useState<Set<ModuleKey>>(new Set(ALL_MODULES));
     const [switchingTeam, setSwitchingTeam] = useState(false);
     const [teamSwitchError, setTeamSwitchError] = useState<string | null>(null);
 
@@ -167,6 +172,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setTeams(context.teams);
         setMembers(context.members);
         setMemberOptions(context.memberOptions);
+        setModules(new Set(context.modules));
     }, []);
 
     const loadTeamContext = useCallback(async () => {
@@ -184,6 +190,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setTeams([]);
                 setMembers([]);
                 setMemberOptions([]);
+                setModules(new Set(ALL_MODULES));
                 return;
             }
             applyTeamContext((await response.json()) as TeamContextResponse);
@@ -197,6 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setTeams([]);
             setMembers([]);
             setMemberOptions([]);
+            setModules(new Set(ALL_MODULES));
         } finally {
             setTeamContextLoading(false);
         }
@@ -221,6 +229,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setTeams([]);
                 setMembers([]);
                 setMemberOptions([]);
+                setModules(new Set(ALL_MODULES));
             }
         }, 0);
         return () => window.clearTimeout(timer);
@@ -272,6 +281,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             teams,
             members,
             memberOptions,
+            modules,
             switchingTeam,
             teamSwitchError,
             switchTeam,
@@ -283,6 +293,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             member,
             memberOptions,
             members,
+            modules,
             playerId,
             refreshAvatar,
             role,

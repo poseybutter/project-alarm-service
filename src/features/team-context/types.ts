@@ -1,3 +1,13 @@
+export type ModuleKey = "tasks" | "report" | "gamification" | "agent" | "manage";
+
+export const ALL_MODULES: ModuleKey[] = [
+    "tasks",
+    "report",
+    "gamification",
+    "agent",
+    "manage",
+];
+
 export type TeamContextOption = {
     id: string;
     name: string;
@@ -19,4 +29,5 @@ export type TeamContextResponse = {
     playerId: number | null;
     avatarUrl: string | null;
     role: "admin" | "member" | "viewer" | "guest";
+    modules: ModuleKey[];
 };

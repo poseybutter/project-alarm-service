@@ -3,9 +3,11 @@ import { TEAM_ID } from "@/lib/constants";
 import { getServerUser } from "@/lib/serverSupabase";
 import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
 import type {
+    ModuleKey,
     TeamContextOption,
     TeamContextResponse,
 } from "@/features/team-context/types";
+import { ALL_MODULES } from "@/features/team-context/types";
 
 const CURRENT_TEAM_COOKIE = "current_team_id";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
@@ -87,23 +89,40 @@ async function loadTeamContext(requestedTeamId?: string, strictTeamSelection = f
         teams[0];
     const membership = membershipByTeam.get(selectedTeam.id);
 
-    const { data: playerRows, error: playersError } = await supabase
-        .from("players")
-        .select("id, name, email, avatar_url")
-        .eq("team_id", selectedTeam.id)
-        .eq("status", "active")
-        .order("id");
-    if (playersError) throw playersError;
+    const [playerResult, modulesResult] = await Promise.all([
+        supabase
+            .from("players")
+            .select("id, name, email, avatar_url")
+            .eq("team_id", selectedTeam.id)
+            .eq("status", "active")
+            .order("id"),
+        supabase
+            .from("team_modules")
+            .select("module, enabled")
+            .eq("team_id", selectedTeam.id),
+    ]);
 
-    const player = (playerRows ?? []).find(
+    if (playerResult.error) throw playerResult.error;
+
+    const playerRows = playerResult.data ?? [];
+    const player = playerRows.find(
         (row) => row.email?.toLowerCase() === user.email?.toLowerCase(),
     );
+
+    // team_modules 미적용 환경(테이블 없음)에서는 전체 모듈 활성화로 폴백
+    const moduleRows = modulesResult.data ?? [];
+    const modules: ModuleKey[] =
+        modulesResult.error || moduleRows.length === 0
+            ? ALL_MODULES
+            : moduleRows
+                  .filter((row) => row.enabled)
+                  .map((row) => row.module as ModuleKey);
 
     const body: TeamContextResponse = {
         teamId: selectedTeam.id,
         teams,
-        members: (playerRows ?? []).map((row) => String(row.name)),
-        memberOptions: (playerRows ?? []).map((row) => ({
+        members: playerRows.map((row) => String(row.name)),
+        memberOptions: playerRows.map((row) => ({
             id: Number(row.id),
             name: String(row.name),
         })),
@@ -114,6 +133,7 @@ async function loadTeamContext(requestedTeamId?: string, strictTeamSelection = f
                 : (membership?.legacyPlayerId ?? null),
         avatarUrl: player?.avatar_url || identity.profile.avatarUrl,
         role: membership?.role ?? "viewer",
+        modules,
     };
     return { body } as const;
 }

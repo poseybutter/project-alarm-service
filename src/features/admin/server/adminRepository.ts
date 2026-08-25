@@ -30,7 +30,9 @@ import type {
   AdminTeam,
   AdminPermission,
   MemberStatus,
+  TeamModuleKey,
 } from "@/features/admin/types";
+import { ALL_TEAM_MODULES } from "@/features/admin/types";
 
 type PlayerRow = {
   id: number;
@@ -497,6 +499,7 @@ export async function getAdminDashboard(
           (member) => member.status === "active" && member.role === "admin",
         ).length,
         projectCount: await countScopedRows("projects", team.id),
+        modules: ALL_TEAM_MODULES,
       };
     }),
   );
@@ -808,6 +811,22 @@ export async function listTeamsWithCounts() {
   const teams = effectiveTeamId
     ? allTeams.filter((team) => team.id === effectiveTeamId)
     : allTeams;
+
+  const service = createServiceSupabaseClient();
+  const teamIds = teams.map((team) => team.id);
+  const { data: moduleRows } = await service
+    .from("team_modules")
+    .select("team_id, module, enabled")
+    .in("team_id", teamIds);
+
+  const modulesByTeam = new Map<string, string[]>();
+  for (const row of moduleRows ?? []) {
+    if (!row.enabled) continue;
+    const list = modulesByTeam.get(row.team_id) ?? [];
+    list.push(row.module);
+    modulesByTeam.set(row.team_id, list);
+  }
+
   return Promise.all(
     teams.map(async (team): Promise<AdminTeam> => {
       const teamMembers = members.filter((member) => member.teamId === team.id);
@@ -819,6 +838,7 @@ export async function listTeamsWithCounts() {
           (member) => member.status === "active" && member.role === "admin",
         ).length,
         projectCount: await countScopedRows("projects", team.id),
+        modules: (modulesByTeam.get(team.id) ?? ALL_TEAM_MODULES) as AdminTeam["modules"],
       };
     }),
   );
@@ -828,6 +848,7 @@ export async function createAdminTeam(input: {
   id: string;
   name: string;
   description?: string;
+  modules?: TeamModuleKey[];
 }) {
   const bootstrap = await requireAdminSession(null, "teams.manage");
   if (!bootstrap.identity.isOrganizationAdmin) {
@@ -868,6 +889,16 @@ export async function createAdminTeam(input: {
     throw new AdminApiError("이미 사용 중인 팀 ID입니다.", 409);
   }
   if (error) throw error;
+
+  // 모듈 초기화: 선택된 모듈만 활성화, 나머지 비활성화
+  const enabledModules = new Set(input.modules ?? ALL_TEAM_MODULES);
+  const moduleRows = ALL_TEAM_MODULES.map((module) => ({
+    team_id: data.id,
+    module,
+    enabled: enabledModules.has(module),
+  }));
+  await service.from("team_modules").insert(moduleRows);
+
   await writeAdminAudit({
     actorEmail: bootstrap.identity.email,
     action: "team.created",
@@ -875,7 +906,7 @@ export async function createAdminTeam(input: {
     targetType: "team",
     targetId: data.id,
     targetLabel: data.name,
-    afterState: data,
+    afterState: { ...data, modules: [...enabledModules] },
   });
   return data;
 }
@@ -912,6 +943,7 @@ export async function updateAdminTeam(input: {
   name: string;
   description?: string;
   status: "active" | "archived";
+  modules?: TeamModuleKey[];
 }) {
   const bootstrap = await requireOrganizationAdmin();
   const before = await loadTeamForMutation(input.id);
@@ -953,6 +985,19 @@ export async function updateAdminTeam(input: {
   }
   if (error) throw error;
   if (!data) throw new AdminApiError("팀을 찾을 수 없습니다.", 404);
+
+  if (input.modules) {
+    const service2 = createServiceSupabaseClient();
+    const enabledModules = new Set(input.modules);
+    const moduleRows = ALL_TEAM_MODULES.map((module) => ({
+      team_id: input.id,
+      module,
+      enabled: enabledModules.has(module),
+    }));
+    await service2
+      .from("team_modules")
+      .upsert(moduleRows, { onConflict: "team_id,module" });
+  }
 
   await writeAdminAudit({
     actorEmail: bootstrap.identity.email,
