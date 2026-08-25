@@ -7,13 +7,11 @@ import type { Task } from "@/lib/types";
 import {
     findProjectId,
     findTeamMemberId,
-    getDiff,
     formatWorkload,
 } from "@/lib/utils";
 import { useTasksData } from "@/features/tasks/hooks/useTasksData";
+import TaskCard from "@/features/tasks/components/TaskCard";
 import {
-    TYPE_COLORS,
-    STATUS_COLORS,
     WORKLOAD_PRESETS,
     getMemberColors,
     normalizeStatus,
@@ -21,7 +19,6 @@ import {
 import { rpcSetTaskStatus } from "@/lib/maple";
 import AuthGuard from "@/components/AuthGuard";
 import { useAuth } from "@/components/AuthProvider";
-import Tooltip from "@/components/Tooltip";
 import UserMenu from "@/components/UserMenu";
 import TeamSwitcher from "@/components/TeamSwitcher";
 import Avatar from "@/components/Avatar";
@@ -31,7 +28,6 @@ import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import TaskEditModal from "@/components/TaskEditModal";
 import TaskContentInputs from "@/components/TaskContentInputs";
-import TaskContentList from "@/components/TaskContentList";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { PageSpinner } from "@/components/Spinner";
 import { DayPicker, DateRange } from "react-day-picker";
@@ -42,7 +38,6 @@ import {
     projectSearchSelectStyles,
     taskFilterProjectSelectStyles,
     modalFormSelectStyles,
-    badgeSelectStyles,
 } from "@/lib/reactSelectStyles";
 import { toLocalYmd } from "@/lib/toLocalYmd";
 
@@ -116,57 +111,6 @@ function WorkloadInput({
     );
 }
 
-const STATUS_OPTIONS = [
-    "대기",
-    "시작 전",
-    "진행중",
-    "지연/보류",
-    "완료",
-].map((s) => ({ value: s, label: s }));
-
-function TaskStatusBadgeSelect({
-    task,
-    disabled,
-    onChange,
-}: {
-    task: Task;
-    disabled: boolean;
-    onChange: (
-        id: number,
-        status: string,
-        task: Task,
-        anchor: { x: number; y: number },
-    ) => void;
-}) {
-    const wrapRef = useRef<HTMLDivElement>(null);
-    return (
-        <div
-            ref={wrapRef}
-            className={`rounded-lg ${STATUS_COLORS[task.status] || "bg-gray-100 text-gray-600"} ${disabled ? "opacity-70" : ""}`}
-        >
-            <Select
-                options={STATUS_OPTIONS}
-                value={{ value: task.status, label: task.status }}
-                isDisabled={disabled}
-                onChange={(opt) => {
-                    if (!opt) return;
-                    const r = wrapRef.current?.getBoundingClientRect();
-                    onChange(task.id, opt.value, task, {
-                        x: (r?.left ?? 0) + (r?.width ?? 0) / 2,
-                        y: (r?.top ?? 0) + (r?.height ?? 0) / 2,
-                    });
-                }}
-                isSearchable={false}
-                isClearable={false}
-                styles={badgeSelectStyles}
-                menuPortalTarget={
-                    typeof document !== "undefined" ? document.body : null
-                }
-                menuPlacement="auto"
-            />
-        </div>
-    );
-}
 
 export default function TasksPage() {
     const {
@@ -182,8 +126,7 @@ export default function TasksPage() {
     const assignableMembers =
         role === "admin" ? members : [currentMember || ""];
 
-    const { tasks, projects, loading, loadTasks, loadProjects } =
-        useTasksData(teamId);
+    const { tasks, projects, loading, loadTasks } = useTasksData(teamId);
     const [toast, setToast] = useState("");
     function showToastMsg(msg: string) {
         setToast(msg);
@@ -624,205 +567,28 @@ export default function TasksPage() {
                                     </div>
                                 </div>
                                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                                    {memberTasks.map((t, i) => {
-                                        const diff = getDiff(t.end_date);
-                                        const isUrgent =
-                                            diff !== null &&
-                                            diff <= 7 &&
-                                            t.status !== "완료";
-                                        const isDone = t.status === "완료";
-                                        return (
-                                            <div
-                                                key={t.id}
-                                                className={`px-4 py-3
-                          ${i < memberTasks.length - 1 ? "border-b border-stone-100" : ""}
-                          ${isDone ? "opacity-50" : ""}
-                          ${t.priority === "긴급" || normalizeStatus(t.status) === "지연/보류" ? "bg-amber-50" : ""}`}
-                                            >
-                                                <div className="flex gap-3">
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            {t.is_starred && (
-                                                                <span
-                                                                    className="text-xs"
-                                                                    title="중요 프로젝트"
-                                                                >
-                                                                    ⭐
-                                                                </span>
-                                                            )}
-                                                            {t.type && (
-                                                                <span
-                                                                    className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${TYPE_COLORS[t.type] || "bg-gray-100 text-gray-600"}`}
-                                                                >
-                                                                    {t.type}
-                                                                </span>
-                                                            )}
-                                                            <span
-                                                                className={`text-sm font-medium truncate ${isDone ? "line-through text-stone-400" : "text-stone-800"}`}
-                                                            >
-                                                                {t.proj}
-                                                            </span>
-                                                        </div>
-                                                        {t.content && (
-                                                            <TaskContentList
-                                                                content={
-                                                                    t.content
-                                                                }
-                                                                className={`mb-1 text-xs leading-relaxed ${isDone ? "text-stone-300 line-through" : "text-stone-500"}`}
-                                                            />
-                                                        )}
-                                                        {t.issue && (
-                                                            <div
-                                                                className={`text-xs px-2 py-1 rounded-lg mb-1 border ${
-                                                                    t.priority ===
-                                                                        "긴급" ||
-                                                                    normalizeStatus(
-                                                                        t.status,
-                                                                    ) ===
-                                                                        "지연/보류"
-                                                                        ? "bg-amber-200 text-amber-900 border-amber-300"
-                                                                        : "bg-amber-50 text-amber-700 border-amber-100"
-                                                                }`}
-                                                            >
-                                                                이슈: {t.issue}
-                                                            </div>
-                                                        )}
-                                                        {/* 湲곌컙 + 怨듭닔 */}
-                                                        <div className="flex items-center gap-2 text-xs text-stone-400">
-                                                            {t.is_plan && (
-                                                                <span className="text-[10px] px-1.5 py-0.5 bg-violet-100 text-violet-600 rounded font-bold shrink-0">
-                                                                    리포트 포함
-                                                                </span>
-                                                            )}
-                                                            {t.workload > 0 && (
-                                                                <span>
-                                                                    {formatWorkload(
-                                                                        t.workload,
-                                                                    )}
-                                                                </span>
-                                                            )}
-                                                            {t.start_date &&
-                                                                t.end_date && (
-                                                                    <span
-                                                                        className={
-                                                                            isUrgent
-                                                                                ? "text-red-500 font-medium"
-                                                                                : ""
-                                                                        }
-                                                                    >
-                                                                        {t.start_date
-                                                                            .slice(
-                                                                                5,
-                                                                            )
-                                                                            .replace(
-                                                                                "-",
-                                                                                "/",
-                                                                            )}{" "}
-                                                                        ~{" "}
-                                                                        {t.end_date
-                                                                            .slice(
-                                                                                5,
-                                                                            )
-                                                                            .replace(
-                                                                                "-",
-                                                                                "/",
-                                                                            )}
-                                                                        {diff !==
-                                                                            null &&
-                                                                            ` D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
-                                                                    </span>
-                                                                )}
-                                                            {!t.start_date &&
-                                                                t.end_date && (
-                                                                    <span
-                                                                        className={
-                                                                            isUrgent
-                                                                                ? "text-red-500 font-medium"
-                                                                                : ""
-                                                                        }
-                                                                    >
-                                                                        ~
-                                                                        {t.end_date
-                                                                            .slice(
-                                                                                5,
-                                                                            )
-                                                                            .replace(
-                                                                                "-",
-                                                                                "/",
-                                                                            )}
-                                                                        {diff !==
-                                                                            null &&
-                                                                            ` D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
-                                                                    </span>
-                                                                )}
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex flex-col justify-between items-end gap-1.5 shrink-0">
-                                                        <TaskStatusBadgeSelect
-                                                            task={t}
-                                                            disabled={
-                                                                isGuest ||
-                                                                !canEditOrDelete(
-                                                                    t.member,
-                                                                )
-                                                            }
-                                                            onChange={(
-                                                                id,
-                                                                status,
-                                                                task,
-                                                                anchor,
-                                                            ) =>
-                                                                void updateStatus(
-                                                                    id,
-                                                                    status,
-                                                                    task,
-                                                                    anchor,
-                                                                )
-                                                            }
-                                                        />
-                                                        {canEditOrDelete(
-                                                            t.member,
-                                                        ) && (
-                                                            <div className="flex items-center gap-2">
-                                                                <Tooltip label="?섏젙">
-                                                                    <button
-                                                                        onClick={() =>
-                                                                            openEdit(
-                                                                                t,
-                                                                            )
-                                                                        }
-                                                                        aria-label="?섏젙"
-                                                                        className="text-base text-stone-300 hover:text-amber-500 transition-colors"
-                                                                    >
-                                                                        <i
-                                                                            className="ri-edit-line"
-                                                                            aria-hidden
-                                                                        />
-                                                                    </button>
-                                                                </Tooltip>
-                                                                <Tooltip label="??젣">
-                                                                    <button
-                                                                        onClick={() =>
-                                                                            deleteTask(
-                                                                                t.id,
-                                                                            )
-                                                                        }
-                                                                        aria-label="??젣"
-                                                                        className="text-base text-stone-300 hover:text-red-400 transition-colors"
-                                                                    >
-                                                                        <i
-                                                                            className="ri-delete-bin-line"
-                                                                            aria-hidden
-                                                                        />
-                                                                    </button>
-                                                                </Tooltip>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
+                                    {memberTasks.map((t, i) => (
+                                        <TaskCard
+                                            key={t.id}
+                                            task={t}
+                                            isLast={i === memberTasks.length - 1}
+                                            disabled={
+                                                isGuest ||
+                                                !canEditOrDelete(t.member)
+                                            }
+                                            canEdit={canEditOrDelete(t.member)}
+                                            onStatusChange={(id, status, task, anchor) =>
+                                                void updateStatus(
+                                                    id,
+                                                    status,
+                                                    task,
+                                                    anchor,
+                                                )
+                                            }
+                                            onEdit={openEdit}
+                                            onDelete={deleteTask}
+                                        />
+                                    ))}
                                 </div>
                             </div>
                         ))
