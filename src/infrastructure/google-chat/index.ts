@@ -46,19 +46,19 @@ function parseWebhookMap(): Record<string, string> {
 }
 
 function resolveWebhook(params: SendGoogleChatParams) {
-    if (params.webhookUrl) return params.webhookUrl;
-
+    // personal_dm은 명시적 webhookUrl보다 수신자 검증을 먼저 수행합니다.
+    // 수신자 없이 팀 웹훅으로 폴백·전송되는 것을 방지합니다.
     if (params.channel === "personal_dm") {
         if (!params.recipientMember) {
-            throw new Error(
-                "personal_dm 채널은 recipientMember가 필요합니다",
-            );
+            throw new Error("personal_dm 채널은 recipientMember가 필요합니다");
         }
+        if (params.webhookUrl) return params.webhookUrl;
         const memberWebhook = parseWebhookMap()[params.recipientMember];
         if (memberWebhook) return memberWebhook;
         return null;
     }
 
+    if (params.webhookUrl) return params.webhookUrl;
     return process.env.GOOGLE_CHAT_WEBHOOK || null;
 }
 

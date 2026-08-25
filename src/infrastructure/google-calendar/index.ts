@@ -119,8 +119,7 @@ function memberEventColorId(member: string) {
 export function getGoogleCalendarConfig() {
     const clientId = process.env.GOOGLE_CALENDAR_CLIENT_ID || "";
     const clientSecret = process.env.GOOGLE_CALENDAR_CLIENT_SECRET || "";
-    const siteUrl =
-        process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
     const redirectUri =
         process.env.GOOGLE_CALENDAR_REDIRECT_URI ||
         `${siteUrl}/api/agents/calendar/callback`;
@@ -154,8 +153,14 @@ async function getValidCalendarAccessToken(
     supabase: {
         from: (table: string) => {
             update: (values: Record<string, unknown>) => {
-                eq: (column: string, value: unknown) => {
-                    eq: (column: string, value: unknown) => PromiseLike<{ error: { message: string } | null }>;
+                eq: (
+                    column: string,
+                    value: unknown,
+                ) => {
+                    eq: (
+                        column: string,
+                        value: unknown,
+                    ) => PromiseLike<{ error: { message: string } | null }>;
                 };
             };
         };
@@ -167,8 +172,10 @@ async function getValidCalendarAccessToken(
     const refreshToken = decryptIntegrationToken(connection.refresh_token);
     // 암호화 접두사로 마이그레이션 필요 여부 판정 (매 호출마다 새 IV로 인한 무한 재암호화 방지)
     const needsMigration =
-        (connection.access_token && !connection.access_token.startsWith("enc:v1:")) ||
-        (connection.refresh_token && !connection.refresh_token.startsWith("enc:v1:"));
+        (connection.access_token &&
+            !connection.access_token.startsWith("enc:v1:")) ||
+        (connection.refresh_token &&
+            !connection.refresh_token.startsWith("enc:v1:"));
     if (needsMigration) {
         const { error } = await supabase
             .from("agent_calendar_connections")
@@ -227,7 +234,9 @@ export async function exchangeGoogleCalendarCode(code: string) {
 
     const json = await res.json();
     if (!res.ok) {
-        throw new Error(json.error_description || json.error || "Token exchange failed");
+        throw new Error(
+            json.error_description || json.error || "Token exchange failed",
+        );
     }
     return json as GoogleTokenResponse;
 }
@@ -247,7 +256,9 @@ export async function refreshGoogleCalendarToken(refreshToken: string) {
 
     const json = await res.json();
     if (!res.ok) {
-        throw new Error(json.error_description || json.error || "Token refresh failed");
+        throw new Error(
+            json.error_description || json.error || "Token refresh failed",
+        );
     }
     return json as GoogleTokenResponse;
 }
@@ -274,12 +285,17 @@ export async function fetchTodayGoogleCalendarEvents(accessToken: string) {
         timeMax,
     });
 
-    const res = await fetchWithTimeout(`${GOOGLE_EVENTS_URL}?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const res = await fetchWithTimeout(
+        `${GOOGLE_EVENTS_URL}?${params.toString()}`,
+        {
+            headers: { Authorization: `Bearer ${accessToken}` },
+        },
+    );
     const json = await res.json();
     if (!res.ok) {
-        throw new Error(json.error?.message || "Failed to fetch calendar events");
+        throw new Error(
+            json.error?.message || "Failed to fetch calendar events",
+        );
     }
     return (json.items ?? []) as GoogleCalendarEvent[];
 }
@@ -304,12 +320,16 @@ export async function fetchTodayGoogleCalendarEventsByCalendarId(
     );
     const json = await res.json();
     if (!res.ok) {
-        throw new Error(json.error?.message || "Failed to fetch calendar events");
+        throw new Error(
+            json.error?.message || "Failed to fetch calendar events",
+        );
     }
     return (json.items ?? []) as GoogleCalendarEvent[];
 }
 
-function eventDateTime(value: { date?: string; dateTime?: string } | undefined) {
+function eventDateTime(
+    value: { date?: string; dateTime?: string } | undefined,
+) {
     if (!value) return { at: null, allDay: false };
     if (value.dateTime) return { at: value.dateTime, allDay: false };
     if (value.date) return { at: `${value.date}T00:00:00+09:00`, allDay: true };
@@ -320,16 +340,39 @@ export async function syncTodayGoogleCalendarEvents(
     supabase: {
         from: (table: string) => {
             update: (values: Record<string, unknown>) => {
-                eq: (column: string, value: unknown) => {
-                    eq: (column: string, value: unknown) => PromiseLike<{ error: { message: string } | null }>;
+                eq: (
+                    column: string,
+                    value: unknown,
+                ) => {
+                    eq: (
+                        column: string,
+                        value: unknown,
+                    ) => PromiseLike<{ error: { message: string } | null }>;
                 };
             };
             delete: () => {
-                eq: (column: string, value: unknown) => {
-                    eq: (column: string, value: unknown) => {
-                        eq: (column: string, value: unknown) => {
-                            gte: (column: string, value: unknown) => {
-                                lt: (column: string, value: unknown) => PromiseLike<{ error: { message: string } | null }>;
+                eq: (
+                    column: string,
+                    value: unknown,
+                ) => {
+                    eq: (
+                        column: string,
+                        value: unknown,
+                    ) => {
+                        eq: (
+                            column: string,
+                            value: unknown,
+                        ) => {
+                            gte: (
+                                column: string,
+                                value: unknown,
+                            ) => {
+                                lt: (
+                                    column: string,
+                                    value: unknown,
+                                ) => PromiseLike<{
+                                    error: { message: string } | null;
+                                }>;
                             };
                         };
                     };
@@ -396,7 +439,9 @@ export async function syncTodayGoogleCalendarEvents(
         .upsert(rows, {
             onConflict: "team_id,email,calendar_id,google_event_id",
         })
-        .select("id, member, email, title, starts_at, ends_at, all_day, location, html_link");
+        .select(
+            "id, member, email, title, starts_at, ends_at, all_day, location, html_link",
+        );
     if (error) throw new Error(error.message);
 
     return data ?? [];
@@ -414,7 +459,10 @@ function teamCalendarEventType(event: GoogleCalendarEvent) {
     return "other";
 }
 
-function extractMemberFromTeamEventTitle(title: string, players: TeamCalendarPlayer[]) {
+function extractMemberFromTeamEventTitle(
+    title: string,
+    players: TeamCalendarPlayer[],
+) {
     const bracket = title.match(/\[(?:휴가|연차|시차)\]\s*([^\s-]+)/);
     const bracketName = bracket?.[1]?.trim();
     if (bracketName && players.some((player) => player.name === bracketName)) {
@@ -442,7 +490,9 @@ function targetPlayersForTeamEvent(
         .filter(Boolean);
     if (attendeeMembers.length > 0) {
         const memberSet = new Set(attendeeMembers);
-        const taggedPlayers = players.filter((player) => memberSet.has(player.name));
+        const taggedPlayers = players.filter((player) =>
+            memberSet.has(player.name),
+        );
         if (taggedPlayers.length > 0) return taggedPlayers;
     }
 
@@ -460,7 +510,10 @@ function targetPlayersForTeamEvent(
     return [];
 }
 
-function displayTitleForTeamEvent(event: GoogleCalendarEvent, players: TeamCalendarPlayer[]) {
+function displayTitleForTeamEvent(
+    event: GoogleCalendarEvent,
+    players: TeamCalendarPlayer[],
+) {
     const title = event.summary || "(제목 없음)";
     const type = teamCalendarEventType(event);
     if (type === "leave" || type === "annual_leave" || type === "offset") {
@@ -468,7 +521,9 @@ function displayTitleForTeamEvent(event: GoogleCalendarEvent, players: TeamCalen
             event.extendedProperties?.private?.member ||
             event.extendedProperties?.shared?.member ||
             extractMemberFromTeamEventTitle(title, players);
-        return member && !title.includes(member) ? `${title} - ${member}` : title;
+        return member && !title.includes(member)
+            ? `${title} - ${member}`
+            : title;
     }
     return title;
 }
@@ -476,7 +531,7 @@ function displayTitleForTeamEvent(event: GoogleCalendarEvent, players: TeamCalen
 function isAppTaskCalendarEvent(event: GoogleCalendarEvent) {
     return Boolean(
         event.extendedProperties?.private?.taskId ||
-            event.extendedProperties?.shared?.taskId,
+        event.extendedProperties?.shared?.taskId,
     );
 }
 
@@ -569,23 +624,23 @@ export async function syncTodayTeamCalendarEvents(
             return events
                 .filter((event) => !isAppTaskCalendarEvent(event))
                 .map((event) => {
-                const start = eventDateTime(event.start);
-                const end = eventDateTime(event.end);
-                return {
-                    team_id: teamId,
-                    member: player.name,
-                    email: player.email,
-                    google_event_id: event.id,
-                    calendar_id: calendar.calendar_id,
-                    title: event.summary || "(제목 없음)",
-                    starts_at: start.at,
-                    ends_at: end.at,
-                    all_day: start.allDay,
-                    location: event.location ?? null,
-                    html_link: event.htmlLink ?? null,
-                    synced_at: new Date().toISOString(),
-                };
-            });
+                    const start = eventDateTime(event.start);
+                    const end = eventDateTime(event.end);
+                    return {
+                        team_id: teamId,
+                        member: player.name,
+                        email: player.email,
+                        google_event_id: event.id,
+                        calendar_id: calendar.calendar_id,
+                        title: event.summary || "(제목 없음)",
+                        starts_at: start.at,
+                        ends_at: end.at,
+                        all_day: start.allDay,
+                        location: event.location ?? null,
+                        html_link: event.htmlLink ?? null,
+                        synced_at: new Date().toISOString(),
+                    };
+                });
         }),
     );
     const rows = [...sharedRows, ...memberRowsNested.flat()];
@@ -613,7 +668,9 @@ export async function syncTodayTeamCalendarEvents(
         .upsert(rows, {
             onConflict: "team_id,email,calendar_id,google_event_id",
         })
-        .select("id, member, email, title, starts_at, ends_at, all_day, location, html_link");
+        .select(
+            "id, member, email, title, starts_at, ends_at, all_day, location, html_link",
+        );
     if (error) throw new Error(error.message);
 
     return data ?? [];
@@ -630,7 +687,9 @@ function buildTeamCalendarEvent(task: TeamCalendarTaskInput) {
     const startDate = task.start_date || task.end_date;
     const endDate = task.end_date || task.start_date || startDate;
     if (!startDate) {
-        throw new Error("팀 캘린더에 표시하려면 업무 기간 또는 마감일이 필요합니다");
+        throw new Error(
+            "팀 캘린더에 표시하려면 업무 기간 또는 마감일이 필요합니다",
+        );
     }
 
     const title = task.content?.trim() || "업무";
@@ -659,13 +718,26 @@ function buildTeamCalendarEvent(task: TeamCalendarTaskInput) {
     };
 }
 
-/**
- * task.id로부터 Google Calendar 호환 event ID를 생성합니다.
- * base32hex 문자셋([0-9a-v])을 사용하며, 동일 task는 항상 같은 ID를 반환합니다.
- */
 function stableTaskEventId(taskId: number): string {
     // 'v' prefix (valid base32hex char)로 일반 이벤트와 구분합니다.
     return `v${taskId.toString().padStart(6, "0")}`;
+}
+
+async function updateTeamCalendarEvent(params: {
+    accessToken: string;
+    url: string;
+    event: ReturnType<typeof buildTeamCalendarEvent>;
+}) {
+    const res = await fetchWithTimeout(params.url, {
+        method: "PUT",
+        headers: {
+            Authorization: `Bearer ${params.accessToken}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(params.event),
+    });
+    const json = await res.json().catch(() => ({}));
+    return { res, json };
 }
 
 export async function upsertTeamCalendarTaskEvent(params: {
@@ -676,25 +748,61 @@ export async function upsertTeamCalendarTaskEvent(params: {
     const { accessToken, calendarId, task } = params;
     const event = buildTeamCalendarEvent(task);
     const encodedCalendarId = encodeURIComponent(calendarId);
-    // task.id 기반 stable ID를 사용하여 멱등성을 보장합니다.
-    // team_calendar_event_id가 이미 저장된 경우 (레거시) 기존 ID를 우선합니다.
     const eventId = task.team_calendar_event_id ?? stableTaskEventId(task.id);
     const url = `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodedCalendarId}/events/${encodeURIComponent(eventId)}`;
 
-    const res = await fetchWithTimeout(url, {
-        // PUT은 멱등 upsert — 이벤트가 없으면 생성, 있으면 전체 교체합니다.
-        method: "PUT",
-        headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(event),
+    const { res, json } = await updateTeamCalendarEvent({
+        accessToken,
+        url,
+        event,
     });
-    const json = await res.json();
-    if (!res.ok) {
-        throw new Error(json.error?.message || "Failed to sync team calendar event");
+
+    if (res.ok) {
+        return json as GoogleCalendarEvent;
     }
-    return json as GoogleCalendarEvent;
+
+    if (res.status === 404) {
+        const insertRes = await fetchWithTimeout(
+            `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodedCalendarId}/events`,
+            {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ ...event, id: eventId }),
+            },
+        );
+        const insertJson = await insertRes.json().catch(() => ({}));
+
+        if (insertRes.ok) {
+            return insertJson as GoogleCalendarEvent;
+        }
+
+        // 동시 생성 충돌 → 기존 이벤트 갱신으로 재시도합니다.
+        if (insertRes.status === 409) {
+            const retry = await updateTeamCalendarEvent({
+                accessToken,
+                url,
+                event,
+            });
+            if (retry.res.ok) {
+                return retry.json as GoogleCalendarEvent;
+            }
+            throw new Error(
+                retry.json.error?.message ||
+                    "Failed to sync team calendar event after conflict",
+            );
+        }
+
+        throw new Error(
+            insertJson.error?.message || "Failed to create team calendar event",
+        );
+    }
+
+    throw new Error(
+        json.error?.message || "Failed to sync team calendar event",
+    );
 }
 
 export async function deleteTeamCalendarTaskEvent(params: {
@@ -713,7 +821,9 @@ export async function deleteTeamCalendarTaskEvent(params: {
     if (res.status === 404 || res.status === 410) return;
     if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        throw new Error(json.error?.message || "Failed to delete team calendar event");
+        throw new Error(
+            json.error?.message || "Failed to delete team calendar event",
+        );
     }
 }
 
@@ -750,7 +860,10 @@ export async function createTeamCalendarEvent(params: {
     const event: Record<string, unknown> = {
         summary: teamEventSummary(input),
         description: "project-alarm-service에서 생성한 팀 일정입니다.",
-        location: input.eventType === "meeting" ? input.meetingRoom || undefined : undefined,
+        location:
+            input.eventType === "meeting"
+                ? input.meetingRoom || undefined
+                : undefined,
         start: allDay
             ? { date: input.date }
             : { dateTime: `${input.date}T${input.startTime}:00+09:00` },
@@ -797,7 +910,9 @@ export async function createTeamCalendarEvent(params: {
 
     const json = await res.json();
     if (!res.ok) {
-        throw new Error(json.error?.message || "Failed to create team calendar event");
+        throw new Error(
+            json.error?.message || "Failed to create team calendar event",
+        );
     }
     return json as GoogleCalendarEvent;
 }
