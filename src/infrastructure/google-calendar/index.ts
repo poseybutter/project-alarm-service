@@ -659,6 +659,15 @@ function buildTeamCalendarEvent(task: TeamCalendarTaskInput) {
     };
 }
 
+/**
+ * task.id로부터 Google Calendar 호환 event ID를 생성합니다.
+ * base32hex 문자셋([0-9a-v])을 사용하며, 동일 task는 항상 같은 ID를 반환합니다.
+ */
+function stableTaskEventId(taskId: number): string {
+    // 'v' prefix (valid base32hex char)로 일반 이벤트와 구분합니다.
+    return `v${taskId.toString().padStart(6, "0")}`;
+}
+
 export async function upsertTeamCalendarTaskEvent(params: {
     accessToken: string;
     calendarId: string;
@@ -667,13 +676,14 @@ export async function upsertTeamCalendarTaskEvent(params: {
     const { accessToken, calendarId, task } = params;
     const event = buildTeamCalendarEvent(task);
     const encodedCalendarId = encodeURIComponent(calendarId);
-    const eventId = task.team_calendar_event_id;
-    const url = eventId
-        ? `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodedCalendarId}/events/${encodeURIComponent(eventId)}`
-        : `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodedCalendarId}/events`;
+    // task.id 기반 stable ID를 사용하여 멱등성을 보장합니다.
+    // team_calendar_event_id가 이미 저장된 경우 (레거시) 기존 ID를 우선합니다.
+    const eventId = task.team_calendar_event_id ?? stableTaskEventId(task.id);
+    const url = `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodedCalendarId}/events/${encodeURIComponent(eventId)}`;
 
     const res = await fetchWithTimeout(url, {
-        method: eventId ? "PATCH" : "POST",
+        // PUT은 멱등 upsert — 이벤트가 없으면 생성, 있으면 전체 교체합니다.
+        method: "PUT",
         headers: {
             Authorization: `Bearer ${accessToken}`,
             "Content-Type": "application/json",
@@ -728,14 +738,16 @@ export async function createTeamCalendarEvent(params: {
     accessToken: string;
     calendarId: string;
     input: TeamCalendarEventInput;
+    /** 멱등 재시도용 식별자. 제공 시 Google Calendar event ID로 사용됩니다. */
+    idempotencyKey?: string;
 }) {
-    const { accessToken, calendarId, input } = params;
+    const { accessToken, calendarId, input, idempotencyKey } = params;
     const allDay = input.eventType === "annual_leave";
     const endDate = input.endDate || input.date;
     if (!allDay && !input.startTime) {
         throw new Error("시간 일정은 시작 시간이 필요합니다");
     }
-    const event = {
+    const event: Record<string, unknown> = {
         summary: teamEventSummary(input),
         description: "project-alarm-service에서 생성한 팀 일정입니다.",
         location: input.eventType === "meeting" ? input.meetingRoom || undefined : undefined,
@@ -756,9 +768,13 @@ export async function createTeamCalendarEvent(params: {
             },
         },
     };
+    if (idempotencyKey) {
+        event.id = idempotencyKey;
+    }
 
+    const encodedCalendarId = encodeURIComponent(calendarId);
     const res = await fetchWithTimeout(
-        `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodeURIComponent(calendarId)}/events`,
+        `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodedCalendarId}/events`,
         {
             method: "POST",
             headers: {
@@ -768,6 +784,17 @@ export async function createTeamCalendarEvent(params: {
             body: JSON.stringify(event),
         },
     );
+
+    // 동일 idempotencyKey로 재시도 시 기존 이벤트를 반환합니다.
+    if (res.status === 409 && idempotencyKey) {
+        const existing = await fetchWithTimeout(
+            `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodedCalendarId}/events/${encodeURIComponent(idempotencyKey)}`,
+            { headers: { Authorization: `Bearer ${accessToken}` } },
+        );
+        const existingJson = await existing.json();
+        if (existing.ok) return existingJson as GoogleCalendarEvent;
+    }
+
     const json = await res.json();
     if (!res.ok) {
         throw new Error(json.error?.message || "Failed to create team calendar event");

@@ -3,6 +3,17 @@ import "server-only";
 import type { NotificationChannel } from "@/lib/agents/types";
 import type { GoogleChatCardPayload } from "@/lib/agents/types";
 
+/**
+ * fetch 타임아웃 후 원격 처리 결과를 알 수 없을 때 발생합니다.
+ * 호출부는 이 오류를 `delivery_failed`가 아닌 `delivery_unknown` 상태로 기록해야 합니다.
+ */
+export class DeliveryUnknownError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "DeliveryUnknownError";
+    }
+}
+
 type SendGoogleChatParams = {
     text: string;
     card?: GoogleChatCardPayload;
@@ -37,7 +48,12 @@ function parseWebhookMap(): Record<string, string> {
 function resolveWebhook(params: SendGoogleChatParams) {
     if (params.webhookUrl) return params.webhookUrl;
 
-    if (params.channel === "personal_dm" && params.recipientMember) {
+    if (params.channel === "personal_dm") {
+        if (!params.recipientMember) {
+            throw new Error(
+                "personal_dm 채널은 recipientMember가 필요합니다",
+            );
+        }
         const memberWebhook = parseWebhookMap()[params.recipientMember];
         if (memberWebhook) return memberWebhook;
         return null;
@@ -83,6 +99,13 @@ export async function sendGoogleChatMessage(params: SendGoogleChatParams) {
             ),
             signal: controller.signal,
         });
+    } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") {
+            throw new DeliveryUnknownError(
+                "Google Chat webhook 요청이 타임아웃되었습니다 — 전송 결과를 알 수 없습니다",
+            );
+        }
+        throw err;
     } finally {
         clearTimeout(timer);
     }
