@@ -605,62 +605,16 @@ V31 호환 기간에는 기존 화면이 `players.role`을 계속 사용하고, 
 
 ## 🔐 보안
 
-> 사내 업무 데이터를 다루는 만큼, 인증·인가·데이터 격리·감사 측면에서 다음 조치를 적용했어요.
-> (✅ 현재 운영 / 🚧 개발 진행중 표기)
+인증, 인가, 데이터 격리, 감사, 비밀 관리 원칙을 기준으로 운영한다.
 
-### 인증 · 세션
-- ✅ **미들웨어 인증 게이트** (`src/proxy.ts`) — `/login`·`/signup`(레거시)·`/pending`·`/auth/callback` 외 모든 경로는 로그인 세션이 없으면 자동 차단·리다이렉트
-- ✅ **팀 멤버십 기반 접근** — 활성 프로필과 팀 멤버십을 서버에서 검증하고, 제한된 소속은 읽기 전용으로 처리
-- ✅ **Supabase SSR 세션 쿠키 사용** — OAuth 세션을 서버 콜백과 미들웨어에서 검증
-- ✅ **Google OAuth → 관리자 승인(pending) 2단계** — 미등록 사용자는 승인 전 워크스페이스 진입 불가
+- 로그인 세션과 팀 소속은 서버에서 검증한다.
+- 역할과 권한은 팀 단위로 평가한다.
+- 민감한 연동 데이터는 서버 경로를 통해서만 접근한다.
+- 운영 Secret과 환경 파일은 저장소에 커밋하지 않는다.
+- 공개 저장소에는 세부 운영 절차와 감사 쿼리를 문서화하지 않는다.
 
-### 인가 · 데이터 격리
-- ✅ **역할 기반 접근 제어 (admin / member / guest)** — 본인 업무·퀘스트만 수정, 관리자만 전체 편집·브리핑 잠금 (`AuthProvider`, `AuthGuard`)
-- ✅ **Supabase RLS(Row Level Security) 활성화** — 모든 테이블에 적용, 클라이언트는 `anon key`만 사용
-- ✅ **`auth.jwt()` 기반 본인 데이터 정책** — 예: 알림 읽음·감사 로그는 본인 이메일 행만 접근 (`db/V4_audit_logs.sql`, `db/V8_notifications.sql`)
-- ✅ **`service_role` 키는 서버 전용** — RLS를 우회하는 강력 키는 Route Handler와 자동화 경로에서만 사용, 프론트엔드에는 절대 포함하지 않음
-
-### 전송 · 응답 헤더
-- ✅ **보안 응답 헤더 적용** (`next.config.ts`) — 모든 경로에:
-  - `X-Frame-Options: SAMEORIGIN` (클릭재킹 방지), `X-Content-Type-Options: nosniff` (MIME 스니핑 차단)
-  - `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`로 카메라·마이크·위치 등 미사용 기능 차단
-  - `Strict-Transport-Security`(HSTS)로 HTTPS 강제
-- ✅ **DB 레벨 쓰기 권한 강제 (RLS)** — `tasks`·`quests`는 본인/관리자만 수정·삭제, 게스트 쓰기 차단 (`db/V11_rls_write_policies.sql`)
-- ✅ **점수 로직 서버화 (RPC)** — EXP·레벨·출석·잔디 계산/기록을 `SECURITY DEFINER` RPC(`set_task_status`·`set_quest_done`·`attendance_check`)로 단일화하고, 클라이언트의 `players` 점수 컬럼 직접 쓰기를 컬럼 권한으로 차단 → **점수 위조 불가** (`db/V12_score_logic_server.sql`)
-
-### 감사 · 비밀 관리
-- ✅ **감사 로그(`audit_logs`)** — 로그인 성공 / 로그아웃 시 이메일·IP·User-Agent 기록 (역방향 프록시 헤더 `x-forwarded-for` 고려)
-- ✅ **환경변수 공개 범위 분리** — 클라이언트 노출은 `NEXT_PUBLIC_*` 만, 서버 전용 값(`SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CALENDAR_CLIENT_SECRET`, `GOOGLE_CHAT_WEBHOOK`)은 비공개
-- ✅ **비밀 미커밋** — `.gitignore`의 `.env*` 로 모든 환경파일 git 추적 제외 (코드 내 하드코딩된 시크릿 없음)
-
----
-
-## ⚙️ 환경 변수
-
-```env
-# Supabase (데이터·실시간)
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-
-# Google Calendar OAuth
-GOOGLE_CALENDAR_CLIENT_ID=
-GOOGLE_CALENDAR_CLIENT_SECRET=
-GOOGLE_CALENDAR_REDIRECT_URI=
-
-# Vercel Cron
-CRON_SECRET=
-
-# Spring Boot 내부 API (단계적 이전 시 사용)
-API_URL=                       # 서버사이드용 내부 URL (예: http://api:8080)
-NEXT_PUBLIC_API_URL=           # 클라이언트 fallback URL
-NEXT_PUBLIC_SITE_URL=          # OAuth 콜백 등 사이트 베이스 URL
-
-# 팀원/알림
-NEXT_PUBLIC_MEMBER_EMAILS=이메일:이름,이메일:이름,...
-GOOGLE_CHAT_WEBHOOK=           # legacy/fallback
-GOOGLE_CHAT_WEBHOOKS=          # legacy/fallback map
-```
+상세 운영 절차, Secret 구성, 보안 마이그레이션 적용 순서, 장애 대응은 비공개
+runbook에서 관리한다.
 
 ---
 
