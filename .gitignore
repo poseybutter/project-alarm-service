@@ -61,3 +61,4 @@ db/*.bak
 db/*.local.sql
 db/*secret*.sql
 db/*private*.sql
+AGENTS.md
