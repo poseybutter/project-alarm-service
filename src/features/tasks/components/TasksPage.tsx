@@ -24,8 +24,7 @@ import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import TaskEditModal from "@/components/TaskEditModal";
 import { PageSpinner } from "@/components/Spinner";
-import Select from "react-select";
-import { taskFilterProjectSelectStyles } from "@/lib/reactSelectStyles";
+import TaskFilters from "@/features/tasks/components/TaskFilters";
 
 
 export default function TasksPage() {
@@ -222,89 +221,16 @@ export default function TasksPage() {
 
                 <div className="max-w-2xl mx-auto pb-24">
                     {/* ?꾪꽣 */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 px-4 py-3">
-                        <div className="min-w-0">
-                            <Select
-                                options={members.map((m) => ({
-                                    value: m,
-                                    label: m,
-                                }))}
-                                value={
-                                    filterMember
-                                        ? {
-                                              value: filterMember,
-                                              label: filterMember,
-                                          }
-                                        : null
-                                }
-                                onChange={(opt) =>
-                                    setFilterMember(opt?.value ?? "")
-                                }
-                                placeholder="전체 담당자"
-                                isClearable
-                                isSearchable={false}
-                                styles={taskFilterProjectSelectStyles}
-                                menuPortalTarget={
-                                    typeof document !== "undefined"
-                                        ? document.body
-                                        : null
-                                }
-                            />
-                        </div>
-                        <div className="min-w-0">
-                            <Select
-                                options={filterProjectSelectOptions}
-                                value={
-                                    filterProject
-                                        ? {
-                                              value: filterProject,
-                                              label: filterProject,
-                                          }
-                                        : null
-                                }
-                                onChange={(opt) =>
-                                    setFilterProject(opt?.value ?? "")
-                                }
-                                placeholder="전체 프로젝트"
-                                isClearable
-                                isSearchable
-                                styles={taskFilterProjectSelectStyles}
-                                menuPortalTarget={
-                                    typeof document !== "undefined"
-                                        ? document.body
-                                        : null
-                                }
-                                noOptionsMessage={() => "프로젝트가 없어요"}
-                            />
-                        </div>
-                        <div className="min-w-0">
-                            <Select
-                                options={["긴급", "높음", "보통", "낮음"].map(
-                                    (p) => ({ value: p, label: p }),
-                                )}
-                                value={
-                                    filterPriority
-                                        ? {
-                                              value: filterPriority,
-                                              label: filterPriority,
-                                          }
-                                        : null
-                                }
-                                onChange={(opt) =>
-                                    setFilterPriority(opt?.value ?? "")
-                                }
-                                placeholder="전체 우선순위"
-                                isClearable
-                                isSearchable={false}
-                                styles={taskFilterProjectSelectStyles}
-                                menuPortalTarget={
-                                    typeof document !== "undefined"
-                                        ? document.body
-                                        : null
-                                }
-                            />
-                        </div>
-                    </div>
+                    <TaskFilters
+                        members={members}
+                        projectOptions={filterProjectSelectOptions}
+                        filterMember={filterMember}
+                        filterProject={filterProject}
+                        filterPriority={filterPriority}
+                        onMemberChange={setFilterMember}
+                        onProjectChange={setFilterProject}
+                        onPriorityChange={setFilterPriority}
+                    />
 
                     {/* ?낅Т 紐⑸줉 */}
                     {loading ? (
