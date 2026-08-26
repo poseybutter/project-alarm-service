@@ -140,6 +140,10 @@ export default function HallOfFamePage() {
     const [loading, setLoading] = useState(true);
 
     async function loadSeasons() {
+        // 팀 전환 시 이전 팀 데이터 초기화
+        setSeasons([]);
+        setSeasonDataMap({});
+        setActiveTab(null);
         setLoading(true);
         const { data } = await supabase
             .from("seasons")

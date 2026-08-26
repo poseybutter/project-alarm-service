@@ -20,13 +20,17 @@ interface BannerConfig {
     sub: string;
 }
 
+/** KST 기준 오늘 자정 Date */
+function kstToday(): Date {
+    const now = new Date();
+    const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    return new Date(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate());
+}
+
 function getDaysUntil(dateStr: string): number {
     const [y, m, d] = dateStr.split("-").map(Number);
     const target = new Date(y, m - 1, d);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    target.setHours(0, 0, 0, 0);
-    return Math.round((target.getTime() - today.getTime()) / 86400000);
+    return Math.round((target.getTime() - kstToday().getTime()) / 86400000);
 }
 
 function getDaysSince(dateStr: string): number {
@@ -88,7 +92,7 @@ export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProp
     const daysSinceStart = getDaysSince(season.range_start);
 
     let state: BannerState;
-    if (season.status === "ended") {
+    if (season.status === "ended" || daysUntilEnd < 0) {
         state = "B";
     } else if (daysSinceStart <= 14) {
         state = "C";
