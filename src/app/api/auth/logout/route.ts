@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { minimizedAuditMetadata } from "@/lib/server/auditMetadata";
+import { clearAuthCookies } from "@/lib/server/authCookies";
 
 export async function POST(req: NextRequest) {
     const store = await cookies();
@@ -58,5 +59,7 @@ export async function POST(req: NextRequest) {
         );
     }
 
-    return NextResponse.json({ ok: true });
+    const res = NextResponse.json({ ok: true });
+    clearAuthCookies(req, res);
+    return res;
 }
