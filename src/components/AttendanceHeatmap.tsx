@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { toLocalYmd } from "@/lib/toLocalYmd";
+import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import { useAuth } from "@/components/AuthProvider";
 
 type AttendanceHeatmapProps = {

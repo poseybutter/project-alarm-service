@@ -7,13 +7,13 @@ import {
     buildNotificationSuggestions,
     type CalendarEventInput,
     type QuestBriefingInput,
-} from "@/lib/agents/notificationAgent";
+} from "@/features/agents/server/notificationAgent";
 import { sendGoogleChatMessage } from "@/infrastructure/google-chat";
 import { syncTodayTeamCalendarEvents } from "@/infrastructure/google-calendar";
 import type {
     AgentSuggestion,
     NotificationSuggestionPayload,
-} from "@/lib/agents/types";
+} from "@/features/agents/server/types";
 import type { Accessibility, Task } from "@/lib/types";
 import { internalErrorResponse } from "@/lib/server/apiResponse";
 import { decryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";

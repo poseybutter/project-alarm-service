@@ -23,15 +23,15 @@ import {
     getDiff,
     normalizeProject,
     getProjectMembers,
-} from "@/lib/utils";
+} from "@/shared/utils/utils";
 import Select from "react-select";
 import {
     selectStyles,
     taskFilterProjectSelectStyles,
     modalFormSelectStyles,
     badgeSelectStyles,
-} from "@/lib/reactSelectStyles";
-import { toLocalYmd } from "@/lib/toLocalYmd";
+} from "@/shared/styles/reactSelectStyles";
+import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 
 const MAINTENANCE_STATUS_URL =
     process.env.NEXT_PUBLIC_MAINTENANCE_STATUS_URL?.trim() ?? "";

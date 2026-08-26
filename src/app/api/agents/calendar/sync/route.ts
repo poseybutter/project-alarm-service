@@ -11,8 +11,8 @@ import {
 import {
     buildNotificationSuggestions,
     type QuestBriefingInput,
-} from "@/lib/agents/notificationAgent";
-import { createAgentSuggestions } from "@/lib/agents/suggestions";
+} from "@/features/agents/server/notificationAgent";
+import { createAgentSuggestions } from "@/features/agents/server/suggestions";
 import type { Accessibility, Task } from "@/lib/types";
 import { internalErrorResponse } from "@/lib/server/apiResponse";
 import {
