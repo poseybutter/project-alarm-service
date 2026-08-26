@@ -86,8 +86,8 @@ function cardHtmlToPlainText(value: string) {
         text = text.replace(/<[^>]*>/g, "");
     } while (text !== prev);
     return text
-        .replace(/&(amp|lt|gt);/g, (_, e) =>
-            ({ amp: "&", lt: "<", gt: ">" })[e] ?? _,
+        .replace(/&(amp|lt|gt);/g, (_, e: string) =>
+            ({ amp: "&", lt: "<", gt: ">" } as Record<string, string>)[e] ?? _,
         )
         .trim();
 }

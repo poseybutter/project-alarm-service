@@ -59,8 +59,8 @@ function cardToPlainText(card: GoogleChatCardPayload) {
                     let t = widget.textParagraph.text.replace(/<br\s*\/?>/gi, "\n");
                     let p;
                     do { p = t; t = t.replace(/<[^>]*>/g, ""); } while (t !== p);
-                    return t.replace(/&(amp|lt|gt);/g, (_, e) =>
-                        ({ amp: "&", lt: "<", gt: ">" })[e] ?? _,
+                    return t.replace(/&(amp|lt|gt);/g, (_, e: string) =>
+                        ({ amp: "&", lt: "<", gt: ">" } as Record<string, string>)[e] ?? _,
                     );
                 })(),
             );
