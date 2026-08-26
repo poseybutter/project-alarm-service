@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
-} from "@/lib/serverSupabase";
+} from "@/infrastructure/supabase/server";
 import { updateAgentSuggestionStatus } from "@/features/agents/server/suggestions";
 import type {
     AgentSuggestionStatus,

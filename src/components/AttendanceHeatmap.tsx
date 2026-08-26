@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/infrastructure/supabase/client";
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import { useAuth } from "@/components/AuthProvider";
 

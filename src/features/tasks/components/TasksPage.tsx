@@ -1,8 +1,8 @@
 ﻿"use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import type { Task } from "@/lib/types";
+import { supabase } from "@/infrastructure/supabase/client";
+import type { Task } from "@/shared/types";
 import { formatWorkload } from "@/shared/utils/utils";
 import { useTasksData } from "@/features/tasks/hooks/useTasksData";
 import TaskCard from "@/features/tasks/components/TaskCard";
@@ -11,7 +11,7 @@ import {
     syncTaskToTeamCalendar,
     deleteTaskFromTeamCalendar,
 } from "@/features/tasks/api/teamCalendarSync";
-import { normalizeStatus } from "@/lib/constants";
+import { normalizeStatus } from "@/shared/constants";
 import { rpcSetTaskStatus } from "@/features/gamification/maple";
 import AuthGuard from "@/components/AuthGuard";
 import { useAuth } from "@/components/AuthProvider";

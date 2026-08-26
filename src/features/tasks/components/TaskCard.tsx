@@ -2,9 +2,9 @@
 
 import { useRef } from "react";
 import Select from "react-select";
-import type { Task } from "@/lib/types";
+import type { Task } from "@/shared/types";
 import { getDiff, formatWorkload } from "@/shared/utils/utils";
-import { TYPE_COLORS, STATUS_COLORS, normalizeStatus } from "@/lib/constants";
+import { TYPE_COLORS, STATUS_COLORS, normalizeStatus } from "@/shared/constants";
 import { badgeSelectStyles } from "@/shared/styles/reactSelectStyles";
 import Tooltip from "@/components/Tooltip";
 import TaskContentList from "@/components/TaskContentList";

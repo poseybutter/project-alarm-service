@@ -1,4 +1,4 @@
-import type { Accessibility, Task } from "@/lib/types";
+import type { Accessibility, Task } from "@/shared/types";
 import { getDiff } from "@/shared/utils/utils";
 import type {
     GoogleChatCardPayload,

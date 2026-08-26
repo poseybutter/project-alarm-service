@@ -39,7 +39,7 @@ function makeClient() {
     };
 }
 
-vi.mock("@/lib/serverSupabase", () => ({
+vi.mock("@/infrastructure/supabase/server", () => ({
     getServerUser: () => mockGetServerUser(),
 }));
 

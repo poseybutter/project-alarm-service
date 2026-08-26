@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
     createServiceSupabaseClient,
     getServerUserRole,
-} from "@/lib/serverSupabase";
+} from "@/infrastructure/supabase/server";
 import {
     deleteTeamCalendarTaskEvent,
     getTeamCalendarAccessToken,
@@ -10,7 +10,7 @@ import {
     type TeamCalendarTaskInput,
     upsertTeamCalendarTaskEvent,
 } from "@/infrastructure/google-calendar";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
 
 type RouteContext = {
     params: Promise<{ id: string }>;
