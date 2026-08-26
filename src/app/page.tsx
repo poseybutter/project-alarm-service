@@ -72,6 +72,7 @@ import TiptapQuestContentEditor from "@/components/TiptapQuestContentEditor";
 import TaskContentInputs from "@/components/TaskContentInputs";
 import TaskContentList from "@/components/TaskContentList";
 import { sanitizeHtml } from "@/lib/sanitizeHtml";
+import SeasonBanner from "@/components/SeasonBanner";
 
 function QuestCardContent({
     content,
@@ -1597,6 +1598,10 @@ export default function HomePage() {
                     />
 
                     <div className="max-w-2xl mx-auto px-4 pt-3 pb-24">
+                        {!isGuest && (
+                            <SeasonBanner teamId={teamId} currentMember={member} />
+                        )}
+
                         {/* ?꾨줈??移대뱶 */}
                         <div className="bg-white rounded-2xl border border-stone-200 p-4 mb-3">
                             <div className="flex items-center gap-3 mb-3">
