@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
-import { getDiff } from "@/lib/utils";
+import { getDiff } from "@/shared/utils/utils";
 import type { Accessibility } from "@/lib/types";
 
 const ACTIVE_PATHS = new Set(["/", "/home", "/tasks", "/report", "/manage", "/profile"]);

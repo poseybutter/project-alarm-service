@@ -7,10 +7,10 @@ import Select from "react-select";
 import {
     badgeSelectStyles,
     modalFormSelectStyles,
-} from "@/lib/reactSelectStyles";
+} from "@/shared/styles/reactSelectStyles";
 import { useAuth } from "@/components/AuthProvider";
 import type { Project } from "@/lib/types";
-import { findProjectId, findTeamMemberId, normalizeProject } from "@/lib/utils";
+import { findProjectId, findTeamMemberId, normalizeProject } from "@/shared/utils/utils";
 
 const INSPECTION_STATUS = ["갱신완료", "신청완료", "신청불필요"];
 const INSPECTION_OPTIONS = INSPECTION_STATUS.map((s) => ({

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/lib/supabase";
 import type { Task, Project } from "@/lib/types";
-import { findProjectId, formatWorkload, normalizeProject } from "@/lib/utils";
+import { findProjectId, formatWorkload, normalizeProject } from "@/shared/utils/utils";
 import { WORKLOAD_PRESETS } from "@/lib/constants";
 import { useAuth } from "@/components/AuthProvider";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
@@ -15,8 +15,8 @@ import Select from "react-select";
 import {
     projectSearchSelectStyles,
     modalFormSelectStyles,
-} from "@/lib/reactSelectStyles";
-import { toLocalYmd } from "@/lib/toLocalYmd";
+} from "@/shared/styles/reactSelectStyles";
+import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import TaskContentInputs from "@/components/TaskContentInputs";
 
 function periodButtonLabel(range: DateRange | undefined): {

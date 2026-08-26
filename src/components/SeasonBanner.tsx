@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { calcLevel } from "@/lib/maple";
+import { calcLevel } from "@/features/gamification/maple";
 import { getTeamRoster, type RosterEntry } from "@/features/gamification/api/getTeamRoster";
 import type { Season } from "@/lib/types";
 
