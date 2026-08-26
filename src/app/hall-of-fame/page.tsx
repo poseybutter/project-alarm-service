@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { supabase } from "@/lib/supabase";
@@ -142,37 +142,14 @@ export default function HallOfFamePage() {
     const [activeTab, setActiveTab] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
 
-    async function loadSeasons() {
-        // 팀 전환 시 이전 팀 데이터 초기화
-        setSeasons([]);
-        setSeasonDataMap({});
-        setActiveTab(null);
-        setLoading(true);
-        const { data } = await supabase
-            .from("seasons")
-            .select("*")
-            .eq("team_id", teamId!)
-            .order("range_start", { ascending: false });
+    // seasonDataMap을 ref로도 관리해 useCallback deps 무한루프 방지
+    const seasonDataRef = useRef<Record<number, SeasonData>>({});
+    const seasonsRef = useRef<Season[]>([]);
 
-        const list = (data ?? []) as Season[];
-        setSeasons(list);
-        if (list.length > 0) {
-            setActiveTab(list[0].id);
-            await loadSeasonData(list[0].id, list);
-        }
-        setLoading(false);
-    }
+    const loadSeasonData = useCallback(async (seasonId: number, seasonList?: Season[]) => {
+        if (seasonDataRef.current[seasonId]) return;
 
-    useEffect(() => {
-        if (!teamId) return;
-        void loadSeasons();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [teamId]);
-
-    async function loadSeasonData(seasonId: number, seasonList?: Season[]) {
-        if (seasonDataMap[seasonId]) return;
-
-        const list = seasonList ?? seasons;
+        const list = seasonList ?? seasonsRef.current;
         const season = list.find((s) => s.id === seasonId);
         if (!season) return;
 
@@ -199,10 +176,9 @@ export default function HallOfFamePage() {
                 level_name: calcLevel(p.exp).name,
             }));
 
-            setSeasonDataMap((prev) => ({
-                ...prev,
-                [seasonId]: { season, records, awards: (awards ?? []) as SeasonAward[], isLive: true },
-            }));
+            const entry: SeasonData = { season, records, awards: (awards ?? []) as SeasonAward[], isLive: true };
+            seasonDataRef.current = { ...seasonDataRef.current, [seasonId]: entry };
+            setSeasonDataMap((prev) => ({ ...prev, [seasonId]: entry }));
         } else {
             const [{ data: records }, { data: awards }] = await Promise.all([
                 supabase
@@ -224,22 +200,53 @@ export default function HallOfFamePage() {
                 level_name: r.level_name,
             }));
 
-            setSeasonDataMap((prev) => ({
-                ...prev,
-                [seasonId]: {
-                    season,
-                    records: displayRecords,
-                    awards: (awards ?? []) as SeasonAward[],
-                    isLive: false,
-                },
-            }));
+            const entry: SeasonData = {
+                season,
+                records: displayRecords,
+                awards: (awards ?? []) as SeasonAward[],
+                isLive: false,
+            };
+            seasonDataRef.current = { ...seasonDataRef.current, [seasonId]: entry };
+            setSeasonDataMap((prev) => ({ ...prev, [seasonId]: entry }));
         }
-    }
+    }, [teamId]);
 
-    async function handleTabChange(seasonId: number) {
+    const loadSeasons = useCallback(async () => {
+        // 팀 전환 시 이전 팀 데이터 초기화
+        setSeasons([]);
+        setSeasonDataMap({});
+        setActiveTab(null);
+        seasonDataRef.current = {};
+        seasonsRef.current = [];
+        setLoading(true);
+        try {
+            const { data } = await supabase
+                .from("seasons")
+                .select("*")
+                .eq("team_id", teamId!)
+                .order("range_start", { ascending: false });
+
+            const list = (data ?? []) as Season[];
+            seasonsRef.current = list;
+            setSeasons(list);
+            if (list.length > 0) {
+                setActiveTab(list[0].id);
+                await loadSeasonData(list[0].id, list);
+            }
+        } finally {
+            setLoading(false);
+        }
+    }, [teamId, loadSeasonData]);
+
+    useEffect(() => {
+        if (!teamId) return;
+        void loadSeasons();
+    }, [teamId, loadSeasons]);
+
+    const handleTabChange = useCallback(async (seasonId: number) => {
         setActiveTab(seasonId);
         await loadSeasonData(seasonId);
-    }
+    }, [loadSeasonData]);
 
     const currentData = activeTab ? seasonDataMap[activeTab] : null;
     const records = currentData?.records ?? [];
