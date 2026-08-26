@@ -174,8 +174,8 @@ function htmlToPlainText(value: string | null | undefined) {
         text = text.replace(/<[^>]*>/g, "");
     } while (text !== prev);
     return text
-        .replace(/&(amp|lt|gt|nbsp);/g, (_, e) =>
-            ({ amp: "&", lt: "<", gt: ">", nbsp: " " })[e] ?? _,
+        .replace(/&(amp|lt|gt|nbsp);/g, (_, e: string) =>
+            ({ amp: "&", lt: "<", gt: ">", nbsp: " " } as Record<string, string>)[e] ?? _,
         )
         .split("\n")
         .map((line) => line.trim())
