@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   addTeamMembership,
   listAdminMembers,
+  removeTeamMembership,
   updateAdminMember,
 } from "@/features/admin/server/adminRepository";
 import { adminErrorResponse, readTeamId } from "@/features/admin/server/http";
@@ -73,6 +74,31 @@ export async function PATCH(request: NextRequest) {
         status,
       }),
     });
+  } catch (error) {
+    return adminErrorResponse(error);
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = (await request.json()) as {
+      membershipId?: unknown;
+      teamId?: unknown;
+    };
+    if (
+      typeof body.membershipId !== "string" ||
+      typeof body.teamId !== "string"
+    ) {
+      return NextResponse.json(
+        { message: "잘못된 멤버십 제거 요청입니다." },
+        { status: 400 },
+      );
+    }
+    await removeTeamMembership({
+      membershipId: body.membershipId,
+      teamId: body.teamId,
+    });
+    return new NextResponse(null, { status: 204 });
   } catch (error) {
     return adminErrorResponse(error);
   }
