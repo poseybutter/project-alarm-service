@@ -7,8 +7,8 @@ import {
 import {
     createAgentSuggestions,
     listAgentSuggestions,
-} from "@/lib/agents/suggestions";
-import type { AgentSuggestionStatus, AgentType } from "@/lib/agents/types";
+} from "@/features/agents/server/suggestions";
+import type { AgentSuggestionStatus, AgentType } from "@/features/agents/server/types";
 
 const AGENT_TYPES = new Set<AgentType>([
     "task_quality",

@@ -4,11 +4,11 @@ import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
 } from "@/lib/serverSupabase";
-import { updateAgentSuggestionStatus } from "@/lib/agents/suggestions";
+import { updateAgentSuggestionStatus } from "@/features/agents/server/suggestions";
 import type {
     AgentSuggestionStatus,
     GoogleChatCardPayload,
-} from "@/lib/agents/types";
+} from "@/features/agents/server/types";
 
 const REVIEW_STATUSES = new Set<AgentSuggestionStatus>([
     "approved",

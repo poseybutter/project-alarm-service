@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { rpcSetQuestDone } from '@/lib/maple'
+import { rpcSetQuestDone } from '@/features/gamification/maple'
 import Tooltip from '@/components/Tooltip'
 import Select from 'react-select'
-import { modalFormSelectStyles } from '@/lib/reactSelectStyles'
+import { modalFormSelectStyles } from '@/shared/styles/reactSelectStyles'
 import { useAuth } from '@/components/AuthProvider'
 import type { Project } from '@/lib/types'
-import { findProjectId, findTeamMemberId, normalizeProject } from '@/lib/utils'
+import { findProjectId, findTeamMemberId, normalizeProject } from '@/shared/utils/utils'
 
 type Quest = {
   id: number
