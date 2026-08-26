@@ -27,6 +27,7 @@ import { PageSpinner } from "@/components/Spinner";
 import TaskFilters from "@/features/tasks/components/TaskFilters";
 
 
+/** 업무 목록 페이지. 필터링·그룹화·상태 변경·삭제·경험치 팝업·팀 캘린더 동기화를 조정한다. */
 export default function TasksPage() {
     const {
         member: currentMember,
@@ -44,6 +45,7 @@ export default function TasksPage() {
     const { tasks, projects, loading, loadTasks } = useTasksData(teamId);
     const [toast, setToast] = useState("");
     const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    /** 토스트 메시지를 3초간 표시한다. 이전 타이머가 있으면 취소 후 새로 시작한다. */
     function showToastMsg(msg: string) {
         if (toastTimer.current) clearTimeout(toastTimer.current);
         setToast(msg);
@@ -75,10 +77,12 @@ export default function TasksPage() {
     >([]);
     const expPopupSeq = useRef(0);
 
+    /** 레벨업 오버레이를 닫는다. */
     const closeLevelUp = useCallback(() => {
         setLevelUpInfo((prev) => ({ ...prev, show: false }));
     }, []);
 
+    /** EXP 팝업을 목록에 추가한다. 고유 id는 타임스탬프와 시퀀스 번호로 생성한다. */
     const pushExpPopup = useCallback(
         (amount: number, x: number, y: number, type: ExpPopupType) => {
             expPopupSeq.current += 1;
@@ -88,14 +92,17 @@ export default function TasksPage() {
         [],
     );
 
+    /** id 기준으로 EXP 팝업을 목록에서 제거한다. */
     const removeExpPopup = useCallback((id: string) => {
         setExpPopups((prev) => prev.filter((p) => p.id !== id));
     }, []);
 
+    /** 수정 모달을 연다. */
     function openEdit(task: Task) {
         setEditTask(task);
     }
 
+    /** 업무 상태를 변경하고 EXP 획득 시 팝업과 레벨업 오버레이를 표시한다. 변경 후 팀 캘린더 동기화를 fire-and-forget으로 실행한다. */
     async function updateStatus(
         id: number,
         status: string,
@@ -139,6 +146,7 @@ export default function TasksPage() {
         loadTasks();
     }
 
+    /** 업무를 삭제한다. Supabase 삭제 성공 후 팀 캘린더 일정 삭제를 fire-and-forget으로 실행한다. */
     async function deleteTask(id: number) {
         if (!confirm("삭제할까요?")) return;
         const { data, error } = await supabase

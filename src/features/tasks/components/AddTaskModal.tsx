@@ -36,7 +36,7 @@ const EMPTY_FORM = {
     show_on_team_calendar: true,
 };
 
-/** 추가 모달 기간 버튼 라벨 */
+/** 선택된 기간 범위를 버튼 라벨 텍스트로 변환한다. 미선택 시 placeholder 플래그를 반환한다. */
 function periodButtonLabel(range: DateRange | undefined): {
     text: string;
     placeholder: boolean;
@@ -48,6 +48,7 @@ function periodButtonLabel(range: DateRange | undefined): {
     return { text: `${f} ~ ${t}`, placeholder: false };
 }
 
+/** 공수(분) 직접 입력과 프리셋 선택 UI. */
 function WorkloadInput({
     value,
     onChange,
@@ -158,10 +159,12 @@ export default function AddTaskModal({
 
     const formPeriodLabel = periodButtonLabel(formDateRange);
 
+    /** 이번주 리포트 포함 여부를 토글한다. */
     function toggleIsPlan() {
         setForm((f) => ({ ...f, is_plan: !f.is_plan }));
     }
 
+    /** 팀 캘린더 표시 여부를 토글한다. 기간 미선택 시 토스트 경고 후 중단한다. */
     function toggleTeamCalendar() {
         if (
             !form.show_on_team_calendar &&
@@ -177,6 +180,7 @@ export default function AddTaskModal({
         }));
     }
 
+    /** 폼 유효성 검사 후 업무를 Supabase에 저장하고 팀 캘린더와 동기화한다. 중복 제출은 isSubmitting으로 방지한다. */
     async function addTask() {
         if (isSubmitting || !teamId) return;
         if (!form.member || !form.proj)

@@ -15,6 +15,7 @@ export function useTasksData(teamId: string | null) {
     const [loading, setLoading] = useState(true);
     const taskSeqRef = useRef(0);
 
+    /** 팀별 업무 목록을 조회하고 loading 상태를 갱신한다. taskSeqRef로 최신 요청만 setTasks를 실행한다. */
     async function loadTasks(
         requestedTeamId = teamId,
         isCancelled = () => false,
@@ -36,6 +37,7 @@ export function useTasksData(teamId: string | null) {
         }
     }
 
+    /** 팀별 프로젝트 목록을 조회하고 정규화하여 저장한다. */
     async function loadProjects(
         requestedTeamId = teamId,
         isCancelled = () => false,
