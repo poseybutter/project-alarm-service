@@ -165,14 +165,18 @@ function accessibilityLine(item: AccessibilityAlert, index: number) {
 
 function htmlToPlainText(value: string | null | undefined) {
     if (!value) return "";
-    return value
+    let text = value
         .replace(/<br\s*\/?>/gi, "\n")
-        .replace(/<\/p>/gi, "\n")
-        .replace(/<[^>]*>/g, "")
-        .replace(/&nbsp;/g, " ")
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
+        .replace(/<\/p>/gi, "\n");
+    let prev;
+    do {
+        prev = text;
+        text = text.replace(/<[^>]*>/g, "");
+    } while (text !== prev);
+    return text
+        .replace(/&(amp|lt|gt|nbsp);/g, (_, e: string) =>
+            ({ amp: "&", lt: "<", gt: ">", nbsp: " " } as Record<string, string>)[e] ?? _,
+        )
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean)

@@ -33,11 +33,13 @@ import { sanitizeHtml } from "@/lib/sanitizeHtml";
 /** 전달사항 HTML이 사용자에게 보일 내용이 있는지 (빈 에디터·공백 태그 제외) */
 function noticeHtmlHasText(html: string | null | undefined): boolean {
     if (!html?.trim()) return false;
-    const text = html
-        .replace(/<[^>]+>/g, "")
-        .replace(/\u00a0/g, " ")
-        .trim();
-    return text.length > 0;
+    let text = html.replace(/\u00a0/g, " ");
+    let prev;
+    do {
+        prev = text;
+        text = text.replace(/<[^>]*>/g, "");
+    } while (text !== prev);
+    return text.trim().length > 0;
 }
 
 /** 이스케이프된 브리핑 조각에서 `**굵게**` → `<strong>` (자동문만 사용) */
@@ -82,8 +84,8 @@ function SectionHtmlReadView({
 /** HTML → 마크다운 변환 (Copy 버튼용) */
 function htmlToMarkdown(html: string): string {
     if (!html?.trim()) return "";
-    return html
-        // 노션 붙여넣기 시 마크다운 기호(**, *)가 그대로 노출되어 굵게/기울임 표시는 제거하고 텍스트만 유지
+    // 노션 붙여넣기 시 마크다운 기호(**, *)가 그대로 노출되어 굵게/기울임 표시는 제거하고 텍스트만 유지
+    let result = html
         .replace(/<strong>([\s\S]*?)<\/strong>/gi, "$1")
         .replace(/<em>([\s\S]*?)<\/em>/gi, "$1")
         .replace(/<br\s*\/?>/gi, "\n")
@@ -100,13 +102,16 @@ function htmlToMarkdown(html: string): string {
                 .replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_: string, c: string) => `${++i}. ${c}`)
                 .trim();
         })
-        .replace(/<[^>]+>/g, "")
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/\u00a0/g, " ")
+        .replace(/\u00a0/g, " ");
+    let mdPrev;
+    do {
+        mdPrev = result;
+        result = result.replace(/<[^>]*>/g, "");
+    } while (result !== mdPrev);
+    return result
+        .replace(/&(amp|lt|gt|quot|#39);/g, (_, e: string) =>
+            ({ amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" } as Record<string, string>)[e] ?? _,
+        )
         .replace(/\n{3,}/g, "\n\n") // 3줄 이상 연속 줄바꿈 → 2줄로 축약
         .trim();
 }
@@ -454,10 +459,6 @@ function contentToCardHtml(t: Task): string {
             out.push(s ? `  ${briefingEscapedToHtmlWithBold(escapeHtml(s))}` : "");
         }
     }
-    // 내용이 비어도 계획 기간이 있으면 한 줄 표시
-    if (!firstDone && datePrefix) {
-        out.push(`⇒ ${datePrefix.trim()}`);
-    }
     // 이슈/비고 (구 형식: ⚠️ {이슈}) — ⇒ 보다 한 단계 안쪽으로 들여쓰기
     if (t.issue && String(t.issue).trim()) {
         out.push(
@@ -628,7 +629,6 @@ export default function ReportPage() {
     const [mOff, setMOff] = useState(0);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
-    const [expanded, setExpanded] = useState<Record<string, boolean>>({});
     const [editMode, setEditMode] = useState(false);
     useEffect(() => {
         wOffRef.current = wOff;
@@ -1129,10 +1129,6 @@ export default function ReportPage() {
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         });
-    }
-
-    function toggleExpand(member: string) {
-        setExpanded((e) => ({ ...e, [member]: !e[member] }));
     }
 
     /** 담당 배정 항목을 아코디언 카드로 렌더 (관리 페이지 프로젝트 패턴) */

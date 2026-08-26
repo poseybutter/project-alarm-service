@@ -6,6 +6,15 @@ import {
   updateAdminTeam,
 } from "@/features/admin/server/adminRepository";
 import { adminErrorResponse } from "@/features/admin/server/http";
+import { ALL_TEAM_MODULES, type TeamModuleKey } from "@/features/admin/types";
+
+function parseModules(raw: unknown): TeamModuleKey[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const valid = raw.filter((m): m is TeamModuleKey =>
+    (ALL_TEAM_MODULES as string[]).includes(m as string),
+  );
+  return valid;
+}
 
 export async function GET() {
   try {
@@ -21,6 +30,7 @@ export async function POST(request: NextRequest) {
       id?: unknown;
       name?: unknown;
       description?: unknown;
+      modules?: unknown;
     };
     if (typeof body.id !== "string" || typeof body.name !== "string") {
       return NextResponse.json(
@@ -35,6 +45,7 @@ export async function POST(request: NextRequest) {
           name: body.name,
           description:
             typeof body.description === "string" ? body.description : undefined,
+          modules: parseModules(body.modules),
         }),
       },
       { status: 201 },
@@ -51,6 +62,7 @@ export async function PATCH(request: NextRequest) {
       name?: unknown;
       description?: unknown;
       status?: unknown;
+      modules?: unknown;
     };
     if (
       typeof body.id !== "string" ||
@@ -69,6 +81,7 @@ export async function PATCH(request: NextRequest) {
         description:
           typeof body.description === "string" ? body.description : undefined,
         status: body.status,
+        modules: parseModules(body.modules),
       }),
     });
   } catch (error) {
