@@ -15,6 +15,16 @@ function isAuthorized(req: NextRequest) {
     return false;
 }
 
+/** KST 기준 현재 날짜 (YYYY-MM-DD) */
+function kstDateStr() {
+    return new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).format(new Date());
+}
+
 export async function GET(req: NextRequest) {
     if (!isAuthorized(req)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -24,6 +34,24 @@ export async function GET(req: NextRequest) {
     if (type !== "monthly" && type !== "weekly") {
         return NextResponse.json(
             { error: "type 파라미터가 필요해요 (monthly | weekly)" },
+            { status: 400 },
+        );
+    }
+
+    // KST 기준 날짜 검증
+    const kst = kstDateStr();
+    const kstDay = Number(kst.slice(8, 10));
+    const kstDow = new Date(kst).getDay(); // 0=일
+
+    if (type === "monthly" && kstDay !== 1) {
+        return NextResponse.json(
+            { error: `KST 기준 오늘은 ${kst}(${kstDay}일)로 월 초기화 대상이 아닙니다` },
+            { status: 400 },
+        );
+    }
+    if (type === "weekly" && kstDow !== 1) {
+        return NextResponse.json(
+            { error: `KST 기준 오늘은 ${kst}(요일:${kstDow})로 주간 초기화 대상이 아닙니다` },
             { status: 400 },
         );
     }

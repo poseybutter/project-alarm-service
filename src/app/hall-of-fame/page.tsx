@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { calcLevel } from "@/lib/maple";
 import { useAuth } from "@/components/AuthProvider";
@@ -59,6 +59,9 @@ const FW_BURSTS = Array.from({ length: 6 }, (_, i) => ({
 }));
 
 function Fireworks() {
+    const shouldReduce = useReducedMotion();
+    if (shouldReduce) return null;
+
     const conf = FW_CONF;
     const bursts = FW_BURSTS;
 

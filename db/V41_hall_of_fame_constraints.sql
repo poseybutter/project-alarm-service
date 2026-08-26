@@ -17,8 +17,34 @@ create index if not exists idx_season_awards_season_id
     on public.season_awards(season_id);
 
 -- ── season_awards 중복 방지 ───────────────────────────────────────────────────
--- 같은 시즌에 동일한 상(title)이 두 번 저장되지 않도록 유니크 제약 추가
--- upsert 시 onConflict: "season_id,title" 로 사용
-alter table public.season_awards
-    add constraint if not exists uq_season_awards_season_title
-    unique (season_id, title);
+-- ADD CONSTRAINT IF NOT EXISTS 는 PG 미지원 → UNIQUE INDEX 로 대체
+-- upsert 시 onConflict: "season_id,title" 로 참조됨
+create unique index if not exists uq_season_awards_season_title
+    on public.season_awards(season_id, title);
+
+-- ── team_id 외래 키 ───────────────────────────────────────────────────────────
+do $$
+begin
+    if not exists (
+        select 1 from pg_constraint
+        where conname = 'season_records_team_id_fkey'
+    ) then
+        alter table public.season_records
+            add constraint season_records_team_id_fkey
+            foreign key (team_id) references public.teams(id) on delete cascade;
+    end if;
+
+    if not exists (
+        select 1 from pg_constraint
+        where conname = 'season_awards_team_id_fkey'
+    ) then
+        alter table public.season_awards
+            add constraint season_awards_team_id_fkey
+            foreign key (team_id) references public.teams(id) on delete cascade;
+    end if;
+end $$;
+
+-- ── 팀당 active 시즌 하나만 허용 (partial unique index) ──────────────────────
+create unique index if not exists uq_seasons_one_active_per_team
+    on public.seasons(team_id)
+    where (status = 'active');
