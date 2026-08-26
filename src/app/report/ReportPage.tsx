@@ -629,7 +629,6 @@ export default function ReportPage() {
     const [mOff, setMOff] = useState(0);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
-    const [expanded, setExpanded] = useState<Record<string, boolean>>({});
     const [editMode, setEditMode] = useState(false);
     useEffect(() => {
         wOffRef.current = wOff;
@@ -1130,10 +1129,6 @@ export default function ReportPage() {
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         });
-    }
-
-    function toggleExpand(member: string) {
-        setExpanded((e) => ({ ...e, [member]: !e[member] }));
     }
 
     /** 담당 배정 항목을 아코디언 카드로 렌더 (관리 페이지 프로젝트 패턴) */
