@@ -82,7 +82,7 @@ export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProp
     }
 
     useEffect(() => {
-        // 팀 전환 시 이전 팀의 배너가 잠깐이라도 보이지 않도록 먼저 비운다.
+        // 팀 전환 시 이전 배너 초기화
         setSeason(null);
         setTopPlayer(null);
         setMyRank(null);

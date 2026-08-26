@@ -1,16 +1,9 @@
 /**
  * POST /api/seasons/close
  *
- * 활성 시즌을 종료하고 명예의 전당 기록을 저장한다.
- *
- * 동작 순서 (계산은 여기서, 쓰기는 DB 함수 close_season 에서 원자적으로):
- *  1. 종료일이 오늘 이하인 active 시즌을 찾는다.
- *  2. players 테이블에서 EXP 순위 계산.
- *  3. tasks 테이블에서 특별상 계산.
- *  4. close_season(season_id, records, awards, mvp, next season info) 호출.
- *     이 함수 안에서 시즌 행을 잠그고 status 를 재확인하므로, 동시에 같은
- *     시즌을 종료하려는 요청이 들어와도 한쪽만 처리된다. 기록 저장 → 특별상
- *     저장 → 시즌 종료 → 다음 시즌 생성 → EXP·레벨 초기화가 모두 한 트랜잭션.
+ * 활성 시즌 종료 및 명예의 전당 기록 저장.
+ * 순위·특별상 계산: 여기서 처리
+ * 저장(기록·시즌 종료·다음 시즌·EXP 리셋): close_season RPC, 단일 트랜잭션
  *
  * 인증: Authorization: Bearer $CRON_SECRET
  * 수동 강제 종료: ?force=true (CRON_SECRET 필수)
