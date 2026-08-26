@@ -1128,8 +1128,7 @@ export default function HomePage() {
     async function loadData() {
         if (!teamId) return;
         const generation = ++loadGenerationRef.current;
-        let playerData, questData, myTaskData, guestTaskData, projData;
-        [
+        const [
             { data: playerData },
             { data: questData },
             { data: myTaskData },
