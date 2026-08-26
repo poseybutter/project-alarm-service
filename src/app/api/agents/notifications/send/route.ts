@@ -11,7 +11,7 @@ import {
 } from "@/lib/agents/notificationDeliveries";
 import { updateAgentSuggestionStatus } from "@/lib/agents/suggestions";
 import { DeliveryUnknownError, sendGoogleChatMessage } from "@/infrastructure/google-chat";
-import { decryptIntegrationToken } from "@/lib/server/tokenEncryption";
+import { decryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
 
 type SendRequest = {
     id?: number;

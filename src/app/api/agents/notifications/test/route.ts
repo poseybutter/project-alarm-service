@@ -8,15 +8,15 @@ import {
     type CalendarEventInput,
     type QuestBriefingInput,
 } from "@/lib/agents/notificationAgent";
-import { sendGoogleChatMessage } from "@/lib/server/googleChat";
-import { syncTodayTeamCalendarEvents } from "@/lib/server/googleCalendar";
+import { sendGoogleChatMessage } from "@/infrastructure/google-chat";
+import { syncTodayTeamCalendarEvents } from "@/infrastructure/google-calendar";
 import type {
     AgentSuggestion,
     NotificationSuggestionPayload,
 } from "@/lib/agents/types";
 import type { Accessibility, Task } from "@/lib/types";
 import { internalErrorResponse } from "@/lib/server/apiResponse";
-import { decryptIntegrationToken } from "@/lib/server/tokenEncryption";
+import { decryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
 import {
     consumeRateLimit,
     rateLimitResponse,
