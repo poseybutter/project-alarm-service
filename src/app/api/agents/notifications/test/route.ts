@@ -183,7 +183,6 @@ export async function POST(request: Request) {
                 .select("*")
                 .maybeSingle();
             if (createError) throw createError;
-            suggestion = created as AgentSuggestion;
         }
 
         const fresh = await buildFreshSuggestion(serviceSupabase, {

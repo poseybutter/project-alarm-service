@@ -459,10 +459,6 @@ function contentToCardHtml(t: Task): string {
             out.push(s ? `  ${briefingEscapedToHtmlWithBold(escapeHtml(s))}` : "");
         }
     }
-    // 내용이 비어도 계획 기간이 있으면 한 줄 표시
-    if (!firstDone && datePrefix) {
-        out.push(`⇒ ${datePrefix.trim()}`);
-    }
     // 이슈/비고 (구 형식: ⚠️ {이슈}) — ⇒ 보다 한 단계 안쪽으로 들여쓰기
     if (t.issue && String(t.issue).trim()) {
         out.push(
