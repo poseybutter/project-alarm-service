@@ -1,10 +1,8 @@
 -- V42: 명예의 전당 — 시즌 종료 원자화 및 안정적인 멤버 식별자
 
 -- ── 안정적인 멤버 식별자 ─────────────────────────────────────────────────────
--- season_records/season_awards.member 는 종료 시점의 "표시 이름 스냅샷"이라
--- 그대로 둔다. 대신 player_id 를 추가해, 이후 이름이 바뀌어도 프로필 화면이
--- 같은 사람의 과거 기록을 계속 찾을 수 있게 한다. player_id 가 비어있는
--- 행(이 마이그레이션 이전에 저장된 기록)은 계속 이름으로 조회한다.
+-- member: 종료 시점 표시 이름 스냅샷, 유지
+-- player_id: 개명 후에도 동일 인물 조회용, null 이면 이름 폴백
 alter table public.season_records
     add column if not exists player_id bigint references public.players(id) on delete set null;
 alter table public.season_awards
@@ -14,8 +12,7 @@ create index if not exists idx_season_records_player_id on public.season_records
 create index if not exists idx_season_awards_player_id  on public.season_awards(player_id);
 
 -- ── 신규 팀 생성 시 창단 시즌 자동 생성 ──────────────────────────────────────
--- V40 은 마이그레이션 시점에 존재하던 팀만 시드한다. 이후 생성되는 팀은 이
--- 트리거가 챙긴다 — 관리자 화면 등 팀 생성 경로가 몇 곳이든 보장된다.
+-- V40 시드 대상 밖(마이그레이션 이후 생성 팀)의 창단 시즌 보장용
 create or replace function public.seed_initial_team_season()
 returns trigger
 language plpgsql
@@ -48,10 +45,8 @@ after insert on public.teams
 for each row execute function public.seed_initial_team_season();
 
 -- ── 시즌 종료를 하나의 트랜잭션으로 처리하는 RPC ───────────────────────────
--- 순위·특별상 계산은 계속 API 서버(src/app/api/seasons/close/route.ts)가 담당하고,
--- 이 함수는 그 결과를 저장하는 "쓰기" 단계만 원자적으로 묶는다.
--- FOR UPDATE 로 시즌 행을 잠그고 status 를 재확인하므로, 동시에 같은 시즌을
--- 종료하려는 요청이 들어와도 한쪽만 처리되고 나머지는 skipped 로 반환된다.
+-- 계산: API 서버(src/app/api/seasons/close/route.ts) 담당
+-- 쓰기: 이 함수가 원자적으로 처리 (FOR UPDATE 잠금 + status 재확인으로 동시 종료 방지)
 create or replace function public.close_season(
     p_season_id integer,
     p_records jsonb,
@@ -129,9 +124,7 @@ begin
     set status = 'ended', mvp_member = p_mvp_member
     where id = p_season_id;
 
-    -- 팀에 이미 active 시즌이 있으면(동시 요청이 먼저 만든 경우) 건너뛴다.
-    -- V41 의 partial unique index(team_id) where status='active' 를
-    -- 대상 지정 없는 on conflict do nothing 이 그대로 활용한다.
+    -- 팀당 active 시즌 중복 방지 (V41 partial unique index 활용)
     if p_next_label is not null then
         insert into public.seasons (team_id, label, sub_label, range_start, range_end, status)
         values (
@@ -141,7 +134,7 @@ begin
         on conflict do nothing;
     end if;
 
-    -- EXP 초기화와 함께 레벨도 1로 되돌린다 (EXP 0 = calcLevel(0) = level 1).
+    -- EXP·레벨 동시 초기화 (EXP 0 = calcLevel(0) = level 1)
     update public.players
     set exp = 0, month_exp = 0, week_exp = 0, level = 1
     where team_id = v_season.team_id;
