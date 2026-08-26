@@ -2,24 +2,24 @@ import { NextResponse } from "next/server";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
-} from "@/lib/serverSupabase";
+} from "@/infrastructure/supabase/server";
 import {
     syncTodayGoogleCalendarEvents,
     syncTodayTeamCalendarEvents,
     type GoogleCalendarConnection,
-} from "@/lib/server/googleCalendar";
+} from "@/infrastructure/google-calendar";
 import {
     buildNotificationSuggestions,
     type QuestBriefingInput,
-} from "@/lib/agents/notificationAgent";
-import { createAgentSuggestions } from "@/lib/agents/suggestions";
-import type { Accessibility, Task } from "@/lib/types";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
+} from "@/features/agents/server/notificationAgent";
+import { createAgentSuggestions } from "@/features/agents/server/suggestions";
+import type { Accessibility, Task } from "@/shared/types";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
 import {
     consumeRateLimit,
     rateLimitResponse,
     requestRateLimitKey,
-} from "@/lib/server/rateLimit";
+} from "@/shared/server/rateLimit";
 
 export async function POST(request: Request) {
     const { user, role, teamId } = await getServerCurrentTeamRole();

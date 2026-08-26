@@ -2,26 +2,26 @@ import { NextResponse } from "next/server";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
-} from "@/lib/serverSupabase";
+} from "@/infrastructure/supabase/server";
 import {
     buildNotificationSuggestions,
     type CalendarEventInput,
     type QuestBriefingInput,
-} from "@/lib/agents/notificationAgent";
-import { sendGoogleChatMessage } from "@/lib/server/googleChat";
-import { syncTodayTeamCalendarEvents } from "@/lib/server/googleCalendar";
+} from "@/features/agents/server/notificationAgent";
+import { sendGoogleChatMessage } from "@/infrastructure/google-chat";
+import { syncTodayTeamCalendarEvents } from "@/infrastructure/google-calendar";
 import type {
     AgentSuggestion,
     NotificationSuggestionPayload,
-} from "@/lib/agents/types";
-import type { Accessibility, Task } from "@/lib/types";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
-import { decryptIntegrationToken } from "@/lib/server/tokenEncryption";
+} from "@/features/agents/server/types";
+import type { Accessibility, Task } from "@/shared/types";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
+import { decryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
 import {
     consumeRateLimit,
     rateLimitResponse,
     requestRateLimitKey,
-} from "@/lib/server/rateLimit";
+} from "@/shared/server/rateLimit";
 
 function isNotificationPayload(
     payload: Record<string, unknown>,

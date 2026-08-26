@@ -17,7 +17,7 @@ import type {
   AdminRoleDefinition,
 } from "@/features/admin/types";
 import { isIdentitySchemaUnavailable } from "@/features/identity/server/identityRepository";
-import { createServiceSupabaseClient } from "@/lib/serverSupabase";
+import { createServiceSupabaseClient } from "@/infrastructure/supabase/server";
 
 type PermissionRow = {
   key: string;

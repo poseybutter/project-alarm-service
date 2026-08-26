@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
-import { TEAM_ID } from "@/lib/constants";
+import { TEAM_ID } from "@/shared/constants";
 import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
 
 export async function createCookieSupabaseClient() {
@@ -65,6 +65,7 @@ export async function getServerUserRole(teamId: string) {
         };
     }
 
+    // 스키마 미적용 또는 백필 지연 시 폴백
     const { data } = await supabase
         .from("players")
         .select("name, role, status")
@@ -110,6 +111,7 @@ export async function getServerCurrentTeamRole() {
         };
     }
 
+    // 스키마 미적용 또는 백필 지연 시 폴백
     const teamId = cookieTeamId || TEAM_ID;
     const { data } = await supabase
         .from("players")

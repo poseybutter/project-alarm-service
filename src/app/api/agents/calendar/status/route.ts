@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
-} from "@/lib/serverSupabase";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
-import { decryptIntegrationToken } from "@/lib/server/tokenEncryption";
+} from "@/infrastructure/supabase/server";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
+import { decryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
 
 export async function GET() {
     const { user, role, teamId } = await getServerCurrentTeamRole();

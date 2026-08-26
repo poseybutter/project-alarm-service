@@ -1,4 +1,4 @@
-import type { Project } from "./types";
+import type { Project } from "@/shared/types";
 
 /** Supabase 행을 Project 타입으로 정규화 (members / 레거시 member 호환) */
 export function normalizeProject(row: Record<string, unknown>): Project {

@@ -2,7 +2,7 @@
 
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { signInWithGoogle } from "@/lib/auth";
+import { signInWithGoogle } from "@/infrastructure/supabase/auth";
 import { GameButton } from "@/components/auth/GameButton";
 import { GameBar } from "@/components/auth/GameBar";
 import { Hero, Gem } from "@/components/auth/Pix";
@@ -69,23 +69,6 @@ function LoginContent() {
                             <span>Google 로그인</span>
                         </GameButton>
                     </div>
-
-                    {/* TODO: 초대코드 가입 플로우 재오픈 시 주석 해제
-                    <div className="flex items-center gap-3 my-6 text-[11px] font-bold text-stone-400 uppercase tracking-widest">
-                        <div className="flex-1 h-[2px] bg-stone-200" />
-                        아직 길드원이 아닌가요?
-                        <div className="flex-1 h-[2px] bg-stone-200" />
-                    </div>
-
-                    <GameButton
-                        variant="ghost"
-                        size="lg"
-                        full
-                        onClick={() => router.push("/signup")}
-                    >
-                        <span>🔑 초대코드로 길드 가입하기</span>
-                    </GameButton>
-                    */}
 
                     <div className="mt-5 p-3 bg-stone-50 border-2 border-stone-200 rounded-md flex gap-2 text-[12px] text-stone-600">
                         <div className="text-stone-400 pt-0.5">🛡️</div>

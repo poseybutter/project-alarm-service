@@ -6,11 +6,7 @@
     },
     {
       "path": "/api/seasons/close",
-      "schedule": "59 14 31 8 *"
-    },
-    {
-      "path": "/api/seasons/close",
-      "schedule": "59 14 31 12 *"
+      "schedule": "59 14 * * *"
     },
     {
       "path": "/api/players/reset-exp?type=monthly",

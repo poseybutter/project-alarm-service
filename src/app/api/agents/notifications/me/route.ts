@@ -2,18 +2,18 @@ import { NextResponse } from "next/server";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
-} from "@/lib/serverSupabase";
+} from "@/infrastructure/supabase/server";
 import {
     buildNotificationSuggestions,
     type CalendarEventInput,
     type QuestBriefingInput,
-} from "@/lib/agents/notificationAgent";
+} from "@/features/agents/server/notificationAgent";
 import {
     syncTodayGoogleCalendarEvents,
     type GoogleCalendarConnection,
-} from "@/lib/server/googleCalendar";
-import type { Accessibility, Task } from "@/lib/types";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
+} from "@/infrastructure/google-calendar";
+import type { Accessibility, Task } from "@/shared/types";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
 
 export async function POST() {
     const { supabase, user, role, teamId } = await getServerCurrentTeamRole();

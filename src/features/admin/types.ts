@@ -59,6 +59,8 @@ export type AdminTeam = {
 
 export type AdminMember = {
   id: number;
+  membershipId: string | null;
+  isDefault: boolean;
   name: string;
   email: string;
   avatarUrl: string | null;

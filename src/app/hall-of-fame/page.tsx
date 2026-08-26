@@ -3,13 +3,14 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { supabase } from "@/lib/supabase";
-import { calcLevel } from "@/lib/maple";
+import { supabase } from "@/infrastructure/supabase/client";
+import { calcLevel } from "@/features/gamification/maple";
+import { getTeamRoster } from "@/features/gamification/api/getTeamRoster";
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import Avatar from "@/components/Avatar";
 import { PageSpinner } from "@/components/Spinner";
-import type { Season, SeasonRecord, SeasonAward } from "@/lib/types";
+import type { Season, SeasonRecord, SeasonAward } from "@/shared/types";
 
 interface DisplayRecord {
     key: string;
@@ -145,8 +146,14 @@ export default function HallOfFamePage() {
     // seasonDataMap을 ref로도 관리해 useCallback deps 무한루프 방지
     const seasonDataRef = useRef<Record<number, SeasonData>>({});
     const seasonsRef = useRef<Season[]>([]);
+    // teamId 변경마다 증가, stale 응답의 state 갱신 차단용
+    const teamGenerationRef = useRef(0);
 
-    const loadSeasonData = useCallback(async (seasonId: number, seasonList?: Season[]) => {
+    const loadSeasonData = useCallback(async (
+        seasonId: number,
+        seasonList?: Season[],
+        generation: number = teamGenerationRef.current,
+    ) => {
         if (seasonDataRef.current[seasonId]) return;
 
         const list = seasonList ?? seasonsRef.current;
@@ -156,19 +163,16 @@ export default function HallOfFamePage() {
         const isLive = season.status === "active";
 
         if (isLive) {
-            const [{ data: players }, { data: awards }] = await Promise.all([
-                supabase
-                    .from("players")
-                    .select("name, exp")
-                    .eq("team_id", teamId!)
-                    .order("exp", { ascending: false }),
+            const [players, { data: awards }] = await Promise.all([
+                getTeamRoster(supabase, teamId!),
                 supabase
                     .from("season_awards")
                     .select("*")
                     .eq("season_id", seasonId),
             ]);
+            if (generation !== teamGenerationRef.current) return;
 
-            const records: DisplayRecord[] = (players ?? []).map((p, i) => ({
+            const records: DisplayRecord[] = players.map((p, i) => ({
                 key: `live-${p.name}`,
                 member: p.name,
                 rank: i + 1,
@@ -191,6 +195,7 @@ export default function HallOfFamePage() {
                     .select("*")
                     .eq("season_id", seasonId),
             ]);
+            if (generation !== teamGenerationRef.current) return;
 
             const displayRecords: DisplayRecord[] = ((records ?? []) as SeasonRecord[]).map((r) => ({
                 key: `rec-${r.id}`,
@@ -212,6 +217,7 @@ export default function HallOfFamePage() {
     }, [teamId]);
 
     const loadSeasons = useCallback(async () => {
+        const generation = ++teamGenerationRef.current;
         // 팀 전환 시 이전 팀 데이터 초기화
         setSeasons([]);
         setSeasonDataMap({});
@@ -225,16 +231,17 @@ export default function HallOfFamePage() {
                 .select("*")
                 .eq("team_id", teamId!)
                 .order("range_start", { ascending: false });
+            if (generation !== teamGenerationRef.current) return;
 
             const list = (data ?? []) as Season[];
             seasonsRef.current = list;
             setSeasons(list);
             if (list.length > 0) {
                 setActiveTab(list[0].id);
-                await loadSeasonData(list[0].id, list);
+                await loadSeasonData(list[0].id, list, generation);
             }
         } finally {
-            setLoading(false);
+            if (generation === teamGenerationRef.current) setLoading(false);
         }
     }, [teamId, loadSeasonData]);
 

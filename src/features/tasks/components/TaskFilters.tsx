@@ -1,7 +1,7 @@
 "use client";
 
 import Select from "react-select";
-import { taskFilterProjectSelectStyles } from "@/lib/reactSelectStyles";
+import { taskFilterProjectSelectStyles } from "@/shared/styles/reactSelectStyles";
 
 const PRIORITY_OPTIONS = ["긴급", "높음", "보통", "낮음"].map((p) => ({
     value: p,

@@ -1,23 +1,18 @@
 /**
  * POST /api/seasons/close
  *
- * 활성 시즌을 종료하고 명예의 전당 기록을 저장한다.
- *
- * 동작 순서:
- *  1. 종료일이 오늘 이하인 active 시즌을 찾는다.
- *  2. players 테이블에서 EXP 순위 계산 → season_records 저장.
- *  3. tasks 테이블에서 특별상 계산 → season_awards 저장.
- *  4. 시즌 status='ended', mvp_member 업데이트.
- *  5. 다음 시즌 자동 생성.
- *  6. 모든 팀원 EXP 초기화.
+ * 활성 시즌 종료 및 명예의 전당 기록 저장.
+ * 순위·특별상 계산: 여기서 처리
+ * 저장(기록·시즌 종료·다음 시즌·EXP 리셋): close_season RPC, 단일 트랜잭션
  *
  * 인증: Authorization: Bearer $CRON_SECRET
  * 수동 강제 종료: ?force=true (CRON_SECRET 필수)
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { createServiceSupabaseClient } from "@/lib/serverSupabase";
-import { calcLevel } from "@/lib/maple";
+import { createServiceSupabaseClient } from "@/infrastructure/supabase/server";
+import { calcLevel } from "@/features/gamification/maple";
+import { getTeamRoster } from "@/features/gamification/api/getTeamRoster";
 
 function isAuthorized(req: NextRequest) {
     const secret = process.env.CRON_SECRET;
@@ -102,33 +97,32 @@ export async function POST(req: NextRequest) {
         const seasonId: number = season.id;
 
         try {
-            // 2. 팀원 EXP 순위 → season_records 저장
-            const { data: players, error: playersErr } = await supabase
-                .from("players")
-                .select("name, exp, level")
-                .eq("team_id", teamId)
-                .order("exp", { ascending: false });
-            if (playersErr) throw new Error(`players 조회 실패: ${playersErr.message}`);
-
-            if (players?.length) {
-                const records = players.map((p, i) => {
-                    const lv = calcLevel(p.exp);
-                    return {
-                        season_id: seasonId,
-                        team_id: teamId,
-                        member: p.name,
-                        rank: i + 1,
-                        exp: p.exp,
-                        level: lv.level,
-                        level_name: lv.name,
-                    };
-                });
-
-                const { error: recErr } = await supabase
-                    .from("season_records")
-                    .upsert(records, { onConflict: "season_id,member" });
-                if (recErr) throw new Error(`season_records: ${recErr.message}`);
+            // 2. 팀원 EXP 순위 계산
+            let players;
+            try {
+                players = await getTeamRoster(supabase, teamId);
+            } catch (err) {
+                throw new Error(
+                    `players 조회 실패: ${err instanceof Error ? err.message : String(err)}`,
+                );
             }
+
+            const records = players.map((p, i) => {
+                const lv = calcLevel(p.exp);
+                return {
+                    player_id: p.id,
+                    member: p.name,
+                    rank: i + 1,
+                    exp: p.exp,
+                    level: lv.level,
+                    level_name: lv.name,
+                };
+            });
+
+            // player_id 로 특별상 수상자를 다시 찾기 위한 맵
+            const playerIdByName = new Map(
+                players.map((p) => [p.name, p.id] as const),
+            );
 
             // 3. 특별상 계산
             const { data: tasks, error: tasksErr } = await supabase
@@ -141,8 +135,7 @@ export async function POST(req: NextRequest) {
             if (tasksErr) throw new Error(`tasks 조회 실패: ${tasksErr.message}`);
 
             const awards: {
-                season_id: number;
-                team_id: string;
+                player_id: number | null;
                 icon: string;
                 title: string;
                 member: string;
@@ -156,8 +149,7 @@ export async function POST(req: NextRequest) {
                 const doneTop = Object.entries(doneCount).sort((a, b) => b[1] - a[1])[0];
                 if (doneTop) {
                     awards.push({
-                        season_id: seasonId,
-                        team_id: teamId,
+                        player_id: playerIdByName.get(doneTop[0]) ?? null,
                         icon: "🏆",
                         title: "업무 완료왕",
                         member: doneTop[0],
@@ -173,8 +165,7 @@ export async function POST(req: NextRequest) {
                 const urgentTop = Object.entries(urgentCount).sort((a, b) => b[1] - a[1])[0];
                 if (urgentTop) {
                     awards.push({
-                        season_id: seasonId,
-                        team_id: teamId,
+                        player_id: playerIdByName.get(urgentTop[0]) ?? null,
                         icon: "⚡",
                         title: "긴급 해결사",
                         member: urgentTop[0],
@@ -194,8 +185,7 @@ export async function POST(req: NextRequest) {
                     .sort((a, b) => b[1] - a[1])[0];
                 if (daysTop) {
                     awards.push({
-                        season_id: seasonId,
-                        team_id: teamId,
+                        player_id: playerIdByName.get(daysTop[0]) ?? null,
                         icon: "📅",
                         title: "꾸준왕",
                         member: daysTop[0],
@@ -204,50 +194,34 @@ export async function POST(req: NextRequest) {
                 }
             }
 
-            if (awards.length) {
-                const { error: awErr } = await supabase
-                    .from("season_awards")
-                    .upsert(awards, { onConflict: "season_id,title" });
-                if (awErr) throw new Error(`season_awards: ${awErr.message}`);
+            // 4. 다음 시즌 정보 계산 (실제 생성 여부는 DB 함수가 팀별 active 시즌
+            //    유무를 다시 확인해서 결정한다 — 동시 요청 시 중복 방지)
+            const next = nextSeasonInfo(season.range_end);
+            const mvp = players[0]?.name ?? null;
+
+            // 5. 기록·특별상 저장, 시즌 종료, 다음 시즌 생성, EXP·레벨 초기화를
+            //    하나의 트랜잭션으로 처리한다.
+            const { data: closeResult, error: closeErr } = await supabase.rpc(
+                "close_season",
+                {
+                    p_season_id: seasonId,
+                    p_records: records,
+                    p_awards: awards,
+                    p_mvp_member: mvp,
+                    p_next_label: next.label,
+                    p_next_sub_label: null,
+                    p_next_range_start: next.range_start,
+                    p_next_range_end: next.range_end,
+                },
+            );
+            if (closeErr) throw new Error(`close_season: ${closeErr.message}`);
+
+            if (closeResult?.skipped) {
+                results.push(
+                    `⏭️ ${season.label} (team: ${teamId}) 건너뜀: ${closeResult.reason}`,
+                );
+                continue;
             }
-
-            // 4. 시즌 종료 처리
-            const mvp = players?.[0]?.name ?? null;
-            const { error: closeErr } = await supabase
-                .from("seasons")
-                .update({ status: "ended", mvp_member: mvp })
-                .eq("id", seasonId);
-            if (closeErr) throw new Error(`season close: ${closeErr.message}`);
-
-            // 5. 다음 시즌 자동 생성 (같은 팀에 active 시즌이 없을 때만)
-            const { data: existing } = await supabase
-                .from("seasons")
-                .select("id")
-                .eq("team_id", teamId)
-                .eq("status", "active")
-                .limit(1);
-
-            if (!existing?.length) {
-                const next = nextSeasonInfo(season.range_end);
-                const { error: nextErr } = await supabase
-                    .from("seasons")
-                    .insert({
-                        team_id: teamId,
-                        label: next.label,
-                        sub_label: null,
-                        range_start: next.range_start,
-                        range_end: next.range_end,
-                        status: "active",
-                    });
-                if (nextErr) throw new Error(`next season: ${nextErr.message}`);
-            }
-
-            // 6. EXP 초기화
-            const { error: resetErr } = await supabase
-                .from("players")
-                .update({ exp: 0, month_exp: 0, week_exp: 0 })
-                .eq("team_id", teamId);
-            if (resetErr) throw new Error(`exp reset: ${resetErr.message}`);
 
             results.push(`✅ ${season.label} (team: ${teamId}) 종료 완료`);
         } catch (err) {
