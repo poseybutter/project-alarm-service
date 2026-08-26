@@ -238,29 +238,30 @@ export default function ProfilePage() {
             if (cancelled) return;
             if (!seasons?.length) return;
 
+            // 팀 전체 기록을 가져와 player_id 로 매칭한다 (playerId 있으면 그걸로,
+            // player_id 가 비어있는 옛 기록은 이름으로 폴백). 개명해도 player_id
+            // 로 계속 같은 사람의 기록을 찾을 수 있다.
             const [{ data: records }, { data: awards }] = await Promise.all([
-                supabase
-                    .from("season_records")
-                    .select("*")
-                    .eq("team_id", teamId)
-                    .eq("member", member),
-                supabase
-                    .from("season_awards")
-                    .select("*")
-                    .eq("team_id", teamId)
-                    .eq("member", member),
+                supabase.from("season_records").select("*").eq("team_id", teamId),
+                supabase.from("season_awards").select("*").eq("team_id", teamId),
             ]);
+            if (cancelled) return;
+
+            const isMine = (row: { player_id: number | null; member: string }) =>
+                row.player_id != null ? row.player_id === playerId : row.member === member;
+
+            const myRecords = (records ?? []).filter(isMine) as SeasonRecord[];
+            const myAwards = (awards ?? []).filter(isMine) as SeasonAward[];
 
             const history = seasons.map((s) => ({
                 season: s as Season,
-                record:
-                    (records ?? []).find((r) => r.season_id === s.id) as SeasonRecord | null,
-                awards: (awards ?? []).filter((a) => a.season_id === s.id) as SeasonAward[],
+                record: myRecords.find((r) => r.season_id === s.id) ?? null,
+                awards: myAwards.filter((a) => a.season_id === s.id),
             }));
             if (!cancelled) setSeasonHistory(history);
         })();
         return () => { cancelled = true; };
-    }, [teamId, member]);
+    }, [teamId, member, playerId]);
 
     async function deleteHistoryTask(id: number) {
         if (!confirm("정말 삭제하시겠어요?")) return;
