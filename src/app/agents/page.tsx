@@ -79,12 +79,16 @@ function formatDateTime(value: string | null) {
 }
 
 function cardHtmlToPlainText(value: string) {
-    return value
-        .replace(/<br\s*\/?>/gi, "\n")
-        .replace(/<[^>]*>/g, "")
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
+    let text = value.replace(/<br\s*\/?>/gi, "\n");
+    let prev;
+    do {
+        prev = text;
+        text = text.replace(/<[^>]*>/g, "");
+    } while (text !== prev);
+    return text
+        .replace(/&(amp|lt|gt);/g, (_, e: string) =>
+            ({ amp: "&", lt: "<", gt: ">" } as Record<string, string>)[e] ?? _,
+        )
         .trim();
 }
 
