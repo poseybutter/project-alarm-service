@@ -136,17 +136,6 @@ export default function TasksPage() {
 
     async function deleteTask(id: number) {
         if (!confirm("삭제할까요?")) return;
-        try {
-            await deleteTaskFromTeamCalendar(id);
-        } catch (err) {
-            if (
-                !confirm(
-                    `${err instanceof Error ? err.message : "팀 캘린더 일정 삭제 실패"}\n그래도 업무를 삭제할까요?`,
-                )
-            ) {
-                return;
-            }
-        }
         const { data, error } = await supabase
             .from("tasks")
             .delete()
@@ -156,6 +145,12 @@ export default function TasksPage() {
             showToastMsg("권한이 없어 삭제할 수 없어요");
             return;
         }
+        // 업무 삭제 성공 후 캘린더 동기화 (실패해도 업무는 이미 삭제됨)
+        deleteTaskFromTeamCalendar(id).catch((err) => {
+            showToastMsg(
+                err instanceof Error ? err.message : "팀 캘린더 일정 삭제 실패",
+            );
+        });
         loadTasks();
     }
 
