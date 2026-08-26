@@ -79,9 +79,13 @@ function formatDateTime(value: string | null) {
 }
 
 function cardHtmlToPlainText(value: string) {
-    return value
-        .replace(/<br\s*\/?>/gi, "\n")
-        .replace(/<[^>]*>/g, "")
+    let text = value.replace(/<br\s*\/?>/gi, "\n");
+    let prev;
+    do {
+        prev = text;
+        text = text.replace(/<[^>]*>/g, "");
+    } while (text !== prev);
+    return text
         .replace(/&amp;/g, "&")
         .replace(/&lt;/g, "<")
         .replace(/&gt;/g, ">")
