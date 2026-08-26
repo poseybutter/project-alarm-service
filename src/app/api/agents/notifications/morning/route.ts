@@ -7,16 +7,16 @@ import {
     type QuestBriefingInput,
 } from "@/lib/agents/notificationAgent";
 import { hasRecentNotificationDelivery } from "@/lib/agents/notificationDeliveries";
-import { sendGoogleChatMessage } from "@/lib/server/googleChat";
+import { sendGoogleChatMessage } from "@/infrastructure/google-chat";
 import {
     syncTodayGoogleCalendarEvents,
     syncTodayTeamCalendarEvents,
     type GoogleCalendarConnection,
-} from "@/lib/server/googleCalendar";
+} from "@/infrastructure/google-calendar";
 import type { AgentSuggestion, NotificationSuggestionPayload } from "@/lib/agents/types";
 import type { Accessibility, Task } from "@/lib/types";
 import { internalErrorResponse } from "@/lib/server/apiResponse";
-import { decryptIntegrationToken } from "@/lib/server/tokenEncryption";
+import { decryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
 
 type NotificationSetting = {
     member: string;

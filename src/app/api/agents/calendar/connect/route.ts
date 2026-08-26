@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { getServerCurrentTeamRole } from "@/lib/serverSupabase";
-import { buildGoogleCalendarAuthUrl } from "@/lib/server/googleCalendar";
+import { buildGoogleCalendarAuthUrl } from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/lib/server/apiResponse";
 
 export async function GET() {

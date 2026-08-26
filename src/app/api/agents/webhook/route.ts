@@ -8,7 +8,7 @@ import {
 import {
     decryptIntegrationToken,
     encryptIntegrationToken,
-} from "@/lib/server/tokenEncryption";
+} from "@/infrastructure/security/tokenEncryption";
 
 function validateWebhookUrl(value: string) {
     if (!value.trim()) return "Webhook URL is required";

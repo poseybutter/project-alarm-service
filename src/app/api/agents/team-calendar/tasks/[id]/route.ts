@@ -9,7 +9,7 @@ import {
     type GoogleCalendarConnection,
     type TeamCalendarTaskInput,
     upsertTeamCalendarTaskEvent,
-} from "@/lib/server/googleCalendar";
+} from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/lib/server/apiResponse";
 
 type RouteContext = {
