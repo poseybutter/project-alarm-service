@@ -44,6 +44,9 @@ dev-server*.err
 *.tsbuildinfo
 next-env.d.ts
 
+# Wiki (GitHub Wiki에 직접 업로드)
+/wiki/
+
 # Claude, Codex
 /claude/
 CLAUDE.md
@@ -58,3 +61,4 @@ db/*.bak
 db/*.local.sql
 db/*secret*.sql
 db/*private*.sql
+AGENTS.md

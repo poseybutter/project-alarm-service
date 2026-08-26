@@ -836,7 +836,6 @@ export default function HomePage() {
     const [myTasks, setMyTasks] = useState<Task[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
     const [guestTeamTasks, setGuestTeamTasks] = useState<Task[]>([]);
-    const [loading, setLoading] = useState(true);
     const [toast, setToast] = useState("");
     const [isAttending, setIsAttending] = useState(false);
     const [showAddQuest, setShowAddQuest] = useState(false);
@@ -1129,52 +1128,46 @@ export default function HomePage() {
     async function loadData() {
         if (!teamId) return;
         const generation = ++loadGenerationRef.current;
-        setLoading(true);
-        let playerData, questData, myTaskData, guestTaskData, projData;
-        try {
-            [
-                { data: playerData },
-                { data: questData },
-                { data: myTaskData },
-                { data: guestTaskData },
-                { data: projData },
-            ] = await Promise.all([
-                supabase
-                    .from("players")
-                    .select("*")
-                    .eq("team_id", teamId)
-                    .eq("name", member)
-                    .maybeSingle(),
-                supabase
-                    .from("quests")
-                    .select("*")
-                    .eq("team_id", teamId)
-                    .eq("member", member)
-                    .neq("status", "완료")
-                    .order("order_index", { ascending: true, nullsFirst: false })
-                    .order("created_at", { ascending: true }),
-                supabase
-                    .from("tasks")
-                    .select("*")
-                    .eq("team_id", teamId)
-                    .eq("member", member)
-                    .order("end_date", { ascending: true }),
-                isGuest
-                    ? supabase
-                          .from("tasks")
-                          .select("*")
-                          .eq("team_id", teamId)
-                          .order("end_date", { ascending: true })
-                    : Promise.resolve({ data: [] as Task[] }),
-                supabase
-                    .from("projects")
-                    .select("*")
-                    .eq("team_id", teamId)
-                    .order("name", { ascending: true }),
-            ]);
-        } finally {
-            if (generation === loadGenerationRef.current) setLoading(false);
-        }
+        const [
+            { data: playerData },
+            { data: questData },
+            { data: myTaskData },
+            { data: guestTaskData },
+            { data: projData },
+        ] = await Promise.all([
+            supabase
+                .from("players")
+                .select("*")
+                .eq("team_id", teamId)
+                .eq("name", member)
+                .maybeSingle(),
+            supabase
+                .from("quests")
+                .select("*")
+                .eq("team_id", teamId)
+                .eq("member", member)
+                .neq("status", "완료")
+                .order("order_index", { ascending: true, nullsFirst: false })
+                .order("created_at", { ascending: true }),
+            supabase
+                .from("tasks")
+                .select("*")
+                .eq("team_id", teamId)
+                .eq("member", member)
+                .order("end_date", { ascending: true }),
+            isGuest
+                ? supabase
+                      .from("tasks")
+                      .select("*")
+                      .eq("team_id", teamId)
+                      .order("end_date", { ascending: true })
+                : Promise.resolve({ data: [] as Task[] }),
+            supabase
+                .from("projects")
+                .select("*")
+                .eq("team_id", teamId)
+                .order("name", { ascending: true }),
+        ]);
         if (generation !== loadGenerationRef.current) return;
         setPlayer(playerData);
         setQuests(questData || []);
@@ -1695,7 +1688,7 @@ export default function HomePage() {
                                 <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-3">
                                     활동 기록
                                 </p>
-                                <AttendanceHeatmap member={member ?? ""} />
+                                <AttendanceHeatmap member={member!} />
                             </div>
                         )}
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { signInWithGoogle } from "@/lib/auth";
 import { GameButton } from "@/components/auth/GameButton";
 import { GameBar } from "@/components/auth/GameBar";
@@ -14,7 +14,6 @@ import {
 } from "@/components/auth/atoms";
 
 function LoginContent() {
-    const router = useRouter();
     const searchParams = useSearchParams();
     const rejected =
         searchParams.get("rejected") === "1" ||

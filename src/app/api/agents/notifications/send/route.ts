@@ -10,7 +10,7 @@ import {
     recordNotificationDelivery,
 } from "@/lib/agents/notificationDeliveries";
 import { updateAgentSuggestionStatus } from "@/lib/agents/suggestions";
-import { sendGoogleChatMessage } from "@/lib/server/googleChat";
+import { DeliveryUnknownError, sendGoogleChatMessage } from "@/infrastructure/google-chat";
 import { decryptIntegrationToken } from "@/lib/server/tokenEncryption";
 
 type SendRequest = {
@@ -105,13 +105,30 @@ export async function POST(req: NextRequest) {
             webhookUrl = decryptIntegrationToken(webhookRow?.webhook_url);
         }
 
-        await sendGoogleChatMessage({
-            text: suggestion.payload.text,
-            card: suggestion.payload.card,
-            channel: suggestion.payload.channel,
-            recipientMember: suggestion.payload.recipientMember,
-            webhookUrl,
-        });
+        try {
+            await sendGoogleChatMessage({
+                text: suggestion.payload.text,
+                card: suggestion.payload.card,
+                channel: suggestion.payload.channel,
+                recipientMember: suggestion.payload.recipientMember,
+                webhookUrl,
+            });
+        } catch (err) {
+            if (err instanceof DeliveryUnknownError) {
+                // 타임아웃 — Google 측 처리 여부 불명. 중복 발송 방지를 위해 applied로 표시합니다.
+                const updated = await updateAgentSuggestionStatus(service, {
+                    id: suggestion.id,
+                    teamId,
+                    status: "applied",
+                    reviewedBy: user.email,
+                });
+                return NextResponse.json(
+                    { suggestion: updated, warning: "전송 결과를 확인할 수 없습니다. 중복 발송을 방지하기 위해 완료 처리되었습니다." },
+                    { status: 202 },
+                );
+            }
+            throw err;
+        }
         const updated = await updateAgentSuggestionStatus(service, {
             id: suggestion.id,
             teamId,
