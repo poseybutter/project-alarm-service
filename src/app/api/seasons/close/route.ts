@@ -103,11 +103,12 @@ export async function POST(req: NextRequest) {
 
         try {
             // 2. 팀원 EXP 순위 → season_records 저장
-            const { data: players } = await supabase
+            const { data: players, error: playersErr } = await supabase
                 .from("players")
                 .select("name, exp, level")
                 .eq("team_id", teamId)
                 .order("exp", { ascending: false });
+            if (playersErr) throw new Error(`players 조회 실패: ${playersErr.message}`);
 
             if (players?.length) {
                 const records = players.map((p, i) => {
@@ -130,13 +131,14 @@ export async function POST(req: NextRequest) {
             }
 
             // 3. 특별상 계산
-            const { data: tasks } = await supabase
+            const { data: tasks, error: tasksErr } = await supabase
                 .from("tasks")
                 .select("member, priority, end_date, status")
                 .eq("team_id", teamId)
                 .eq("status", "완료")
                 .gte("end_date", season.range_start)
                 .lte("end_date", season.range_end);
+            if (tasksErr) throw new Error(`tasks 조회 실패: ${tasksErr.message}`);
 
             const awards: {
                 season_id: number;
@@ -205,7 +207,7 @@ export async function POST(req: NextRequest) {
             if (awards.length) {
                 const { error: awErr } = await supabase
                     .from("season_awards")
-                    .insert(awards);
+                    .upsert(awards, { onConflict: "season_id,title" });
                 if (awErr) throw new Error(`season_awards: ${awErr.message}`);
             }
 

@@ -6,6 +6,10 @@
     },
     {
       "path": "/api/seasons/close",
+      "schedule": "59 14 31 8 *"
+    },
+    {
+      "path": "/api/seasons/close",
       "schedule": "59 14 31 12 *"
     },
     {
