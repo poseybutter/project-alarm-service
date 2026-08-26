@@ -65,6 +65,7 @@ export async function getServerUserRole(teamId: string) {
         };
     }
 
+    // 스키마 미적용 또는 백필 지연 시 폴백
     const { data } = await supabase
         .from("players")
         .select("name, role, status")
@@ -110,6 +111,7 @@ export async function getServerCurrentTeamRole() {
         };
     }
 
+    // 스키마 미적용 또는 백필 지연 시 폴백
     const teamId = cookieTeamId || TEAM_ID;
     const { data } = await supabase
         .from("players")
