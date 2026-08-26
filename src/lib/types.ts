@@ -110,6 +110,7 @@ export type SeasonRecord = {
     id: number;
     season_id: number;
     team_id: string;
+    player_id: number | null;
     member: string;
     rank: number;
     exp: number;
@@ -122,6 +123,7 @@ export type SeasonAward = {
     id: number;
     season_id: number;
     team_id: string;
+    player_id: number | null;
     icon: string;
     title: string;
     member: string;

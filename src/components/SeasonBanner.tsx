@@ -44,7 +44,7 @@ export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProp
     const [myRank, setMyRank] = useState<number | null>(null);
     const [expGap, setExpGap] = useState<number | null>(null);
 
-    async function load() {
+    async function load(isCancelled: () => boolean) {
         // 현재 진행 중인 시즌
         const { data: seasons } = await supabase
             .from("seasons")
@@ -53,6 +53,7 @@ export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProp
             .order("range_end", { ascending: false })
             .limit(2);
 
+        if (isCancelled()) return;
         if (!seasons || seasons.length === 0) return;
 
         const active = seasons.find((s) => s.status === "active") ?? null;
@@ -66,6 +67,7 @@ export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProp
             .eq("team_id", teamId!)
             .order("exp", { ascending: false });
 
+        if (isCancelled()) return;
         if (!players || players.length === 0) return;
 
         setTopPlayer(players[0] as Player);
@@ -80,8 +82,18 @@ export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProp
     }
 
     useEffect(() => {
+        // 팀 전환 시 이전 팀의 배너가 잠깐이라도 보이지 않도록 먼저 비운다.
+        setSeason(null);
+        setTopPlayer(null);
+        setMyRank(null);
+        setExpGap(null);
+
         if (!teamId) return;
-        void load();
+        let cancelled = false;
+        void load(() => cancelled);
+        return () => {
+            cancelled = true;
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [teamId]);
 
