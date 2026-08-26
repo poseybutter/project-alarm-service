@@ -19,6 +19,7 @@ const STATUS_OPTIONS = [
 
 type StatusChangeAnchor = { x: number; y: number };
 
+/** 업무 상태를 Select 드롭다운으로 변경하는 배지 컴포넌트. 클릭 위치를 EXP 팝업 앵커로 전달한다. */
 function TaskStatusBadgeSelect({
     task,
     disabled,
