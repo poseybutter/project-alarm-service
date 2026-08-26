@@ -36,6 +36,8 @@ import { ALL_TEAM_MODULES } from "@/features/admin/types";
 
 type PlayerRow = {
   id: number;
+  membership_id?: string | null;
+  is_default?: boolean;
   name: string | null;
   email: string | null;
   avatar_url: string | null;
@@ -277,6 +279,8 @@ function toAdminMember(
   const role = normalizeAdminRole(row.role);
   return {
     id: row.id,
+    membershipId: row.membership_id ?? null,
+    isDefault: row.is_default ?? true,
     name: row.name || row.email?.split("@")[0] || "이름 미등록",
     email: row.email || "이메일 미등록",
     avatarUrl: row.avatar_url,
@@ -313,7 +317,7 @@ async function queryAdminMembersNormalized(teamId: string | null): Promise<Playe
   let tmQuery = service
     .from("team_memberships")
     .select(
-      "legacy_player_id, team_id, role, status, profiles!inner(display_name, email, avatar_url, account_status)",
+      "id, legacy_player_id, team_id, role, status, is_default, profiles!inner(display_name, email, avatar_url, account_status)",
     );
   if (teamId) tmQuery = tmQuery.eq("team_id", teamId);
   const { data: tmRows, error: tmError } = await tmQuery;
@@ -339,19 +343,19 @@ async function queryAdminMembersNormalized(teamId: string | null): Promise<Playe
   }
 
   return (tmRows ?? [])
-    .flatMap((r) => {
-      // legacy_player_id 없는 행은 건너뜀 (PATCH·React key 충돌 방지)
-      if (typeof r.legacy_player_id !== "number" || r.legacy_player_id <= 0) {
-        return [];
-      }
+    .map((r) => {
       const profile = r.profiles as unknown as {
         display_name: string;
         email: string;
         avatar_url: string | null;
         account_status: string;
       };
-      const legacyId = r.legacy_player_id;
-      const gm = levelMap.get(legacyId);
+      // legacy_player_id 없는 행(두 번째 이상 팀 멤버십)은 gamification 데이터가 없음
+      const legacyId =
+        typeof r.legacy_player_id === "number" && r.legacy_player_id > 0
+          ? r.legacy_player_id
+          : 0;
+      const gm = legacyId > 0 ? levelMap.get(legacyId) : undefined;
       const effectiveStatus =
         r.status === "active"
           ? "active"
@@ -360,8 +364,10 @@ async function queryAdminMembersNormalized(teamId: string | null): Promise<Playe
             : profile.account_status === "rejected"
               ? "rejected"
               : "suspended";
-      return [{
+      return {
         id: legacyId,
+        membership_id: String(r.id),
+        is_default: Boolean(r.is_default),
         name: profile.display_name ?? null,
         email: profile.email ?? null,
         avatar_url: profile.avatar_url ?? null,
@@ -370,7 +376,7 @@ async function queryAdminMembersNormalized(teamId: string | null): Promise<Playe
         status: effectiveStatus,
         level: gm?.level ?? null,
         exp: gm?.exp ?? null,
-      } as PlayerRow];
+      } as PlayerRow;
     })
     .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "ko"));
 }
