@@ -2,6 +2,6 @@
 
 export const dynamic = "force-dynamic";
 
-import TasksPage from "./TasksPage";
+import TasksPage from "@/features/tasks/components/TasksPage";
 
 export default TasksPage;

@@ -42,11 +42,13 @@ export function findProjectId(
 
 export function getDiff(dateStr: string | null) {
     if (!dateStr) return null;
-    const d = new Date(dateStr);
-    const n = new Date();
-    d.setHours(0, 0, 0, 0);
-    n.setHours(0, 0, 0, 0);
-    return Math.round((d.getTime() - n.getTime()) / (1000 * 60 * 60 * 24));
+    // "YYYY-MM-DD" 문자열을 로컬 날짜로 파싱 (UTC 변환 없이 D-day 계산)
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const target = new Date(y, m - 1, d);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    target.setHours(0, 0, 0, 0);
+    return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
 /** 작성 시점 기준 상대 시간 (방금/몇 분/시간/일 전, 7일 이상은 날짜). 실제 일시는 GitHub에 있음 */
