@@ -43,9 +43,14 @@ export default function TasksPage() {
 
     const { tasks, projects, loading, loadTasks } = useTasksData(teamId);
     const [toast, setToast] = useState("");
+    const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     function showToastMsg(msg: string) {
+        if (toastTimer.current) clearTimeout(toastTimer.current);
         setToast(msg);
-        setTimeout(() => setToast(""), 3000);
+        toastTimer.current = setTimeout(() => {
+            setToast("");
+            toastTimer.current = null;
+        }, 3000);
     }
     const [showModal, setShowModal] = useState(false);
     const [editTask, setEditTask] = useState<Task | null>(null);
