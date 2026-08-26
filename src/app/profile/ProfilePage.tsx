@@ -226,13 +226,16 @@ export default function ProfilePage() {
     const router = useRouter();
 
     useEffect(() => {
+        setSeasonHistory([]); // 팀/멤버 전환 시 이전 데이터 초기화
         if (!teamId || !member) return;
+        let cancelled = false;
         void (async () => {
             const { data: seasons } = await supabase
                 .from("seasons")
                 .select("*")
                 .eq("team_id", teamId)
                 .order("range_start", { ascending: false });
+            if (cancelled) return;
             if (!seasons?.length) return;
 
             const [{ data: records }, { data: awards }] = await Promise.all([
@@ -254,8 +257,9 @@ export default function ProfilePage() {
                     (records ?? []).find((r) => r.season_id === s.id) as SeasonRecord | null,
                 awards: (awards ?? []).filter((a) => a.season_id === s.id) as SeasonAward[],
             }));
-            setSeasonHistory(history);
+            if (!cancelled) setSeasonHistory(history);
         })();
+        return () => { cancelled = true; };
     }, [teamId, member]);
 
     async function deleteHistoryTask(id: number) {

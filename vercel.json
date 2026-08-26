@@ -14,11 +14,11 @@
     },
     {
       "path": "/api/players/reset-exp?type=monthly",
-      "schedule": "1 0 1 * *"
+      "schedule": "1 15 1 * *"
     },
     {
       "path": "/api/players/reset-exp?type=weekly",
-      "schedule": "1 15 * * 0"
+      "schedule": "1 15 * * 1"
     }
   ]
 }
