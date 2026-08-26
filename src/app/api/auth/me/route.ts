@@ -32,11 +32,17 @@ export async function GET() {
     }
 
     // 스키마 미적용 폴백: players 직접 조회
-    const { data } = await supabase
+    const { data, error } = await supabase
         .from("players")
         .select("name, status")
         .eq("email", user.email)
         .maybeSingle();
+    if (error) {
+        return NextResponse.json(
+            { message: "사용자 정보를 확인할 수 없습니다." },
+            { status: 500 },
+        );
+    }
 
     return NextResponse.json({
         email: user.email,
