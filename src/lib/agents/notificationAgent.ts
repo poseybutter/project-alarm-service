@@ -174,10 +174,9 @@ function htmlToPlainText(value: string | null | undefined) {
         text = text.replace(/<[^>]*>/g, "");
     } while (text !== prev);
     return text
-        .replace(/&nbsp;/g, " ")
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
+        .replace(/&(amp|lt|gt|nbsp);/g, (_, e) =>
+            ({ amp: "&", lt: "<", gt: ">", nbsp: " " })[e] ?? _,
+        )
         .split("\n")
         .map((line) => line.trim())
         .filter(Boolean)

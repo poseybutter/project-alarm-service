@@ -109,11 +109,9 @@ function htmlToMarkdown(html: string): string {
         result = result.replace(/<[^>]*>/g, "");
     } while (result !== mdPrev);
     return result
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
+        .replace(/&(amp|lt|gt|quot|#39);/g, (_, e) =>
+            ({ amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" })[e] ?? _,
+        )
         .replace(/\n{3,}/g, "\n\n") // 3줄 이상 연속 줄바꿈 → 2줄로 축약
         .trim();
 }
