@@ -916,6 +916,80 @@ export async function updateAdminMember(input: {
   return data;
 }
 
+/**
+ * 이미 다른 팀 소속인 프로필을 두 번째 팀에 추가한다.
+ * players는 팀 1개만 표현 가능하므로 이 멤버십은 legacy_player_id 없이
+ * team_memberships에만 생성한다 (is_default=false, 기존 기본 팀 유지).
+ */
+export async function addTeamMembership(input: {
+  email: string;
+  teamId: string;
+  role: "admin" | "member" | "viewer";
+}) {
+  const bootstrap = await requireAdminSession(input.teamId, "members.manage");
+  const service = createServiceSupabaseClient();
+  const email = input.email.trim().toLowerCase();
+
+  const { data: profile, error: profileError } = await service
+    .from("profiles")
+    .select("id, display_name, email, account_status")
+    .eq("email", email)
+    .maybeSingle();
+  if (profileError && isIdentitySchemaUnavailable(profileError)) {
+    throw new AdminApiError("V31 정규화 마이그레이션이 필요합니다.", 503);
+  }
+  if (profileError) throw profileError;
+  if (!profile) {
+    throw new AdminApiError(
+      "로그인 이력이 있는 사용자만 다른 팀에 추가할 수 있습니다.",
+      404,
+    );
+  }
+  if (profile.account_status !== "active") {
+    throw new AdminApiError("활성 상태 사용자만 다른 팀에 추가할 수 있습니다.", 409);
+  }
+
+  const { data: existing, error: existingError } = await service
+    .from("team_memberships")
+    .select("id")
+    .eq("profile_id", profile.id)
+    .eq("team_id", input.teamId)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing) {
+    throw new AdminApiError("이미 해당 팀 소속입니다.", 409);
+  }
+
+  const { data: membership, error: insertError } = await service
+    .from("team_memberships")
+    .insert({
+      profile_id: profile.id,
+      team_id: input.teamId,
+      role: input.role,
+      status: "active",
+      is_default: false,
+      legacy_player_id: null,
+    })
+    .select("id, team_id, role, status, is_default")
+    .single();
+  if (insertError?.code === "23505") {
+    throw new AdminApiError("이미 해당 팀 소속입니다.", 409);
+  }
+  if (insertError) throw insertError;
+
+  await writeAdminAudit({
+    actorEmail: bootstrap.identity.email,
+    action: "membership.added",
+    teamId: input.teamId,
+    targetType: "team_membership",
+    targetId: membership.id,
+    targetLabel: profile.display_name || profile.email,
+    afterState: membership,
+  });
+
+  return membership;
+}
+
 export async function listTeamsWithCounts() {
   const bootstrap = await requireAdminSession(null, "teams.read");
   const effectiveTeamId = bootstrap.currentScope.teamId;
