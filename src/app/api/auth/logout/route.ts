@@ -5,26 +5,25 @@ import { minimizedAuditMetadata } from "@/lib/server/auditMetadata";
 
 export async function POST(req: NextRequest) {
     const store = await cookies();
-
-    // 감사 로그 — Supabase 세션이 살아있으면 로그아웃 시점 기록.
-    // 실패해도 로그아웃 흐름은 계속 진행.
-    try {
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
-            {
-                cookies: {
-                    getAll() {
-                        return store.getAll();
-                    },
-                    setAll(cookiesToSet) {
-                        cookiesToSet.forEach(({ name, value, options }) => {
-                            store.set(name, value, options);
-                        });
-                    },
+    const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
+        {
+            cookies: {
+                getAll() {
+                    return store.getAll();
+                },
+                setAll(cookiesToSet) {
+                    cookiesToSet.forEach(({ name, value, options }) => {
+                        store.set(name, value, options);
+                    });
                 },
             },
-        );
+        },
+    );
+
+    // 감사 로그 — 로그아웃 시점 기록, 실패해도 signOut은 그대로 진행
+    try {
         const {
             data: { user },
         } = await supabase.auth.getUser();
@@ -45,14 +44,18 @@ export async function POST(req: NextRequest) {
                 );
             }
         }
-
-        // Supabase 세션 종료 — sb-* 인증 쿠키 제거.
-        const { error: signOutError } = await supabase.auth.signOut();
-        if (signOutError) {
-            console.error("[logout] supabase signOut failed:", signOutError);
-        }
     } catch (err) {
         console.error("[logout] audit_logs flow failed:", err);
+    }
+
+    // Supabase 세션 종료 — 감사 로그 결과와 무관하게 항상 실행
+    const { error: signOutError } = await supabase.auth.signOut();
+    if (signOutError) {
+        console.error("[logout] supabase signOut failed:", signOutError);
+        return NextResponse.json(
+            { message: "로그아웃 처리에 실패했습니다." },
+            { status: 500 },
+        );
     }
 
     return NextResponse.json({ ok: true });
