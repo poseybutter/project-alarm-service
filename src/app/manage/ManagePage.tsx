@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DayPicker } from "react-day-picker";
 import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/infrastructure/supabase/client";
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import UserMenu from "@/components/UserMenu";
@@ -16,7 +16,7 @@ import { DatePickerCaption } from "@/components/DatePickerCaption";
 import Avatar from "@/components/Avatar";
 import Tooltip from "@/components/Tooltip";
 import { PageSpinner } from "@/components/Spinner";
-import type { Accessibility, Project } from "@/lib/types";
+import type { Accessibility, Project } from "@/shared/types";
 import {
     findProjectId,
     findTeamMemberId,

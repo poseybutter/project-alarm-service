@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/infrastructure/supabase/client";
 import { calcLevel } from "@/features/gamification/maple";
 import { getTeamRoster, type RosterEntry } from "@/features/gamification/api/getTeamRoster";
-import type { Season } from "@/lib/types";
+import type { Season } from "@/shared/types";
 
 interface SeasonBannerProps {
     teamId: string | null;

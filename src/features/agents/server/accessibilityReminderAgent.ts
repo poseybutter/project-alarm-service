@@ -1,4 +1,4 @@
-import type { Accessibility } from "@/lib/types";
+import type { Accessibility } from "@/shared/types";
 import { getDiff } from "@/shared/utils/utils";
 import type { NewAgentSuggestion, NotificationSuggestionPayload } from "./types";
 

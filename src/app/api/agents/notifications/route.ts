@@ -5,12 +5,12 @@ import {
     listRecentlyDeliveredDedupeKeys,
 } from "@/features/agents/server/notificationDeliveries";
 import { createAgentSuggestions } from "@/features/agents/server/suggestions";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
-} from "@/lib/serverSupabase";
-import type { Accessibility, Task } from "@/lib/types";
+} from "@/infrastructure/supabase/server";
+import type { Accessibility, Task } from "@/shared/types";
 import type {
     CalendarEventInput,
     QuestBriefingInput,

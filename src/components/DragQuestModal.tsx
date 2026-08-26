@@ -5,8 +5,8 @@ import { createPortal } from "react-dom";
 import { DayPicker } from "react-day-picker";
 import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
-import type { Task } from "@/lib/types";
-import { TYPE_COLORS } from "@/lib/constants";
+import type { Task } from "@/shared/types";
+import { TYPE_COLORS } from "@/shared/constants";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 
