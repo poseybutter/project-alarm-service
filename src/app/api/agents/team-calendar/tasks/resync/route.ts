@@ -2,15 +2,15 @@ import { NextResponse } from "next/server";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
-} from "@/lib/serverSupabase";
+} from "@/infrastructure/supabase/server";
 import {
     deleteTeamCalendarTaskEvent,
     getTeamCalendarAccessToken,
     type GoogleCalendarConnection,
     type TeamCalendarTaskInput,
     upsertTeamCalendarTaskEvent,
-} from "@/lib/server/googleCalendar";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
+} from "@/infrastructure/google-calendar";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
 
 export async function POST() {
     const { user, role, teamId } = await getServerCurrentTeamRole();

@@ -6,7 +6,7 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { createServiceSupabaseClient } from "@/lib/serverSupabase";
+import { createServiceSupabaseClient } from "@/infrastructure/supabase/server";
 
 function isAuthorized(req: NextRequest) {
     const secret = process.env.CRON_SECRET;
@@ -41,7 +41,8 @@ export async function GET(req: NextRequest) {
     // KST 기준 날짜 검증
     const kst = kstDateStr();
     const kstDay = Number(kst.slice(8, 10));
-    const kstDow = new Date(kst).getDay(); // 0=일
+    // getDay() 대신 getUTCDay() — 런타임 타임존 의존 방지
+    const kstDow = new Date(kst).getUTCDay(); // 0=일
 
     if (type === "monthly" && kstDay !== 1) {
         return NextResponse.json(

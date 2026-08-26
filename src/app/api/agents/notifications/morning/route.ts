@@ -1,22 +1,22 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { TEAM_ID } from "@/lib/constants";
-import { createServiceSupabaseClient } from "@/lib/serverSupabase";
+import { TEAM_ID } from "@/shared/constants";
+import { createServiceSupabaseClient } from "@/infrastructure/supabase/server";
 import {
     buildNotificationSuggestions,
     type CalendarEventInput,
     type QuestBriefingInput,
-} from "@/lib/agents/notificationAgent";
-import { hasRecentNotificationDelivery } from "@/lib/agents/notificationDeliveries";
-import { sendGoogleChatMessage } from "@/lib/server/googleChat";
+} from "@/features/agents/server/notificationAgent";
+import { hasRecentNotificationDelivery } from "@/features/agents/server/notificationDeliveries";
+import { sendGoogleChatMessage } from "@/infrastructure/google-chat";
 import {
     syncTodayGoogleCalendarEvents,
     syncTodayTeamCalendarEvents,
     type GoogleCalendarConnection,
-} from "@/lib/server/googleCalendar";
-import type { AgentSuggestion, NotificationSuggestionPayload } from "@/lib/agents/types";
-import type { Accessibility, Task } from "@/lib/types";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
-import { decryptIntegrationToken } from "@/lib/server/tokenEncryption";
+} from "@/infrastructure/google-calendar";
+import type { AgentSuggestion, NotificationSuggestionPayload } from "@/features/agents/server/types";
+import type { Accessibility, Task } from "@/shared/types";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
+import { decryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
 
 type NotificationSetting = {
     member: string;

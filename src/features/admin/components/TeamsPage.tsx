@@ -40,7 +40,7 @@ import {
   ALL_TEAM_MODULES,
   TEAM_MODULE_LABELS,
 } from "@/features/admin/types";
-import { TEAM_ID } from "@/lib/constants";
+import { TEAM_ID } from "@/shared/constants";
 
 type TeamsResponse = { teams: AdminTeam[] };
 type MembersResponse = { members: AdminMember[] };

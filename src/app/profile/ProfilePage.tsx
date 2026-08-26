@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/infrastructure/supabase/client";
 import {
     calcLevel,
     getNextLevel,
@@ -9,7 +9,7 @@ import {
     rpcAttendanceCheck,
     LEVELS,
     rpcSetQuestDone,
-} from "@/lib/maple";
+} from "@/features/gamification/maple";
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import Tooltip from "@/components/Tooltip";
@@ -25,16 +25,16 @@ import { DayPicker, DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
 import { ko } from "date-fns/locale";
 import { useRouter } from "next/navigation";
-import type { Player, Task, Quest, Season, SeasonRecord, SeasonAward } from "@/lib/types";
-import { formatWorkload } from "@/lib/utils";
+import type { Player, Task, Quest, Season, SeasonRecord, SeasonAward } from "@/shared/types";
+import { formatWorkload } from "@/shared/utils/utils";
 import {
     BAR_COLORS,
     getMemberColors,
     normalizeStatus,
-} from "@/lib/constants";
-import { toLocalYmd } from "@/lib/toLocalYmd";
+} from "@/shared/constants";
+import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import Select from "react-select";
-import { taskFilterProjectSelectStyles } from "@/lib/reactSelectStyles";
+import { taskFilterProjectSelectStyles } from "@/shared/styles/reactSelectStyles";
 
 const TITLES = [
     {
@@ -238,29 +238,28 @@ export default function ProfilePage() {
             if (cancelled) return;
             if (!seasons?.length) return;
 
+            // player_id 우선 매칭, 없으면 이름 폴백 (개명 대응)
             const [{ data: records }, { data: awards }] = await Promise.all([
-                supabase
-                    .from("season_records")
-                    .select("*")
-                    .eq("team_id", teamId)
-                    .eq("member", member),
-                supabase
-                    .from("season_awards")
-                    .select("*")
-                    .eq("team_id", teamId)
-                    .eq("member", member),
+                supabase.from("season_records").select("*").eq("team_id", teamId),
+                supabase.from("season_awards").select("*").eq("team_id", teamId),
             ]);
+            if (cancelled) return;
+
+            const isMine = (row: { player_id: number | null; member: string }) =>
+                row.player_id != null ? row.player_id === playerId : row.member === member;
+
+            const myRecords = (records ?? []).filter(isMine) as SeasonRecord[];
+            const myAwards = (awards ?? []).filter(isMine) as SeasonAward[];
 
             const history = seasons.map((s) => ({
                 season: s as Season,
-                record:
-                    (records ?? []).find((r) => r.season_id === s.id) as SeasonRecord | null,
-                awards: (awards ?? []).filter((a) => a.season_id === s.id) as SeasonAward[],
+                record: myRecords.find((r) => r.season_id === s.id) ?? null,
+                awards: myAwards.filter((a) => a.season_id === s.id),
             }));
             if (!cancelled) setSeasonHistory(history);
         })();
         return () => { cancelled = true; };
-    }, [teamId, member]);
+    }, [teamId, member, playerId]);
 
     async function deleteHistoryTask(id: number) {
         if (!confirm("정말 삭제하시겠어요?")) return;

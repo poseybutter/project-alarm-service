@@ -23,6 +23,13 @@ create unique index if not exists uq_season_awards_season_title
     on public.season_awards(season_id, title);
 
 -- ── team_id 외래 키 ───────────────────────────────────────────────────────────
+-- FK 추가 전 고아 행(teams 미존재 team_id) 정리, ALTER TABLE 실패 방지
+delete from public.season_records r
+where not exists (select 1 from public.teams t where t.id = r.team_id);
+
+delete from public.season_awards a
+where not exists (select 1 from public.teams t where t.id = a.team_id);
+
 do $$
 begin
     if not exists (

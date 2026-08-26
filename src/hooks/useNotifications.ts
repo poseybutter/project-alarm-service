@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/infrastructure/supabase/client";
 import { useAuth } from "@/components/AuthProvider";
 
 // 구독마다 고유한 채널 이름을 보장하기 위한 카운터.

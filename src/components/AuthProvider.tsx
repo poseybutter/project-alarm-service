@@ -9,8 +9,8 @@ import {
     useState,
 } from "react";
 import { User } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
-import { getMemberName } from "@/lib/auth";
+import { supabase } from "@/infrastructure/supabase/client";
+import { getMemberName } from "@/infrastructure/supabase/auth";
 import type {
     ModuleKey,
     TeamMemberOption,

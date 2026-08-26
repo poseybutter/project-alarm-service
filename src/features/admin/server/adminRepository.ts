@@ -1,11 +1,11 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { TEAM_ID } from "@/lib/constants";
+import { TEAM_ID } from "@/shared/constants";
 import {
   createServiceSupabaseClient,
   getServerUser,
-} from "@/lib/serverSupabase";
+} from "@/infrastructure/supabase/server";
 import {
   ALL_ADMIN_PERMISSIONS,
   normalizeAdminRole,
@@ -36,6 +36,8 @@ import { ALL_TEAM_MODULES } from "@/features/admin/types";
 
 type PlayerRow = {
   id: number;
+  membership_id?: string | null;
+  is_default?: boolean;
   name: string | null;
   email: string | null;
   avatar_url: string | null;
@@ -277,6 +279,8 @@ function toAdminMember(
   const role = normalizeAdminRole(row.role);
   return {
     id: row.id,
+    membershipId: row.membership_id ?? null,
+    isDefault: row.is_default ?? true,
     name: row.name || row.email?.split("@")[0] || "이름 미등록",
     email: row.email || "이메일 미등록",
     avatarUrl: row.avatar_url,
@@ -313,7 +317,7 @@ async function queryAdminMembersNormalized(teamId: string | null): Promise<Playe
   let tmQuery = service
     .from("team_memberships")
     .select(
-      "legacy_player_id, team_id, role, status, profiles!inner(display_name, email, avatar_url, account_status)",
+      "id, legacy_player_id, team_id, role, status, is_default, profiles!inner(display_name, email, avatar_url, account_status)",
     );
   if (teamId) tmQuery = tmQuery.eq("team_id", teamId);
   const { data: tmRows, error: tmError } = await tmQuery;
@@ -339,19 +343,19 @@ async function queryAdminMembersNormalized(teamId: string | null): Promise<Playe
   }
 
   return (tmRows ?? [])
-    .flatMap((r) => {
-      // legacy_player_id 없는 행은 건너뜀 (PATCH·React key 충돌 방지)
-      if (typeof r.legacy_player_id !== "number" || r.legacy_player_id <= 0) {
-        return [];
-      }
+    .map((r) => {
       const profile = r.profiles as unknown as {
         display_name: string;
         email: string;
         avatar_url: string | null;
         account_status: string;
       };
-      const legacyId = r.legacy_player_id;
-      const gm = levelMap.get(legacyId);
+      // legacy_player_id 없는 행(두 번째 이상 팀 멤버십)은 gamification 데이터가 없음
+      const legacyId =
+        typeof r.legacy_player_id === "number" && r.legacy_player_id > 0
+          ? r.legacy_player_id
+          : 0;
+      const gm = legacyId > 0 ? levelMap.get(legacyId) : undefined;
       const effectiveStatus =
         r.status === "active"
           ? "active"
@@ -360,8 +364,10 @@ async function queryAdminMembersNormalized(teamId: string | null): Promise<Playe
             : profile.account_status === "rejected"
               ? "rejected"
               : "suspended";
-      return [{
+      return {
         id: legacyId,
+        membership_id: String(r.id),
+        is_default: Boolean(r.is_default),
         name: profile.display_name ?? null,
         email: profile.email ?? null,
         avatar_url: profile.avatar_url ?? null,
@@ -370,7 +376,7 @@ async function queryAdminMembersNormalized(teamId: string | null): Promise<Playe
         status: effectiveStatus,
         level: gm?.level ?? null,
         exp: gm?.exp ?? null,
-      } as PlayerRow];
+      } as PlayerRow;
     })
     .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "ko"));
 }
@@ -914,6 +920,133 @@ export async function updateAdminMember(input: {
     afterState: data,
   });
   return data;
+}
+
+/**
+ * 이미 다른 팀 소속인 프로필을 두 번째 팀에 추가한다.
+ * players는 팀 1개만 표현 가능하므로 이 멤버십은 legacy_player_id 없이
+ * team_memberships에만 생성한다 (is_default=false, 기존 기본 팀 유지).
+ */
+export async function addTeamMembership(input: {
+  email: string;
+  teamId: string;
+  role: "admin" | "member" | "viewer";
+}) {
+  const bootstrap = await requireAdminSession(input.teamId, "members.manage");
+  const service = createServiceSupabaseClient();
+  const email = input.email.trim().toLowerCase();
+
+  const { data: profile, error: profileError } = await service
+    .from("profiles")
+    .select("id, display_name, email, account_status")
+    .eq("email", email)
+    .maybeSingle();
+  if (profileError && isIdentitySchemaUnavailable(profileError)) {
+    throw new AdminApiError("V31 정규화 마이그레이션이 필요합니다.", 503);
+  }
+  if (profileError) throw profileError;
+  if (!profile) {
+    throw new AdminApiError(
+      "로그인 이력이 있는 사용자만 다른 팀에 추가할 수 있습니다.",
+      404,
+    );
+  }
+  if (profile.account_status !== "active") {
+    throw new AdminApiError("활성 상태 사용자만 다른 팀에 추가할 수 있습니다.", 409);
+  }
+
+  const { data: existing, error: existingError } = await service
+    .from("team_memberships")
+    .select("id")
+    .eq("profile_id", profile.id)
+    .eq("team_id", input.teamId)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing) {
+    throw new AdminApiError("이미 해당 팀 소속입니다.", 409);
+  }
+
+  const { data: membership, error: insertError } = await service
+    .from("team_memberships")
+    .insert({
+      profile_id: profile.id,
+      team_id: input.teamId,
+      role: input.role,
+      status: "active",
+      is_default: false,
+      legacy_player_id: null,
+    })
+    .select("id, team_id, role, status, is_default")
+    .single();
+  if (insertError?.code === "23505") {
+    throw new AdminApiError("이미 해당 팀 소속입니다.", 409);
+  }
+  if (insertError) throw insertError;
+
+  await writeAdminAudit({
+    actorEmail: bootstrap.identity.email,
+    action: "membership.added",
+    teamId: input.teamId,
+    targetType: "team_membership",
+    targetId: membership.id,
+    targetLabel: profile.display_name || profile.email,
+    afterState: membership,
+  });
+
+  return membership;
+}
+
+/**
+ * 두 번째 이상 팀 소속(멤버십) 제거.
+ * 기본 소속(is_default=true)은 players와 연결된 레거시 경로라 대상 아님 —
+ * 그 경우는 updateAdminMember의 상태 변경(suspended)을 사용.
+ */
+export async function removeTeamMembership(input: {
+  membershipId: string;
+  teamId: string;
+}) {
+  const bootstrap = await requireAdminSession(input.teamId, "members.manage");
+  const service = createServiceSupabaseClient();
+
+  const { data: membership, error: membershipError } = await service
+    .from("team_memberships")
+    .select("id, team_id, role, is_default, profiles!inner(email, display_name)")
+    .eq("id", input.membershipId)
+    .maybeSingle();
+  if (membershipError) throw membershipError;
+  if (!membership || membership.team_id !== input.teamId) {
+    throw new AdminApiError("멤버십을 찾을 수 없습니다.", 404);
+  }
+  if (membership.is_default) {
+    throw new AdminApiError(
+      "기본 소속은 이 기능으로 제거할 수 없습니다. 구성원 상태 변경을 이용해 주세요.",
+      409,
+    );
+  }
+
+  const profile = membership.profiles as unknown as {
+    email: string;
+    display_name: string;
+  };
+  if (profile.email.toLowerCase() === bootstrap.identity.email.toLowerCase()) {
+    throw new AdminApiError("자신의 멤버십은 직접 제거할 수 없습니다.", 409);
+  }
+
+  const { error: deleteError } = await service
+    .from("team_memberships")
+    .delete()
+    .eq("id", input.membershipId);
+  if (deleteError) throw deleteError;
+
+  await writeAdminAudit({
+    actorEmail: bootstrap.identity.email,
+    action: "membership.removed",
+    teamId: input.teamId,
+    targetType: "team_membership",
+    targetId: membership.id,
+    targetLabel: profile.display_name || profile.email,
+    beforeState: membership,
+  });
 }
 
 export async function listTeamsWithCounts() {

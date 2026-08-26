@@ -2,8 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
     createServiceSupabaseClient,
     getServerUserRole,
-} from "@/lib/serverSupabase";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
+} from "@/infrastructure/supabase/server";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
 
 type SnoozeBody = {
     teamId?: string;

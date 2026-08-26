@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
-import { calcLevel } from "@/lib/maple";
-import type { Season, Player } from "@/lib/types";
+import { supabase } from "@/infrastructure/supabase/client";
+import { calcLevel } from "@/features/gamification/maple";
+import { getTeamRoster, type RosterEntry } from "@/features/gamification/api/getTeamRoster";
+import type { Season } from "@/shared/types";
 
 interface SeasonBannerProps {
     teamId: string | null;
@@ -40,11 +41,11 @@ function getDaysSince(dateStr: string): number {
 export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProps) {
     const router = useRouter();
     const [season, setSeason] = useState<Season | null>(null);
-    const [topPlayer, setTopPlayer] = useState<Player | null>(null);
+    const [topPlayer, setTopPlayer] = useState<RosterEntry | null>(null);
     const [myRank, setMyRank] = useState<number | null>(null);
     const [expGap, setExpGap] = useState<number | null>(null);
 
-    async function load() {
+    async function load(isCancelled: () => boolean) {
         // 현재 진행 중인 시즌
         const { data: seasons } = await supabase
             .from("seasons")
@@ -53,6 +54,7 @@ export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProp
             .order("range_end", { ascending: false })
             .limit(2);
 
+        if (isCancelled()) return;
         if (!seasons || seasons.length === 0) return;
 
         const active = seasons.find((s) => s.status === "active") ?? null;
@@ -60,15 +62,12 @@ export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProp
         setSeason(active ?? latestEnded);
 
         // 팀 전체 플레이어 EXP 랭킹 (현재 EXP 기준)
-        const { data: players } = await supabase
-            .from("players")
-            .select("*")
-            .eq("team_id", teamId!)
-            .order("exp", { ascending: false });
+        const players = await getTeamRoster(supabase, teamId!);
 
-        if (!players || players.length === 0) return;
+        if (isCancelled()) return;
+        if (players.length === 0) return;
 
-        setTopPlayer(players[0] as Player);
+        setTopPlayer(players[0]);
 
         if (currentMember) {
             const myIdx = players.findIndex((p) => p.name === currentMember);
@@ -80,8 +79,18 @@ export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProp
     }
 
     useEffect(() => {
+        // 팀 전환 시 이전 배너 초기화
+        setSeason(null);
+        setTopPlayer(null);
+        setMyRank(null);
+        setExpGap(null);
+
         if (!teamId) return;
-        void load();
+        let cancelled = false;
+        void load(() => cancelled);
+        return () => {
+            cancelled = true;
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [teamId]);
 

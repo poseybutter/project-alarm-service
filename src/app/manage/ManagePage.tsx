@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DayPicker } from "react-day-picker";
 import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/infrastructure/supabase/client";
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import UserMenu from "@/components/UserMenu";
@@ -16,22 +16,22 @@ import { DatePickerCaption } from "@/components/DatePickerCaption";
 import Avatar from "@/components/Avatar";
 import Tooltip from "@/components/Tooltip";
 import { PageSpinner } from "@/components/Spinner";
-import type { Accessibility, Project } from "@/lib/types";
+import type { Accessibility, Project } from "@/shared/types";
 import {
     findProjectId,
     findTeamMemberId,
     getDiff,
     normalizeProject,
     getProjectMembers,
-} from "@/lib/utils";
+} from "@/shared/utils/utils";
 import Select from "react-select";
 import {
     selectStyles,
     taskFilterProjectSelectStyles,
     modalFormSelectStyles,
     badgeSelectStyles,
-} from "@/lib/reactSelectStyles";
-import { toLocalYmd } from "@/lib/toLocalYmd";
+} from "@/shared/styles/reactSelectStyles";
+import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 
 const MAINTENANCE_STATUS_URL =
     process.env.NEXT_PUBLIC_MAINTENANCE_STATUS_URL?.trim() ?? "";
