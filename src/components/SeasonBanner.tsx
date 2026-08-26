@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { calcLevel } from "@/lib/maple";
-import type { Season, Player } from "@/lib/types";
+import { getTeamRoster, type RosterEntry } from "@/features/gamification/api/getTeamRoster";
+import type { Season } from "@/lib/types";
 
 interface SeasonBannerProps {
     teamId: string | null;
@@ -40,7 +41,7 @@ function getDaysSince(dateStr: string): number {
 export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProps) {
     const router = useRouter();
     const [season, setSeason] = useState<Season | null>(null);
-    const [topPlayer, setTopPlayer] = useState<Player | null>(null);
+    const [topPlayer, setTopPlayer] = useState<RosterEntry | null>(null);
     const [myRank, setMyRank] = useState<number | null>(null);
     const [expGap, setExpGap] = useState<number | null>(null);
 
@@ -61,16 +62,12 @@ export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProp
         setSeason(active ?? latestEnded);
 
         // 팀 전체 플레이어 EXP 랭킹 (현재 EXP 기준)
-        const { data: players } = await supabase
-            .from("players")
-            .select("*")
-            .eq("team_id", teamId!)
-            .order("exp", { ascending: false });
+        const players = await getTeamRoster(supabase, teamId!);
 
         if (isCancelled()) return;
-        if (!players || players.length === 0) return;
+        if (players.length === 0) return;
 
-        setTopPlayer(players[0] as Player);
+        setTopPlayer(players[0]);
 
         if (currentMember) {
             const myIdx = players.findIndex((p) => p.name === currentMember);

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { calcLevel } from "@/lib/maple";
+import { getTeamRoster } from "@/features/gamification/api/getTeamRoster";
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import Avatar from "@/components/Avatar";
@@ -162,12 +163,8 @@ export default function HallOfFamePage() {
         const isLive = season.status === "active";
 
         if (isLive) {
-            const [{ data: players }, { data: awards }] = await Promise.all([
-                supabase
-                    .from("players")
-                    .select("name, exp")
-                    .eq("team_id", teamId!)
-                    .order("exp", { ascending: false }),
+            const [players, { data: awards }] = await Promise.all([
+                getTeamRoster(supabase, teamId!),
                 supabase
                     .from("season_awards")
                     .select("*")
@@ -175,7 +172,7 @@ export default function HallOfFamePage() {
             ]);
             if (generation !== teamGenerationRef.current) return;
 
-            const records: DisplayRecord[] = (players ?? []).map((p, i) => ({
+            const records: DisplayRecord[] = players.map((p, i) => ({
                 key: `live-${p.name}`,
                 member: p.name,
                 rank: i + 1,
