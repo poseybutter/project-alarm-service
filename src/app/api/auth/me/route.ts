@@ -1,19 +1,17 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { ApiError, apiFetch } from "@/lib/api";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
-
-const ACCESS_COOKIE = "accessToken";
+import { getServerUser } from "@/lib/serverSupabase";
+import {
+    isIdentitySchemaUnavailable,
+    loadNormalizedIdentity,
+} from "@/features/identity/server/identityRepository";
 
 /**
- * 현재 로그인된 사용자 정보 조회.
- * - accessToken 쿠키 추출 → Spring GET /api/auth/me 프록시
- * - pending 화면에서 15초 폴링용
+ * 현재 로그인된 사용자 상태 조회.
+ * pending 화면에서 15초 폴링용 — 승인/거절 여부 확인.
  */
 export async function GET() {
-    const store = await cookies();
-    const accessToken = store.get(ACCESS_COOKIE)?.value;
-    if (!accessToken) {
+    const { supabase, user } = await getServerUser();
+    if (!user?.email) {
         return NextResponse.json(
             { message: "인증되지 않았어요" },
             { status: 401 },
@@ -21,22 +19,28 @@ export async function GET() {
     }
 
     try {
-        const data = await apiFetch<unknown>("/api/auth/me", {
-            method: "GET",
-            headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        return NextResponse.json(data);
-    } catch (err) {
-        if (err instanceof ApiError) {
-            return NextResponse.json(
-                { message: "사용자 정보를 확인할 수 없습니다." },
-                { status: err.status },
-            );
+        const normalized = await loadNormalizedIdentity(supabase, user.email);
+        if (normalized?.profile) {
+            return NextResponse.json({
+                email: normalized.profile.email,
+                name: normalized.profile.displayName,
+                status: normalized.profile.accountStatus,
+            });
         }
-        return internalErrorResponse(
-            "auth-me",
-            err,
-            "사용자 정보 조회에 실패했습니다.",
-        );
+    } catch (err) {
+        if (!isIdentitySchemaUnavailable(err)) throw err;
     }
+
+    // 스키마 미적용 폴백: players 직접 조회
+    const { data } = await supabase
+        .from("players")
+        .select("name, status")
+        .eq("email", user.email)
+        .maybeSingle();
+
+    return NextResponse.json({
+        email: user.email,
+        name: data?.name ?? user.email.split("@")[0],
+        status: data?.status ?? "pending",
+    });
 }
