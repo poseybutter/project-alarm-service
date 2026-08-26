@@ -10,11 +10,13 @@ export function questRichTextIsEffectivelyEmpty(
     raw: string | null | undefined,
 ): boolean {
     if (!raw?.trim()) return true;
-    const text = raw
-        .replace(/<[^>]+>/g, "")
-        .replace(/\u00a0/g, " ")
-        .trim();
-    return text.length === 0;
+    let text = raw.replace(/\u00a0/g, " ");
+    let prev;
+    do {
+        prev = text;
+        text = text.replace(/<[^>]*>/g, "");
+    } while (text !== prev);
+    return text.trim().length === 0;
 }
 
 /** 레거시 플레인 텍스트를 에디터 초기 HTML로 (이미 HTML이면 그대로) */
