@@ -1695,7 +1695,7 @@ export default function HomePage() {
                                 <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-3">
                                     활동 기록
                                 </p>
-                                <AttendanceHeatmap member={member ?? ""} />
+                                <AttendanceHeatmap member={member!} />
                             </div>
                         )}
 
