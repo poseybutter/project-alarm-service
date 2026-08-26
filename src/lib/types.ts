@@ -93,3 +93,40 @@ export type Quest = {
     order_index?: number | null;
     created_at: string;
 };
+
+export type Season = {
+    id: number;
+    team_id: string;
+    label: string;
+    sub_label: string | null;
+    range_start: string;
+    range_end: string;
+    status: "active" | "ended";
+    mvp_member: string | null;
+    created_at: string;
+};
+
+export type SeasonRecord = {
+    id: number;
+    season_id: number;
+    team_id: string;
+    player_id: number | null;
+    member: string;
+    rank: number;
+    exp: number;
+    level: number;
+    level_name: string;
+    created_at: string;
+};
+
+export type SeasonAward = {
+    id: number;
+    season_id: number;
+    team_id: string;
+    player_id: number | null;
+    icon: string;
+    title: string;
+    member: string;
+    metric: string;
+    created_at: string;
+};

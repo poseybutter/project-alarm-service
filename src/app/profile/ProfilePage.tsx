@@ -24,7 +24,8 @@ import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { DayPicker, DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
 import { ko } from "date-fns/locale";
-import type { Player, Task, Quest } from "@/lib/types";
+import { useRouter } from "next/navigation";
+import type { Player, Task, Quest, Season, SeasonRecord, SeasonAward } from "@/lib/types";
 import { formatWorkload } from "@/lib/utils";
 import {
     BAR_COLORS,
@@ -172,6 +173,9 @@ export default function ProfilePage() {
     const [showAvatarMenu, setShowAvatarMenu] = useState(false);
     const [historyEditTask, setHistoryEditTask] = useState<Task | null>(null);
     const [completedQuests, setCompletedQuests] = useState<Quest[]>([]);
+    const [seasonHistory, setSeasonHistory] = useState<
+        { season: Season; record: SeasonRecord | null; awards: SeasonAward[] }[]
+    >([]);
 
     const canEditHistoryTask = (taskMember: string) =>
         !isGuest && (role === "admin" || taskMember === member);
@@ -218,6 +222,44 @@ export default function ProfilePage() {
     useEffect(() => {
         if (member && teamId) void loadAll();
     }, [loadAll, member, teamId]); // member와 현재 팀이 준비된 뒤 실행
+
+    const router = useRouter();
+
+    useEffect(() => {
+        setSeasonHistory([]); // 팀/멤버 전환 시 이전 데이터 초기화
+        if (!teamId || !member) return;
+        let cancelled = false;
+        void (async () => {
+            const { data: seasons } = await supabase
+                .from("seasons")
+                .select("*")
+                .eq("team_id", teamId)
+                .order("range_start", { ascending: false });
+            if (cancelled) return;
+            if (!seasons?.length) return;
+
+            // player_id 우선 매칭, 없으면 이름 폴백 (개명 대응)
+            const [{ data: records }, { data: awards }] = await Promise.all([
+                supabase.from("season_records").select("*").eq("team_id", teamId),
+                supabase.from("season_awards").select("*").eq("team_id", teamId),
+            ]);
+            if (cancelled) return;
+
+            const isMine = (row: { player_id: number | null; member: string }) =>
+                row.player_id != null ? row.player_id === playerId : row.member === member;
+
+            const myRecords = (records ?? []).filter(isMine) as SeasonRecord[];
+            const myAwards = (awards ?? []).filter(isMine) as SeasonAward[];
+
+            const history = seasons.map((s) => ({
+                season: s as Season,
+                record: myRecords.find((r) => r.season_id === s.id) ?? null,
+                awards: myAwards.filter((a) => a.season_id === s.id),
+            }));
+            if (!cancelled) setSeasonHistory(history);
+        })();
+        return () => { cancelled = true; };
+    }, [teamId, member, playerId]);
 
     async function deleteHistoryTask(id: number) {
         if (!confirm("정말 삭제하시겠어요?")) return;
@@ -790,6 +832,133 @@ export default function ProfilePage() {
                                     })}
                                 </div>
                             </div>
+
+                            {/* 시즌 기록 */}
+                            {!isGuest && seasonHistory.length > 0 && (
+                                <div>
+                                    <div className="flex justify-between items-baseline mb-2">
+                                        <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
+                                            🏆 시즌 기록
+                                        </span>
+                                        <button
+                                            onClick={() => router.push("/hall-of-fame")}
+                                            className="text-xs font-bold text-amber-600"
+                                        >
+                                            명예의 전당 →
+                                        </button>
+                                    </div>
+                                    <div className="flex flex-col gap-3">
+                                        {seasonHistory.map(({ season, record, awards: sAwards }) => {
+                                            const isActive = season.status === "active";
+                                            const MEDAL: Record<number, string> = { 1: "🥇", 2: "🥈", 3: "🥉" };
+                                            const MEDAL_RING: Record<number, string> = {
+                                                1: "#f5c518",
+                                                2: "#c0c0c0",
+                                                3: "#cd7f32",
+                                            };
+                                            const medal = record ? MEDAL[record.rank] : null;
+                                            const ringColor = record ? MEDAL_RING[record.rank] : null;
+                                            return (
+                                                <div
+                                                    key={season.id}
+                                                    className="rounded-xl p-4"
+                                                    style={{
+                                                        border: isActive
+                                                            ? "1px solid #e7e5e0"
+                                                            : ringColor
+                                                              ? `1px solid ${ringColor}55`
+                                                              : "1px solid #e7e5e0",
+                                                        background: isActive
+                                                            ? "#fff"
+                                                            : ringColor
+                                                              ? `linear-gradient(180deg,#fff 0%,${ringColor}0f 100%)`
+                                                              : "#fff",
+                                                    }}
+                                                >
+                                                    <div className="flex gap-3 items-start">
+                                                        {/* 배지 */}
+                                                        <div
+                                                            className="w-11 h-11 rounded-full flex items-center justify-center text-xl shrink-0"
+                                                            style={{
+                                                                background: isActive
+                                                                    ? "#f7f6f3"
+                                                                    : medal
+                                                                      ? `linear-gradient(135deg,#fff3c4,#fde68a)`
+                                                                      : "#f7f6f3",
+                                                                border: isActive
+                                                                    ? "1px solid #e7e5e0"
+                                                                    : ringColor
+                                                                      ? `1.5px solid ${ringColor}`
+                                                                      : "1px solid #e7e5e0",
+                                                            }}
+                                                        >
+                                                            {isActive ? "⏳" : (medal ?? "🎖")}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex justify-between items-baseline gap-2">
+                                                                <div className="text-sm font-extrabold text-stone-900 truncate">
+                                                                    {season.label}
+                                                                    {season.sub_label && (
+                                                                        <span className="text-stone-400 font-semibold">
+                                                                            {" "}· {season.sub_label}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                {isActive ? (
+                                                                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 shrink-0">
+                                                                        진행 중
+                                                                    </span>
+                                                                ) : record ? (
+                                                                    <span
+                                                                        className="text-sm font-extrabold shrink-0"
+                                                                        style={{ color: ringColor ?? "#d97706" }}
+                                                                    >
+                                                                        {medal ?? ""} {record.rank}위
+                                                                    </span>
+                                                                ) : null}
+                                                            </div>
+                                                            <div className="text-xs text-stone-400 mb-2">
+                                                                {season.range_start.slice(0, 10).replace(/-/g, ".")} ~{" "}
+                                                                {isActive
+                                                                    ? "진행 중"
+                                                                    : season.range_end.slice(0, 10).replace(/-/g, ".")}
+                                                            </div>
+                                                            {record && (
+                                                                <div className="flex items-center gap-2 flex-wrap">
+                                                                    <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                                                                        {record.level_name}
+                                                                    </span>
+                                                                    <span className="text-sm font-bold text-stone-900">
+                                                                        {record.exp.toLocaleString()} EXP
+                                                                    </span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    {sAwards.length > 0 && (
+                                                        <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-stone-100">
+                                                            {sAwards.map((a) => (
+                                                                <span
+                                                                    key={a.id}
+                                                                    className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold"
+                                                                    style={{
+                                                                        background: "#fffbeb",
+                                                                        border: "1px solid #fde9b8",
+                                                                        color: "#92400e",
+                                                                    }}
+                                                                >
+                                                                    <span className="text-xs">{a.icon}</span>
+                                                                    {a.title}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 
