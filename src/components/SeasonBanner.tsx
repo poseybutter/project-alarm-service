@@ -40,11 +40,6 @@ export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProp
     const [myRank, setMyRank] = useState<number | null>(null);
     const [expGap, setExpGap] = useState<number | null>(null);
 
-    useEffect(() => {
-        if (!teamId) return;
-        void load();
-    }, [teamId]);
-
     async function load() {
         // 현재 진행 중인 시즌
         const { data: seasons } = await supabase
@@ -79,6 +74,12 @@ export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProp
             }
         }
     }
+
+    useEffect(() => {
+        if (!teamId) return;
+        void load();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [teamId]);
 
     if (!season) return null;
 

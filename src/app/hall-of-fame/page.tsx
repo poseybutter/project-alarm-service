@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
@@ -35,39 +35,32 @@ const PODIUM_BG: Record<number, string> = {
 
 const FW_COLORS = ["#ef4444", "#f97316", "#fbbf24", "#22c55e", "#3b82f6", "#a855f7", "#ec4899", "#f43f5e"];
 
-function Fireworks() {
-    const conf = useMemo(
-        () =>
-            Array.from({ length: 50 }, (_, i) => ({
-                id: i,
-                x: Math.random() * 100,
-                color: FW_COLORS[i % FW_COLORS.length],
-                delay: Math.random() * 4.5,
-                dur: Math.random() * 2.5 + 2,
-                size: Math.random() * 7 + 4,
-                rot: Math.random() * 720 - 360,
-                drift: Math.random() * 100 - 50,
-                repeatDelay: Math.random() * 2 + 0.5,
-                isRect: i % 3 !== 0,
-            })),
-        [],
-    );
+// 모듈 레벨에서 한 번만 계산 (Math.random을 render 밖으로)
+const FW_CONF = Array.from({ length: 50 }, (_, i) => ({
+    id: i,
+    x: Math.random() * 100,
+    color: FW_COLORS[i % FW_COLORS.length],
+    delay: Math.random() * 4.5,
+    dur: Math.random() * 2.5 + 2,
+    size: Math.random() * 7 + 4,
+    rot: Math.random() * 720 - 360,
+    drift: Math.random() * 100 - 50,
+    repeatDelay: Math.random() * 2 + 0.5,
+    isRect: i % 3 !== 0,
+}));
 
-    const bursts = useMemo(
-        () =>
-            Array.from({ length: 6 }, (_, i) => ({
-                id: i,
-                x: [10, 28, 50, 68, 82, 93][i],
-                y: [25, 15, 30, 18, 28, 12][i],
-                delay: i * 0.6 + 0.3,
-                repeatDelay: 3.5 + i * 0.3,
-                colors: [
-                    FW_COLORS[i % FW_COLORS.length],
-                    FW_COLORS[(i + 2) % FW_COLORS.length],
-                ],
-            })),
-        [],
-    );
+const FW_BURSTS = Array.from({ length: 6 }, (_, i) => ({
+    id: i,
+    x: [10, 28, 50, 68, 82, 93][i],
+    y: [25, 15, 30, 18, 28, 12][i],
+    delay: i * 0.6 + 0.3,
+    repeatDelay: 3.5 + i * 0.3,
+    colors: [FW_COLORS[i % FW_COLORS.length], FW_COLORS[(i + 2) % FW_COLORS.length]],
+}));
+
+function Fireworks() {
+    const conf = FW_CONF;
+    const bursts = FW_BURSTS;
 
     return (
         <div className="pointer-events-none fixed inset-0 overflow-hidden z-0">
@@ -146,11 +139,6 @@ export default function HallOfFamePage() {
     const [activeTab, setActiveTab] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
-        if (!teamId) return;
-        void loadSeasons();
-    }, [teamId]);
-
     async function loadSeasons() {
         setLoading(true);
         const { data } = await supabase
@@ -167,6 +155,12 @@ export default function HallOfFamePage() {
         }
         setLoading(false);
     }
+
+    useEffect(() => {
+        if (!teamId) return;
+        void loadSeasons();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [teamId]);
 
     async function loadSeasonData(seasonId: number, seasonList?: Season[]) {
         if (seasonDataMap[seasonId]) return;
