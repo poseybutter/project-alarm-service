@@ -9,16 +9,16 @@ import Select from "react-select";
 import { supabase } from "@/lib/supabase";
 import type { Project } from "@/lib/types";
 import type { TeamMemberOption } from "@/features/team-context/types";
-import { findProjectId, findTeamMemberId, formatWorkload } from "@/lib/utils";
+import { findProjectId, findTeamMemberId, formatWorkload } from "@/shared/utils/utils";
 import { WORKLOAD_PRESETS, getMemberColors } from "@/lib/constants";
-import { toLocalYmd } from "@/lib/toLocalYmd";
+import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import Avatar from "@/components/Avatar";
 import TaskContentInputs from "@/components/TaskContentInputs";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import {
     projectSearchSelectStyles,
     modalFormSelectStyles,
-} from "@/lib/reactSelectStyles";
+} from "@/shared/styles/reactSelectStyles";
 import { syncTaskToTeamCalendar } from "@/features/tasks/api/teamCalendarSync";
 
 const EMPTY_FORM = {

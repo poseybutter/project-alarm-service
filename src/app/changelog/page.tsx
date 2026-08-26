@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import AuthGuard from "@/components/AuthGuard";
 import Header from "@/components/Header";
 import { useNotifications } from "@/hooks/useNotifications";
-import { timeAgo } from "@/lib/utils";
+import { timeAgo } from "@/shared/utils/utils";
 
 export default function ChangelogPage() {
     const { notifications, markAllRead } = useNotifications();

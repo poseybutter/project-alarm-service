@@ -1,5 +1,5 @@
 import type { Accessibility } from "@/lib/types";
-import { getDiff } from "@/lib/utils";
+import { getDiff } from "@/shared/utils/utils";
 import type { NewAgentSuggestion, NotificationSuggestionPayload } from "./types";
 
 const REQUEST_NEEDED_STATUSES = new Set([

@@ -5,15 +5,15 @@ import {
     buildNotificationSuggestions,
     type CalendarEventInput,
     type QuestBriefingInput,
-} from "@/lib/agents/notificationAgent";
-import { hasRecentNotificationDelivery } from "@/lib/agents/notificationDeliveries";
+} from "@/features/agents/server/notificationAgent";
+import { hasRecentNotificationDelivery } from "@/features/agents/server/notificationDeliveries";
 import { sendGoogleChatMessage } from "@/infrastructure/google-chat";
 import {
     syncTodayGoogleCalendarEvents,
     syncTodayTeamCalendarEvents,
     type GoogleCalendarConnection,
 } from "@/infrastructure/google-calendar";
-import type { AgentSuggestion, NotificationSuggestionPayload } from "@/lib/agents/types";
+import type { AgentSuggestion, NotificationSuggestionPayload } from "@/features/agents/server/types";
 import type { Accessibility, Task } from "@/lib/types";
 import { internalErrorResponse } from "@/lib/server/apiResponse";
 import { decryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";

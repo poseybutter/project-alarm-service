@@ -8,7 +8,7 @@ import "react-day-picker/dist/style.css";
 import type { Task } from "@/lib/types";
 import { TYPE_COLORS } from "@/lib/constants";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
-import { toLocalYmd } from "@/lib/toLocalYmd";
+import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 
 type DragQuestModalProps = {
     task: Task;

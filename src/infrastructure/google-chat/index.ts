@@ -1,7 +1,7 @@
 import "server-only";
 
-import type { NotificationChannel } from "@/lib/agents/types";
-import type { GoogleChatCardPayload } from "@/lib/agents/types";
+import type { NotificationChannel } from "@/features/agents/server/types";
+import type { GoogleChatCardPayload } from "@/features/agents/server/types";
 
 /**
  * fetch 타임아웃 후 원격 처리 결과를 알 수 없을 때 발생합니다.

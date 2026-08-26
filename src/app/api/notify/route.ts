@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { LEVELS } from "@/lib/levels";
+import { LEVELS } from "@/features/gamification/levels";
 import { internalErrorResponse } from "@/lib/server/apiResponse";
 import { DeliveryUnknownError, sendGoogleChatMessage } from "@/infrastructure/google-chat";
 import {

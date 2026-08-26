@@ -7,7 +7,7 @@ import {
     buildNotificationSuggestions,
     type CalendarEventInput,
     type QuestBriefingInput,
-} from "@/lib/agents/notificationAgent";
+} from "@/features/agents/server/notificationAgent";
 import {
     syncTodayGoogleCalendarEvents,
     type GoogleCalendarConnection,

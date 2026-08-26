@@ -4,12 +4,12 @@ import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
 } from "@/lib/serverSupabase";
-import type { AgentSuggestion, NotificationSuggestionPayload } from "@/lib/agents/types";
+import type { AgentSuggestion, NotificationSuggestionPayload } from "@/features/agents/server/types";
 import {
     hasRecentNotificationDelivery,
     recordNotificationDelivery,
-} from "@/lib/agents/notificationDeliveries";
-import { updateAgentSuggestionStatus } from "@/lib/agents/suggestions";
+} from "@/features/agents/server/notificationDeliveries";
+import { updateAgentSuggestionStatus } from "@/features/agents/server/suggestions";
 import { DeliveryUnknownError, sendGoogleChatMessage } from "@/infrastructure/google-chat";
 import { decryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
 

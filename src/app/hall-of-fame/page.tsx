@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { supabase } from "@/lib/supabase";
-import { calcLevel } from "@/lib/maple";
+import { calcLevel } from "@/features/gamification/maple";
 import { getTeamRoster } from "@/features/gamification/api/getTeamRoster";
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
