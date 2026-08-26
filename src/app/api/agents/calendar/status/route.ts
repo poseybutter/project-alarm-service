@@ -4,7 +4,7 @@ import {
     getServerCurrentTeamRole,
 } from "@/lib/serverSupabase";
 import { internalErrorResponse } from "@/lib/server/apiResponse";
-import { decryptIntegrationToken } from "@/lib/server/tokenEncryption";
+import { decryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
 
 export async function GET() {
     const { user, role, teamId } = await getServerCurrentTeamRole();
