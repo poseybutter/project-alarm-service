@@ -117,6 +117,7 @@ export default function AddTaskModal({
     const [formDateRange, setFormDateRange] = useState<DateRange | undefined>();
     const [showFormDatePicker, setShowFormDatePicker] = useState(false);
     const [formProjTab, setFormProjTab] = useState<"mine" | "all">("mine");
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     // 모달이 열릴 때마다 폼을 기본값으로 초기화한다.
     useEffect(() => {
@@ -177,7 +178,7 @@ export default function AddTaskModal({
     }
 
     async function addTask() {
-        if (!teamId) return;
+        if (isSubmitting || !teamId) return;
         if (!form.member || !form.proj)
             return alert("담당자와 프로젝트명은 필수예요");
         const selectedPlayerId = findTeamMemberId(memberOptions, form.member);
@@ -190,47 +191,52 @@ export default function AddTaskModal({
             onToast("업무 캘린더 등록을 위해 기간 또는 마감일을 선택해주세요");
             return;
         }
-        const { data, error } = await supabase
-            .from("tasks")
-            .insert([
-                {
-                    member: form.member,
-                    player_id: selectedPlayerId,
-                    type: form.type,
-                    proj: form.proj,
-                    project_id: selectedProjectId,
-                    content: form.content,
-                    priority: form.priority || null,
-                    start_date: formDateRange?.from
-                        ? toLocalYmd(formDateRange.from)
-                        : null,
-                    end_date: formDateRange?.to
-                        ? toLocalYmd(formDateRange.to)
-                        : null,
-                    workload: form.workload || 0,
-                    issue: form.issue || null,
-                    status: "대기",
-                    is_plan: form.is_plan ?? false,
-                    is_starred: form.is_starred ?? false,
-                    show_on_team_calendar: true,
-                    team_id: teamId,
-                },
-            ])
-            .select("id")
-            .single();
-        if (error) {
-            onToast("업무 등록에 실패했어요");
-            return;
+        setIsSubmitting(true);
+        try {
+            const { data, error } = await supabase
+                .from("tasks")
+                .insert([
+                    {
+                        member: form.member,
+                        player_id: selectedPlayerId,
+                        type: form.type,
+                        proj: form.proj,
+                        project_id: selectedProjectId,
+                        content: form.content,
+                        priority: form.priority || null,
+                        start_date: formDateRange?.from
+                            ? toLocalYmd(formDateRange.from)
+                            : null,
+                        end_date: formDateRange?.to
+                            ? toLocalYmd(formDateRange.to)
+                            : null,
+                        workload: form.workload || 0,
+                        issue: form.issue || null,
+                        status: "대기",
+                        is_plan: form.is_plan ?? false,
+                        is_starred: form.is_starred ?? false,
+                        show_on_team_calendar: true,
+                        team_id: teamId,
+                    },
+                ])
+                .select("id")
+                .single();
+            if (error) {
+                onToast("업무 등록에 실패했어요");
+                return;
+            }
+            if (data?.id) {
+                void syncTaskToTeamCalendar(data.id).catch((err) => {
+                    onToast(
+                        err instanceof Error ? err.message : "팀 캘린더 동기화 실패",
+                    );
+                });
+            }
+            onClose();
+            onCreated();
+        } finally {
+            setIsSubmitting(false);
         }
-        if (data?.id) {
-            void syncTaskToTeamCalendar(data.id).catch((err) => {
-                onToast(
-                    err instanceof Error ? err.message : "팀 캘린더 동기화 실패",
-                );
-            });
-        }
-        onClose();
-        onCreated();
     }
 
     if (!open) return null;
@@ -249,6 +255,7 @@ export default function AddTaskModal({
                     <h2 className="text-base font-bold">업무 추가</h2>
                     <button
                         onClick={onClose}
+                        aria-label="업무 추가 모달 닫기"
                         className="text-2xl text-stone-400 leading-none"
                     >
                         ×
@@ -359,6 +366,8 @@ export default function AddTaskModal({
                         <button
                             type="button"
                             onClick={toggleIsPlan}
+                            aria-label="이번주 리포트 포함"
+                            aria-pressed={form.is_plan}
                             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors
                       ${form.is_plan ? "bg-amber-500" : "bg-stone-200"}`}
                         >
@@ -385,6 +394,8 @@ export default function AddTaskModal({
                                     is_starred: !f.is_starred,
                                 }))
                             }
+                            aria-label="중요 프로젝트"
+                            aria-pressed={form.is_starred}
                             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors
                       ${form.is_starred ? "bg-amber-500" : "bg-stone-200"}`}
                         >
@@ -553,9 +564,10 @@ export default function AddTaskModal({
                     </div>
                     <button
                         onClick={addTask}
-                        className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm"
+                        disabled={isSubmitting}
+                        className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm disabled:opacity-60"
                     >
-                        등록하기
+                        {isSubmitting ? "등록 중..." : "등록하기"}
                     </button>
                 </div>
             </div>

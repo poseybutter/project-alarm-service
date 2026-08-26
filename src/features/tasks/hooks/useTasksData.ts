@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import type { Task, Project } from "@/lib/types";
 import { normalizeProject } from "@/lib/utils";
@@ -13,6 +13,7 @@ export function useTasksData(teamId: string | null) {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState(true);
+    const taskSeqRef = useRef(0);
 
     async function loadTasks(
         requestedTeamId = teamId,
@@ -20,17 +21,18 @@ export function useTasksData(teamId: string | null) {
     ) {
         if (!requestedTeamId) return;
         setLoading(true);
+        const seq = ++taskSeqRef.current;
         try {
             const { data } = await supabase
                 .from("tasks")
                 .select("*")
                 .eq("team_id", requestedTeamId)
                 .order("created_at", { ascending: false });
-            if (!isCancelled()) {
+            if (!isCancelled() && seq === taskSeqRef.current) {
                 setTasks(data || []);
             }
         } finally {
-            if (!isCancelled()) setLoading(false);
+            if (!isCancelled() && seq === taskSeqRef.current) setLoading(false);
         }
     }
 
@@ -53,8 +55,15 @@ export function useTasksData(teamId: string | null) {
     }
 
     useEffect(() => {
-        if (!teamId) return;
+        if (!teamId) {
+            setTasks([]);
+            setProjects([]);
+            setLoading(false);
+            return;
+        }
         let cancelled = false;
+        setTasks([]);
+        setProjects([]);
         void loadTasks(teamId, () => cancelled);
         void loadProjects(teamId, () => cancelled);
 
@@ -64,12 +73,13 @@ export function useTasksData(teamId: string | null) {
                 "postgres_changes",
                 { event: "*", schema: "public", table: "tasks" },
                 async () => {
+                    const seq = ++taskSeqRef.current;
                     const { data } = await supabase
                         .from("tasks")
                         .select("*")
                         .eq("team_id", teamId)
                         .order("created_at", { ascending: false });
-                    if (!cancelled) setTasks(data || []);
+                    if (!cancelled && seq === taskSeqRef.current) setTasks(data || []);
                 },
             )
             .subscribe();
