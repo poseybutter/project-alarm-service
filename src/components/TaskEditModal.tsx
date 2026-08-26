@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { supabase } from "@/lib/supabase";
-import type { Task, Project } from "@/lib/types";
+import { supabase } from "@/infrastructure/supabase/client";
+import type { Task, Project } from "@/shared/types";
 import { findProjectId, formatWorkload, normalizeProject } from "@/shared/utils/utils";
-import { WORKLOAD_PRESETS } from "@/lib/constants";
+import { WORKLOAD_PRESETS } from "@/shared/constants";
 import { useAuth } from "@/components/AuthProvider";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { DayPicker, DateRange } from "react-day-picker";

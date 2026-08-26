@@ -1,8 +1,8 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
-import { getServerCurrentTeamRole } from "@/lib/serverSupabase";
+import { getServerCurrentTeamRole } from "@/infrastructure/supabase/server";
 import { buildGoogleCalendarAuthUrl } from "@/infrastructure/google-calendar";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
 
 export async function GET() {
     const { user, role, teamId } = await getServerCurrentTeamRole();

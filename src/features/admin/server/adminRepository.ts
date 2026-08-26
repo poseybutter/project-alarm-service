@@ -1,11 +1,11 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { TEAM_ID } from "@/lib/constants";
+import { TEAM_ID } from "@/shared/constants";
 import {
   createServiceSupabaseClient,
   getServerUser,
-} from "@/lib/serverSupabase";
+} from "@/infrastructure/supabase/server";
 import {
   ALL_ADMIN_PERMISSIONS,
   normalizeAdminRole,

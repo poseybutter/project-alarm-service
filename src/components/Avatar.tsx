@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
-import { getMemberColors } from '@/lib/constants'
+import { supabase } from '@/infrastructure/supabase/client'
+import { getMemberColors } from '@/shared/constants'
 import { useAuth } from '@/components/AuthProvider'
 
 // 전역 캐시

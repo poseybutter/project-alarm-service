@@ -1,10 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAdminSession } from "@/features/admin/server/adminRepository";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
-} from "@/lib/serverSupabase";
+} from "@/infrastructure/supabase/server";
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DEFAULT_MORNING_SEND_TIME = "08:30";

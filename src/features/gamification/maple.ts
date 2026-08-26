@@ -1,5 +1,5 @@
-import { supabase } from "@/lib/supabase";
-import { sendLevelUpMessage } from "@/lib/googleChat";
+import { supabase } from "@/infrastructure/supabase/client";
+import { sendLevelUpMessage } from "./googleChat";
 import { LEVELS } from "./levels";
 
 export { LEVELS } from "./levels";

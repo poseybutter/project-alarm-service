@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/infrastructure/supabase/client";
 import {
     calcLevel,
     getNextLevel,
@@ -25,13 +25,13 @@ import { DayPicker, DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
 import { ko } from "date-fns/locale";
 import { useRouter } from "next/navigation";
-import type { Player, Task, Quest, Season, SeasonRecord, SeasonAward } from "@/lib/types";
+import type { Player, Task, Quest, Season, SeasonRecord, SeasonAward } from "@/shared/types";
 import { formatWorkload } from "@/shared/utils/utils";
 import {
     BAR_COLORS,
     getMemberColors,
     normalizeStatus,
-} from "@/lib/constants";
+} from "@/shared/constants";
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import Select from "react-select";
 import { taskFilterProjectSelectStyles } from "@/shared/styles/reactSelectStyles";

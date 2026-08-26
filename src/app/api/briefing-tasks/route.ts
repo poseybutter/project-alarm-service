@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getServerUserRole } from "@/lib/serverSupabase";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
+import { getServerUserRole } from "@/infrastructure/supabase/server";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
 
 /**
  * 주간 브리핑 업무별 편집 내용(briefing_tasks) API.
