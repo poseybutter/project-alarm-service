@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
-} from "@/lib/serverSupabase";
+} from "@/infrastructure/supabase/server";
 import {
     buildNotificationSuggestions,
     type CalendarEventInput,
@@ -14,14 +14,14 @@ import type {
     AgentSuggestion,
     NotificationSuggestionPayload,
 } from "@/features/agents/server/types";
-import type { Accessibility, Task } from "@/lib/types";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
+import type { Accessibility, Task } from "@/shared/types";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { decryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
 import {
     consumeRateLimit,
     rateLimitResponse,
     requestRateLimitKey,
-} from "@/lib/server/rateLimit";
+} from "@/shared/server/rateLimit";
 
 function isNotificationPayload(
     payload: Record<string, unknown>,

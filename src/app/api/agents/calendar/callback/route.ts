@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import {
     createServiceSupabaseClient,
     getServerUserRole,
-} from "@/lib/serverSupabase";
+} from "@/infrastructure/supabase/server";
 import { exchangeGoogleCalendarCode } from "@/infrastructure/google-calendar";
 import { encryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
 

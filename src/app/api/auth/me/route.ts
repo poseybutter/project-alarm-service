@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServerUser } from "@/lib/serverSupabase";
+import { getServerUser } from "@/infrastructure/supabase/server";
 import {
     isIdentitySchemaUnavailable,
     loadNormalizedIdentity,

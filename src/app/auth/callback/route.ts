@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { isIdentitySchemaUnavailable } from "@/features/identity/server/identityRepository";
-import { minimizedAuditMetadata } from "@/lib/server/auditMetadata";
+import { minimizedAuditMetadata } from "@/shared/server/auditMetadata";
 
 /**
  * Supabase OAuth (Google) 콜백.

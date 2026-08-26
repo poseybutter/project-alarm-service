@@ -4,9 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import { useAuth } from "@/components/AuthProvider";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/infrastructure/supabase/client";
 import { getDiff } from "@/shared/utils/utils";
-import type { Accessibility } from "@/lib/types";
+import type { Accessibility } from "@/shared/types";
 
 const ACTIVE_PATHS = new Set(["/", "/home", "/tasks", "/report", "/manage", "/profile"]);
 const SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;

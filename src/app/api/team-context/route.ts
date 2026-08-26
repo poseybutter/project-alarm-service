@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { TEAM_ID } from "@/lib/constants";
-import { getServerUser } from "@/lib/serverSupabase";
+import { TEAM_ID } from "@/shared/constants";
+import { getServerUser } from "@/infrastructure/supabase/server";
 import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
 import type {
     ModuleKey,
