@@ -9,7 +9,7 @@ import {
     syncTodayTeamCalendarEvents,
     type GoogleCalendarConnection,
     type TeamCalendarEventInput,
-} from "@/lib/server/googleCalendar";
+} from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/lib/server/apiResponse";
 
 const VALID_EVENT_TYPES = new Set([

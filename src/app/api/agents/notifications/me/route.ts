@@ -11,7 +11,7 @@ import {
 import {
     syncTodayGoogleCalendarEvents,
     type GoogleCalendarConnection,
-} from "@/lib/server/googleCalendar";
+} from "@/infrastructure/google-calendar";
 import type { Accessibility, Task } from "@/lib/types";
 import { internalErrorResponse } from "@/lib/server/apiResponse";
 

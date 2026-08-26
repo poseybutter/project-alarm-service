@@ -4,8 +4,8 @@ import {
     createServiceSupabaseClient,
     getServerUserRole,
 } from "@/lib/serverSupabase";
-import { exchangeGoogleCalendarCode } from "@/lib/server/googleCalendar";
-import { encryptIntegrationToken } from "@/lib/server/tokenEncryption";
+import { exchangeGoogleCalendarCode } from "@/infrastructure/google-calendar";
+import { encryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
 
 export async function GET(req: NextRequest) {
     const origin = req.nextUrl.origin;

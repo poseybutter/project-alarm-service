@@ -7,7 +7,7 @@ import {
     syncTodayGoogleCalendarEvents,
     syncTodayTeamCalendarEvents,
     type GoogleCalendarConnection,
-} from "@/lib/server/googleCalendar";
+} from "@/infrastructure/google-calendar";
 import {
     buildNotificationSuggestions,
     type QuestBriefingInput,
