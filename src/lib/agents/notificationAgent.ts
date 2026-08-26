@@ -165,10 +165,15 @@ function accessibilityLine(item: AccessibilityAlert, index: number) {
 
 function htmlToPlainText(value: string | null | undefined) {
     if (!value) return "";
-    return value
+    let text = value
         .replace(/<br\s*\/?>/gi, "\n")
-        .replace(/<\/p>/gi, "\n")
-        .replace(/<[^>]*>/g, "")
+        .replace(/<\/p>/gi, "\n");
+    let prev;
+    do {
+        prev = text;
+        text = text.replace(/<[^>]*>/g, "");
+    } while (text !== prev);
+    return text
         .replace(/&nbsp;/g, " ")
         .replace(/&amp;/g, "&")
         .replace(/&lt;/g, "<")
