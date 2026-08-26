@@ -990,6 +990,59 @@ export async function addTeamMembership(input: {
   return membership;
 }
 
+/**
+ * 두 번째 이상 팀 소속(멤버십) 제거.
+ * 기본 소속(is_default=true)은 players와 연결된 레거시 경로라 대상 아님 —
+ * 그 경우는 updateAdminMember의 상태 변경(suspended)을 사용.
+ */
+export async function removeTeamMembership(input: {
+  membershipId: string;
+  teamId: string;
+}) {
+  const bootstrap = await requireAdminSession(input.teamId, "members.manage");
+  const service = createServiceSupabaseClient();
+
+  const { data: membership, error: membershipError } = await service
+    .from("team_memberships")
+    .select("id, team_id, role, is_default, profiles!inner(email, display_name)")
+    .eq("id", input.membershipId)
+    .maybeSingle();
+  if (membershipError) throw membershipError;
+  if (!membership || membership.team_id !== input.teamId) {
+    throw new AdminApiError("멤버십을 찾을 수 없습니다.", 404);
+  }
+  if (membership.is_default) {
+    throw new AdminApiError(
+      "기본 소속은 이 기능으로 제거할 수 없습니다. 구성원 상태 변경을 이용해 주세요.",
+      409,
+    );
+  }
+
+  const profile = membership.profiles as unknown as {
+    email: string;
+    display_name: string;
+  };
+  if (profile.email.toLowerCase() === bootstrap.identity.email.toLowerCase()) {
+    throw new AdminApiError("자신의 멤버십은 직접 제거할 수 없습니다.", 409);
+  }
+
+  const { error: deleteError } = await service
+    .from("team_memberships")
+    .delete()
+    .eq("id", input.membershipId);
+  if (deleteError) throw deleteError;
+
+  await writeAdminAudit({
+    actorEmail: bootstrap.identity.email,
+    action: "membership.removed",
+    teamId: input.teamId,
+    targetType: "team_membership",
+    targetId: membership.id,
+    targetLabel: profile.display_name || profile.email,
+    beforeState: membership,
+  });
+}
+
 export async function listTeamsWithCounts() {
   const bootstrap = await requireAdminSession(null, "teams.read");
   const effectiveTeamId = bootstrap.currentScope.teamId;
