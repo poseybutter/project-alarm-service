@@ -55,12 +55,12 @@ function cardToPlainText(card: GoogleChatCardPayload) {
         if (section.header) lines.push("", section.header);
         for (const widget of section.widgets) {
             lines.push(
-                widget.textParagraph.text
-                    .replace(/<br\s*\/?>/gi, "\n")
-                    .replace(/<[^>]*>/g, "")
-                    .replace(/&amp;/g, "&")
-                    .replace(/&lt;/g, "<")
-                    .replace(/&gt;/g, ">"),
+                (() => {
+                    let t = widget.textParagraph.text.replace(/<br\s*\/?>/gi, "\n");
+                    let p;
+                    do { p = t; t = t.replace(/<[^>]*>/g, ""); } while (t !== p);
+                    return t.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+                })(),
             );
         }
     }
