@@ -3,6 +3,18 @@
     {
       "path": "/api/agents/notifications/morning",
       "schedule": "30 23 * * 0-4"
+    },
+    {
+      "path": "/api/seasons/close",
+      "schedule": "59 14 * * *"
+    },
+    {
+      "path": "/api/players/reset-exp?type=monthly",
+      "schedule": "1 15 1 * *"
+    },
+    {
+      "path": "/api/players/reset-exp?type=weekly",
+      "schedule": "1 15 * * 1"
     }
   ]
 }
