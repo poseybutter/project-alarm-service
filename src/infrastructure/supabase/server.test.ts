@@ -42,7 +42,7 @@ vi.mock("@/features/identity/server/identityRepository", () => ({
     isIdentitySchemaUnavailable: () => false,
 }));
 
-import { getServerUserRole } from "@/lib/serverSupabase";
+import { getServerUserRole } from "@/infrastructure/supabase/server";
 
 const TEAM = "ud2";
 

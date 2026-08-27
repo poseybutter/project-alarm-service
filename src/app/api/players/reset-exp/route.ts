@@ -6,7 +6,7 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { createServiceSupabaseClient } from "@/lib/serverSupabase";
+import { createServiceSupabaseClient } from "@/infrastructure/supabase/server";
 
 function isAuthorized(req: NextRequest) {
     const secret = process.env.CRON_SECRET;

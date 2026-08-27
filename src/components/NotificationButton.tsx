@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useNotifications } from "@/hooks/useNotifications";
-import { timeAgo } from "@/lib/utils";
+import { timeAgo } from "@/shared/utils/utils";
 
 export default function NotificationButton() {
     const router = useRouter();

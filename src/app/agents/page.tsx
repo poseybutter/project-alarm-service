@@ -7,12 +7,12 @@ import UserMenu from "@/components/UserMenu";
 import TeamSwitcher from "@/components/TeamSwitcher";
 import AgentButton from "@/components/AgentButton";
 import { useAuth } from "@/components/AuthProvider";
-import { sanitizeHtml } from "@/lib/sanitizeHtml";
+import { sanitizeHtml } from "@/shared/utils/sanitizeHtml";
 import type {
     AgentSuggestion,
     GoogleChatCardPayload,
     NotificationSuggestionPayload,
-} from "@/lib/agents/types";
+} from "@/features/agents/server/types";
 
 type MemberWebhook = {
     member: string;

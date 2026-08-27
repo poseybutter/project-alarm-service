@@ -1,14 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAdminSession } from "@/features/admin/server/adminRepository";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
-} from "@/lib/serverSupabase";
+} from "@/infrastructure/supabase/server";
 import {
     decryptIntegrationToken,
     encryptIntegrationToken,
-} from "@/lib/server/tokenEncryption";
+} from "@/infrastructure/security/tokenEncryption";
 
 function validateWebhookUrl(value: string) {
     if (!value.trim()) return "Webhook URL is required";

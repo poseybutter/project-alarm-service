@@ -2,15 +2,15 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
-} from "@/lib/serverSupabase";
+} from "@/infrastructure/supabase/server";
 import {
     createTeamCalendarEvent,
     getTeamCalendarAccessToken,
     syncTodayTeamCalendarEvents,
     type GoogleCalendarConnection,
     type TeamCalendarEventInput,
-} from "@/lib/server/googleCalendar";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
+} from "@/infrastructure/google-calendar";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
 
 const VALID_EVENT_TYPES = new Set([
     "meeting",

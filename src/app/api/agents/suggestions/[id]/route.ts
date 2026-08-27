@@ -1,14 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
-} from "@/lib/serverSupabase";
-import { updateAgentSuggestionStatus } from "@/lib/agents/suggestions";
+} from "@/infrastructure/supabase/server";
+import { updateAgentSuggestionStatus } from "@/features/agents/server/suggestions";
 import type {
     AgentSuggestionStatus,
     GoogleChatCardPayload,
-} from "@/lib/agents/types";
+} from "@/features/agents/server/types";
 
 const REVIEW_STATUSES = new Set<AgentSuggestionStatus>([
     "approved",

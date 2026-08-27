@@ -15,20 +15,20 @@ import Typography from "@tiptap/extension-typography";
 import UserMenu from "@/components/UserMenu";
 import TeamSwitcher from "@/components/TeamSwitcher";
 import Avatar from "@/components/Avatar";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/infrastructure/supabase/client";
 import AuthGuard from "@/components/AuthGuard";
 import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import { useAuth } from "@/components/AuthProvider";
 import { PageSpinner } from "@/components/Spinner";
-import type { Task } from "@/lib/types";
-import { normalizeStatus } from "@/lib/constants";
-import { toLocalYmd } from "@/lib/toLocalYmd";
+import type { Task } from "@/shared/types";
+import { normalizeStatus } from "@/shared/constants";
+import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import TiptapSectionEditor from "@/components/TiptapSectionEditor";
 import Tooltip from "@/components/Tooltip";
 import Select from "react-select";
-import { modalFormSelectStyles } from "@/lib/reactSelectStyles";
-import { sanitizeHtml } from "@/lib/sanitizeHtml";
+import { modalFormSelectStyles } from "@/shared/styles/reactSelectStyles";
+import { sanitizeHtml } from "@/shared/utils/sanitizeHtml";
 
 /** 전달사항 HTML이 사용자에게 보일 내용이 있는지 (빈 에디터·공백 태그 제외) */
 function noticeHtmlHasText(html: string | null | undefined): boolean {

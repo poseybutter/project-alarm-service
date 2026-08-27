@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { LEVELS } from "@/lib/levels";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
+import { LEVELS } from "@/features/gamification/levels";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { DeliveryUnknownError, sendGoogleChatMessage } from "@/infrastructure/google-chat";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
-} from "@/lib/serverSupabase";
+} from "@/infrastructure/supabase/server";
 
 type NotifyBody = {
     type?: unknown;

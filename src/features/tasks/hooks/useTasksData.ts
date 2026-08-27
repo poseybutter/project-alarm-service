@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import type { Task, Project } from "@/lib/types";
-import { normalizeProject } from "@/lib/utils";
+import { supabase } from "@/infrastructure/supabase/client";
+import type { Task, Project } from "@/shared/types";
+import { normalizeProject } from "@/shared/utils/utils";
 
 /**
  * 업무·프로젝트 데이터 로딩과 realtime 구독을 담당한다.

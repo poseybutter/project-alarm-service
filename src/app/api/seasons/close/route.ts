@@ -10,8 +10,8 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { createServiceSupabaseClient } from "@/lib/serverSupabase";
-import { calcLevel } from "@/lib/maple";
+import { createServiceSupabaseClient } from "@/infrastructure/supabase/server";
+import { calcLevel } from "@/features/gamification/maple";
 import { getTeamRoster } from "@/features/gamification/api/getTeamRoster";
 
 function isAuthorized(req: NextRequest) {
