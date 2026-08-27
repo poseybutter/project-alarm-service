@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
-import { clearAuthCookies } from "@/lib/server/authCookies";
+import { clearAuthCookies } from "@/shared/server/authCookies";
 
 export async function POST(req: NextRequest) {
     const store = await cookies();
