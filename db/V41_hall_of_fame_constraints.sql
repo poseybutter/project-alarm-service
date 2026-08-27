@@ -55,17 +55,3 @@ end $$;
 create unique index if not exists uq_seasons_one_active_per_team
     on public.seasons(team_id)
     where (status = 'active');
-
--- ── V40 시드 보완: partial unique index 생성 후 충돌 대상을 명시해 재실행 안전 보장 ──
--- V40의 on conflict do nothing 은 충돌 대상 미지정으로 부분 유니크 인덱스를 활용 못함.
--- 이 문은 인덱스 생성 후 실행되므로 안전하게 멱등 삽입 가능.
-insert into public.seasons (team_id, label, sub_label, range_start, range_end, status)
-select
-    t.id,
-    '베타 시즌',
-    '왕좌는 하나다',
-    '2026-05-01',
-    '2026-08-31',
-    'active'
-from public.teams t
-on conflict (team_id) where (status = 'active') do nothing;
