@@ -460,7 +460,7 @@ export function TeamsPage() {
           <TeamNameField value={name} onChange={setName} />
           <label className="block">
             <span className="mb-1.5 block text-xs font-bold text-stone-600">
-              팀 고유 주소
+              팀 코드
             </span>
             <input
               className="admin-input w-full font-mono"
