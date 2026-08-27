@@ -54,7 +54,12 @@ export function MembersPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const teamOptions = useMemo(
-    () => scopes.filter((scope) => scope.kind === "team"),
+    () =>
+      scopes.filter(
+        (scope) =>
+          scope.kind === "team" &&
+          scope.permissions.includes("members.manage"),
+      ),
     [scopes],
   );
   const [addOpen, setAddOpen] = useState(false);
