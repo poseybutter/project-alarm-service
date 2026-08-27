@@ -1,20 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { buildAccessibilityReminderSuggestions } from "@/lib/agents/accessibilityReminderAgent";
-import { buildNotificationSuggestions } from "@/lib/agents/notificationAgent";
+import { buildAccessibilityReminderSuggestions } from "@/features/agents/server/accessibilityReminderAgent";
+import { buildNotificationSuggestions } from "@/features/agents/server/notificationAgent";
 import {
     listRecentlyDeliveredDedupeKeys,
-} from "@/lib/agents/notificationDeliveries";
-import { createAgentSuggestions } from "@/lib/agents/suggestions";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
+} from "@/features/agents/server/notificationDeliveries";
+import { createAgentSuggestions } from "@/features/agents/server/suggestions";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
-} from "@/lib/serverSupabase";
-import type { Accessibility, Task } from "@/lib/types";
+} from "@/infrastructure/supabase/server";
+import type { Accessibility, Task } from "@/shared/types";
 import type {
     CalendarEventInput,
     QuestBriefingInput,
-} from "@/lib/agents/notificationAgent";
+} from "@/features/agents/server/notificationAgent";
 
 function excludeRecentlyDelivered<T extends { dedupe_key: string | null }>(
     suggestions: T[],

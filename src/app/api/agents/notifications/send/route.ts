@@ -1,17 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
-} from "@/lib/serverSupabase";
-import type { AgentSuggestion, NotificationSuggestionPayload } from "@/lib/agents/types";
+} from "@/infrastructure/supabase/server";
+import type { AgentSuggestion, NotificationSuggestionPayload } from "@/features/agents/server/types";
 import {
     hasRecentNotificationDelivery,
     recordNotificationDelivery,
-} from "@/lib/agents/notificationDeliveries";
-import { updateAgentSuggestionStatus } from "@/lib/agents/suggestions";
+} from "@/features/agents/server/notificationDeliveries";
+import { updateAgentSuggestionStatus } from "@/features/agents/server/suggestions";
 import { DeliveryUnknownError, sendGoogleChatMessage } from "@/infrastructure/google-chat";
-import { decryptIntegrationToken } from "@/lib/server/tokenEncryption";
+import { decryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
 
 type SendRequest = {
     id?: number;

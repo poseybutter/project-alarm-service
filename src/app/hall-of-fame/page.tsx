@@ -3,14 +3,14 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { supabase } from "@/lib/supabase";
-import { calcLevel } from "@/lib/maple";
+import { supabase } from "@/infrastructure/supabase/client";
+import { calcLevel } from "@/features/gamification/maple";
 import { getTeamRoster } from "@/features/gamification/api/getTeamRoster";
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import Avatar from "@/components/Avatar";
 import { PageSpinner } from "@/components/Spinner";
-import type { Season, SeasonRecord, SeasonAward } from "@/lib/types";
+import type { Season, SeasonRecord, SeasonAward } from "@/shared/types";
 
 interface DisplayRecord {
     key: string;

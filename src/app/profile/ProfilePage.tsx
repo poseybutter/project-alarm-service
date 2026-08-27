@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/infrastructure/supabase/client";
 import {
     calcLevel,
     getNextLevel,
@@ -9,7 +9,7 @@ import {
     rpcAttendanceCheck,
     LEVELS,
     rpcSetQuestDone,
-} from "@/lib/maple";
+} from "@/features/gamification/maple";
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import Tooltip from "@/components/Tooltip";
@@ -25,16 +25,16 @@ import { DayPicker, DateRange } from "react-day-picker";
 import "react-day-picker/dist/style.css";
 import { ko } from "date-fns/locale";
 import { useRouter } from "next/navigation";
-import type { Player, Task, Quest, Season, SeasonRecord, SeasonAward } from "@/lib/types";
-import { formatWorkload } from "@/lib/utils";
+import type { Player, Task, Quest, Season, SeasonRecord, SeasonAward } from "@/shared/types";
+import { formatWorkload } from "@/shared/utils/utils";
 import {
     BAR_COLORS,
     getMemberColors,
     normalizeStatus,
-} from "@/lib/constants";
-import { toLocalYmd } from "@/lib/toLocalYmd";
+} from "@/shared/constants";
+import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import Select from "react-select";
-import { taskFilterProjectSelectStyles } from "@/lib/reactSelectStyles";
+import { taskFilterProjectSelectStyles } from "@/shared/styles/reactSelectStyles";
 
 const TITLES = [
     {

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/infrastructure/supabase/client";
 import {
     calcLevel,
     getNextLevel,
@@ -13,29 +13,29 @@ import {
     rpcSetTaskStatus,
     rpcSetQuestDone,
     EXP_REWARDS,
-} from "@/lib/maple";
+} from "@/features/gamification/maple";
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import Header from "@/components/Header";
 import Tooltip from "@/components/Tooltip";
-import type { Quest, Player, Task, Project } from "@/lib/types";
+import type { Quest, Player, Task, Project } from "@/shared/types";
 import {
     findProjectId,
     getDiff,
     formatWorkload,
     normalizeProject,
-} from "@/lib/utils";
+} from "@/shared/utils/utils";
 import {
     questContentLooksLikeStoredHtml,
     questRichTextIsEffectivelyEmpty,
     toQuestEditorInitialHtml,
-} from "@/lib/questContentDisplay";
+} from "@/features/gamification/questContentDisplay";
 import {
     BAR_COLORS,
     TYPE_COLORS,
     STATUS_COLORS,
     WORKLOAD_PRESETS,
-} from "@/lib/constants";
+} from "@/shared/constants";
 import Avatar from "@/components/Avatar";
 import LevelUpOverlay from "@/components/LevelUpOverlay";
 import MvpOverlay from "@/components/MvpOverlay";
@@ -66,12 +66,12 @@ import {
     projectSearchSelectStyles,
     modalFormSelectStyles,
     badgeSelectStyles,
-} from "@/lib/reactSelectStyles";
-import { toLocalYmd } from "@/lib/toLocalYmd";
+} from "@/shared/styles/reactSelectStyles";
+import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import TiptapQuestContentEditor from "@/components/TiptapQuestContentEditor";
 import TaskContentInputs from "@/components/TaskContentInputs";
 import TaskContentList from "@/components/TaskContentList";
-import { sanitizeHtml } from "@/lib/sanitizeHtml";
+import { sanitizeHtml } from "@/shared/utils/sanitizeHtml";
 import SeasonBanner from "@/components/SeasonBanner";
 
 function QuestCardContent({

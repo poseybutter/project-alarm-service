@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from './AuthProvider'
-import { signOut } from '@/lib/auth'
+import { signOut } from '@/infrastructure/supabase/auth'
 
 export default function UserMenu() {
   const { member, avatarUrl, teamId, teams, role } = useAuth()

@@ -2,7 +2,7 @@
 
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { signInWithGoogle } from "@/lib/auth";
+import { signInWithGoogle } from "@/infrastructure/supabase/auth";
 import { GameButton } from "@/components/auth/GameButton";
 import { GameBar } from "@/components/auth/GameBar";
 import { Hero, Gem } from "@/components/auth/Pix";

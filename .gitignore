@@ -40,6 +40,9 @@ dev-server*.err
 # vercel
 .vercel
 
+# JetBrains IDE
+.idea/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

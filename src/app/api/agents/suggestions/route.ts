@@ -1,14 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { internalErrorResponse } from "@/lib/server/apiResponse";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
-} from "@/lib/serverSupabase";
+} from "@/infrastructure/supabase/server";
 import {
     createAgentSuggestions,
     listAgentSuggestions,
-} from "@/lib/agents/suggestions";
-import type { AgentSuggestionStatus, AgentType } from "@/lib/agents/types";
+} from "@/features/agents/server/suggestions";
+import type { AgentSuggestionStatus, AgentType } from "@/features/agents/server/types";
 
 const AGENT_TYPES = new Set<AgentType>([
     "task_quality",

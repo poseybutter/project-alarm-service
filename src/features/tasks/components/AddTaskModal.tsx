@@ -6,19 +6,19 @@ import { DayPicker, DateRange } from "react-day-picker";
 import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
 import Select from "react-select";
-import { supabase } from "@/lib/supabase";
-import type { Project } from "@/lib/types";
+import { supabase } from "@/infrastructure/supabase/client";
+import type { Project } from "@/shared/types";
 import type { TeamMemberOption } from "@/features/team-context/types";
-import { findProjectId, findTeamMemberId, formatWorkload } from "@/lib/utils";
-import { WORKLOAD_PRESETS, getMemberColors } from "@/lib/constants";
-import { toLocalYmd } from "@/lib/toLocalYmd";
+import { findProjectId, findTeamMemberId, formatWorkload } from "@/shared/utils/utils";
+import { WORKLOAD_PRESETS, getMemberColors } from "@/shared/constants";
+import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import Avatar from "@/components/Avatar";
 import TaskContentInputs from "@/components/TaskContentInputs";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import {
     projectSearchSelectStyles,
     modalFormSelectStyles,
-} from "@/lib/reactSelectStyles";
+} from "@/shared/styles/reactSelectStyles";
 import { syncTaskToTeamCalendar } from "@/features/tasks/api/teamCalendarSync";
 
 const EMPTY_FORM = {
