@@ -89,7 +89,7 @@ export function TeamsPage() {
       .replace(/^-+|-+$/g, "")
       .replace(/-{2,}/g, "-")
       .slice(0, 20);
-    if (generated.length >= 2) setTeamId(generated);
+    setTeamId(generated.length >= 2 ? generated : "");
   }, [name]);
 
   const teams = useMemo(() => {
