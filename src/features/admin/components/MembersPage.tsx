@@ -470,6 +470,11 @@ export function MembersPage() {
                 </div>
 
                 {/* Role & Status editing — primary membership only */}
+                {!selectedPrimary?.isDefault && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
+                    기본 소속이 없는 구성원입니다. 역할·상태 변경을 하려면 기본 소속 팀에서 관리해 주세요.
+                  </div>
+                )}
                 {selectedPrimary?.isDefault && (
                   <fieldset className="space-y-4">
                     <legend className="text-sm font-extrabold">권한 및 상태</legend>
