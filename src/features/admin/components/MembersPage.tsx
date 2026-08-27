@@ -78,7 +78,15 @@ export function MembersPage() {
 
   const members = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return (data?.members ?? []).filter((member) => {
+    // 사람 기준으로 중복 제거 — 기본 소속(isDefault=true)을 우선, 없으면 첫 번째 행 사용
+    const seen = new Map<string, AdminMember>();
+    for (const member of data?.members ?? []) {
+      const existing = seen.get(member.email);
+      if (!existing || (!existing.isDefault && member.isDefault)) {
+        seen.set(member.email, member);
+      }
+    }
+    return Array.from(seen.values()).filter((member) => {
       if (filter !== "all" && member.status !== filter) return false;
       return (
         !query ||
@@ -88,6 +96,14 @@ export function MembersPage() {
       );
     });
   }, [data, filter, search]);
+
+  const teamCountByEmail = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const m of data?.members ?? []) {
+      map.set(m.email, (map.get(m.email) ?? 0) + 1);
+    }
+    return map;
+  }, [data]);
 
   const allMembershipsForSelected = useMemo(
     () => (selected ? (data?.members ?? []).filter((m) => m.email === selected.email) : []),
@@ -330,9 +346,9 @@ export function MembersPage() {
                   </td>
                   <td className="px-3 py-3 text-stone-600">
                     {member.teamName}
-                    {!member.isDefault && (
+                    {(teamCountByEmail.get(member.email) ?? 1) > 1 && (
                       <span className="ml-1.5 inline-flex items-center rounded border border-amber-200 bg-amber-50 px-1 text-[9px] font-extrabold text-amber-700">
-                        추가 소속
+                        +{(teamCountByEmail.get(member.email) ?? 1) - 1}팀
                       </span>
                     )}
                   </td>
