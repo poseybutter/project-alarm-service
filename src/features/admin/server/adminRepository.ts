@@ -173,7 +173,12 @@ export async function requireAdminSession(
   const { user } = await getServerUser();
   if (!user?.email) throw new AdminApiError("로그인이 필요합니다.", 401);
 
-  const memberships = await loadActor(user.email);
+  const [memberships, isOrganizationAdmin, teams] = await Promise.all([
+    loadActor(user.email),
+    loadOrganizationAdmin(user.email),
+    loadTeams(),
+  ]);
+
   const activeMemberships = memberships.filter(
     (membership) => membership.status === "active",
   );
@@ -184,14 +189,9 @@ export async function requireAdminSession(
   const adminMemberships = activeMemberships.filter((membership) =>
     membershipPermissions(membership).includes("admin.read"),
   );
-  const isOrganizationAdmin = await loadOrganizationAdmin(
-    user.email,
-  );
   if (!isOrganizationAdmin && adminMemberships.length === 0) {
     throw new AdminApiError("관리자 권한이 없습니다.", 403);
   }
-
-  const teams = await loadTeams();
   const allowedTeamIds = new Set(
     isOrganizationAdmin
       ? teams.map((team) => team.id)
@@ -517,6 +517,27 @@ async function countScopedRows(table: string, teamId: string | null) {
   return count ?? 0;
 }
 
+async function countProjectsByTeams(
+  teamIds: string[],
+): Promise<Map<string, number>> {
+  if (teamIds.length === 0) return new Map();
+  const service = createServiceSupabaseClient();
+  const { data, error } = await service
+    .from("projects")
+    .select("team_id")
+    .in("team_id", teamIds);
+  if (error) {
+    if (error.code === "42P01" || error.code === "42703") return new Map();
+    throw error;
+  }
+  const counts = new Map<string, number>();
+  for (const row of data ?? []) {
+    const tid = row.team_id as string;
+    counts.set(tid, (counts.get(tid) ?? 0) + 1);
+  }
+  return counts;
+}
+
 async function countOpenTasks(teamId: string | null) {
   const service = createServiceSupabaseClient();
   let query = service
@@ -578,23 +599,24 @@ export async function getAdminDashboard(
   const scopeTeams = effectiveTeamId
     ? teams.filter((team) => team.id === effectiveTeamId)
     : teams.filter((team) => team.status === "active");
-  const teamSummaries: AdminTeam[] = await Promise.all(
-    scopeTeams.map(async (team) => {
-      const teamMembers = allMembers.filter(
-        (member) => member.teamId === team.id,
-      );
-      return {
-        ...team,
-        memberCount: teamMembers.filter((member) => member.status === "active")
-          .length,
-        adminCount: teamMembers.filter(
-          (member) => member.status === "active" && member.role === "admin",
-        ).length,
-        projectCount: await countScopedRows("projects", team.id),
-        modules: ALL_TEAM_MODULES,
-      };
-    }),
+  const projectCountsByTeam = await countProjectsByTeams(
+    scopeTeams.map((team) => team.id),
   );
+  const teamSummaries: AdminTeam[] = scopeTeams.map((team) => {
+    const teamMembers = allMembers.filter(
+      (member) => member.teamId === team.id,
+    );
+    return {
+      ...team,
+      memberCount: teamMembers.filter((member) => member.status === "active")
+        .length,
+      adminCount: teamMembers.filter(
+        (member) => member.status === "active" && member.role === "admin",
+      ).length,
+      projectCount: projectCountsByTeam.get(team.id) ?? 0,
+      modules: ALL_TEAM_MODULES,
+    };
+  });
 
   return {
     generatedAt: new Date().toISOString(),
@@ -1112,21 +1134,20 @@ export async function listTeamsWithCounts() {
     modulesByTeam.set(row.team_id, list);
   }
 
-  return Promise.all(
-    teams.map(async (team): Promise<AdminTeam> => {
-      const teamMembers = members.filter((member) => member.teamId === team.id);
-      return {
-        ...team,
-        memberCount: teamMembers.filter((member) => member.status === "active")
-          .length,
-        adminCount: teamMembers.filter(
-          (member) => member.status === "active" && member.role === "admin",
-        ).length,
-        projectCount: await countScopedRows("projects", team.id),
-        modules: (modulesByTeam.get(team.id) ?? ALL_TEAM_MODULES) as AdminTeam["modules"],
-      };
-    }),
-  );
+  const projectCountsByTeam = await countProjectsByTeams(teamIds);
+  return teams.map((team): AdminTeam => {
+    const teamMembers = members.filter((member) => member.teamId === team.id);
+    return {
+      ...team,
+      memberCount: teamMembers.filter((member) => member.status === "active")
+        .length,
+      adminCount: teamMembers.filter(
+        (member) => member.status === "active" && member.role === "admin",
+      ).length,
+      projectCount: projectCountsByTeam.get(team.id) ?? 0,
+      modules: (modulesByTeam.get(team.id) ?? ALL_TEAM_MODULES) as AdminTeam["modules"],
+    };
+  });
 }
 
 export async function createAdminTeam(input: {
