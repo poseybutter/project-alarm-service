@@ -10,11 +10,13 @@ import type { ModuleKey } from "@/features/team-context/types";
 const navStyle = { "--nav-height": "67px" } as CSSProperties;
 
 const NAV_ITEMS: { href: string; icon: string; label: string; module: ModuleKey | null }[] = [
-    { href: "/home",    icon: "🏠", label: "홈",    module: null },
-    { href: "/tasks",   icon: "📋", label: "업무",  module: "tasks" },
-    { href: "/report",  icon: "✏️", label: "리포트", module: "report" },
-    { href: "/manage",  icon: "🗂️", label: "관리",  module: "manage" },
-    { href: "/profile", icon: "🍄", label: "프로필", module: null },
+    { href: "/home",    icon: "🏠", label: "홈",      module: null },
+    { href: "/tasks",   icon: "📋", label: "업무",    module: "tasks" },
+    { href: "/report",  icon: "✏️", label: "리포트",  module: "report" },
+    { href: "/quests",  icon: "⚔️", label: "퀘스트",  module: "gamification" },
+    { href: "/agents",  icon: "🤖", label: "에이전트", module: "agent" },
+    { href: "/manage",  icon: "🗂️", label: "관리",    module: "manage" },
+    { href: "/profile", icon: "🍄", label: "프로필",  module: null },
 ];
 
 export default function Nav() {
