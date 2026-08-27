@@ -76,6 +76,15 @@ export function MembersPage() {
   const [removeError, setRemoveError] = useState<ApiFailure | null>(null);
   const [removingMembership, setRemovingMembership] = useState<AdminMember | null>(null);
 
+  const teamNamesByEmail = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const m of data?.members ?? []) {
+      const list = map.get(m.email) ?? [];
+      map.set(m.email, [...list, m.teamName]);
+    }
+    return map;
+  }, [data]);
+
   const members = useMemo(() => {
     const query = search.trim().toLowerCase();
     // 사람 기준으로 중복 제거 — 기본 소속(isDefault=true)을 우선, 없으면 첫 번째 행 사용
@@ -88,23 +97,15 @@ export function MembersPage() {
     }
     return Array.from(seen.values()).filter((member) => {
       if (filter !== "all" && member.status !== filter) return false;
-      return (
-        !query ||
-        member.name.toLowerCase().includes(query) ||
-        member.email.toLowerCase().includes(query) ||
-        member.teamName.toLowerCase().includes(query)
+      if (!query) return true;
+      if (member.name.toLowerCase().includes(query)) return true;
+      if (member.email.toLowerCase().includes(query)) return true;
+      // 모든 소속 팀 이름 검색 대상 포함
+      return (teamNamesByEmail.get(member.email) ?? [member.teamName]).some((t) =>
+        t.toLowerCase().includes(query),
       );
     });
-  }, [data, filter, search]);
-
-  const teamNamesByEmail = useMemo(() => {
-    const map = new Map<string, string[]>();
-    for (const m of data?.members ?? []) {
-      const list = map.get(m.email) ?? [];
-      map.set(m.email, [...list, m.teamName]);
-    }
-    return map;
-  }, [data]);
+  }, [data, filter, search, teamNamesByEmail]);
 
   const allMembershipsForSelected = useMemo(
     () => (selected ? (data?.members ?? []).filter((m) => m.email === selected.email) : []),
@@ -195,6 +196,7 @@ export function MembersPage() {
       await reload();
     } catch (reason) {
       const failure = reason as ApiFailure;
+      setRemoveConfirm(false);
       setRemoveError({
         message: failure.message || "소속을 제거하지 못했습니다.",
         requestId: failure.requestId,
@@ -320,6 +322,9 @@ export function MembersPage() {
                   key={member.membershipId ?? `legacy-${member.id}`}
                   className="border-t border-stone-100 cursor-pointer hover:bg-stone-50"
                   onClick={() => openMember(member)}
+                  tabIndex={0}
+                  role="button"
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") openMember(member); }}
                 >
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-2">
@@ -414,7 +419,7 @@ export function MembersPage() {
                         <span className="shrink-0 inline-flex min-h-5 items-center rounded border border-stone-200 bg-stone-50 px-1.5 text-[10px] font-extrabold text-stone-700">
                           {membership.roleName}
                         </span>
-                        {!membership.isDefault && membership.email !== identity.email ? (
+                        {!membership.isDefault && membership.email !== identity.email && teamOptions.some((s) => s.teamId === membership.teamId) ? (
                           <button
                             type="button"
                             className="admin-icon-button shrink-0 text-red-500 hover:bg-red-50 hover:text-red-700"
