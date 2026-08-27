@@ -173,10 +173,11 @@ export async function requireAdminSession(
   const { user } = await getServerUser();
   if (!user?.email) throw new AdminApiError("로그인이 필요합니다.", 401);
 
-  const [memberships, isOrganizationAdmin, teams] = await Promise.all([
+  // loadActor·loadOrganizationAdmin은 인증 판단에 필요하므로 병렬 실행.
+  // loadTeams는 인증 확인 후에만 실행해 미인증 사용자의 불필요한 DB 조회를 막는다.
+  const [memberships, isOrganizationAdmin] = await Promise.all([
     loadActor(user.email),
     loadOrganizationAdmin(user.email),
-    loadTeams(),
   ]);
 
   const activeMemberships = memberships.filter(
@@ -192,6 +193,8 @@ export async function requireAdminSession(
   if (!isOrganizationAdmin && adminMemberships.length === 0) {
     throw new AdminApiError("관리자 권한이 없습니다.", 403);
   }
+
+  const teams = await loadTeams();
   const allowedTeamIds = new Set(
     isOrganizationAdmin
       ? teams.map((team) => team.id)
@@ -522,18 +525,25 @@ async function countProjectsByTeams(
 ): Promise<Map<string, number>> {
   if (teamIds.length === 0) return new Map();
   const service = createServiceSupabaseClient();
-  const { data, error } = await service
-    .from("projects")
-    .select("team_id")
-    .in("team_id", teamIds);
-  if (error) {
-    if (error.code === "42P01" || error.code === "42703") return new Map();
-    throw error;
-  }
   const counts = new Map<string, number>();
-  for (const row of data ?? []) {
-    const tid = row.team_id as string;
-    counts.set(tid, (counts.get(tid) ?? 0) + 1);
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await service
+      .from("projects")
+      .select("team_id")
+      .in("team_id", teamIds)
+      .range(from, from + pageSize - 1);
+    if (error) {
+      if (error.code === "42P01" || error.code === "42703") return new Map();
+      throw error;
+    }
+    for (const row of data ?? []) {
+      const tid = row.team_id as string;
+      counts.set(tid, (counts.get(tid) ?? 0) + 1);
+    }
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
   }
   return counts;
 }
