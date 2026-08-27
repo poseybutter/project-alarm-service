@@ -966,12 +966,30 @@ export async function addTeamMembership(input: {
     throw new AdminApiError("이미 해당 팀 소속입니다.", 409);
   }
 
+  // role_id: 넣지 않으면 컬럼 기본값(team_member)이 항상 들어가 admin·viewer로
+  // 추가해도 실제 권한은 구성원으로만 부여됨 — 시스템 역할을 직접 찾아 명시.
+  const roleKey =
+    input.role === "admin"
+      ? "team_admin"
+      : input.role === "viewer"
+        ? "team_viewer"
+        : "team_member";
+  const { data: roleRow, error: roleError } = await service
+    .from("roles")
+    .select("id")
+    .is("team_id", null)
+    .eq("role_key", roleKey)
+    .eq("status", "active")
+    .maybeSingle();
+  if (roleError && !isIdentitySchemaUnavailable(roleError)) throw roleError;
+
   const { data: membership, error: insertError } = await service
     .from("team_memberships")
     .insert({
       profile_id: profile.id,
       team_id: input.teamId,
       role: input.role,
+      ...(roleRow?.id ? { role_id: roleRow.id } : {}),
       status: "active",
       is_default: false,
       legacy_player_id: null,
@@ -1032,11 +1050,31 @@ export async function removeTeamMembership(input: {
     throw new AdminApiError("자신의 멤버십은 직접 제거할 수 없습니다.", 409);
   }
 
-  const { error: deleteError } = await service
+  // 팀의 마지막 활성 관리자는 제거 불가 (updateAdminMember와 동일한 보호)
+  if (membership.role === "admin") {
+    const { count, error: countError } = await service
+      .from("team_memberships")
+      .select("id", { count: "exact", head: true })
+      .eq("team_id", input.teamId)
+      .eq("role", "admin")
+      .eq("status", "active");
+    if (countError) throw countError;
+    if ((count ?? 0) <= 1) {
+      throw new AdminApiError("팀의 마지막 관리자는 제거할 수 없습니다.", 409);
+    }
+  }
+
+  // 조회와 삭제 사이 팀이 바뀌는 경우 방지 위해 team_id 재확인
+  const { error: deleteError, count: deletedCount } = await service
     .from("team_memberships")
-    .delete()
-    .eq("id", input.membershipId);
+    .delete({ count: "exact" })
+    .eq("id", input.membershipId)
+    .eq("team_id", input.teamId)
+    .eq("is_default", false);
   if (deleteError) throw deleteError;
+  if (!deletedCount) {
+    throw new AdminApiError("멤버십을 찾을 수 없습니다.", 404);
+  }
 
   await writeAdminAudit({
     actorEmail: bootstrap.identity.email,

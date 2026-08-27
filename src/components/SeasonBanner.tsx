@@ -62,7 +62,13 @@ export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProp
         setSeason(active ?? latestEnded);
 
         // 팀 전체 플레이어 EXP 랭킹 (현재 EXP 기준)
-        const players = await getTeamRoster(supabase, teamId!);
+        let players: RosterEntry[];
+        try {
+            players = await getTeamRoster(supabase, teamId!);
+        } catch (err) {
+            console.error("[SeasonBanner] 랭킹 조회 실패", err);
+            return;
+        }
 
         if (isCancelled()) return;
         if (players.length === 0) return;
