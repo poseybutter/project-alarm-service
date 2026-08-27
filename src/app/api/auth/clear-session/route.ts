@@ -1,8 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
-
-const SPRING_AUTH_COOKIES = ["accessToken", "refreshToken"];
+import { clearAuthCookies } from "@/lib/server/authCookies";
 
 export async function POST(req: NextRequest) {
     const store = await cookies();
@@ -30,16 +29,6 @@ export async function POST(req: NextRequest) {
     }
 
     const res = NextResponse.json({ ok: true });
-    const requestCookieNames = req.cookies.getAll().map((cookie) => cookie.name);
-    const authCookieNames = requestCookieNames.filter(
-        (name) =>
-            SPRING_AUTH_COOKIES.includes(name) ||
-            (name.startsWith("sb-") && name.includes("-auth-token")),
-    );
-
-    for (const name of authCookieNames) {
-        res.cookies.set(name, "", { path: "/", maxAge: 0 });
-    }
-
+    clearAuthCookies(req, res);
     return res;
 }

@@ -12,6 +12,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServiceSupabaseClient } from "@/lib/serverSupabase";
 import { calcLevel } from "@/lib/maple";
+import { getTeamRoster } from "@/features/gamification/api/getTeamRoster";
 
 function isAuthorized(req: NextRequest) {
     const secret = process.env.CRON_SECRET;
@@ -97,14 +98,16 @@ export async function POST(req: NextRequest) {
 
         try {
             // 2. 팀원 EXP 순위 계산
-            const { data: players, error: playersErr } = await supabase
-                .from("players")
-                .select("id, name, exp, level")
-                .eq("team_id", teamId)
-                .order("exp", { ascending: false });
-            if (playersErr) throw new Error(`players 조회 실패: ${playersErr.message}`);
+            let players;
+            try {
+                players = await getTeamRoster(supabase, teamId);
+            } catch (err) {
+                throw new Error(
+                    `players 조회 실패: ${err instanceof Error ? err.message : String(err)}`,
+                );
+            }
 
-            const records = (players ?? []).map((p, i) => {
+            const records = players.map((p, i) => {
                 const lv = calcLevel(p.exp);
                 return {
                     player_id: p.id,
@@ -118,7 +121,7 @@ export async function POST(req: NextRequest) {
 
             // player_id 로 특별상 수상자를 다시 찾기 위한 맵
             const playerIdByName = new Map(
-                (players ?? []).map((p) => [p.name, p.id] as const),
+                players.map((p) => [p.name, p.id] as const),
             );
 
             // 3. 특별상 계산
@@ -194,7 +197,7 @@ export async function POST(req: NextRequest) {
             // 4. 다음 시즌 정보 계산 (실제 생성 여부는 DB 함수가 팀별 active 시즌
             //    유무를 다시 확인해서 결정한다 — 동시 요청 시 중복 방지)
             const next = nextSeasonInfo(season.range_end);
-            const mvp = players?.[0]?.name ?? null;
+            const mvp = players[0]?.name ?? null;
 
             // 5. 기록·특별상 저장, 시즌 종료, 다음 시즌 생성, EXP·레벨 초기화를
             //    하나의 트랜잭션으로 처리한다.

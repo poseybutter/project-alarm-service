@@ -1,7 +1,16 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Pause, Play, Save, Search, ShieldAlert, X } from "lucide-react";
+import {
+  Pause,
+  Play,
+  Save,
+  Search,
+  ShieldAlert,
+  UserMinus,
+  UserPlus,
+  X,
+} from "lucide-react";
 import { useAdmin } from "@/features/admin/components/AdminShell";
 import {
   AdminButton,
@@ -26,7 +35,7 @@ type MembersResponse = { members: AdminMember[] };
 type MemberFilter = "all" | "active" | "suspended" | "pending";
 
 export function MembersPage() {
-  const { identity } = useAdmin();
+  const { identity, scopes } = useAdmin();
   const { data, error, loading, reload } =
     useAdminResource<MembersResponse>("/api/admin/members");
   const { data: roleCatalog } =
@@ -43,6 +52,28 @@ export function MembersPage() {
   const [discardPrompt, setDiscardPrompt] = useState(false);
   const [suspendConfirm, setSuspendConfirm] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const teamOptions = useMemo(
+    () =>
+      scopes.filter(
+        (scope) =>
+          scope.kind === "team" &&
+          scope.permissions.includes("members.manage"),
+      ),
+    [scopes],
+  );
+  const [addOpen, setAddOpen] = useState(false);
+  const [addEmail, setAddEmail] = useState("");
+  const [addTeamId, setAddTeamId] = useState(teamOptions[0]?.teamId ?? "");
+  const [addRole, setAddRole] = useState<"admin" | "member" | "viewer">(
+    "member",
+  );
+  const [addSaving, setAddSaving] = useState(false);
+  const [addError, setAddError] = useState<ApiFailure | null>(null);
+
+  const [removeConfirm, setRemoveConfirm] = useState(false);
+  const [removeSaving, setRemoveSaving] = useState(false);
+  const [removeError, setRemoveError] = useState<ApiFailure | null>(null);
 
   const members = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -69,15 +100,79 @@ export function MembersPage() {
     setDraftStatus(member.status === "suspended" ? "suspended" : "active");
     setSaveError(null);
     setDiscardPrompt(false);
+    setRemoveConfirm(false);
+    setRemoveError(null);
   }
 
   function closeDrawer() {
-    if (saving) return;
+    if (saving || removeSaving) return;
     if (dirty) {
       setDiscardPrompt(true);
       return;
     }
     setSelected(null);
+  }
+
+  async function submitAddMembership() {
+    if (!addEmail.trim() || !addTeamId || addSaving) return;
+    setAddSaving(true);
+    setAddError(null);
+    try {
+      const response = await fetch("/api/admin/members", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: addEmail.trim(),
+          teamId: addTeamId,
+          role: addRole,
+        }),
+      });
+      const body = (await response.json()) as ApiFailure;
+      if (!response.ok) throw body;
+      setSuccessMessage(`${addEmail.trim()}님을 팀에 추가했습니다.`);
+      setAddOpen(false);
+      setAddEmail("");
+      await reload();
+    } catch (reason) {
+      const failure = reason as ApiFailure;
+      setAddError({
+        message: failure.message || "멤버십을 추가하지 못했습니다.",
+        requestId: failure.requestId,
+      });
+    } finally {
+      setAddSaving(false);
+    }
+  }
+
+  async function removeMembership() {
+    if (!selected?.membershipId || !selected.teamId || removeSaving) return;
+    setRemoveSaving(true);
+    setRemoveError(null);
+    try {
+      const response = await fetch("/api/admin/members", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          membershipId: selected.membershipId,
+          teamId: selected.teamId,
+        }),
+      });
+      if (response.status !== 204) {
+        throw (await response.json()) as ApiFailure;
+      }
+      setSuccessMessage(`${selected.name}님의 ${selected.teamName} 소속을 제거했습니다.`);
+      setRemoveConfirm(false);
+      setSelected(null);
+      await reload();
+    } catch (reason) {
+      const failure = reason as ApiFailure;
+      setRemoveError({
+        message: failure.message || "소속을 제거하지 못했습니다.",
+        requestId: failure.requestId,
+      });
+    } finally {
+      setRemoveSaving(false);
+    }
   }
 
   async function saveMember() {
@@ -149,6 +244,21 @@ export function MembersPage() {
             <option value="pending">승인 대기</option>
           </select>
         </label>
+        {teamOptions.length > 0 && (
+          <AdminButton
+            variant="primary"
+            className="sm:ml-auto"
+            onClick={() => {
+              setAddEmail("");
+              setAddTeamId(teamOptions[0]?.teamId ?? "");
+              setAddRole("member");
+              setAddError(null);
+              setAddOpen(true);
+            }}
+          >
+            <UserPlus size={14} /> 다른 팀에 추가
+          </AdminButton>
+        )}
       </div>
 
       {loading && <LoadingRows count={7} />}
@@ -181,7 +291,7 @@ export function MembersPage() {
             <tbody>
               {members.map((member) => (
                 <tr
-                  key={member.id}
+                  key={member.membershipId ?? `legacy-${member.id}`}
                   className="border-t border-stone-100 hover:bg-stone-50"
                 >
                   <td className="px-3 py-3">
@@ -210,6 +320,11 @@ export function MembersPage() {
                   </td>
                   <td className="px-3 py-3 text-stone-600">
                     {member.teamName}
+                    {!member.isDefault && (
+                      <span className="ml-1.5 inline-flex items-center rounded border border-amber-200 bg-amber-50 px-1 text-[9px] font-extrabold text-amber-700">
+                        추가 소속
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-3">
                     <span className="inline-flex min-h-5 items-center rounded border border-stone-200 bg-stone-50 px-1.5 text-[10px] font-extrabold text-stone-700">
@@ -265,6 +380,40 @@ export function MembersPage() {
               <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
                 이 사용자는 접근 요청 단계에 있습니다. 접근 요청 화면에서 팀과
                 역할을 지정해 주세요.
+              </div>
+            ) : !selected.isDefault ? (
+              <div className="space-y-4">
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
+                  이 팀은 이 사용자의 기본 소속이 아닌 추가 소속입니다. 역할·상태
+                  변경은 지원하지 않고, 소속 제거만 가능합니다.
+                </div>
+                {selected.email === identity.email ? (
+                  <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                    <ShieldAlert className="mt-0.5 shrink-0" size={16} />
+                    자신의 멤버십은 직접 제거할 수 없습니다.
+                  </div>
+                ) : (
+                  <AdminButton
+                    variant="danger"
+                    onClick={() => setRemoveConfirm(true)}
+                    disabled={removeSaving}
+                  >
+                    <UserMinus size={14} /> 이 팀 소속 제거
+                  </AdminButton>
+                )}
+                {removeError && (
+                  <div
+                    role="alert"
+                    className="rounded-md border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800"
+                  >
+                    {removeError.message}
+                    {removeError.requestId && (
+                      <span className="mt-1 block font-mono text-[10px]">
+                        요청 ID: {removeError.requestId}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <fieldset className="space-y-4">
@@ -383,6 +532,7 @@ export function MembersPage() {
                 </div>
               </div>
             ) : selected.teamId &&
+              selected.isDefault &&
               selected.status !== "pending" &&
               selected.status !== "rejected" ? (
               <div className="flex justify-end gap-2 border-t border-stone-200 pt-4">
@@ -479,6 +629,181 @@ export function MembersPage() {
           </div>
         </AdminModal>
       )}
+
+      {selected && (
+        <AdminModal
+          open={removeConfirm}
+          role="alertdialog"
+          labelledBy="remove-membership-title"
+          onClose={() => !removeSaving && setRemoveConfirm(false)}
+          className="m-auto w-[calc(100%_-_2rem)] max-w-md rounded-md border-2 border-stone-950 bg-white shadow-2xl"
+        >
+          <div className="relative p-5">
+            <button
+              type="button"
+              className="admin-icon-button absolute right-3 top-3"
+              aria-label="닫기"
+              onClick={() => setRemoveConfirm(false)}
+              disabled={removeSaving}
+            >
+              <X size={18} />
+            </button>
+            <div className="flex gap-3 pr-9">
+              <span className="grid size-9 shrink-0 place-items-center rounded bg-red-100 text-red-700">
+                <UserMinus size={18} />
+              </span>
+              <div>
+                <h2
+                  id="remove-membership-title"
+                  className="text-base font-extrabold"
+                >
+                  {selected.teamName} 소속 제거
+                </h2>
+                <p className="mt-1 text-xs leading-5 text-stone-600">
+                  {selected.name}님을 {selected.teamName}에서 제거합니다. 다른
+                  팀 소속에는 영향이 없고, 필요하면 언제든 다시 추가할 수
+                  있습니다.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2 border-t border-stone-200 pt-4">
+              <AdminButton
+                onClick={() => setRemoveConfirm(false)}
+                disabled={removeSaving}
+              >
+                취소
+              </AdminButton>
+              <AdminButton
+                variant="danger"
+                onClick={() => void removeMembership()}
+                disabled={removeSaving}
+              >
+                {removeSaving ? (
+                  <SavingLabel label="제거 중" />
+                ) : (
+                  <>
+                    <UserMinus size={14} /> 소속 제거
+                  </>
+                )}
+              </AdminButton>
+            </div>
+          </div>
+        </AdminModal>
+      )}
+
+      <AdminModal
+        open={addOpen}
+        role="dialog"
+        labelledBy="add-membership-title"
+        onClose={() => !addSaving && setAddOpen(false)}
+        className="m-auto w-[calc(100%_-_2rem)] max-w-md rounded-md border-2 border-stone-950 bg-white shadow-2xl"
+      >
+        <div className="relative p-5">
+          <button
+            type="button"
+            className="admin-icon-button absolute right-3 top-3"
+            aria-label="닫기"
+            onClick={() => setAddOpen(false)}
+            disabled={addSaving}
+          >
+            <X size={18} />
+          </button>
+          <div className="flex gap-3 pr-9">
+            <span className="grid size-9 shrink-0 place-items-center rounded bg-amber-100 text-amber-700">
+              <UserPlus size={18} />
+            </span>
+            <div>
+              <h2 id="add-membership-title" className="text-base font-extrabold">
+                다른 팀에 구성원 추가
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-stone-600">
+                로그인 이력이 있는 사용자만 추가할 수 있습니다. 기존 소속은
+                그대로 유지되고, 선택한 팀에 추가 소속이 생깁니다.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 space-y-3">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-bold text-stone-600">
+                이메일
+              </span>
+              <input
+                className="admin-input w-full"
+                type="email"
+                value={addEmail}
+                onChange={(event) => setAddEmail(event.target.value)}
+                placeholder="member@example.com"
+                disabled={addSaving}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-bold text-stone-600">
+                추가할 팀
+              </span>
+              <select
+                className="admin-select w-full"
+                value={addTeamId}
+                onChange={(event) => setAddTeamId(event.target.value)}
+                disabled={addSaving}
+              >
+                {teamOptions.map((scope) => (
+                  <option key={scope.teamId} value={scope.teamId ?? ""}>
+                    {scope.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-bold text-stone-600">
+                역할
+              </span>
+              <select
+                className="admin-select w-full"
+                value={addRole}
+                onChange={(event) =>
+                  setAddRole(event.target.value as "admin" | "member" | "viewer")
+                }
+                disabled={addSaving}
+              >
+                <option value="member">구성원</option>
+                <option value="admin">팀 관리자</option>
+                <option value="viewer">뷰어</option>
+              </select>
+            </label>
+          </div>
+          {addError && (
+            <div
+              role="alert"
+              className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800"
+            >
+              {addError.message}
+              {addError.requestId && (
+                <span className="mt-1 block font-mono text-[10px]">
+                  요청 ID: {addError.requestId}
+                </span>
+              )}
+            </div>
+          )}
+          <div className="mt-5 flex justify-end gap-2 border-t border-stone-200 pt-4">
+            <AdminButton onClick={() => setAddOpen(false)} disabled={addSaving}>
+              취소
+            </AdminButton>
+            <AdminButton
+              variant="primary"
+              onClick={() => void submitAddMembership()}
+              disabled={addSaving || !addEmail.trim() || !addTeamId}
+            >
+              {addSaving ? (
+                <SavingLabel label="추가 중" />
+              ) : (
+                <>
+                  <UserPlus size={14} /> 추가
+                </>
+              )}
+            </AdminButton>
+          </div>
+        </div>
+      </AdminModal>
     </AdminPage>
   );
 }

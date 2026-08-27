@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { calcLevel } from "@/lib/maple";
+import { getTeamRoster } from "@/features/gamification/api/getTeamRoster";
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import Avatar from "@/components/Avatar";
@@ -161,61 +162,62 @@ export default function HallOfFamePage() {
 
         const isLive = season.status === "active";
 
-        if (isLive) {
-            const [{ data: players }, { data: awards }] = await Promise.all([
-                supabase
-                    .from("players")
-                    .select("name, exp")
-                    .eq("team_id", teamId!)
-                    .order("exp", { ascending: false }),
-                supabase
-                    .from("season_awards")
-                    .select("*")
-                    .eq("season_id", seasonId),
-            ]);
-            if (generation !== teamGenerationRef.current) return;
+        try {
+            if (isLive) {
+                const [players, { data: awards }] = await Promise.all([
+                    getTeamRoster(supabase, teamId!),
+                    supabase
+                        .from("season_awards")
+                        .select("*")
+                        .eq("season_id", seasonId),
+                ]);
+                if (generation !== teamGenerationRef.current) return;
 
-            const records: DisplayRecord[] = (players ?? []).map((p, i) => ({
-                key: `live-${p.name}`,
-                member: p.name,
-                rank: i + 1,
-                exp: p.exp,
-                level_name: calcLevel(p.exp).name,
-            }));
+                const records: DisplayRecord[] = players.map((p, i) => ({
+                    key: `live-${p.name}`,
+                    member: p.name,
+                    rank: i + 1,
+                    exp: p.exp,
+                    level_name: calcLevel(p.exp).name,
+                }));
 
-            const entry: SeasonData = { season, records, awards: (awards ?? []) as SeasonAward[], isLive: true };
-            seasonDataRef.current = { ...seasonDataRef.current, [seasonId]: entry };
-            setSeasonDataMap((prev) => ({ ...prev, [seasonId]: entry }));
-        } else {
-            const [{ data: records }, { data: awards }] = await Promise.all([
-                supabase
-                    .from("season_records")
-                    .select("*")
-                    .eq("season_id", seasonId)
-                    .order("rank", { ascending: true }),
-                supabase
-                    .from("season_awards")
-                    .select("*")
-                    .eq("season_id", seasonId),
-            ]);
-            if (generation !== teamGenerationRef.current) return;
+                const entry: SeasonData = { season, records, awards: (awards ?? []) as SeasonAward[], isLive: true };
+                seasonDataRef.current = { ...seasonDataRef.current, [seasonId]: entry };
+                setSeasonDataMap((prev) => ({ ...prev, [seasonId]: entry }));
+            } else {
+                const [{ data: records }, { data: awards }] = await Promise.all([
+                    supabase
+                        .from("season_records")
+                        .select("*")
+                        .eq("season_id", seasonId)
+                        .order("rank", { ascending: true }),
+                    supabase
+                        .from("season_awards")
+                        .select("*")
+                        .eq("season_id", seasonId),
+                ]);
+                if (generation !== teamGenerationRef.current) return;
 
-            const displayRecords: DisplayRecord[] = ((records ?? []) as SeasonRecord[]).map((r) => ({
-                key: `rec-${r.id}`,
-                member: r.member,
-                rank: r.rank,
-                exp: r.exp,
-                level_name: r.level_name,
-            }));
+                const displayRecords: DisplayRecord[] = ((records ?? []) as SeasonRecord[]).map((r) => ({
+                    key: `rec-${r.id}`,
+                    member: r.member,
+                    rank: r.rank,
+                    exp: r.exp,
+                    level_name: r.level_name,
+                }));
 
-            const entry: SeasonData = {
-                season,
-                records: displayRecords,
-                awards: (awards ?? []) as SeasonAward[],
-                isLive: false,
-            };
-            seasonDataRef.current = { ...seasonDataRef.current, [seasonId]: entry };
-            setSeasonDataMap((prev) => ({ ...prev, [seasonId]: entry }));
+                const entry: SeasonData = {
+                    season,
+                    records: displayRecords,
+                    awards: (awards ?? []) as SeasonAward[],
+                    isLive: false,
+                };
+                seasonDataRef.current = { ...seasonDataRef.current, [seasonId]: entry };
+                setSeasonDataMap((prev) => ({ ...prev, [seasonId]: entry }));
+            }
+        } catch (err) {
+            // 조회 실패 — 캐시 미기록, 다음 탭 진입 시 재시도
+            console.error("[hall-of-fame] 시즌 데이터 로딩 실패", err);
         }
     }, [teamId]);
 
