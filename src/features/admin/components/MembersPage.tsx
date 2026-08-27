@@ -97,10 +97,11 @@ export function MembersPage() {
     });
   }, [data, filter, search]);
 
-  const teamCountByEmail = useMemo(() => {
-    const map = new Map<string, number>();
+  const teamNamesByEmail = useMemo(() => {
+    const map = new Map<string, string[]>();
     for (const m of data?.members ?? []) {
-      map.set(m.email, (map.get(m.email) ?? 0) + 1);
+      const list = map.get(m.email) ?? [];
+      map.set(m.email, [...list, m.teamName]);
     }
     return map;
   }, [data]);
@@ -311,21 +312,17 @@ export function MembersPage() {
                 <th className="px-3 py-2.5 font-bold">역할</th>
                 <th className="px-3 py-2.5 font-bold">상태</th>
                 <th className="px-3 py-2.5 text-right font-bold">레벨</th>
-                <th className="w-24 px-3 py-2.5 text-right font-bold">관리</th>
               </tr>
             </thead>
             <tbody>
               {members.map((member) => (
                 <tr
                   key={member.membershipId ?? `legacy-${member.id}`}
-                  className="border-t border-stone-100 hover:bg-stone-50"
+                  className="border-t border-stone-100 cursor-pointer hover:bg-stone-50"
+                  onClick={() => openMember(member)}
                 >
                   <td className="px-3 py-3">
-                    <button
-                      type="button"
-                      className="flex items-center gap-2 text-left"
-                      onClick={() => openMember(member)}
-                    >
+                    <div className="flex items-center gap-2">
                       <span className="grid size-8 shrink-0 place-items-center rounded bg-stone-100 font-bold text-stone-700">
                         {member.name.slice(0, 1)}
                       </span>
@@ -342,15 +339,10 @@ export function MembersPage() {
                           {member.email}
                         </span>
                       </span>
-                    </button>
+                    </div>
                   </td>
                   <td className="px-3 py-3 text-stone-600">
-                    {member.teamName}
-                    {(teamCountByEmail.get(member.email) ?? 1) > 1 && (
-                      <span className="ml-1.5 inline-flex items-center rounded border border-amber-200 bg-amber-50 px-1 text-[9px] font-extrabold text-amber-700">
-                        +{(teamCountByEmail.get(member.email) ?? 1) - 1}팀
-                      </span>
-                    )}
+                    {(teamNamesByEmail.get(member.email) ?? [member.teamName]).join(", ")}
                   </td>
                   <td className="px-3 py-3">
                     <span className="inline-flex min-h-5 items-center rounded border border-stone-200 bg-stone-50 px-1.5 text-[10px] font-extrabold text-stone-700">
@@ -362,11 +354,6 @@ export function MembersPage() {
                   </td>
                   <td className="px-3 py-3 text-right font-mono">
                     {member.level ?? "-"}
-                  </td>
-                  <td className="px-3 py-3 text-right">
-                    <AdminButton onClick={() => openMember(member)}>
-                      상세
-                    </AdminButton>
                   </td>
                 </tr>
               ))}
