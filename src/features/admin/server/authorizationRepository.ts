@@ -166,17 +166,18 @@ export async function loadMembershipAuthorizationIndex(
       .filter((role) => role.status === "active")
       .map((role) => [role.id, role]),
   );
+  const validPermissions = new Set<string>(ALL_ADMIN_PERMISSIONS);
   const permissionsByRoleId = new Map<string, AdminPermission[]>();
   for (const row of permissionRows ?? []) {
-    const permission = ALL_ADMIN_PERMISSIONS.find(
-      (candidate) => candidate === row.permission_key,
-    );
-    if (!permission) continue;
+    if (!validPermissions.has(row.permission_key)) continue;
+    const permission = row.permission_key as AdminPermission;
     const roleId = String(row.role_id);
-    permissionsByRoleId.set(roleId, [
-      ...(permissionsByRoleId.get(roleId) ?? []),
-      permission,
-    ]);
+    const existing = permissionsByRoleId.get(roleId);
+    if (existing) {
+      existing.push(permission);
+    } else {
+      permissionsByRoleId.set(roleId, [permission]);
+    }
   }
 
   const authorizations = rows.flatMap((row) => {
