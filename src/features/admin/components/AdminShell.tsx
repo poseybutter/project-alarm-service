@@ -345,7 +345,7 @@ function AccountFooter({ bootstrap }: { bootstrap: AdminBootstrap }) {
   return (
     <div className="border-t border-stone-200 p-2">
       <Link
-        href="/manage"
+        href="/home"
         className="flex min-h-10 items-center gap-2 rounded-md px-2 text-xs font-bold text-stone-600 hover:bg-stone-100"
       >
         <ArrowLeft size={15} /> 사용자 화면으로 돌아가기
