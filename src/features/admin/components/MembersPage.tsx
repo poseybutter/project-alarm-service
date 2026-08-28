@@ -131,6 +131,16 @@ export function MembersPage() {
     [selected, addEmail, eligibleTeamsForSelected, teamOptions],
   );
 
+  // 기본 소속 팀에 members.manage 권한이 있을 때만 역할·상태 편집 허용
+  const canEditPrimary = useMemo(
+    () =>
+      Boolean(
+        selectedPrimary?.isDefault &&
+          teamOptions.some((s) => s.teamId === selectedPrimary.teamId),
+      ),
+    [selectedPrimary, teamOptions],
+  );
+
   const dirty = Boolean(
     selectedPrimary &&
     ((selectedPrimary.roleId ?? `legacy:${selectedPrimary.role}`) !== draftRoleId ||
@@ -491,7 +501,12 @@ export function MembersPage() {
                     기본 소속이 없는 구성원입니다. 역할·상태 변경을 하려면 기본 소속 팀에서 관리해 주세요.
                   </div>
                 )}
-                {selectedPrimary?.isDefault && (
+                {selectedPrimary?.isDefault && !canEditPrimary && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
+                    이 구성원의 기본 소속 팀에 대한 관리 권한이 없습니다. 해당 팀 관리자에게 문의해 주세요.
+                  </div>
+                )}
+                {canEditPrimary && (
                   <fieldset className="space-y-4">
                     <legend className="text-sm font-extrabold">권한 및 상태</legend>
                     <label className="block">
@@ -601,9 +616,9 @@ export function MembersPage() {
                   </AdminButton>
                 </div>
               </div>
-            ) : selectedPrimary?.isDefault &&
-              selectedPrimary.status !== "pending" &&
-              selectedPrimary.status !== "rejected" ? (
+            ) : canEditPrimary &&
+              selectedPrimary?.status !== "pending" &&
+              selectedPrimary?.status !== "rejected" ? (
               <div className="flex justify-end gap-2 border-t border-stone-200 pt-4">
                 <AdminButton onClick={closeDrawer} disabled={saving}>
                   취소
@@ -611,7 +626,7 @@ export function MembersPage() {
                 <AdminButton
                   variant="primary"
                   onClick={() => {
-                    if (draftStatus === "suspended" && selectedPrimary.status !== "suspended") {
+                    if (draftStatus === "suspended" && selectedPrimary?.status !== "suspended") {
                       setSuspendConfirm(true);
                     } else {
                       void saveMember();
