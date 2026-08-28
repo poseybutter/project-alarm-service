@@ -6,6 +6,7 @@ import type {
     ModuleKey,
     TeamContextOption,
     TeamContextResponse,
+    TeamMemberOption,
 } from "@/features/team-context/types";
 import { ALL_MODULES } from "@/features/team-context/types";
 
@@ -118,14 +119,40 @@ async function loadTeamContext(requestedTeamId?: string, strictTeamSelection = f
                   .filter((row) => row.enabled)
                   .map((row) => row.module as ModuleKey);
 
+    // players 행이 없는 팀(admin에서 생성된 신규 스키마 팀)은
+    // team_memberships + profiles로 members/memberOptions를 구성한다.
+    let memberNames: string[] = playerRows.map((row) => String(row.name));
+    let memberOptions: TeamMemberOption[] = playerRows.map((row) => ({
+        id: Number(row.id),
+        name: String(row.name),
+    }));
+
+    if (playerRows.length === 0) {
+        const { data: tmRows } = await supabase
+            .from("team_memberships")
+            .select("legacy_player_id, profiles!inner(display_name)")
+            .eq("team_id", selectedTeam.id)
+            .eq("status", "active");
+        if (tmRows && tmRows.length > 0) {
+            memberNames = tmRows.map((r) => {
+                const profile = r.profiles as unknown as { display_name: string };
+                return String(profile.display_name ?? "");
+            });
+            memberOptions = tmRows.map((r) => {
+                const profile = r.profiles as unknown as { display_name: string };
+                return {
+                    id: typeof r.legacy_player_id === "number" ? r.legacy_player_id : 0,
+                    name: String(profile.display_name ?? ""),
+                };
+            });
+        }
+    }
+
     const body: TeamContextResponse = {
         teamId: selectedTeam.id,
         teams,
-        members: playerRows.map((row) => String(row.name)),
-        memberOptions: playerRows.map((row) => ({
-            id: Number(row.id),
-            name: String(row.name),
-        })),
+        members: memberNames,
+        memberOptions,
         member: player?.name || identity.profile.displayName,
         playerId:
             typeof player?.id === "number"
