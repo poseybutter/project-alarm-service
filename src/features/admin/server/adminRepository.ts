@@ -786,6 +786,7 @@ export async function reviewAccessRequest(input: {
 
 export async function updateAdminMember(input: {
   id: number;
+  membershipId?: string;
   teamId: string;
   role?: "admin" | "member";
   roleId?: string;
@@ -799,7 +800,66 @@ export async function updateAdminMember(input: {
     .eq("id", input.id)
     .maybeSingle();
   if (beforeError) throw beforeError;
-  if (!before) throw new AdminApiError("구성원을 찾을 수 없습니다.", 404);
+
+  // New-schema member (no legacy players row) — update team_memberships directly
+  if (!before) {
+    if (!input.membershipId) {
+      throw new AdminApiError("구성원을 찾을 수 없습니다.", 404);
+    }
+    if (!input.role) {
+      throw new AdminApiError("변경할 항목이 없습니다.", 400);
+    }
+
+    const { data: membership, error: membershipError } = await service
+      .from("team_memberships")
+      .select("id, team_id, role, status, profiles!inner(email, display_name)")
+      .eq("id", input.membershipId)
+      .eq("team_id", input.teamId)
+      .maybeSingle();
+    if (membershipError) throw membershipError;
+    if (!membership) throw new AdminApiError("구성원을 찾을 수 없습니다.", 404);
+
+    const profile = membership.profiles as unknown as {
+      email: string;
+      display_name: string;
+    };
+
+    if (profile.email === bootstrap.identity.email && input.role === "member") {
+      throw new AdminApiError("자신의 관리자 권한은 직접 해제할 수 없습니다.", 409);
+    }
+
+    if (membership.role === "admin" && input.role === "member") {
+      const { count, error: countError } = await service
+        .from("team_memberships")
+        .select("id", { count: "exact", head: true })
+        .eq("team_id", input.teamId)
+        .eq("role", "admin")
+        .eq("status", "active");
+      if (countError) throw countError;
+      if ((count ?? 0) <= 1) {
+        throw new AdminApiError("팀의 마지막 관리자는 변경할 수 없습니다.", 409);
+      }
+    }
+
+    const { error: updateError } = await service
+      .from("team_memberships")
+      .update({ role: input.role })
+      .eq("id", input.membershipId);
+    if (updateError) throw updateError;
+
+    await writeAdminAudit({
+      actorEmail: bootstrap.identity.email,
+      action: "member.updated",
+      teamId: input.teamId,
+      targetType: "membership",
+      targetId: input.membershipId,
+      targetLabel: profile.display_name || profile.email || input.membershipId,
+      beforeState: { role: membership.role },
+      afterState: { role: input.role },
+    });
+    return null;
+  }
+
   if (before.team_id !== input.teamId) {
     throw new AdminApiError("선택한 팀의 구성원이 아닙니다.", 400);
   }

@@ -1632,9 +1632,10 @@ export default function HomePage() {
                                             onClick={(e) =>
                                                 void handleAttend(e)
                                             }
-                                            disabled={attended || isAttending}
+                                            disabled={!player || attended || isAttending}
+                                            title={!player ? "이 팀은 출석 체크를 지원하지 않습니다." : undefined}
                                             className={`text-xs mt-1 px-2 py-0.5 rounded-full font-medium transition-all
-                    ${attended ? "bg-green-100 text-green-700" : "bg-amber-500 text-white"}`}
+                    ${attended ? "bg-green-100 text-green-700" : !player ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-amber-500 text-white"}`}
                                         >
                                             {attended
                                                 ? "출석 완료"
@@ -1805,9 +1806,11 @@ export default function HomePage() {
                                             icon: "☀️",
                                             label: "출석체크",
                                             value: attended ? "완료" : "미완료",
-                                            onClick: (ev: React.MouseEvent) =>
-                                                void handleAttend(ev),
-                                            highlight: !attended,
+                                            onClick: player
+                                                ? (ev: React.MouseEvent) =>
+                                                      void handleAttend(ev)
+                                                : null,
+                                            highlight: !attended && Boolean(player),
                                         },
                                         {
                                             icon: "📋",
