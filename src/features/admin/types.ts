@@ -33,7 +33,7 @@ export type TeamModuleKey = "tasks" | "report" | "gamification" | "agent" | "man
 export const TEAM_MODULE_LABELS: Record<TeamModuleKey, string> = {
   tasks: "업무 관리",
   report: "브리핑·리포트",
-  gamification: "게이미피케이션",
+  gamification: "퀘스트",
   agent: "알림 에이전트",
   manage: "프로젝트·접근성 관리",
 };
