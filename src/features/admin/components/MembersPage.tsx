@@ -116,6 +116,21 @@ export function MembersPage() {
     [allMembershipsForSelected, selected],
   );
 
+  // 선택된 구성원이 아직 속하지 않은 팀만 — "다른 팀에 추가" 대상
+  const eligibleTeamsForSelected = useMemo(() => {
+    if (!selected) return teamOptions;
+    const currentTeamIds = new Set(
+      allMembershipsForSelected.map((m) => m.teamId).filter(Boolean),
+    );
+    return teamOptions.filter((scope) => !currentTeamIds.has(scope.teamId ?? ""));
+  }, [selected, allMembershipsForSelected, teamOptions]);
+
+  // 모달을 구성원 드로어에서 열면 이미 소속된 팀 제외, 일반 초대에서 열면 전체 표시
+  const addModalTeamOptions = useMemo(
+    () => (selected && addEmail === selected.email ? eligibleTeamsForSelected : teamOptions),
+    [selected, addEmail, eligibleTeamsForSelected, teamOptions],
+  );
+
   const dirty = Boolean(
     selectedPrimary &&
     ((selectedPrimary.roleId ?? `legacy:${selectedPrimary.role}`) !== draftRoleId ||
@@ -197,6 +212,7 @@ export function MembersPage() {
     } catch (reason) {
       const failure = reason as ApiFailure;
       setRemoveConfirm(false);
+      setRemovingMembership(null);
       setRemoveError({
         message: failure.message || "소속을 제거하지 못했습니다.",
         requestId: failure.requestId,
@@ -439,13 +455,13 @@ export function MembersPage() {
                       </div>
                     ))}
                   </div>
-                  {teamOptions.length > 0 && (
+                  {eligibleTeamsForSelected.length > 0 && (
                     <button
                       type="button"
                       className="mt-2 flex w-full items-center gap-1.5 rounded-md border border-dashed border-stone-300 px-3 py-2 text-xs font-semibold text-stone-500 hover:border-stone-400 hover:text-stone-700 transition-colors"
                       onClick={() => {
                         setAddEmail(selected.email);
-                        setAddTeamId(teamOptions[0]?.teamId ?? "");
+                        setAddTeamId(eligibleTeamsForSelected[0]?.teamId ?? "");
                         setAddRole("member");
                         setAddError(null);
                         setAddOpen(true);
@@ -804,7 +820,7 @@ export function MembersPage() {
                 onChange={(event) => setAddTeamId(event.target.value)}
                 disabled={addSaving}
               >
-                {teamOptions.map((scope) => (
+                {addModalTeamOptions.map((scope) => (
                   <option key={scope.teamId} value={scope.teamId ?? ""}>
                     {scope.label}
                   </option>
