@@ -242,19 +242,25 @@ export async function POST(req: NextRequest) {
             }
 
             // 개별 플레이어 icons 컬럼에 append (read → write)
+            // team_id 필터 제거: 보조팀 멤버는 players.team_id가 다를 수 있음
             for (const { player_id, title_id } of iconWinners) {
-                const { data: row } = await supabase
+                const { data: row, error: readErr } = await supabase
                     .from("players")
                     .select("icons")
                     .eq("id", player_id)
-                    .eq("team_id", teamId)
                     .single();
-                const current: string[] = Array.isArray(row?.icons) ? row.icons : [];
-                await supabase
+                if (readErr || !row) {
+                    console.error(`[close_season] icons 읽기 실패 (player ${player_id}):`, readErr?.message);
+                    continue; // 기존 icons 보존을 위해 skip
+                }
+                const current: string[] = Array.isArray(row.icons) ? row.icons : [];
+                const { error: writeErr } = await supabase
                     .from("players")
                     .update({ icons: [...current, title_id] })
-                    .eq("id", player_id)
-                    .eq("team_id", teamId);
+                    .eq("id", player_id);
+                if (writeErr) {
+                    console.error(`[close_season] icons 쓰기 실패 (player ${player_id}):`, writeErr.message);
+                }
             }
 
             results.push(`✅ ${season.label} (team: ${teamId}) 종료 완료`);

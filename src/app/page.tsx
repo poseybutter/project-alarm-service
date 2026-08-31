@@ -1686,7 +1686,7 @@ export default function HomePage() {
                                     </div>
                                 </div>
                             )}
-                            {!isGuest && !player && (
+                            {!isGuest && !player && !authLoading && (
                                 <p className="text-xs text-stone-400 mt-1">
                                     이 팀은 퀘스트·출석·레벨 기능이 아직 설정되지 않았습니다.
                                 </p>
@@ -1834,8 +1834,10 @@ export default function HomePage() {
                                         <button
                                             key={s.label}
                                             onClick={s.onClick || undefined}
+                                            disabled={!s.onClick}
                                             className={`rounded-xl border p-2.5 text-center transition-all
-                  ${s.highlight ? "bg-amber-500 border-amber-500 text-white" : "bg-white border-stone-200 text-stone-800"}`}
+                  ${s.highlight ? "bg-amber-500 border-amber-500 text-white" : "bg-white border-stone-200 text-stone-800"}
+                  ${!s.onClick ? "cursor-default" : ""}`}
                                         >
                                             <div className="text-lg">
                                                 {s.icon}

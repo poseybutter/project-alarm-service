@@ -16,7 +16,7 @@ export type TeamContextOption = {
 };
 
 export type TeamMemberOption = {
-    id: number;
+    id: number | null;
     name: string;
 };
 

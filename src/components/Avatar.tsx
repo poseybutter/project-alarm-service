@@ -31,7 +31,10 @@ export default function Avatar({
       setUrl(null)
       return () => { cancelled = true }
     }
-    setUrl(avatarCache[cacheKey] ?? null)
+    // 본인 아바타가 변경되면 캐시 갱신 (프로필 업로드 후 stale 방지)
+    if (isSelf && authAvatarUrl) {
+      avatarCache[cacheKey] = authAvatarUrl
+    }
     if (avatarCache[cacheKey] !== undefined) {
       setUrl(avatarCache[cacheKey])
       return () => { cancelled = true }

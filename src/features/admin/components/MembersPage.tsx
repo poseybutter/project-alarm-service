@@ -269,7 +269,7 @@ export function MembersPage() {
   return (
     <AdminPage
       title="구성원 관리"
-      description="전체 구성원 목록입니다. 이름을 클릭하면 소속 팀, 역할, 계정 상태를 변경할 수 있습니다. 구성원을 완전히 삭제하는 대신 '정지' 상태로 비활성화하는 것을 권장합니다."
+      description="전체 구성원 목록입니다. 이름을 클릭하면 소속 팀, 역할, 계정 상태를 변경할 수 있습니다. 편집은 해당 구성원의 기본 소속 팀에 대한 구성원 관리 권한이 필요합니다. 구성원을 완전히 삭제하는 대신 '정지' 상태로 비활성화하는 것을 권장합니다."
     >
       {successMessage && <SuccessMessage>{successMessage}</SuccessMessage>}
       <div className="mb-3 flex flex-col gap-2 sm:flex-row">
