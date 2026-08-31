@@ -35,65 +35,13 @@ import {
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import Select from "react-select";
 import { taskFilterProjectSelectStyles } from "@/shared/styles/reactSelectStyles";
-
-const TITLES = [
-    {
-        id: "first",
-        icon: "🌱",
-        name: "첫 완료",
-        desc: "첫 번째 업무 완료",
-        condition: (p: Player) => (p.total_done || 0) >= 1,
-    },
-    {
-        id: "streak3",
-        icon: "🔥",
-        name: "꾸준러",
-        desc: "3일 연속 출석",
-        condition: (p: Player) => (p.attend_streak || 0) >= 3,
-    },
-    {
-        id: "streak7",
-        icon: "⚡",
-        name: "주간 챔피언",
-        desc: "7일 연속 출석",
-        condition: (p: Player) => (p.attend_streak || 0) >= 7,
-    },
-    {
-        id: "ontime",
-        icon: "⏰",
-        name: "마감지킴이",
-        desc: "D-day 전 완료 5건",
-        condition: (p: Player) => (p.on_time_done || 0) >= 5,
-    },
-    {
-        id: "d10",
-        icon: "💪",
-        name: "업무 달인",
-        desc: "완료 10건",
-        condition: (p: Player) => (p.total_done || 0) >= 10,
-    },
-    {
-        id: "d30",
-        icon: "🏆",
-        name: "베테랑",
-        desc: "완료 30건",
-        condition: (p: Player) => (p.total_done || 0) >= 30,
-    },
-    {
-        id: "urgent",
-        icon: "🚨",
-        name: "긴급 해결사",
-        desc: "긴급 업무 5건 완료",
-        condition: (p: Player) => (p.urgent_done || 0) >= 5,
-    },
-    {
-        id: "lv5",
-        icon: "⭐",
-        name: "중급 탐험가",
-        desc: "레벨 5 달성",
-        condition: (p: Player) => (p.level || 1) >= 5,
-    },
-];
+import {
+    ACHIEVEMENT_TITLES,
+    TITLES_BY_ID,
+    RARITY_ORDER,
+    RARITY_LABEL,
+    RARITY_STYLE,
+} from "@/features/gamification/titles";
 
 function getThisWeekRange() {
     const now = new Date();
@@ -388,7 +336,25 @@ export default function ProfilePage() {
 
     const player = players.find((p) => p.name === member);
     const myPlayer = player;
-    const myTitles = TITLES.filter((t) => myPlayer && t.condition(myPlayer));
+    const myAchievementTitles = ACHIEVEMENT_TITLES.filter(
+        (t) => myPlayer && t.condition?.(myPlayer),
+    );
+
+    // player.icons에 저장된 시즌 수상 칭호 집계
+    const iconCounts = (myPlayer?.icons ?? []).reduce<Record<string, number>>(
+        (acc, id) => { acc[id] = (acc[id] || 0) + 1; return acc; },
+        {},
+    );
+    const mySeasonTitles = Object.entries(iconCounts)
+        .map(([id, count]) => ({ def: TITLES_BY_ID.get(id), count }))
+        .filter((x): x is { def: NonNullable<typeof x.def>; count: number } => x.def !== undefined)
+        .sort((a, b) => RARITY_ORDER[a.def.rarity] - RARITY_ORDER[b.def.rarity]);
+
+    // 프로필 카드 상단에 표시할 대표 칭호 (레어리티 높은 순)
+    const myTitles = [
+        ...mySeasonTitles.map((x) => x.def),
+        ...myAchievementTitles,
+    ].sort((a, b) => RARITY_ORDER[a.rarity] - RARITY_ORDER[b.rarity]);
     const lv = player ? calcLevel(player.exp) : LEVELS[0];
     const next = player ? getNextLevel(player.exp) : null;
     const pct = player ? expBar(player.exp) : 0;
@@ -581,19 +547,18 @@ export default function ProfilePage() {
                                 </div>
                                 {myTitles.length > 0 && (
                                     <div className="mb-4 flex flex-wrap justify-center gap-2">
-                                        {myTitles.map((t) => (
-                                            <div
-                                                key={t.id}
-                                                className="flex flex-col items-center gap-0.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5"
-                                            >
-                                                <span className="text-base">
-                                                    {t.icon}
-                                                </span>
-                                                <span className="text-[11px] font-medium text-amber-700">
-                                                    {t.name}
-                                                </span>
-                                            </div>
-                                        ))}
+                                        {myTitles.slice(0, 4).map((t) => {
+                                            const s = RARITY_STYLE[t.rarity];
+                                            return (
+                                                <div
+                                                    key={t.id}
+                                                    className={`flex flex-col items-center gap-0.5 rounded-xl border px-3 py-1.5 ${s.border} ${s.bg}`}
+                                                >
+                                                    <span className="text-base">{t.icon}</span>
+                                                    <span className={`text-[11px] font-medium ${s.text}`}>{t.name}</span>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 )}
                                 <button
@@ -1485,7 +1450,109 @@ export default function ProfilePage() {
 
                     {/* 칭호 탭 */}
                     {tab === "titles" && (
-                        <div className="space-y-4">
+                        <div className="space-y-5">
+                            {/* 시즌 수상 칭호 */}
+                            {mySeasonTitles.length > 0 && (
+                                <div>
+                                    <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-2">
+                                        시즌 수상 칭호
+                                    </p>
+                                    <div className="space-y-2">
+                                        {mySeasonTitles.map(({ def, count }) => {
+                                            const s = RARITY_STYLE[def.rarity];
+                                            return (
+                                                <div
+                                                    key={def.id}
+                                                    className={`rounded-xl border px-4 py-3 flex items-center gap-3 ${s.border} ${s.bg}`}
+                                                >
+                                                    <span className="text-2xl">{def.icon}</span>
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <p className={`text-sm font-bold ${s.text}`}>{def.name}</p>
+                                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${s.badgeBg} ${s.badgeText}`}>
+                                                                {RARITY_LABEL[def.rarity]}
+                                                            </span>
+                                                            {count > 1 && (
+                                                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-stone-200 text-stone-600">
+                                                                    ×{count}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-xs text-stone-400 mt-0.5">{def.desc}</p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* 업적 칭호 */}
+                            <div>
+                                <div className="flex justify-between items-center mb-2">
+                                    <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">
+                                        업적 칭호
+                                    </p>
+                                    <span className="text-xs text-stone-400">
+                                        {myAchievementTitles.length}/{ACHIEVEMENT_TITLES.length}
+                                    </span>
+                                </div>
+
+                                {/* 획득한 업적 */}
+                                {myAchievementTitles.length > 0 && (
+                                    <div className="space-y-2 mb-3">
+                                        {myAchievementTitles
+                                            .sort((a, b) => RARITY_ORDER[a.rarity] - RARITY_ORDER[b.rarity])
+                                            .map((t) => {
+                                                const s = RARITY_STYLE[t.rarity];
+                                                return (
+                                                    <div
+                                                        key={t.id}
+                                                        className={`rounded-xl border px-4 py-3 flex items-center gap-3 ${s.border} ${s.bg}`}
+                                                    >
+                                                        <span className="text-2xl">{t.icon}</span>
+                                                        <div className="flex-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <p className={`text-sm font-bold ${s.text}`}>{t.name}</p>
+                                                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${s.badgeBg} ${s.badgeText}`}>
+                                                                    {RARITY_LABEL[t.rarity]}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-xs text-stone-400 mt-0.5">{t.desc}</p>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                    </div>
+                                )}
+
+                                {/* 미획득 업적 */}
+                                <div className="space-y-2">
+                                    {ACHIEVEMENT_TITLES.filter(
+                                        (t) => !player || !t.condition?.(player),
+                                    )
+                                        .sort((a, b) => RARITY_ORDER[a.rarity] - RARITY_ORDER[b.rarity])
+                                        .map((t) => (
+                                            <div
+                                                key={t.id}
+                                                className="bg-white rounded-xl border border-stone-200 px-4 py-3 flex items-center gap-3 opacity-45"
+                                            >
+                                                <span className="text-2xl">{t.icon}</span>
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="text-sm font-medium text-stone-500">{t.name}</p>
+                                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-stone-200 text-stone-500">
+                                                            {RARITY_LABEL[t.rarity]}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-stone-400 mt-0.5">{t.desc}</p>
+                                                </div>
+                                                <span className="text-xs text-stone-300">🔒</span>
+                                            </div>
+                                        ))}
+                                </div>
+                            </div>
+
                             {/* 레벨 가이드 */}
                             <div>
                                 <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-2">
@@ -1494,8 +1561,7 @@ export default function ProfilePage() {
                                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
                                     {LEVELS.map((lv, i) => {
                                         const isCurrentLv = player
-                                            ? calcLevel(player.exp).level ===
-                                              lv.level
+                                            ? calcLevel(player.exp).level === lv.level
                                             : false;
                                         const isUnlocked = player
                                             ? player.exp >= lv.exp
@@ -1520,10 +1586,8 @@ export default function ProfilePage() {
                                                         {lv.name}
                                                     </p>
                                                     <p className="text-xs text-stone-400">
-                                                        {lv.exp.toLocaleString()}{" "}
-                                                        EXP
-                                                        {i <
-                                                            LEVELS.length - 1 &&
+                                                        {lv.exp.toLocaleString()} EXP
+                                                        {i < LEVELS.length - 1 &&
                                                             ` ~ ${(LEVELS[i + 1].exp - 1).toLocaleString()} EXP`}
                                                     </p>
                                                 </div>
@@ -1533,100 +1597,16 @@ export default function ProfilePage() {
                                                             현재
                                                         </span>
                                                     )}
-                                                    {!isCurrentLv &&
-                                                        isUnlocked && (
-                                                            <span className="text-xs text-green-500">
-                                                                ✓
-                                                            </span>
-                                                        )}
+                                                    {!isCurrentLv && isUnlocked && (
+                                                        <span className="text-xs text-green-500">✓</span>
+                                                    )}
                                                     {!isUnlocked && (
-                                                        <span className="text-xs text-stone-300">
-                                                            🔒
-                                                        </span>
+                                                        <span className="text-xs text-stone-300">🔒</span>
                                                     )}
                                                 </div>
                                             </div>
                                         );
                                     })}
-                                </div>
-                            </div>
-
-                            {/* 획득한 칭호 */}
-                            <div>
-                                <div className="flex justify-between items-center mb-2">
-                                    <p className="text-xs font-bold text-stone-400 uppercase tracking-wide">
-                                        획득한 칭호
-                                    </p>
-                                    <span className="text-xs text-stone-400">
-                                        {player
-                                            ? TITLES.filter((t) =>
-                                                  t.condition(player),
-                                              ).length
-                                            : 0}
-                                        /{TITLES.length}
-                                    </span>
-                                </div>
-                                <div className="space-y-2">
-                                    {player &&
-                                    TITLES.filter((t) => t.condition(player))
-                                        .length > 0 ? (
-                                        TITLES.filter((t) =>
-                                            t.condition(player),
-                                        ).map((t) => (
-                                            <div
-                                                key={t.id}
-                                                className="bg-white rounded-xl border border-stone-200 px-4 py-3 flex items-center gap-3"
-                                            >
-                                                <span className="text-2xl">
-                                                    {t.icon}
-                                                </span>
-                                                <div>
-                                                    <p className="text-sm font-bold text-stone-800">
-                                                        {t.name}
-                                                    </p>
-                                                    <p className="text-xs text-stone-400">
-                                                        {t.desc}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <p className="text-xs text-stone-400 text-center py-4">
-                                            아직 획득한 칭호가 없어요
-                                        </p>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* 미획득 칭호 */}
-                            <div>
-                                <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-2">
-                                    미획득
-                                </p>
-                                <div className="space-y-2">
-                                    {TITLES.filter(
-                                        (t) => !player || !t.condition(player),
-                                    ).map((t) => (
-                                        <div
-                                            key={t.id}
-                                            className="bg-white rounded-xl border border-stone-200 px-4 py-3 flex items-center gap-3 opacity-50"
-                                        >
-                                            <span className="text-2xl">
-                                                {t.icon}
-                                            </span>
-                                            <div className="flex-1">
-                                                <p className="text-sm font-medium text-stone-500">
-                                                    {t.name}
-                                                </p>
-                                                <p className="text-xs text-stone-400">
-                                                    {t.desc}
-                                                </p>
-                                            </div>
-                                            <span className="text-xs text-stone-300">
-                                                🔒
-                                            </span>
-                                        </div>
-                                    ))}
                                 </div>
                             </div>
                         </div>

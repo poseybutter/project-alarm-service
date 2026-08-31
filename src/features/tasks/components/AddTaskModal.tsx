@@ -185,6 +185,10 @@ export default function AddTaskModal({
         if (isSubmitting || !teamId) return;
         if (!form.member || !form.proj)
             return alert("담당자와 프로젝트명은 필수예요");
+        if (!form.type) {
+            onToast("구분을 선택해주세요");
+            return;
+        }
         const selectedPlayerId = findTeamMemberId(memberOptions, form.member);
         const selectedProjectId = findProjectId(projects, form.proj);
         if (selectedPlayerId === null || selectedProjectId === null) {
@@ -294,7 +298,7 @@ export default function AddTaskModal({
                     <div className="grid grid-cols-2 gap-3">
                         <div>
                             <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                구분
+                                구분 <span className="text-red-500">*</span>
                             </label>
                             <Select
                                 options={[
