@@ -806,7 +806,7 @@ export async function updateAdminMember(input: {
     if (!input.membershipId) {
       throw new AdminApiError("구성원을 찾을 수 없습니다.", 404);
     }
-    if (!input.role) {
+    if (!input.role && !input.status) {
       throw new AdminApiError("변경할 항목이 없습니다.", 400);
     }
 
@@ -841,9 +841,14 @@ export async function updateAdminMember(input: {
       }
     }
 
+    const membershipUpdates: Record<string, string> = {};
+    if (input.role) membershipUpdates.role = input.role;
+    if (input.status) membershipUpdates.status = input.status;
+    if (input.roleId) membershipUpdates.role_id = input.roleId;
+
     const { error: updateError } = await service
       .from("team_memberships")
-      .update({ role: input.role })
+      .update(membershipUpdates)
       .eq("id", input.membershipId);
     if (updateError) throw updateError;
 
@@ -854,8 +859,8 @@ export async function updateAdminMember(input: {
       targetType: "membership",
       targetId: input.membershipId,
       targetLabel: profile.display_name || profile.email || input.membershipId,
-      beforeState: { role: membership.role },
-      afterState: { role: input.role },
+      beforeState: { role: membership.role, status: membership.status },
+      afterState: membershipUpdates,
     });
     return null;
   }

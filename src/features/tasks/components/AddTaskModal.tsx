@@ -191,8 +191,12 @@ export default function AddTaskModal({
         }
         const selectedPlayerId = findTeamMemberId(memberOptions, form.member);
         const selectedProjectId = findProjectId(projects, form.proj);
-        if (selectedPlayerId === null || selectedProjectId === null) {
-            onToast("현재 팀의 담당자와 프로젝트를 다시 선택해주세요");
+        if (!memberOptions.some((o) => o.name === form.member)) {
+            onToast("현재 팀의 담당자를 다시 선택해주세요");
+            return;
+        }
+        if (selectedProjectId === null) {
+            onToast("현재 팀의 프로젝트를 다시 선택해주세요");
             return;
         }
         if (!formDateRange?.from && !formDateRange?.to) {

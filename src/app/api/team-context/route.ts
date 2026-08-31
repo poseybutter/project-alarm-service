@@ -142,7 +142,7 @@ async function loadTeamContext(requestedTeamId?: string, strictTeamSelection = f
             memberOptions = tmRows.map((r) => {
                 const profile = r.profiles as unknown as { display_name: string };
                 return {
-                    id: typeof r.legacy_player_id === "number" ? r.legacy_player_id : 0,
+                    id: typeof r.legacy_player_id === "number" ? r.legacy_player_id : null,
                     name: String(profile.display_name ?? ""),
                 };
             });
