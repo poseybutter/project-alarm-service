@@ -109,7 +109,7 @@ export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProp
     let state: BannerState;
     if (season.status === "ended" || daysUntilEnd < 0) {
         state = "B";
-    } else if (daysSinceStart <= 14) {
+    } else if (daysSinceStart >= 0 && daysSinceStart <= 14) {
         state = "C";
     } else if (daysUntilEnd <= 3 && daysUntilEnd >= 0) {
         state = "D";
