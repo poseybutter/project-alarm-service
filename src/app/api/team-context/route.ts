@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { TEAM_ID } from "@/shared/constants";
 import { getServerUser } from "@/infrastructure/supabase/server";
 import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
+import { getMemberName } from "@/infrastructure/supabase/auth";
 import type {
     ModuleKey,
     TeamContextOption,
@@ -153,7 +154,11 @@ async function loadTeamContext(requestedTeamId?: string, strictTeamSelection = f
         teams,
         members: memberNames,
         memberOptions,
-        member: player?.name || identity.profile.displayName,
+        member:
+            player?.name ||
+            // players 행 없는 팀: 환경변수 이름 → 프로필 displayName 순으로 폴백
+            getMemberName(user.email ?? "") ||
+            identity.profile.displayName,
         playerId:
             typeof player?.id === "number"
                 ? player.id

@@ -299,7 +299,7 @@ function QuestFormModal({
                                                 }
                                                 className="flex-1 rounded-lg border border-stone-200 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50"
                                             >
-                                                珥덇린??
+                                                초기화
                                             </button>
                                             <button
                                                 type="button"
@@ -308,7 +308,7 @@ function QuestFormModal({
                                                 }
                                                 className="flex-1 rounded-lg bg-amber-500 py-2 text-xs font-bold text-white hover:bg-amber-600"
                                             >
-                                                ?곸슜
+                                                적용
                                             </button>
                                         </div>
                                     </div>
@@ -1658,19 +1658,18 @@ export default function HomePage() {
                                     </div>
                                 )}
                             </div>
-                            {!isGuest && (
+                            {!isGuest && player && (
                                 <div>
                                     <div className="flex justify-between text-xs text-stone-400 mb-1">
                                         <span>
-                                            {player?.exp.toLocaleString() || 0}{" "}
+                                            {player.exp.toLocaleString()}{" "}
                                             EXP
                                         </span>
                                         <span>
                                             다음 레벨까지{" "}
                                             {next
                                                 ? (
-                                                      next.exp -
-                                                      (player?.exp || 0)
+                                                      next.exp - player.exp
                                                   ).toLocaleString()
                                                 : 0}{" "}
                                             EXP
@@ -1687,9 +1686,14 @@ export default function HomePage() {
                                     </div>
                                 </div>
                             )}
+                            {!isGuest && !player && (
+                                <p className="text-xs text-stone-400 mt-1">
+                                    이 팀은 퀘스트·출석·레벨 기능이 아직 설정되지 않았습니다.
+                                </p>
+                            )}
                         </div>
 
-                        {!isGuest && (
+                        {!isGuest && player && (
                             <div className="mb-3 w-full min-w-0 bg-white rounded-xl border border-stone-200 p-4">
                                 <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-3">
                                     활동 기록
