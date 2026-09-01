@@ -25,9 +25,9 @@ export function getProjectMembers(p: Project): string[] {
 }
 
 export function findTeamMemberId(
-    members: readonly { id: number; name: string }[],
+    members: readonly { id: number | null; name: string }[],
     name: string | null | undefined,
-) {
+): number | null {
     if (!name) return null;
     return members.find((member) => member.name === name)?.id ?? null;
 }

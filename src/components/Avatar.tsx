@@ -17,10 +17,13 @@ export default function Avatar({
   size?: number
   showName?: boolean
 }) {
-  const { teamId } = useAuth()
+  const { teamId, member: currentMember, avatarUrl: authAvatarUrl } = useAuth()
   const cacheKey = `${teamId ?? 'none'}:${name}`
   const [url, setUrl] = useState<string | null>(avatarCache[cacheKey] ?? null)
   const c = getMemberColors(name)
+
+  // 현재 사용자 본인 여부 — players 행 없는 팀에서 프로필 아바타로 fallback
+  const isSelf = name === currentMember
 
   useEffect(() => {
     let cancelled = false
@@ -28,19 +31,23 @@ export default function Avatar({
       setUrl(null)
       return () => { cancelled = true }
     }
-    setUrl(avatarCache[cacheKey] ?? null)
+    // 본인 인증 아바타 변경 시 캐시 무효화 — DB에서 players.avatar_url 우선 재조회
+    if (isSelf && authAvatarUrl) {
+      delete avatarCache[cacheKey]
+    }
     if (avatarCache[cacheKey] !== undefined) {
       setUrl(avatarCache[cacheKey])
       return () => { cancelled = true }
     }
     supabase.from('players').select('avatar_url').eq('team_id', teamId).eq('name', name).single()
       .then(({ data }) => {
-        const u = data?.avatar_url || null
+        // players 행이 없을 때 본인이면 프로필 아바타 사용
+        const u = data?.avatar_url || (isSelf ? (authAvatarUrl ?? null) : null)
         avatarCache[cacheKey] = u
         if (!cancelled) setUrl(u)
       })
     return () => { cancelled = true }
-  }, [cacheKey, name, teamId])
+  }, [cacheKey, name, teamId, isSelf, authAvatarUrl])
 
   const sz = `${size}px`
 

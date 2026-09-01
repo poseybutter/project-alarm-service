@@ -48,12 +48,19 @@ export async function PATCH(request: NextRequest) {
   try {
     const body = (await request.json()) as {
       id?: unknown;
+      membershipId?: unknown;
       teamId?: unknown;
       role?: unknown;
       roleId?: unknown;
       status?: unknown;
     };
-    if (!Number.isInteger(body.id) || typeof body.teamId !== "string") {
+    const membershipId =
+      typeof body.membershipId === "string" ? body.membershipId : undefined;
+    // Allow id=0 when membershipId is present (new-schema member without legacy player row)
+    const validId =
+      Number.isInteger(body.id) &&
+      (body.id !== 0 || membershipId !== undefined);
+    if (!validId || typeof body.teamId !== "string") {
       return NextResponse.json(
         { message: "잘못된 구성원 변경 요청입니다." },
         { status: 400 },
@@ -68,6 +75,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({
       member: await updateAdminMember({
         id: body.id as number,
+        membershipId,
         teamId: body.teamId,
         role,
         roleId: typeof body.roleId === "string" ? body.roleId : undefined,
