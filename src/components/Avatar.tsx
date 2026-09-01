@@ -31,9 +31,9 @@ export default function Avatar({
       setUrl(null)
       return () => { cancelled = true }
     }
-    // 본인 아바타가 변경되면 캐시 갱신 (프로필 업로드 후 stale 방지)
+    // 본인 인증 아바타 변경 시 캐시 무효화 — DB에서 players.avatar_url 우선 재조회
     if (isSelf && authAvatarUrl) {
-      avatarCache[cacheKey] = authAvatarUrl
+      delete avatarCache[cacheKey]
     }
     if (avatarCache[cacheKey] !== undefined) {
       setUrl(avatarCache[cacheKey])

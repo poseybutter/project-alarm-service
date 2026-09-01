@@ -806,8 +806,11 @@ export async function updateAdminMember(input: {
     if (!input.membershipId) {
       throw new AdminApiError("구성원을 찾을 수 없습니다.", 404);
     }
-    if (!input.role && !input.status) {
+    if (!input.role && !input.status && !input.roleId) {
       throw new AdminApiError("변경할 항목이 없습니다.", 400);
+    }
+    if (input.role && input.roleId) {
+      throw new AdminApiError("roleId와 role은 함께 변경할 수 없습니다.", 400);
     }
 
     const { data: membership, error: membershipError } = await service
@@ -841,8 +844,28 @@ export async function updateAdminMember(input: {
       }
     }
 
-    const membershipUpdates: Record<string, string> = {};
-    if (input.role) membershipUpdates.role = input.role;
+    if (input.roleId) {
+      const { data: roleRow, error: roleError } = await service
+        .from("roles")
+        .select("id, team_id, status")
+        .eq("id", input.roleId)
+        .eq("status", "active")
+        .maybeSingle();
+      if (roleError) throw roleError;
+      if (
+        !roleRow ||
+        (roleRow.team_id !== null && roleRow.team_id !== input.teamId)
+      ) {
+        throw new AdminApiError("이 팀에 배정할 수 없는 역할입니다.", 400);
+      }
+    }
+
+    const membershipUpdates: Record<string, string | null> = {};
+    if (input.role) {
+      membershipUpdates.role = input.role;
+      // role 변경 시 기존 role_id가 stale해지므로 초기화
+      if (!input.roleId) membershipUpdates.role_id = null;
+    }
     if (input.status) membershipUpdates.status = input.status;
     if (input.roleId) membershipUpdates.role_id = input.roleId;
 
