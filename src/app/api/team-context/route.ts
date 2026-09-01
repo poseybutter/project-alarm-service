@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { TEAM_ID } from "@/shared/constants";
-import { getServerUser } from "@/infrastructure/supabase/server";
-import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
+import {
+    createServiceSupabaseClient,
+    getServerUser,
+} from "@/infrastructure/supabase/server";
+import {
+    loadNormalizedIdentity,
+    listActiveTeamMembers,
+} from "@/features/identity/server/identityRepository";
 import { getMemberName } from "@/infrastructure/supabase/auth";
 import type {
     ModuleKey,
@@ -91,24 +97,19 @@ async function loadTeamContext(requestedTeamId?: string, strictTeamSelection = f
         teams[0];
     const membership = membershipByTeam.get(selectedTeam.id);
 
-    const [playerResult, modulesResult] = await Promise.all([
-        supabase
-            .from("players")
-            .select("id, name, email, avatar_url")
-            .eq("team_id", selectedTeam.id)
-            .eq("status", "active")
-            .order("id"),
+    // RLS 제약 회피: 인증된 클라이언트는 자신의 row만 볼 수 있으므로
+    // 팀 전체 멤버 목록은 service client로 조회
+    const serviceClient = createServiceSupabaseClient();
+    const [teamMembers, modulesResult] = await Promise.all([
+        listActiveTeamMembers(serviceClient, selectedTeam.id),
         supabase
             .from("team_modules")
             .select("module, enabled")
             .eq("team_id", selectedTeam.id),
     ]);
 
-    if (playerResult.error) throw playerResult.error;
-
-    const playerRows = playerResult.data ?? [];
-    const player = playerRows.find(
-        (row) => row.email?.toLowerCase() === user.email?.toLowerCase(),
+    const currentMember = teamMembers.find(
+        (m) => m.email.toLowerCase() === user.email?.toLowerCase(),
     );
 
     // team_modules 미적용 환경(테이블 없음)에서는 전체 모듈 활성화로 폴백
@@ -120,33 +121,26 @@ async function loadTeamContext(requestedTeamId?: string, strictTeamSelection = f
                   .filter((row) => row.enabled)
                   .map((row) => row.module as ModuleKey);
 
-    // players 행이 없는 팀(admin에서 생성된 신규 스키마 팀)은
-    // team_memberships + profiles로 members/memberOptions를 구성한다.
-    let memberNames: string[] = playerRows.map((row) => String(row.name));
-    let memberOptions: TeamMemberOption[] = playerRows.map((row) => ({
-        id: Number(row.id),
-        name: String(row.name),
-    }));
+    const memberNames: string[] = teamMembers.map((m) => m.name);
+    // legacyPlayerId가 null인 멤버는 downstream에서 numeric id를 전제하므로 제외
+    const memberOptions: TeamMemberOption[] = teamMembers
+        .filter((m) => m.legacyPlayerId !== null)
+        .map((m) => ({
+            id: m.legacyPlayerId,
+            name: m.name,
+        }));
 
-    if (playerRows.length === 0) {
-        const { data: tmRows } = await supabase
-            .from("team_memberships")
-            .select("legacy_player_id, profiles!inner(display_name)")
-            .eq("team_id", selectedTeam.id)
-            .eq("status", "active");
-        if (tmRows && tmRows.length > 0) {
-            memberNames = tmRows.map((r) => {
-                const profile = r.profiles as unknown as { display_name: string };
-                return String(profile.display_name ?? "");
-            });
-            memberOptions = tmRows.map((r) => {
-                const profile = r.profiles as unknown as { display_name: string };
-                return {
-                    id: typeof r.legacy_player_id === "number" ? r.legacy_player_id : null,
-                    name: String(profile.display_name ?? ""),
-                };
-            });
-        }
+    // avatar: players.avatar_url이 쓰기 대상이므로 직접 조회하여 우선 적용
+    let avatarUrl = identity.profile.avatarUrl;
+    const currentPlayerId =
+        currentMember?.legacyPlayerId ?? membership?.legacyPlayerId ?? null;
+    if (currentPlayerId) {
+        const { data: playerRow } = await serviceClient
+            .from("players")
+            .select("avatar_url")
+            .eq("id", currentPlayerId)
+            .maybeSingle();
+        if (playerRow?.avatar_url) avatarUrl = String(playerRow.avatar_url);
     }
 
     const body: TeamContextResponse = {
@@ -155,15 +149,11 @@ async function loadTeamContext(requestedTeamId?: string, strictTeamSelection = f
         members: memberNames,
         memberOptions,
         member:
-            player?.name ||
-            // players 행 없는 팀: 환경변수 이름 → 프로필 displayName 순으로 폴백
+            currentMember?.name ||
             getMemberName(user.email ?? "") ||
             identity.profile.displayName,
-        playerId:
-            typeof player?.id === "number"
-                ? player.id
-                : (membership?.legacyPlayerId ?? null),
-        avatarUrl: player?.avatar_url || identity.profile.avatarUrl,
+        playerId: currentPlayerId,
+        avatarUrl,
         role: membership?.role ?? "viewer",
         modules,
     };
