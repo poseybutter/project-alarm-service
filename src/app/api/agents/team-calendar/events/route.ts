@@ -11,7 +11,7 @@ import {
     type TeamCalendarEventInput,
 } from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
-import { resolveTeamMember, listActiveTeamMembers } from "@/features/identity/server/identityRepository";
+import { listActiveTeamMembers } from "@/features/identity/server/identityRepository";
 
 const VALID_EVENT_TYPES = new Set([
     "meeting",
@@ -86,16 +86,14 @@ export async function POST(req: NextRequest) {
 
     try {
         if (body.targetMember) {
-            if (role !== "admin") {
-                const actor = await resolveTeamMember(supabase, user.email, teamId);
-                if (!actor || actor.name !== body.targetMember) {
-                    return NextResponse.json({ message: "본인 일정만 등록할 수 있습니다" }, { status: 403 });
-                }
-            }
             const teamMembers = await listActiveTeamMembers(supabase, teamId);
             const target = teamMembers.find((m) => m.name === body.targetMember);
             if (!target) {
                 return NextResponse.json({ message: "현재 팀의 활성 구성원을 선택해주세요" }, { status: 400 });
+            }
+            // 이름이 아닌 email로 본인 확인 (동명이인 우회 방지)
+            if (role !== "admin" && target.email.toLowerCase() !== user.email!.toLowerCase()) {
+                return NextResponse.json({ message: "본인 일정만 등록할 수 있습니다" }, { status: 403 });
             }
         }
         const { data: setting, error: settingError } = await supabase

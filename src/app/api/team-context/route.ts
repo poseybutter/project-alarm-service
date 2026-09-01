@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { TEAM_ID } from "@/shared/constants";
-import { getServerUser } from "@/infrastructure/supabase/server";
+import {
+    createServiceSupabaseClient,
+    getServerUser,
+} from "@/infrastructure/supabase/server";
 import {
     loadNormalizedIdentity,
     listActiveTeamMembers,
@@ -94,8 +97,11 @@ async function loadTeamContext(requestedTeamId?: string, strictTeamSelection = f
         teams[0];
     const membership = membershipByTeam.get(selectedTeam.id);
 
+    // RLS 제약 회피: 인증된 클라이언트는 자신의 row만 볼 수 있으므로
+    // 팀 전체 멤버 목록은 service client로 조회
+    const serviceClient = createServiceSupabaseClient();
     const [teamMembers, modulesResult] = await Promise.all([
-        listActiveTeamMembers(supabase, selectedTeam.id),
+        listActiveTeamMembers(serviceClient, selectedTeam.id),
         supabase
             .from("team_modules")
             .select("module, enabled")
@@ -116,10 +122,26 @@ async function loadTeamContext(requestedTeamId?: string, strictTeamSelection = f
                   .map((row) => row.module as ModuleKey);
 
     const memberNames: string[] = teamMembers.map((m) => m.name);
-    const memberOptions: TeamMemberOption[] = teamMembers.map((m) => ({
-        id: m.legacyPlayerId,
-        name: m.name,
-    }));
+    // legacyPlayerId가 null인 멤버는 downstream에서 numeric id를 전제하므로 제외
+    const memberOptions: TeamMemberOption[] = teamMembers
+        .filter((m) => m.legacyPlayerId !== null)
+        .map((m) => ({
+            id: m.legacyPlayerId,
+            name: m.name,
+        }));
+
+    // avatar: players.avatar_url이 쓰기 대상이므로 직접 조회하여 우선 적용
+    let avatarUrl = identity.profile.avatarUrl;
+    const currentPlayerId =
+        currentMember?.legacyPlayerId ?? membership?.legacyPlayerId ?? null;
+    if (currentPlayerId) {
+        const { data: playerRow } = await serviceClient
+            .from("players")
+            .select("avatar_url")
+            .eq("id", currentPlayerId)
+            .maybeSingle();
+        if (playerRow?.avatar_url) avatarUrl = String(playerRow.avatar_url);
+    }
 
     const body: TeamContextResponse = {
         teamId: selectedTeam.id,
@@ -130,8 +152,8 @@ async function loadTeamContext(requestedTeamId?: string, strictTeamSelection = f
             currentMember?.name ||
             getMemberName(user.email ?? "") ||
             identity.profile.displayName,
-        playerId: currentMember?.legacyPlayerId ?? (membership?.legacyPlayerId ?? null),
-        avatarUrl: identity.profile.avatarUrl,
+        playerId: currentPlayerId,
+        avatarUrl,
         role: membership?.role ?? "viewer",
         modules,
     };

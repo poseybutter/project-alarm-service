@@ -42,6 +42,7 @@ function makeClient() {
 
 vi.mock("@/infrastructure/supabase/server", () => ({
     getServerUser: () => mockGetServerUser(),
+    createServiceSupabaseClient: () => makeClient(),
 }));
 
 vi.mock("@/features/identity/server/identityRepository", () => ({
@@ -114,6 +115,7 @@ beforeEach(() => {
                 { module: "manage", enabled: false },
             ],
         },
+        players: { data: { id: 4, avatar_url: null } },
     };
 });
 
