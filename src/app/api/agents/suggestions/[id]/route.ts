@@ -9,6 +9,7 @@ import type {
     AgentSuggestionStatus,
     GoogleChatCardPayload,
 } from "@/features/agents/server/types";
+import { resolveTeamMember } from "@/features/identity/server/identityRepository";
 
 const REVIEW_STATUSES = new Set<AgentSuggestionStatus>([
     "approved",
@@ -98,13 +99,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
 
     try {
         const service = createServiceSupabaseClient();
-        const { data: player, error: playerError } = await service
-            .from("players")
-            .select("name")
-            .eq("team_id", teamId)
-            .eq("email", user.email)
-            .maybeSingle();
-        if (playerError) throw playerError;
+        const player = await resolveTeamMember(service, user.email, teamId);
 
         const { data: existing, error: existingError } = await service
             .from("agent_suggestions")

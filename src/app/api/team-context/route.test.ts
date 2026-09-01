@@ -9,10 +9,11 @@ import { NextRequest } from "next/server";
  * 노출되고, 반대로 과하게 막으면 정상 사용자가 로그인 직후 튕긴다.
  */
 
-const { mockGetServerUser, mockLoadNormalizedIdentity, tableData } = vi.hoisted(
+const { mockGetServerUser, mockLoadNormalizedIdentity, mockListActiveTeamMembers, tableData } = vi.hoisted(
     () => ({
         mockGetServerUser: vi.fn(),
         mockLoadNormalizedIdentity: vi.fn(),
+        mockListActiveTeamMembers: vi.fn(),
         tableData: {
             value: {} as Record<string, { data?: unknown; error?: unknown }>,
         },
@@ -41,11 +42,14 @@ function makeClient() {
 
 vi.mock("@/infrastructure/supabase/server", () => ({
     getServerUser: () => mockGetServerUser(),
+    createServiceSupabaseClient: () => makeClient(),
 }));
 
 vi.mock("@/features/identity/server/identityRepository", () => ({
     loadNormalizedIdentity: (...args: unknown[]) =>
         mockLoadNormalizedIdentity(...args),
+    listActiveTeamMembers: (...args: unknown[]) =>
+        mockListActiveTeamMembers(...args),
     isIdentitySchemaUnavailable: () => false,
 }));
 
@@ -99,11 +103,11 @@ beforeEach(() => {
             { teamId: "ud2", status: "active", role: "admin", isDefault: true },
         ]),
     );
+    mockListActiveTeamMembers.mockResolvedValue([
+        { name: "구성원", email: EMAIL, role: "admin", membershipId: "m1", legacyPlayerId: 4 },
+    ]);
     tableData.value = {
         teams: { data: [{ id: "ud2", name: "UD2팀", status: "active" }] },
-        players: {
-            data: [{ id: 4, name: "구성원", email: EMAIL, avatar_url: null }],
-        },
         team_modules: {
             data: [
                 { module: "tasks", enabled: true },
@@ -111,6 +115,7 @@ beforeEach(() => {
                 { module: "manage", enabled: false },
             ],
         },
+        players: { data: { id: 4, avatar_url: null } },
     };
 });
 

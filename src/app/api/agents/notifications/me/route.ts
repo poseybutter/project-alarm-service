@@ -3,6 +3,7 @@ import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
 } from "@/infrastructure/supabase/server";
+import { resolveTeamMember } from "@/features/identity/server/identityRepository";
 import {
     buildNotificationSuggestions,
     type CalendarEventInput,
@@ -23,14 +24,8 @@ export async function POST() {
 
     try {
         const serviceSupabase = createServiceSupabaseClient();
-        const { data: player, error: playerError } = await supabase
-            .from("players")
-            .select("name")
-            .eq("team_id", teamId)
-            .eq("email", user.email)
-            .maybeSingle();
-        if (playerError) throw playerError;
-        if (!player?.name) {
+        const member = await resolveTeamMember(serviceSupabase, user.email, teamId);
+        if (!member) {
             return NextResponse.json(
                 { message: "Player not found" },
                 { status: 404 },
@@ -63,18 +58,18 @@ export async function POST() {
                 .from("tasks")
                 .select("*")
                 .eq("team_id", teamId)
-                .eq("member", player.name),
+                .eq("member", member.name),
             serviceSupabase
                 .from("accessibility")
                 .select("*")
                 .eq("team_id", teamId)
-                .eq("member", player.name)
+                .eq("member", member.name)
                 .order("end_date", { ascending: true }),
             serviceSupabase
                 .from("quests")
                 .select("id, member, content, proj, end_date, task_id, status")
                 .eq("team_id", teamId)
-                .eq("member", player.name)
+                .eq("member", member.name)
                 .is("task_id", null)
                 .order("order_index", { ascending: true, nullsFirst: false })
                 .order("created_at", { ascending: true }),
@@ -114,7 +109,7 @@ export async function POST() {
                 .eq("team_id", teamId)
                 .eq("agent_type", "notification")
                 .eq("status", "pending")
-                .eq("payload->>recipientMember", player.name);
+                .eq("payload->>recipientMember", member.name);
 
             return NextResponse.json({ suggestions: [] });
         }
@@ -136,7 +131,7 @@ export async function POST() {
             .eq("team_id", teamId)
             .eq("agent_type", "notification")
             .eq("status", "pending")
-            .eq("payload->>recipientMember", player.name);
+            .eq("payload->>recipientMember", member.name);
 
         if (refreshedIds.length > 0) {
             cleanup = cleanup.not("id", "in", `(${refreshedIds.join(",")})`);
