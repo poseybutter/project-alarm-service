@@ -1621,11 +1621,11 @@ export default function HomePage() {
                                             <span className="text-xs px-2 py-0.5 bg-stone-200 text-stone-600 rounded-full font-medium">
                                                 게스트
                                             </span>
-                                        ) : (
+                                        ) : player ? (
                                             <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
                                                 {lv.name}
                                             </span>
-                                        )}
+                                        ) : null}
                                     </div>
                                     {!isGuest && (
                                         <button
