@@ -17,6 +17,7 @@ import type { AgentSuggestion, NotificationSuggestionPayload } from "@/features/
 import type { Accessibility, Task } from "@/shared/types";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { decryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
+import { listActiveTeamMembers } from "@/features/identity/server/identityRepository";
 
 type NotificationSetting = {
     member: string;
@@ -192,26 +193,19 @@ async function handleMorningBriefings(req: NextRequest) {
     }
 
     const supabase = createServiceSupabaseClient();
-    const [
-        { data: players, error: playersError },
-        { data: settings, error: settingsError },
-    ] = await Promise.all([
-        supabase
-            .from("players")
-            .select("name, email")
-            .eq("team_id", TEAM_ID),
-        supabase
-            .from("agent_member_notification_settings")
-            .select("member, email, morning_send_time, morning_enabled")
-            .eq("team_id", TEAM_ID),
-    ]);
-
-    if (playersError) {
+    let teamMembers;
+    try {
+        teamMembers = await listActiveTeamMembers(supabase, TEAM_ID);
+    } catch (err) {
         return NextResponse.json(
-            { message: playersError.message },
+            { message: err instanceof Error ? err.message : "Failed to load members" },
             { status: 500 },
         );
     }
+    const { data: settings, error: settingsError } = await supabase
+        .from("agent_member_notification_settings")
+        .select("member, email, morning_send_time, morning_enabled")
+        .eq("team_id", TEAM_ID);
     if (settingsError) {
         return NextResponse.json(
             { message: settingsError.message },
@@ -245,13 +239,13 @@ async function handleMorningBriefings(req: NextRequest) {
                 setting,
             ]),
         );
-        const targets = ((players ?? []) as PlayerNotificationTarget[])
-            .filter((player) => Boolean(player.email))
-            .map((player) => {
-                const setting = settingsByEmail.get(player.email as string);
+        const targets = teamMembers
+            .filter((m) => Boolean(m.email))
+            .map((m) => {
+                const setting = settingsByEmail.get(m.email);
                 return {
-                    member: setting?.member ?? player.name,
-                    email: player.email as string,
+                    member: setting?.member ?? m.name,
+                    email: m.email,
                     morning_send_time:
                         setting?.morning_send_time ?? DEFAULT_MORNING_SEND_TIME,
                     morning_enabled: setting?.morning_enabled ?? true,

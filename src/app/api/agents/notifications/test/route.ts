@@ -22,6 +22,7 @@ import {
     rateLimitResponse,
     requestRateLimitKey,
 } from "@/shared/server/rateLimit";
+import { resolveTeamMember } from "@/features/identity/server/identityRepository";
 
 function isNotificationPayload(
     payload: Record<string, unknown>,
@@ -116,14 +117,8 @@ export async function POST(request: Request) {
 
     try {
         const serviceSupabase = createServiceSupabaseClient();
-        const { data: player, error: playerError } = await supabase
-            .from("players")
-            .select("name")
-            .eq("team_id", teamId)
-            .eq("email", user.email)
-            .maybeSingle();
-        if (playerError) throw playerError;
-        if (!player?.name) {
+        const member = await resolveTeamMember(serviceSupabase, user.email, teamId);
+        if (!member) {
             return NextResponse.json(
                 { message: "Player not found" },
                 { status: 404 },
@@ -151,7 +146,7 @@ export async function POST(request: Request) {
                 .eq("team_id", teamId)
                 .eq("agent_type", "notification")
                 .eq("status", "pending")
-                .eq("payload->>recipientMember", player.name)
+                .eq("payload->>recipientMember", member.name)
                 .order("created_at", { ascending: false })
                 .limit(1);
         if (suggestionError) throw suggestionError;
@@ -160,7 +155,7 @@ export async function POST(request: Request) {
             null) as AgentSuggestion | null;
         if (!suggestion) {
             const fresh = await buildFreshSuggestion(serviceSupabase, {
-                member: player.name,
+                member: member.name,
                 email: user.email,
                 teamId,
                 canSyncTeamCalendar: role === "admin",
@@ -186,7 +181,7 @@ export async function POST(request: Request) {
         }
 
         const fresh = await buildFreshSuggestion(serviceSupabase, {
-            member: player.name,
+            member: member.name,
             email: user.email,
             teamId,
             canSyncTeamCalendar: role === "admin",
@@ -231,10 +226,10 @@ export async function POST(request: Request) {
             .eq("team_id", teamId)
             .eq("agent_type", "notification")
             .eq("status", "pending")
-            .eq("payload->>recipientMember", player.name)
+            .eq("payload->>recipientMember", member.name)
             .like(
                 "dedupe_key",
-                `notification:member:${player.name}:${todayKstYmd()}:%`,
+                `notification:member:${member.name}:${todayKstYmd()}:%`,
             )
             .neq("id", suggestion.id);
         if (staleCleanupError) throw staleCleanupError;
@@ -250,7 +245,7 @@ export async function POST(request: Request) {
             text: suggestion.payload.text,
             card: suggestion.payload.card,
             channel: "personal_dm",
-            recipientMember: player.name,
+            recipientMember: member.name,
             webhookUrl: decryptIntegrationToken(webhookRow.webhook_url),
         });
 

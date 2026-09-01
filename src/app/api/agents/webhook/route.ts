@@ -9,6 +9,10 @@ import {
     decryptIntegrationToken,
     encryptIntegrationToken,
 } from "@/infrastructure/security/tokenEncryption";
+import {
+    resolveTeamMember,
+    listActiveTeamMembers,
+} from "@/features/identity/server/identityRepository";
 
 function validateWebhookUrl(value: string) {
     if (!value.trim()) return "Webhook URL is required";
@@ -30,22 +34,6 @@ function validateWebhookUrl(value: string) {
     return "올바른 Google Chat Webhook URL을 입력해주세요.";
 }
 
-async function getCurrentPlayer(
-    supabase: Awaited<ReturnType<typeof getServerCurrentTeamRole>>["supabase"],
-    email: string,
-    teamId: string,
-) {
-    const { data, error } = await supabase
-        .from("players")
-        .select("name, role")
-        .eq("team_id", teamId)
-        .eq("email", email)
-        .maybeSingle();
-
-    if (error) throw error;
-    return data;
-}
-
 export async function GET() {
     const { user, role, teamId } = await getServerCurrentTeamRole();
     if (!user?.email || !role || !teamId) {
@@ -54,8 +42,8 @@ export async function GET() {
 
     try {
         const service = createServiceSupabaseClient();
-        const player = await getCurrentPlayer(service, user.email, teamId);
-        if (!player?.name) {
+        const member = await resolveTeamMember(service, user.email, teamId);
+        if (!member) {
             return NextResponse.json(
                 { message: "Player not found" },
                 { status: 404 },
@@ -86,20 +74,15 @@ export async function GET() {
 
         if (role === "admin") {
             await requireAdminSession(teamId, "integrations.read");
-            const [{ data: players, error: playersError }, { data: hooks, error: hooksError }] =
+            const [teamMembers, { data: hooks, error: hooksError }] =
                 await Promise.all([
-                    service
-                        .from("players")
-                        .select("name, email, role")
-                        .eq("team_id", teamId)
-                        .order("name"),
+                    listActiveTeamMembers(service, teamId),
                     service
                         .from("agent_member_webhooks")
                         .select("member, email, webhook_url, updated_at")
                         .eq("team_id", teamId),
                 ]);
 
-            if (playersError) throw playersError;
             if (hooksError) throw hooksError;
 
             const hookByMember = new Map(
@@ -107,16 +90,16 @@ export async function GET() {
             );
 
             return NextResponse.json({
-                member: player.name,
+                member: member.name,
                 configured: Boolean(ownWebhookUrl),
                 webhookUrl: "",
                 updatedAt: data?.updated_at ?? null,
-                members: (players ?? []).map((row) => {
-                    const hook = hookByMember.get(row.name);
+                members: teamMembers.map((m) => {
+                    const hook = hookByMember.get(m.name);
                     return {
-                        member: row.name,
-                        email: row.email,
-                        role: row.role,
+                        member: m.name,
+                        email: m.email,
+                        role: m.role,
                         configured: Boolean(hook?.webhook_url),
                         updatedAt: hook?.updated_at ?? null,
                     };
@@ -125,7 +108,7 @@ export async function GET() {
         }
 
         return NextResponse.json({
-            member: player.name,
+            member: member.name,
             configured: Boolean(ownWebhookUrl),
             webhookUrl: "",
             updatedAt: data?.updated_at ?? null,
@@ -160,8 +143,8 @@ export async function PUT(req: NextRequest) {
 
     try {
         const service = createServiceSupabaseClient();
-        const player = await getCurrentPlayer(service, user.email, teamId);
-        if (!player?.name) {
+        const currentMember = await resolveTeamMember(service, user.email, teamId);
+        if (!currentMember) {
             return NextResponse.json(
                 { message: "Player not found" },
                 { status: 404 },
@@ -171,20 +154,15 @@ export async function PUT(req: NextRequest) {
         const targetMember =
             role === "admin" && body.member?.trim()
                 ? body.member.trim()
-                : player.name;
-        const isOwnWebhook = targetMember === player.name;
+                : currentMember.name;
+        const isOwnWebhook = targetMember === currentMember.name;
         if (!isOwnWebhook) {
             await requireAdminSession(teamId, "integrations.manage");
         }
 
-        const { data: targetPlayer, error: targetError } = await service
-            .from("players")
-            .select("name, email")
-            .eq("team_id", teamId)
-            .eq("name", targetMember)
-            .maybeSingle();
+        const teamMembers = await listActiveTeamMembers(service, teamId);
+        const targetPlayer = teamMembers.find((m) => m.name === targetMember) ?? null;
 
-        if (targetError) throw targetError;
         if (!targetPlayer?.email) {
             return NextResponse.json(
                 { message: "Target player not found" },
@@ -241,8 +219,8 @@ export async function DELETE(req: NextRequest) {
 
     try {
         const service = createServiceSupabaseClient();
-        const player = await getCurrentPlayer(service, user.email, teamId);
-        if (!player?.name) {
+        const currentMember = await resolveTeamMember(service, user.email, teamId);
+        if (!currentMember) {
             return NextResponse.json(
                 { message: "Player not found" },
                 { status: 404 },
@@ -252,8 +230,8 @@ export async function DELETE(req: NextRequest) {
         const targetMember =
             role === "admin" && requestedMember
                 ? requestedMember
-                : player.name;
-        if (targetMember !== player.name) {
+                : currentMember.name;
+        if (targetMember !== currentMember.name) {
             await requireAdminSession(teamId, "integrations.manage");
         }
 

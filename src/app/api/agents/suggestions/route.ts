@@ -4,6 +4,7 @@ import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
 } from "@/infrastructure/supabase/server";
+import { resolveTeamMember } from "@/features/identity/server/identityRepository";
 import {
     createAgentSuggestions,
     listAgentSuggestions,
@@ -55,15 +56,8 @@ export async function GET(req: NextRequest) {
 
         const shouldShowTeam = role === "admin" && scopeParam === "team";
         if (!shouldShowTeam && user.email) {
-            const { data: player, error: playerError } = await service
-                .from("players")
-                .select("name")
-                .eq("team_id", teamId)
-                .eq("email", user.email)
-                .maybeSingle();
-
-            if (playerError) throw playerError;
-            const memberName = player?.name ?? "";
+            const resolvedMember = await resolveTeamMember(service, user.email, teamId);
+            const memberName = resolvedMember?.name ?? "";
             suggestions = suggestions.filter((suggestion) => {
                 const recipient = suggestion.payload?.recipientMember;
                 return recipient === memberName;

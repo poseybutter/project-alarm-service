@@ -6,6 +6,7 @@ import {
 } from "@/infrastructure/supabase/server";
 import { exchangeGoogleCalendarCode } from "@/infrastructure/google-calendar";
 import { encryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
+import { resolveTeamMember } from "@/features/identity/server/identityRepository";
 
 export async function GET(req: NextRequest) {
     const origin = req.nextUrl.origin;
@@ -25,15 +26,8 @@ export async function GET(req: NextRequest) {
     }
 
     try {
-        const { data: player, error: playerError } = await supabase
-            .from("players")
-            .select("name")
-            .eq("team_id", teamId)
-            .eq("email", user.email)
-            .maybeSingle();
-
-        if (playerError) throw playerError;
-        if (!player?.name) {
+        const member = await resolveTeamMember(supabase, user.email, teamId);
+        if (!member) {
             return NextResponse.redirect(`${origin}/agents?calendar=no_player`);
         }
 
@@ -48,7 +42,7 @@ export async function GET(req: NextRequest) {
             .upsert(
                 {
                     team_id: teamId,
-                    member: player.name,
+                    member: member.name,
                     email: user.email,
                     google_email: user.email,
                     access_token: encryptIntegrationToken(token.access_token),

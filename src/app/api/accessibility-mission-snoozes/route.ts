@@ -4,6 +4,7 @@ import {
     getServerUserRole,
 } from "@/infrastructure/supabase/server";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
+import { resolveTeamMember, listActiveTeamMembers } from "@/features/identity/server/identityRepository";
 
 type SnoozeBody = {
     teamId?: string;
@@ -47,13 +48,7 @@ async function getAuthorizedTarget(
         };
     }
 
-    const { data: actor, error: actorError } = await serviceSupabase
-        .from("players")
-        .select("name, role")
-        .eq("team_id", teamId)
-        .eq("email", userEmail)
-        .maybeSingle();
-    if (actorError) throw actorError;
+    const actor = await resolveTeamMember(serviceSupabase, userEmail, teamId);
     const isOwner = actor?.name === target.member;
     const isAdmin = role === "admin" || actor?.role === "admin";
     if (!isOwner && !isAdmin) {
@@ -62,13 +57,8 @@ async function getAuthorizedTarget(
         };
     }
 
-    const { data: targetPlayer, error: playerError } = await serviceSupabase
-        .from("players")
-        .select("email")
-        .eq("team_id", teamId)
-        .eq("name", target.member)
-        .maybeSingle();
-    if (playerError) throw playerError;
+    const teamMembers = await listActiveTeamMembers(serviceSupabase, teamId);
+    const targetPlayer = teamMembers.find((m) => m.name === target.member) ?? null;
     if (!targetPlayer?.email) {
         return {
             error: NextResponse.json(

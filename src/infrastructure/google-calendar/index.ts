@@ -5,6 +5,7 @@ import {
     decryptIntegrationToken,
     encryptIntegrationToken,
 } from "@/infrastructure/security/tokenEncryption";
+import { listActiveTeamMembers } from "@/features/identity/server/identityRepository";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -566,16 +567,10 @@ export async function syncTodayTeamCalendarEvents(
     if (connectionError) throw new Error(connectionError.message);
     if (!connection) return [];
 
-    const { data: players, error: playersError } = await supabase
-        .from("players")
-        .select("name, email")
-        .eq("team_id", teamId)
-        .eq("status", "active");
-    if (playersError) throw new Error(playersError.message);
-
-    const teamPlayers = ((players ?? []) as TeamCalendarPlayer[]).filter(
-        (player) => player.name && player.email,
-    );
+    const activeMembers = await listActiveTeamMembers(supabase, teamId);
+    const teamPlayers: TeamCalendarPlayer[] = activeMembers
+        .filter((m) => m.name && m.email)
+        .map((m) => ({ name: m.name, email: m.email }));
     if (teamPlayers.length === 0) return [];
 
     const accessToken = await getValidCalendarAccessToken(
