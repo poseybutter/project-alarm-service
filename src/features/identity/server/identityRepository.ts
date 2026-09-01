@@ -61,6 +61,7 @@ export async function resolveTeamMember(
       "id, role, legacy_player_id, profiles!inner(display_name, email)",
     )
     .eq("team_id", teamId)
+    // 의도적 active 필터: 정지된 멤버의 API 접근을 차단 (기존 일부 players 쿼리는 필터 없었으나 정규화)
     .eq("status", "active")
     .eq("profiles.email", email.toLowerCase())
     .maybeSingle();
@@ -70,7 +71,7 @@ export async function resolveTeamMember(
       .from("players")
       .select("id, name, email, role")
       .eq("team_id", teamId)
-      .eq("email", email.toLowerCase())
+      .ilike("email", email)
       .maybeSingle();
     if (playerError) throw playerError;
     if (!player?.name) return null;
@@ -128,6 +129,7 @@ export async function listActiveTeamMembers(
       "id, role, legacy_player_id, profiles!inner(display_name, email)",
     )
     .eq("team_id", teamId)
+    // 의도적 active 필터: 정지된 멤버 제외 (기존 일부 players 쿼리는 필터 없었으나 정규화)
     .eq("status", "active");
 
   if (tmError && isIdentitySchemaUnavailable(tmError)) {
