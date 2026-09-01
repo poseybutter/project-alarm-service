@@ -5,24 +5,13 @@ import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
 } from "@/infrastructure/supabase/server";
+import {
+    resolveTeamMember,
+    listActiveTeamMembers,
+} from "@/features/identity/server/identityRepository";
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DEFAULT_MORNING_SEND_TIME = "08:30";
-
-async function getCurrentPlayer(
-    supabase: Awaited<ReturnType<typeof getServerCurrentTeamRole>>["supabase"],
-    email: string,
-    teamId: string,
-) {
-    const { data, error } = await supabase
-        .from("players")
-        .select("name")
-        .eq("team_id", teamId)
-        .eq("email", email)
-        .maybeSingle();
-    if (error) throw error;
-    return data;
-}
 
 export async function GET() {
     const { user, role, teamId } = await getServerCurrentTeamRole();
@@ -32,8 +21,8 @@ export async function GET() {
 
     try {
         const service = createServiceSupabaseClient();
-        const player = await getCurrentPlayer(service, user.email, teamId);
-        if (!player?.name) {
+        const member = await resolveTeamMember(service, user.email, teamId);
+        if (!member) {
             return NextResponse.json(
                 { message: "Player not found" },
                 { status: 404 },
@@ -119,8 +108,8 @@ export async function PUT(req: NextRequest) {
 
     try {
         const service = createServiceSupabaseClient();
-        const player = await getCurrentPlayer(service, user.email, teamId);
-        if (!player?.name) {
+        const member = await resolveTeamMember(service, user.email, teamId);
+        if (!member) {
             return NextResponse.json(
                 { message: "Player not found" },
                 { status: 404 },
@@ -132,7 +121,7 @@ export async function PUT(req: NextRequest) {
             .upsert(
                 {
                     team_id: teamId,
-                    member: player.name,
+                    member: member.name,
                     email: user.email,
                     morning_send_time: morningSendTime,
                     morning_enabled: body.morningEnabled ?? true,
@@ -179,14 +168,9 @@ export async function PUT(req: NextRequest) {
         if (body.memberCalendarIds !== undefined) {
             await requireAdminSession(teamId, "integrations.manage");
 
-            const { data: activePlayers, error: playersError } = await service
-                .from("players")
-                .select("name")
-                .eq("team_id", teamId)
-                .eq("status", "active");
-            if (playersError) throw playersError;
+            const activeMembers = await listActiveTeamMembers(service, teamId);
             const allowedMembers = new Set(
-                (activePlayers ?? []).map((row) => String(row.name)),
+                activeMembers.map((m) => m.name),
             );
 
             const entries = Object.entries(body.memberCalendarIds).map(

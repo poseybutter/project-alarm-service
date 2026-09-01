@@ -11,25 +11,11 @@ import {
     upsertTeamCalendarTaskEvent,
 } from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
+import { resolveTeamMember } from "@/features/identity/server/identityRepository";
 
 type RouteContext = {
     params: Promise<{ id: string }>;
 };
-
-async function getCurrentPlayer(
-    supabase: ReturnType<typeof createServiceSupabaseClient>,
-    email: string,
-    teamId: string,
-) {
-    const { data, error } = await supabase
-        .from("players")
-        .select("name, role")
-        .eq("team_id", teamId)
-        .eq("email", email)
-        .maybeSingle();
-    if (error) throw error;
-    return data;
-}
 
 function canManageTask(params: {
     role: string | null;
@@ -133,11 +119,11 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
         }
         authorizedTeamId = task.team_id;
-        const player = await getCurrentPlayer(supabase, user.email, task.team_id);
+        const member =await resolveTeamMember(supabase, user.email, task.team_id);
         if (
             !canManageTask({
                 role,
-                playerName: player?.name,
+                playerName: member?.name,
                 taskMember: task.member,
             })
         ) {
@@ -221,11 +207,11 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
         if (!user?.email || !role) {
             return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
         }
-        const player = await getCurrentPlayer(supabase, user.email, task.team_id);
+        const member =await resolveTeamMember(supabase, user.email, task.team_id);
         if (
             !canManageTask({
                 role,
-                playerName: player?.name,
+                playerName: member?.name,
                 taskMember: task.member,
             })
         ) {

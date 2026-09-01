@@ -38,6 +38,118 @@ export function isIdentitySchemaUnavailable(error: unknown) {
   );
 }
 
+export type TeamMemberInfo = {
+  name: string;
+  email: string;
+  role: "admin" | "member" | "viewer";
+  membershipId: string;
+  legacyPlayerId: number | null;
+};
+
+/**
+ * 특정 팀의 단일 멤버를 email로 조회합니다.
+ * V31 미적용 환경에서는 players 테이블로 폴백합니다.
+ */
+export async function resolveTeamMember(
+  client: SupabaseClient,
+  email: string,
+  teamId: string,
+): Promise<TeamMemberInfo | null> {
+  const { data: tmRow, error: tmError } = await client
+    .from("team_memberships")
+    .select(
+      "id, role, legacy_player_id, profiles!inner(display_name, email)",
+    )
+    .eq("team_id", teamId)
+    .eq("status", "active")
+    .eq("profiles.email", email.toLowerCase())
+    .maybeSingle();
+
+  if (tmError && isIdentitySchemaUnavailable(tmError)) {
+    const { data: player, error: playerError } = await client
+      .from("players")
+      .select("id, name, email, role")
+      .eq("team_id", teamId)
+      .eq("email", email.toLowerCase())
+      .maybeSingle();
+    if (playerError) throw playerError;
+    if (!player?.name) return null;
+    return {
+      name: player.name,
+      email: player.email,
+      role: player.role === "admin" ? "admin" : "member",
+      membershipId: "",
+      legacyPlayerId: player.id,
+    };
+  }
+  if (tmError) throw tmError;
+  if (!tmRow) return null;
+
+  const profile = tmRow.profiles as unknown as {
+    display_name: string;
+    email: string;
+  };
+  return {
+    name: profile.display_name,
+    email: profile.email,
+    role: tmRow.role as TeamMemberInfo["role"],
+    membershipId: String(tmRow.id),
+    legacyPlayerId:
+      typeof tmRow.legacy_player_id === "number"
+        ? tmRow.legacy_player_id
+        : null,
+  };
+}
+
+/**
+ * 특정 팀의 활성 멤버 전체 목록을 조회합니다.
+ * V31 미적용 환경에서는 players 테이블로 폴백합니다.
+ */
+export async function listActiveTeamMembers(
+  client: SupabaseClient,
+  teamId: string,
+): Promise<TeamMemberInfo[]> {
+  const { data: tmRows, error: tmError } = await client
+    .from("team_memberships")
+    .select(
+      "id, role, legacy_player_id, profiles!inner(display_name, email)",
+    )
+    .eq("team_id", teamId)
+    .eq("status", "active");
+
+  if (tmError && isIdentitySchemaUnavailable(tmError)) {
+    const { data: players, error: playersError } = await client
+      .from("players")
+      .select("id, name, email, role")
+      .eq("team_id", teamId)
+      .eq("status", "active");
+    if (playersError) throw playersError;
+    return (players ?? []).map((p) => ({
+      name: p.name,
+      email: p.email,
+      role: p.role === "admin" ? ("admin" as const) : ("member" as const),
+      membershipId: "",
+      legacyPlayerId: p.id,
+    }));
+  }
+  if (tmError) throw tmError;
+
+  return (tmRows ?? []).map((r) => {
+    const profile = r.profiles as unknown as {
+      display_name: string;
+      email: string;
+    };
+    return {
+      name: profile.display_name,
+      email: profile.email,
+      role: r.role as TeamMemberInfo["role"],
+      membershipId: String(r.id),
+      legacyPlayerId:
+        typeof r.legacy_player_id === "number" ? r.legacy_player_id : null,
+    };
+  });
+}
+
 export async function loadNormalizedIdentity(
   client: SupabaseClient,
   email: string,
