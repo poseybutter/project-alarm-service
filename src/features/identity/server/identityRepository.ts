@@ -89,15 +89,28 @@ export async function resolveTeamMember(
     display_name: string;
     email: string;
   };
+  const legacyPlayerId =
+    typeof tmRow.legacy_player_id === "number"
+      ? tmRow.legacy_player_id
+      : null;
+
+  // 레거시 호환: agent 테이블의 member 키는 players.name 기준
+  let name = profile.display_name;
+  if (legacyPlayerId) {
+    const { data: playerRow } = await client
+      .from("players")
+      .select("name")
+      .eq("id", legacyPlayerId)
+      .maybeSingle();
+    if (playerRow?.name) name = playerRow.name;
+  }
+
   return {
-    name: profile.display_name,
+    name,
     email: profile.email,
     role: tmRow.role as TeamMemberInfo["role"],
     membershipId: String(tmRow.id),
-    legacyPlayerId:
-      typeof tmRow.legacy_player_id === "number"
-        ? tmRow.legacy_player_id
-        : null,
+    legacyPlayerId,
   };
 }
 
@@ -134,18 +147,36 @@ export async function listActiveTeamMembers(
   }
   if (tmError) throw tmError;
 
+  // 레거시 호환: agent 테이블의 member 키는 players.name 기준
+  const legacyIds = (tmRows ?? [])
+    .map((r) => r.legacy_player_id)
+    .filter((id): id is number => typeof id === "number");
+  const nameMap = new Map<number, string>();
+  if (legacyIds.length > 0) {
+    const { data: playerRows } = await client
+      .from("players")
+      .select("id, name")
+      .in("id", legacyIds);
+    for (const p of playerRows ?? []) {
+      if (p.name) nameMap.set(Number(p.id), String(p.name));
+    }
+  }
+
   return (tmRows ?? []).map((r) => {
     const profile = r.profiles as unknown as {
       display_name: string;
       email: string;
     };
+    const legacyPlayerId =
+      typeof r.legacy_player_id === "number" ? r.legacy_player_id : null;
     return {
-      name: profile.display_name,
+      name:
+        (legacyPlayerId ? nameMap.get(legacyPlayerId) : null) ??
+        profile.display_name,
       email: profile.email,
       role: r.role as TeamMemberInfo["role"],
       membershipId: String(r.id),
-      legacyPlayerId:
-        typeof r.legacy_player_id === "number" ? r.legacy_player_id : null,
+      legacyPlayerId,
     };
   });
 }

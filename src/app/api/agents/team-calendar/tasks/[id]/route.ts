@@ -119,7 +119,7 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
         }
         authorizedTeamId = task.team_id;
-        const member =await resolveTeamMember(supabase, user.email, task.team_id);
+        const member = await resolveTeamMember(supabase, user.email, task.team_id);
         if (
             !canManageTask({
                 role,
@@ -207,7 +207,7 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
         if (!user?.email || !role) {
             return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
         }
-        const member =await resolveTeamMember(supabase, user.email, task.team_id);
+        const member = await resolveTeamMember(supabase, user.email, task.team_id);
         if (
             !canManageTask({
                 role,
