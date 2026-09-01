@@ -13,6 +13,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServiceSupabaseClient } from "@/infrastructure/supabase/server";
 import { calcLevel } from "@/features/gamification/maple";
 import { getTeamRoster } from "@/features/gamification/api/getTeamRoster";
+import { AWARD_TITLE_TO_ID } from "@/features/gamification/titles";
 
 function isAuthorized(req: NextRequest) {
     const secret = process.env.CRON_SECRET;
@@ -221,6 +222,45 @@ export async function POST(req: NextRequest) {
                     `⏭️ ${season.label} (team: ${teamId}) 건너뜀: ${closeResult.reason}`,
                 );
                 continue;
+            }
+
+            // 시즌 수상 칭호 → players.icons 에 누적 기록
+            const iconWinners: { player_id: number; title_id: string }[] = [];
+
+            // MVP (EXP 1위)
+            const mvpId = players[0]?.id;
+            if (mvpId != null) {
+                iconWinners.push({ player_id: mvpId, title_id: "season_mvp" });
+            }
+
+            // 특별상
+            for (const award of awards) {
+                const titleId = award.player_id != null ? AWARD_TITLE_TO_ID[award.title] : null;
+                if (titleId && award.player_id != null) {
+                    iconWinners.push({ player_id: award.player_id, title_id: titleId });
+                }
+            }
+
+            // 개별 플레이어 icons 컬럼에 append (read → write)
+            // team_id 필터 제거: 보조팀 멤버는 players.team_id가 다를 수 있음
+            for (const { player_id, title_id } of iconWinners) {
+                const { data: row, error: readErr } = await supabase
+                    .from("players")
+                    .select("icons")
+                    .eq("id", player_id)
+                    .single();
+                if (readErr || !row) {
+                    console.error(`[close_season] icons 읽기 실패 (player ${player_id}):`, readErr?.message);
+                    continue; // 기존 icons 보존을 위해 skip
+                }
+                const current: string[] = Array.isArray(row.icons) ? row.icons : [];
+                const { error: writeErr } = await supabase
+                    .from("players")
+                    .update({ icons: [...current, title_id] })
+                    .eq("id", player_id);
+                if (writeErr) {
+                    console.error(`[close_season] icons 쓰기 실패 (player ${player_id}):`, writeErr.message);
+                }
             }
 
             results.push(`✅ ${season.label} (team: ${teamId}) 종료 완료`);

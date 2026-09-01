@@ -76,7 +76,7 @@ export function TeamsPage() {
   const [deletePrompt, setDeletePrompt] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [managerCandidateId, setManagerCandidateId] = useState("");
-  const [roleSavingId, setRoleSavingId] = useState<number | null>(null);
+  const [roleSavingId, setRoleSavingId] = useState<string | null>(null);
   const [roleMessage, setRoleMessage] = useState<string | null>(null);
 
   // 팀 이름 → 팀 ID 자동 생성 (영문·숫자만 추출, 공백→하이픈)
@@ -278,7 +278,8 @@ export function TeamsPage() {
 
   async function changeTeamManager(member: AdminMember, makeAdmin: boolean) {
     if (!selected || roleSavingId !== null) return;
-    setRoleSavingId(member.id);
+    const candidateKey = member.membershipId ?? String(member.id);
+    setRoleSavingId(candidateKey);
     setSaveError(null);
     setRoleMessage(null);
     try {
@@ -287,6 +288,7 @@ export function TeamsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: member.id,
+          membershipId: member.membershipId ?? undefined,
           teamId: selected.id,
           role: makeAdmin ? "admin" : "member",
         }),
@@ -324,7 +326,7 @@ export function TeamsPage() {
   return (
     <AdminPage
       title="팀 관리"
-      description="직군과 협업 단위별 팀을 생성하고 운영 상태를 관리합니다. 연결 데이터가 있는 팀은 보관해 이력을 유지합니다."
+      description="팀을 만들고 구성원을 배정합니다. 팀을 클릭하면 구성원 목록과 관리자를 확인·변경할 수 있습니다. 더 이상 사용하지 않는 팀은 삭제 대신 보관을 선택하세요."
       action={
         identity.isOrganizationAdmin ? (
           <AdminButton variant="primary" onClick={openCreateDrawer}>
@@ -599,7 +601,8 @@ export function TeamsPage() {
                                   : "팀 관리자 권한 해제"
                             }
                           >
-                            {roleSavingId === member.id ? (
+                            {roleSavingId ===
+                            (member.membershipId ?? String(member.id)) ? (
                               <SavingLabel label="변경 중" />
                             ) : (
                               <>
@@ -628,11 +631,15 @@ export function TeamsPage() {
                             disabled={roleSavingId !== null}
                           >
                             <option value="">활성 구성원 선택</option>
-                            {managerCandidates.map((member) => (
-                              <option key={member.id} value={member.id}>
-                                {member.name} · {member.email}
-                              </option>
-                            ))}
+                            {managerCandidates.map((member) => {
+                              const candidateKey =
+                                member.membershipId ?? String(member.id);
+                              return (
+                                <option key={candidateKey} value={candidateKey}>
+                                  {member.name} · {member.email}
+                                </option>
+                              );
+                            })}
                           </select>
                           <AdminButton
                             variant="primary"
@@ -642,7 +649,8 @@ export function TeamsPage() {
                             onClick={() => {
                               const candidate = managerCandidates.find(
                                 (member) =>
-                                  String(member.id) === managerCandidateId,
+                                  (member.membershipId ?? String(member.id)) ===
+                                  managerCandidateId,
                               );
                               if (candidate)
                                 void changeTeamManager(candidate, true);

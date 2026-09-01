@@ -269,7 +269,7 @@ export function MembersPage() {
   return (
     <AdminPage
       title="구성원 관리"
-      description="구성원의 팀 역할과 계정 상태를 관리합니다. 계정 삭제 대신 정지 상태를 사용합니다."
+      description="전체 구성원 목록입니다. 이름을 클릭하면 소속 팀, 역할, 계정 상태를 변경할 수 있습니다. 편집은 해당 구성원의 기본 소속 팀에 대한 구성원 관리 권한이 필요합니다. 구성원을 완전히 삭제하는 대신 '정지' 상태로 비활성화하는 것을 권장합니다."
     >
       {successMessage && <SuccessMessage>{successMessage}</SuccessMessage>}
       <div className="mb-3 flex flex-col gap-2 sm:flex-row">
@@ -427,7 +427,10 @@ export function MembersPage() {
               <>
                 {/* 소속 팀 section */}
                 <div>
-                  <h3 className="mb-2 text-sm font-extrabold">소속 팀</h3>
+                  <h3 className="mb-1 text-sm font-extrabold">소속 팀</h3>
+                  <p className="mb-2 text-xs text-stone-500">
+                    <span className="font-bold">기본</span> 소속은 홈 화면·퀘스트 등에 사용되는 주 팀입니다.
+                  </p>
                   <div className="divide-y divide-stone-100 rounded-md border border-stone-200">
                     {allMembershipsForSelected.map((membership) => (
                       <div

@@ -195,7 +195,7 @@ export function RolesPage() {
   return (
     <AdminPage
       title="역할 및 권한"
-      description="팀 역할의 권한 범위를 관리합니다. 조직 관리자는 역할과 별도로 모든 권한을 유지합니다."
+      description="역할은 '이 팀원이 어떤 관리 메뉴에 접근할 수 있는가'를 정의합니다. 대부분은 기본 제공 시스템 역할(팀 관리자·일반 구성원)만으로 충분하며, 세분화가 필요할 때만 커스텀 역할을 추가하세요."
       action={
         <AdminButton
           variant="primary"
@@ -219,12 +219,22 @@ export function RolesPage() {
           </p>
         </div>
       )}
+      {data?.schemaReady && selectedTeamId && (
+        <div className="mb-3 flex gap-3 rounded-md border border-stone-200 bg-stone-50 p-4 text-xs leading-5 text-stone-600">
+          <ShieldCheck className="mt-0.5 shrink-0 text-stone-400" size={16} />
+          <p>
+            역할을 배정하려면 <strong>구성원 메뉴</strong>에서 해당 구성원을
+            선택한 뒤 역할 항목을 변경하세요. 이 화면에서는 각 역할이 어떤
+            권한을 갖는지 정의합니다.
+          </p>
+        </div>
+      )}
       {data && !data.schemaReady && (
         <div className="mb-3 flex gap-3 rounded-md border border-red-200 bg-red-50 p-4 text-xs leading-5 text-red-800">
           <LockKeyhole className="mt-0.5 shrink-0" size={18} />
           <p>
-            V32 역할·권한 마이그레이션 적용 전입니다. 현재 시스템 역할은 조회만
-            가능하며 저장 기능은 비활성화됩니다.
+            역할·권한 기능을 사용하려면 DB 마이그레이션(V32)이 필요합니다.
+            현재는 시스템 역할 조회만 가능합니다.
           </p>
         </div>
       )}
