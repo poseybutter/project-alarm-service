@@ -164,6 +164,7 @@ export function TeamsPage() {
 
   function resetFeedback() {
     setSaveError(null);
+    setOrderError(null);
     setDiscardPrompt(false);
     setDeletePrompt(false);
     setDeleteConfirmation("");
@@ -182,6 +183,8 @@ export function TeamsPage() {
   }
 
   function openTeam(team: AdminTeam) {
+    // 다른 팀 순서 저장이 끝나기 전 전환하면 목록·오류가 섞인다
+    if (orderSaving) return;
     resetFeedback();
     setSelected(team);
     setDraftName(team.name);
@@ -190,7 +193,8 @@ export function TeamsPage() {
   }
 
   function closeTeamDrawer() {
-    if (saving) return;
+    // 순서 저장 중 팀을 바꾸면 이전 팀의 목록·오류가 새 팀 화면에 남는다
+    if (saving || orderSaving) return;
     if (dirty) {
       setDiscardPrompt(true);
       return;
@@ -926,7 +930,10 @@ export function TeamsPage() {
                       )}
                     </AdminButton>
                   )}
-                  <AdminButton onClick={closeTeamDrawer} disabled={saving}>
+                  <AdminButton
+                    onClick={closeTeamDrawer}
+                    disabled={saving || orderSaving}
+                  >
                     취소
                   </AdminButton>
                   <AdminButton
