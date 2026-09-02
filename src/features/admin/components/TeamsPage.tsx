@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   DndContext,
+  KeyboardSensor,
   PointerSensor,
   TouchSensor,
   useSensor,
@@ -12,6 +13,7 @@ import {
 } from "@dnd-kit/core";
 import {
   SortableContext,
+  sortableKeyboardCoordinates,
   verticalListSortingStrategy,
   useSortable,
   arrayMove,
@@ -97,10 +99,13 @@ export function TeamsPage() {
   const [roleMessage, setRoleMessage] = useState<string | null>(null);
   const [orderItems, setOrderItems] = useState<AdminMember[]>([]);
   const [orderSaving, setOrderSaving] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
 
   const dndSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 50, tolerance: 5 } }),
+    // 키보드 재정렬: 핸들에 포커스 후 Space로 집고 방향키로 이동, Space로 놓기
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
   // 팀 이름 → 팀 ID 자동 생성 (영문·숫자만 추출, 공백→하이픈)
@@ -358,50 +363,66 @@ export function TeamsPage() {
     }
   }
 
-  const handleMemberDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const { active, over } = event;
-      if (!over || active.id === over.id || !selected) return;
-
-      setOrderItems((prev) => {
-        const oldIndex = prev.findIndex(
-          (m) => (m.membershipId ?? String(m.id)) === active.id,
-        );
-        const newIndex = prev.findIndex(
-          (m) => (m.membershipId ?? String(m.id)) === over.id,
-        );
-        if (oldIndex === -1 || newIndex === -1) return prev;
-        const reordered = arrayMove(prev, oldIndex, newIndex);
-
-        // API 호출로 순서 저장
-        setOrderSaving(true);
-        const order = reordered.map((m, i) => ({
-          membershipId: m.membershipId ?? "",
-          playerId: m.id,
-          sortOrder: i,
-        }));
-        fetch("/api/admin/members", {
+  // 순서 저장은 이벤트 핸들러에서만 수행한다.
+  // (상태 업데이터는 순수해야 하며, Strict Mode에서 재실행되면 요청·감사 로그가 중복된다)
+  const saveMemberOrder = useCallback(
+    async (teamId: string, next: AdminMember[], previous: AdminMember[]) => {
+      try {
+        const res = await fetch("/api/admin/members", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "reorder",
-            teamId: selected.id,
-            order,
+            teamId,
+            order: next.map((m, i) => ({
+              membershipId: m.membershipId ?? "",
+              playerId: m.id,
+              sortOrder: i,
+            })),
           }),
-        })
-          .then((res) => {
-            if (!res.ok) throw new Error("reorder failed");
-            return reloadMembers();
-          })
-          .catch((err) => {
-            console.error("[member reorder]", err);
-          })
-          .finally(() => setOrderSaving(false));
-
-        return reordered;
-      });
+        });
+        if (!res.ok) {
+          const payload = (await res.json().catch(() => null)) as {
+            message?: string;
+          } | null;
+          throw new Error(payload?.message ?? "구성원 순서를 저장하지 못했습니다.");
+        }
+        await reloadMembers();
+      } catch (err) {
+        // 실패 시 낙관적 순서를 되돌린다 (RPC가 원자적이므로 서버는 이전 상태 그대로)
+        setOrderItems(previous);
+        setOrderError(
+          err instanceof Error ? err.message : "구성원 순서를 저장하지 못했습니다.",
+        );
+      } finally {
+        setOrderSaving(false);
+      }
     },
-    [selected, reloadMembers],
+    [reloadMembers],
+  );
+
+  const handleMemberDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      // 저장 중에는 새 드래그를 받지 않는다 (요청 경합으로 옛 순서가 덮어쓰는 것 방지)
+      if (!over || active.id === over.id || !selected || orderSaving) return;
+
+      const previous = orderItems;
+      const oldIndex = previous.findIndex(
+        (m) => (m.membershipId ?? String(m.id)) === active.id,
+      );
+      const newIndex = previous.findIndex(
+        (m) => (m.membershipId ?? String(m.id)) === over.id,
+      );
+      if (oldIndex === -1 || newIndex === -1) return;
+
+      const reordered = arrayMove(previous, oldIndex, newIndex);
+      setOrderItems(reordered);
+      setOrderError(null);
+      setOrderSaving(true);
+      void saveMemberOrder(selected.id, reordered, previous);
+    },
+    [selected, orderItems, orderSaving, saveMemberOrder],
   );
 
   return (
@@ -795,6 +816,14 @@ export function TeamsPage() {
                     드래그하여 표시 순서를 변경합니다. 업무·리포트 등 팀 내
                     구성원 목록에 반영됩니다.
                   </p>
+                  {orderError && (
+                    <p
+                      role="alert"
+                      className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700"
+                    >
+                      {orderError}
+                    </p>
+                  )}
                   <div className="mt-3 space-y-1">
                     <DndContext
                       sensors={dndSensors}
@@ -810,6 +839,7 @@ export function TeamsPage() {
                           <SortableMemberRow
                             key={member.membershipId ?? String(member.id)}
                             member={member}
+                            disabled={orderSaving}
                           />
                         ))}
                       </SortableContext>
@@ -1097,10 +1127,16 @@ export function TeamsPage() {
   );
 }
 
-function SortableMemberRow({ member }: { member: AdminMember }) {
+function SortableMemberRow({
+  member,
+  disabled = false,
+}: {
+  member: AdminMember;
+  disabled?: boolean;
+}) {
   const sortableId = member.membershipId ?? String(member.id);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: sortableId });
+    useSortable({ id: sortableId, disabled });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -1117,13 +1153,17 @@ function SortableMemberRow({ member }: { member: AdminMember }) {
           : "border-stone-200"
       }`}
     >
+      {/*
+        attributes에 tabIndex=0·role·aria-roledescription이 포함되므로 덮어쓰지 않는다.
+        키보드 사용자는 이 핸들에 포커스한 뒤 Space로 집고 방향키로 이동한다.
+      */}
       <button
         type="button"
         {...listeners}
         {...attributes}
-        className="touch-none cursor-grab self-center text-stone-300 hover:text-stone-500 active:cursor-grabbing"
-        tabIndex={-1}
-        aria-label="순서 변경"
+        disabled={disabled}
+        className="touch-none cursor-grab self-center text-stone-300 hover:text-stone-500 focus-visible:text-stone-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 active:cursor-grabbing disabled:cursor-not-allowed"
+        aria-label={`${member.name} 순서 변경`}
       >
         <GripVertical size={16} />
       </button>
