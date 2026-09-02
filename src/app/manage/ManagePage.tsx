@@ -720,10 +720,19 @@ export default function ManagePage() {
         if (!deleteTarget) return;
         setDeleting(true);
         try {
+            // Supabase는 실패 시 throw 대신 { error }를 반환하므로 명시적으로 확인한다
             if (deleteTarget.type === "project") {
-                await supabase.from("projects").delete().eq("id", deleteTarget.id);
+                const { error } = await supabase
+                    .from("projects")
+                    .delete()
+                    .eq("id", deleteTarget.id);
+                if (error) throw error;
             } else {
-                await supabase.from("accessibility").delete().eq("id", deleteTarget.id);
+                const { error } = await supabase
+                    .from("accessibility")
+                    .delete()
+                    .eq("id", deleteTarget.id);
+                if (error) throw error;
                 notifyAccessibilityChanged();
             }
             setDeleteTarget(null);
