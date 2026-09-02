@@ -130,14 +130,27 @@ export async function listActiveTeamMembers(
     )
     .eq("team_id", teamId)
     // 의도적 active 필터: 정지된 멤버 제외 (기존 일부 players 쿼리는 필터 없었으나 정규화)
-    .eq("status", "active");
+    .eq("status", "active")
+    .order("sort_order", { ascending: true });
 
   if (tmError && isIdentitySchemaUnavailable(tmError)) {
-    const { data: players, error: playersError } = await client
+    // sort_order 컬럼이 아직 없을 수 있으므로 먼저 시도 후 폴백
+    let { data: players, error: playersError } = await client
       .from("players")
-      .select("id, name, email, role")
+      .select("id, name, email, role, sort_order")
       .eq("team_id", teamId)
-      .eq("status", "active");
+      .eq("status", "active")
+      .order("sort_order", { ascending: true });
+    if (playersError && (playersError as { code?: string }).code === "42703") {
+      const fb = await client
+        .from("players")
+        .select("id, name, email, role")
+        .eq("team_id", teamId)
+        .eq("status", "active")
+        .order("id", { ascending: true });
+      players = fb.data as typeof players;
+      playersError = fb.error;
+    }
     if (playersError) throw playersError;
     return (players ?? []).map((p) => ({
       name: p.name,

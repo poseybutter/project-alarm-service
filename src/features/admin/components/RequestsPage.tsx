@@ -300,6 +300,9 @@ export function RequestsPage() {
                       사용자는 다시 로그인해도 승인 대기 화면에 진입할 수
                       없습니다.
                     </p>
+                    <p className="mt-1 text-xs text-red-600">
+                      이 작업은 되돌릴 수 없습니다.
+                    </p>
                     <div className="mt-3 flex justify-end gap-2">
                       <AdminButton
                         onClick={() => setConfirmReject(false)}

@@ -54,6 +54,7 @@ export type AdminTeam = {
   memberCount: number;
   adminCount: number;
   projectCount: number;
+  taskCount: number;
   modules: TeamModuleKey[];
 };
 
@@ -73,6 +74,7 @@ export type AdminMember = {
   roleId: string | null;
   roleKey: string;
   roleName: string;
+  sortOrder: number;
 };
 
 export type AdminPermissionDefinition = {

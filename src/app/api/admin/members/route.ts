@@ -3,6 +3,7 @@ import {
   addTeamMembership,
   listAdminMembers,
   removeTeamMembership,
+  reorderTeamMembers,
   updateAdminMember,
 } from "@/features/admin/server/adminRepository";
 import { adminErrorResponse, readTeamId } from "@/features/admin/server/http";
@@ -47,13 +48,30 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = (await request.json()) as {
+      action?: unknown;
       id?: unknown;
       membershipId?: unknown;
       teamId?: unknown;
       role?: unknown;
       roleId?: unknown;
       status?: unknown;
+      order?: unknown;
     };
+
+    if (body.action === "reorder") {
+      if (typeof body.teamId !== "string" || !Array.isArray(body.order)) {
+        return NextResponse.json(
+          { message: "잘못된 순서 변경 요청입니다." },
+          { status: 400 },
+        );
+      }
+      await reorderTeamMembers({
+        teamId: body.teamId,
+        order: (body.order as { membershipId: string; playerId: number; sortOrder: number }[]),
+      });
+      return NextResponse.json({ ok: true });
+    }
+
     const membershipId =
       typeof body.membershipId === "string" ? body.membershipId : undefined;
     // Allow id=0 when membershipId is present (new-schema member without legacy player row)

@@ -324,7 +324,30 @@ export function MembersPage() {
           onRetry={reload}
         />
       )}
-      {!loading && !error && members.length === 0 && (
+      {!loading && !error && members.length === 0 && (data?.members ?? []).length === 0 && (
+        <div className="mt-6 text-center">
+          <EmptyState
+            title="등록된 구성원이 없습니다"
+            description="팀에 구성원을 초대하여 시작하세요."
+          />
+          {teamOptions.length > 0 && (
+            <AdminButton
+              variant="primary"
+              className="mt-4"
+              onClick={() => {
+                setAddEmail("");
+                setAddTeamId(teamOptions[0]?.teamId ?? "");
+                setAddRole("member");
+                setAddError(null);
+                setAddOpen(true);
+              }}
+            >
+              <UserPlus size={14} /> 구성원 초대
+            </AdminButton>
+          )}
+        </div>
+      )}
+      {!loading && !error && members.length === 0 && (data?.members ?? []).length > 0 && (
         <EmptyState
           title="조건에 맞는 구성원이 없습니다"
           description="검색어 또는 상태 필터를 변경해 주세요."
