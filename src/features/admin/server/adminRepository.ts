@@ -319,14 +319,31 @@ function toAdminMember(
 async function queryAdminMembersNormalized(teamId: string | null): Promise<PlayerRow[]> {
   const service = createServiceSupabaseClient();
 
-  let tmQuery = service
-    .from("team_memberships")
-    .select(
-      "id, legacy_player_id, team_id, role, status, is_default, sort_order, profiles!inner(display_name, email, avatar_url, account_status)",
-    );
-  if (teamId) tmQuery = tmQuery.eq("team_id", teamId);
-  tmQuery = tmQuery.order("sort_order", { ascending: true });
-  const { data: tmRows, error: tmError } = await tmQuery;
+  const WITH_SORT_ORDER =
+    "id, legacy_player_id, team_id, role, status, is_default, sort_order, profiles!inner(display_name, email, avatar_url, account_status)";
+  const WITHOUT_SORT_ORDER =
+    "id, legacy_player_id, team_id, role, status, is_default, profiles!inner(display_name, email, avatar_url, account_status)";
+
+  const runNormalized = async (withSortOrder: boolean) => {
+    let query = service
+      .from("team_memberships")
+      .select(withSortOrder ? WITH_SORT_ORDER : WITHOUT_SORT_ORDER);
+    if (teamId) query = query.eq("team_id", teamId);
+    if (withSortOrder) query = query.order("sort_order", { ascending: true });
+    // id를 보조 정렬 키로 둬 같은 sort_order에서도 표시 순서가 결정적이도록 한다
+    const { data, error } = await query.order("id", { ascending: true });
+    return {
+      data: data as (Record<string, unknown> & { sort_order?: number })[] | null,
+      error,
+    };
+  };
+
+  let { data: tmRows, error: tmError } = await runNormalized(true);
+  if (tmError && (tmError as { code?: string }).code === "42703") {
+    // sort_order 컬럼만 없는 경우(V48 미적용) — identity 스키마는 살아 있으므로
+    // players로 폴백하지 않고 같은 정규화 쿼리를 sort_order 없이 재시도한다.
+    ({ data: tmRows, error: tmError } = await runNormalized(false));
+  }
   if (tmError) throw tmError;
 
   // gamification 데이터는 players에서 보완 (team_memberships에 없음)
@@ -1261,34 +1278,31 @@ export async function reorderTeamMembers(input: {
   const bootstrap = await requireAdminSession(input.teamId, "members.manage");
   const service = createServiceSupabaseClient();
 
-  for (const item of input.order) {
-    if (item.membershipId) {
-      // 정규화된 team_memberships 경로
-      const { error } = await service
-        .from("team_memberships")
-        .update({ sort_order: item.sortOrder })
-        .eq("id", item.membershipId)
-        .eq("team_id", input.teamId);
-      if (error) throw error;
-    } else if (item.playerId > 0) {
-      // 레거시 players 경로
-      const { error } = await service
-        .from("players")
-        .update({ sort_order: item.sortOrder })
-        .eq("id", item.playerId)
-        .eq("team_id", input.teamId);
-      if (error) throw error;
-    }
-  }
-
-  await writeAdminAudit({
-    actorEmail: bootstrap.identity.email,
-    action: "member.reordered",
-    teamId: input.teamId,
-    targetType: "team",
-    targetId: input.teamId,
-    targetLabel: `구성원 ${input.order.length}명 순서 변경`,
+  // 검증·전체 갱신·감사 로그를 V49 RPC 한 트랜잭션으로 처리한다.
+  // 개별 update 루프는 중간 실패 시 순서가 부분 저장되므로 사용하지 않는다.
+  const { error } = await service.rpc("admin_reorder_team_members", {
+    p_team_id: input.teamId,
+    p_order: input.order.map((item) => ({
+      membership_id: item.membershipId || null,
+      player_id: item.playerId > 0 ? item.playerId : null,
+      sort_order: item.sortOrder,
+    })),
+    p_actor_email: bootstrap.identity.email,
   });
+  if (!error) return;
+
+  // 22023: RPC 내부 검증 실패 — 클라이언트 입력 문제이므로 400으로 변환
+  if (error.code === "22023") {
+    throw new AdminApiError(error.message, 400);
+  }
+  // 42883/PGRST202: V49 미적용 — 부분 저장 위험이 있으므로 조용히 폴백하지 않는다
+  if (error.code === "42883" || error.code === "PGRST202") {
+    throw new AdminApiError(
+      "구성원 순서 변경 기능을 사용하려면 V49 마이그레이션이 필요합니다.",
+      503,
+    );
+  }
+  throw error;
 }
 
 export async function listTeamsWithCounts() {
