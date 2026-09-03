@@ -159,9 +159,9 @@ export default function TasksPage() {
         }
         // 업무 삭제 성공 후 캘린더 동기화 (실패해도 업무는 이미 삭제됨)
         deleteTaskFromTeamCalendar(id).catch((err) => {
-            showToastMsg(
-                err instanceof Error ? err.message : "팀 캘린더 일정 삭제 실패",
-            );
+            const msg = err instanceof Error ? err.message : "팀 캘린더 일정 삭제 실패";
+            console.warn("[team-calendar] delete failed:", msg);
+            showToastMsg(msg);
         });
         loadTasks();
     }
