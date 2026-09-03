@@ -1171,9 +1171,6 @@ export default function HomePage() {
         loadData();
     }
 
-    function deleteQuest(id: number) {
-        setDeclineConfirm({ type: "quest", id });
-    }
 
     async function undoQuest(quest: Quest) {
         // ?꾨즺 痍⑥냼 ???쒕쾭 RPC 媛 ?곹깭 ?섎룎由?+ ?먯닔 李④컧(-10).
