@@ -6,7 +6,6 @@ import type { Task } from "@/shared/types";
 import { getDiff, formatWorkload } from "@/shared/utils/utils";
 import { TYPE_COLORS, STATUS_COLORS, normalizeStatus } from "@/shared/constants";
 import { badgeSelectStyles } from "@/shared/styles/reactSelectStyles";
-import Tooltip from "@/components/Tooltip";
 import TaskContentList from "@/components/TaskContentList";
 
 const STATUS_OPTIONS = [
@@ -87,7 +86,6 @@ export default function TaskCard({
     canEdit,
     onStatusChange,
     onEdit,
-    onDelete,
 }: TaskCardProps) {
     const diff = getDiff(t.end_date);
     const isUrgent = diff !== null && diff <= 7 && t.status !== "완료";
