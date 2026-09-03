@@ -8,6 +8,7 @@ import {
     getTeamCalendarAccessToken,
     type GoogleCalendarConnection,
     type TeamCalendarTaskInput,
+    TeamCalendarPartialSyncError,
     TeamCalendarSyncError,
     syncTeamCalendarTaskEvents,
 } from "@/infrastructure/google-calendar";
@@ -141,17 +142,19 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             task.member,
             task.team_calendar_id,
         );
+        // 항목 일정만 있는 업무는 base ID가 null 이므로, 항목 ID까지 함께 봐야
+        // 캘린더가 바뀔 때 이전 캘린더의 일정이 남지 않는다.
+        const previousEventIds = [
+            task.team_calendar_event_id,
+            ...(task.team_calendar_item_event_ids ?? []),
+        ].filter((id): id is string => Boolean(id));
         const previousCalendarId =
-            task.team_calendar_event_id &&
+            previousEventIds.length > 0 &&
             (!task.team_calendar_id || task.team_calendar_id !== calendarId)
                 ? task.team_calendar_id || sharedCalendarId
                 : null;
         if (previousCalendarId) {
-            for (const staleId of [
-                task.team_calendar_event_id,
-                ...(task.team_calendar_item_event_ids ?? []),
-            ]) {
-                if (!staleId) continue;
+            for (const staleId of previousEventIds) {
                 await deleteTeamCalendarTaskEvent({
                     accessToken,
                     calendarId: previousCalendarId,
@@ -201,9 +204,21 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             ? error.message
             : "팀 캘린더 동기화에 실패했습니다.";
         if (authorizedTeamId) {
+            // 중간까지 만들어진 이벤트 ID 를 저장해야 다음 시도에서 재사용하고,
+            // 저장하지 않으면 그 일정이 캘린더에 고아로 남는다.
+            const progress =
+                error instanceof TeamCalendarPartialSyncError
+                    ? {
+                          team_calendar_event_id: error.progress.baseEventId,
+                          team_calendar_item_event_ids: error.progress
+                              .itemEventIds.length
+                              ? error.progress.itemEventIds
+                              : null,
+                      }
+                    : {};
             await supabase
                 .from("tasks")
-                .update({ team_calendar_sync_error: message })
+                .update({ ...progress, team_calendar_sync_error: message })
                 .eq("team_id", authorizedTeamId)
                 .eq("id", taskId);
         }
@@ -266,7 +281,10 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
             }
             // 삭제된 일정 식별자를 남겨두면 이후 동기화가 없는 일정을 가리키게 된다.
             // 읽어온 event_id 를 조건에 포함해, 그사이 재동기화로 새 일정이 생겼다면 건드리지 않는다.
-            const cleanup = supabase
+            // 읽어온 ID 스냅샷과 정확히 일치할 때만 지운다.
+            // 그사이 재동기화가 새 일정을 만들었다면 건드리지 않는다.
+            // 항목 일정만 있는 업무는 base ID 가 null 이라, 두 컬럼을 모두 봐야 한다.
+            let cleanup = supabase
                 .from("tasks")
                 .update({
                     team_calendar_event_id: null,
@@ -276,13 +294,20 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
                 })
                 .eq("team_id", task.team_id)
                 .eq("id", taskId);
-            // 업무 기간 일정이 없던 업무는 NULL 이므로 eq 가 아니라 is 로 비교해야 한다.
-            const { error } = await (task.team_calendar_event_id
+            cleanup = task.team_calendar_event_id
                 ? cleanup.eq(
                       "team_calendar_event_id",
                       task.team_calendar_event_id,
                   )
-                : cleanup.is("team_calendar_event_id", null));
+                : cleanup.is("team_calendar_event_id", null);
+            cleanup = task.team_calendar_item_event_ids?.length
+                ? cleanup.filter(
+                      "team_calendar_item_event_ids",
+                      "eq",
+                      JSON.stringify(task.team_calendar_item_event_ids),
+                  )
+                : cleanup.is("team_calendar_item_event_ids", null);
+            const { error } = await cleanup;
             if (error) throw error;
         }
 

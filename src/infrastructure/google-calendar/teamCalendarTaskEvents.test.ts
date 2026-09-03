@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import type { TeamCalendarTaskInput } from "./index";
-import { syncTeamCalendarTaskEvents } from "./index";
+import { syncTeamCalendarTaskEvents, TeamCalendarPartialSyncError } from "./index";
 
 /**
  * 업무 내용 항목별 팀 캘린더 일정 동기화 규칙을 고정한다.
@@ -143,6 +143,34 @@ describe("업무 내용 항목별 캘린더 일정", () => {
         const r = await run(BASE);
         expect(calls.some((c) => c.method === "POST")).toBe(true);
         expect(r.baseEventId).toBeTruthy();
+    });
+
+    it("중간에 실패하면 이미 만든 이벤트 ID 를 오류에 실어 보낸다", async () => {
+        let writes = 0;
+        stubGoogle((call) => {
+            if (call.method !== "PUT" && call.method !== "POST") return null;
+            writes += 1;
+            // 업무 기간 일정 + 첫 항목까지 성공시키고 두 번째 항목에서 끊는다.
+            return writes >= 3 ? { status: 500, json: { error: { message: "boom" } } } : null;
+        });
+        const err = await run({
+            ...BASE,
+            content_items: [
+                { text: "킥오프", workload: 0, start_date: "2026-08-05", end_date: "2026-08-05" },
+                { text: "디자인", workload: 0, start_date: "2026-08-10", end_date: "2026-08-21" },
+                { text: "일정 없음", workload: 0 },
+            ],
+        }).catch((e) => e);
+
+        expect(err).toBeInstanceOf(TeamCalendarPartialSyncError);
+        expect(err.progress.baseEventId).toBeTruthy();
+        expect(err.progress.itemEventIds).toHaveLength(1);
+    });
+
+    it("설정·필수값 누락은 진행분 없이 그대로 올린다", async () => {
+        const err = await run({ ...BASE, start_date: null, end_date: null }).catch((e) => e);
+        expect(err).not.toBeInstanceOf(TeamCalendarPartialSyncError);
+        expect(err.message).toContain("업무 기간 또는 마감일이 필요합니다");
     });
 
     it("표시할 내용이 없으면 사용자에게 알릴 오류를 던진다", async () => {

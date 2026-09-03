@@ -870,6 +870,26 @@ export async function upsertTeamCalendarTaskEvent(params: {
  *
  * 항목이 줄거나 일정이 빠지면 남는 일정은 지운다.
  */
+export type TeamCalendarSyncProgress = {
+    baseEventId: string | null;
+    itemEventIds: string[];
+};
+
+/**
+ * 여러 일정 중 일부만 만들어진 뒤 실패했을 때 던진다.
+ * 이미 만들어진 이벤트 ID를 실어 보내, 호출부가 저장하고 다음 시도에서 재사용하게 한다.
+ * 저장하지 않으면 그 이벤트는 참조를 잃고 캘린더에 고아로 남는다.
+ */
+export class TeamCalendarPartialSyncError extends Error {
+    constructor(
+        readonly reason: unknown,
+        readonly progress: TeamCalendarSyncProgress,
+    ) {
+        super(reason instanceof Error ? reason.message : "팀 캘린더 동기화 실패");
+        this.name = "TeamCalendarPartialSyncError";
+    }
+}
+
 export async function syncTeamCalendarTaskEvents(params: {
     accessToken: string;
     calendarId: string;
@@ -879,72 +899,98 @@ export async function syncTeamCalendarTaskEvents(params: {
     const { hasItems, scheduled, unscheduled } =
         splitContentItemsBySchedule(task);
 
-    // 업무 기간 일정: 항목이 없으면 기존 content 전체, 있으면 일정 없는 항목만 모은다.
-    const baseTitle = hasItems
-        ? unscheduled.map((ci) => ci.text.trim()).join("\n")
-        : task.content?.trim() || "";
-    const needsBaseEvent = baseTitle.length > 0;
+    // 원격 쓰기 중간에 실패해도 이미 만든 이벤트 ID는 호출부가 저장할 수 있어야 한다.
+    // 저장하지 못하면 그 이벤트는 참조를 잃고 캘린더에 고아로 남는다.
+    const progress: TeamCalendarSyncProgress = {
+        baseEventId: task.team_calendar_event_id ?? null,
+        itemEventIds: [...(task.team_calendar_item_event_ids ?? [])],
+    };
 
-    let baseEventId = task.team_calendar_event_id ?? null;
-    let htmlLink: string | null = null;
+    async function syncEvents() {
+        // 업무 기간 일정: 항목이 없으면 기존 content 전체, 있으면 일정 없는 항목만 모은다.
+        const baseTitle = hasItems
+            ? unscheduled.map((ci) => ci.text.trim()).join("\n")
+            : task.content?.trim() || "";
+        const needsBaseEvent = baseTitle.length > 0;
 
-    if (needsBaseEvent) {
-        const event = await upsertTeamCalendarTaskEvent({
-            accessToken,
-            calendarId,
-            task: { ...task, team_calendar_event_id: baseEventId },
-            override: { title: baseTitle },
-        });
-        baseEventId = event.id;
-        htmlLink = event.htmlLink ?? null;
-    } else if (baseEventId) {
-        // 모든 항목이 자기 일정을 갖게 되면 업무 기간 일정은 비므로 지운다.
-        await deleteTeamCalendarTaskEvent({
-            accessToken,
-            calendarId,
-            eventId: baseEventId,
-        });
-        baseEventId = null;
+        let baseEventId = task.team_calendar_event_id ?? null;
+        let htmlLink: string | null = null;
+
+        if (needsBaseEvent) {
+            const event = await upsertTeamCalendarTaskEvent({
+                accessToken,
+                calendarId,
+                task: { ...task, team_calendar_event_id: baseEventId },
+                override: { title: baseTitle },
+            });
+            baseEventId = event.id;
+            progress.baseEventId = event.id;
+            htmlLink = event.htmlLink ?? null;
+        } else if (baseEventId) {
+            // 모든 항목이 자기 일정을 갖게 되면 업무 기간 일정은 비므로 지운다.
+            await deleteTeamCalendarTaskEvent({
+                accessToken,
+                calendarId,
+                eventId: baseEventId,
+            });
+            baseEventId = null;
+            progress.baseEventId = null;
+        }
+
+        const previousItemEventIds = task.team_calendar_item_event_ids ?? [];
+        const itemEventIds: string[] = [];
+        for (const [index, entry] of scheduled.entries()) {
+            const event = await upsertTeamCalendarTaskEvent({
+                accessToken,
+                calendarId,
+                task: {
+                    ...task,
+                    team_calendar_event_id: previousItemEventIds[index] ?? null,
+                },
+                override: {
+                    title: entry.item.text,
+                    startDate: entry.start,
+                    endDate: entry.end,
+                },
+                fallbackEventId: stableTaskItemEventId(task.id, index),
+            });
+            itemEventIds.push(event.id);
+            // 뒤 항목에서 실패해도 방금 만든 ID 를 잃지 않도록 즉시 반영한다.
+            // 아직 정리하지 않은 예전 ID 는 뒤에 남겨 다음 시도에서 지울 수 있게 한다.
+            progress.itemEventIds = [
+                ...itemEventIds,
+                ...previousItemEventIds.slice(itemEventIds.length),
+            ];
+            htmlLink ??= event.htmlLink ?? null;
+        }
+
+        // 이번에 쓰지 않은 예전 항목 일정 정리
+        for (const staleId of previousItemEventIds.slice(scheduled.length)) {
+            if (!staleId || itemEventIds.includes(staleId)) continue;
+            await deleteTeamCalendarTaskEvent({
+                accessToken,
+                calendarId,
+                eventId: staleId,
+            });
+        }
+        progress.itemEventIds = itemEventIds;
+
+        if (!baseEventId && itemEventIds.length === 0) {
+            throw new TeamCalendarSyncError(
+                "팀 캘린더에 표시할 업무 내용이 없습니다",
+            );
+        }
+
+        return { baseEventId, itemEventIds, htmlLink };
     }
 
-    const previousItemEventIds = task.team_calendar_item_event_ids ?? [];
-    const itemEventIds: string[] = [];
-    for (const [index, entry] of scheduled.entries()) {
-        const event = await upsertTeamCalendarTaskEvent({
-            accessToken,
-            calendarId,
-            task: {
-                ...task,
-                team_calendar_event_id: previousItemEventIds[index] ?? null,
-            },
-            override: {
-                title: entry.item.text,
-                startDate: entry.start,
-                endDate: entry.end,
-            },
-            fallbackEventId: stableTaskItemEventId(task.id, index),
-        });
-        itemEventIds.push(event.id);
-        htmlLink ??= event.htmlLink ?? null;
+    try {
+        return await syncEvents();
+    } catch (error) {
+        // 설정·필수값 누락은 아무것도 만들지 않았으므로 그대로 올린다.
+        if (error instanceof TeamCalendarSyncError) throw error;
+        throw new TeamCalendarPartialSyncError(error, progress);
     }
-
-    // 이번에 쓰지 않은 예전 항목 일정 정리
-    for (const staleId of previousItemEventIds.slice(scheduled.length)) {
-        if (!staleId || itemEventIds.includes(staleId)) continue;
-        await deleteTeamCalendarTaskEvent({
-            accessToken,
-            calendarId,
-            eventId: staleId,
-        });
-    }
-
-    if (!baseEventId && itemEventIds.length === 0) {
-        throw new TeamCalendarSyncError(
-            "팀 캘린더에 표시할 업무 내용이 없습니다",
-        );
-    }
-
-    return { baseEventId, itemEventIds, htmlLink };
 }
 
 export async function deleteTeamCalendarTaskEvent(params: {
