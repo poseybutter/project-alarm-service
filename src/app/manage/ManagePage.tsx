@@ -163,7 +163,14 @@ export default function ManagePage() {
     const [projects, setProjects] = useState<Project[]>([]);
     const [accessibility, setAccessibility] = useState<Accessibility[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [toast, setToast] = useState("");
+    const [deleteTarget, setDeleteTarget] = useState<{
+        type: "project" | "accessibility";
+        id: number;
+        name: string;
+    } | null>(null);
+    const [deleting, setDeleting] = useState(false);
     const loadGenerationRef = useRef(0);
 
     const [showProjModal, setShowProjModal] = useState(false);
@@ -293,9 +300,10 @@ export default function ManagePage() {
         if (!teamId) return;
         const generation = ++loadGenerationRef.current;
         setLoading(true);
+        setLoadError(null);
         let projData, accData;
         try {
-            [{ data: projData }, { data: accData }] = await Promise.all([
+            const [projResult, accResult] = await Promise.all([
                 supabase
                     .from("projects")
                     .select("*")
@@ -307,6 +315,20 @@ export default function ManagePage() {
                     .eq("team_id", teamId)
                     .order("end_date", { ascending: true }),
             ]);
+            if (projResult.error) throw projResult.error;
+            if (accResult.error) throw accResult.error;
+            projData = projResult.data;
+            accData = accResult.data;
+        } catch (err) {
+            if (generation === loadGenerationRef.current) {
+                setLoadError(
+                    err instanceof Error
+                        ? err.message
+                        : "데이터를 불러오지 못했습니다.",
+                );
+                setLoading(false);
+            }
+            return;
         } finally {
             if (generation === loadGenerationRef.current) setLoading(false);
         }
@@ -449,11 +471,14 @@ export default function ManagePage() {
         await loadData();
     }
 
-    async function deleteProject(id: number) {
+    function deleteProject(id: number) {
         if (isGuest) return;
-        if (!confirm("삭제할까요?")) return;
-        await supabase.from("projects").delete().eq("id", id);
-        await loadData();
+        const proj = projects.find((p) => p.id === id);
+        setDeleteTarget({
+            type: "project",
+            id,
+            name: proj?.name ?? `프로젝트 #${id}`,
+        });
     }
 
     function openAccModalForAdd() {
@@ -680,15 +705,43 @@ export default function ManagePage() {
         notifyAccessibilityChanged();
     }
 
-    async function deleteAcc(id: number) {
+    function deleteAcc(id: number) {
         const row = accessibility.find((a) => a.id === id);
         if (!row) return;
-        const can = !isGuest;
-        if (!can) return;
-        if (!confirm("삭제할까요?")) return;
-        await supabase.from("accessibility").delete().eq("id", id);
-        await loadData();
-        notifyAccessibilityChanged();
+        if (isGuest) return;
+        setDeleteTarget({
+            type: "accessibility",
+            id,
+            name: row.proj ?? `접근성 #${id}`,
+        });
+    }
+
+    async function confirmDelete() {
+        if (!deleteTarget) return;
+        setDeleting(true);
+        try {
+            // Supabase는 실패 시 throw 대신 { error }를 반환하므로 명시적으로 확인한다
+            if (deleteTarget.type === "project") {
+                const { error } = await supabase
+                    .from("projects")
+                    .delete()
+                    .eq("id", deleteTarget.id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase
+                    .from("accessibility")
+                    .delete()
+                    .eq("id", deleteTarget.id);
+                if (error) throw error;
+                notifyAccessibilityChanged();
+            }
+            setDeleteTarget(null);
+            await loadData();
+        } catch {
+            showToastMsg("삭제에 실패했습니다.");
+        } finally {
+            setDeleting(false);
+        }
     }
 
     async function toggleArchive(id: number, current: boolean) {
@@ -811,6 +864,17 @@ export default function ManagePage() {
 
                     {loading ? (
                         <PageSpinner />
+                    ) : loadError ? (
+                        <div className="mx-4 mt-8 rounded-lg border border-red-200 bg-red-50 p-4 text-center">
+                            <p className="text-sm text-red-700">{loadError}</p>
+                            <button
+                                type="button"
+                                className="mt-3 rounded-lg bg-red-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-red-700"
+                                onClick={() => void loadData()}
+                            >
+                                다시 시도
+                            </button>
+                        </div>
                     ) : manageTab === "project" ? (
                         <div>
                             <div className="flex flex-wrap gap-2 mb-2">
@@ -2189,6 +2253,51 @@ export default function ManagePage() {
                     </div>
                 )}
 
+                {deleteTarget &&
+                    createPortal(
+                        <div
+                            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+                            onClick={() => !deleting && setDeleteTarget(null)}
+                        >
+                            <div
+                                className="mx-4 w-full max-w-sm rounded-xl bg-white p-5 shadow-2xl"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <h3 className="text-base font-bold text-stone-900">
+                                    삭제 확인
+                                </h3>
+                                <p className="mt-2 text-sm text-stone-600">
+                                    <strong>{deleteTarget.name}</strong>
+                                    {deleteTarget.type === "project"
+                                        ? " 프로젝트를"
+                                        : " 접근성 항목을"}{" "}
+                                    삭제할까요?
+                                </p>
+                                <p className="mt-1 text-xs text-red-600">
+                                    이 작업은 되돌릴 수 없습니다.
+                                </p>
+                                <div className="mt-4 flex justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        className="rounded-lg border border-stone-300 px-4 py-1.5 text-xs font-bold text-stone-700 hover:bg-stone-50"
+                                        onClick={() => setDeleteTarget(null)}
+                                        disabled={deleting}
+                                    >
+                                        취소
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="rounded-lg bg-red-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50"
+                                        onClick={() => void confirmDelete()}
+                                        disabled={deleting}
+                                    >
+                                        {deleting ? "삭제 중…" : "삭제"}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>,
+                        document.body,
+                    )}
                 {toast && (
                     <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-stone-800 text-white text-sm px-5 py-2.5 rounded-full shadow-lg z-50 whitespace-nowrap">
                         {toast}

@@ -123,21 +123,43 @@ export async function listActiveTeamMembers(
   client: SupabaseClient,
   teamId: string,
 ): Promise<TeamMemberInfo[]> {
-  const { data: tmRows, error: tmError } = await client
-    .from("team_memberships")
-    .select(
-      "id, role, legacy_player_id, profiles!inner(display_name, email)",
-    )
-    .eq("team_id", teamId)
-    // 의도적 active 필터: 정지된 멤버 제외 (기존 일부 players 쿼리는 필터 없었으나 정규화)
-    .eq("status", "active");
+  const queryMemberships = (withSortOrder: boolean) => {
+    let query = client
+      .from("team_memberships")
+      .select("id, role, legacy_player_id, profiles!inner(display_name, email)")
+      .eq("team_id", teamId)
+      // 의도적 active 필터: 정지된 멤버 제외 (기존 일부 players 쿼리는 필터 없었으나 정규화)
+      .eq("status", "active");
+    if (withSortOrder) query = query.order("sort_order", { ascending: true });
+    // id를 보조 정렬 키로 둬 같은 sort_order에서도 순서가 결정적이도록 한다
+    return query.order("id", { ascending: true });
+  };
+
+  let { data: tmRows, error: tmError } = await queryMemberships(true);
+  if (tmError && (tmError as { code?: string }).code === "42703") {
+    // sort_order 컬럼만 없는 경우(V48 미적용) — identity 스키마는 살아 있으므로
+    // players로 폴백하면 legacy_player_id 없는 멤버십이 누락된다. 같은 쿼리를 재시도.
+    ({ data: tmRows, error: tmError } = await queryMemberships(false));
+  }
 
   if (tmError && isIdentitySchemaUnavailable(tmError)) {
-    const { data: players, error: playersError } = await client
+    // sort_order 컬럼이 아직 없을 수 있으므로 먼저 시도 후 폴백
+    let { data: players, error: playersError } = await client
       .from("players")
-      .select("id, name, email, role")
+      .select("id, name, email, role, sort_order")
       .eq("team_id", teamId)
-      .eq("status", "active");
+      .eq("status", "active")
+      .order("sort_order", { ascending: true });
+    if (playersError && (playersError as { code?: string }).code === "42703") {
+      const fb = await client
+        .from("players")
+        .select("id, name, email, role")
+        .eq("team_id", teamId)
+        .eq("status", "active")
+        .order("id", { ascending: true });
+      players = fb.data as typeof players;
+      playersError = fb.error;
+    }
     if (playersError) throw playersError;
     return (players ?? []).map((p) => ({
       name: p.name,

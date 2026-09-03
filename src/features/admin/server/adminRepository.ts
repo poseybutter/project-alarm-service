@@ -47,6 +47,7 @@ type PlayerRow = {
   level: number | null;
   exp: number | null;
   created_at?: string | null;
+  sort_order?: number;
   authorization?: MembershipAuthorization;
 };
 
@@ -302,6 +303,7 @@ function toAdminMember(
     roleName:
       row.authorization?.roleName ??
       (role === "admin" ? "팀 관리자" : "구성원"),
+    sortOrder: row.sort_order ?? 0,
   };
 }
 
@@ -317,13 +319,31 @@ function toAdminMember(
 async function queryAdminMembersNormalized(teamId: string | null): Promise<PlayerRow[]> {
   const service = createServiceSupabaseClient();
 
-  let tmQuery = service
-    .from("team_memberships")
-    .select(
-      "id, legacy_player_id, team_id, role, status, is_default, profiles!inner(display_name, email, avatar_url, account_status)",
-    );
-  if (teamId) tmQuery = tmQuery.eq("team_id", teamId);
-  const { data: tmRows, error: tmError } = await tmQuery;
+  const WITH_SORT_ORDER =
+    "id, legacy_player_id, team_id, role, status, is_default, sort_order, profiles!inner(display_name, email, avatar_url, account_status)";
+  const WITHOUT_SORT_ORDER =
+    "id, legacy_player_id, team_id, role, status, is_default, profiles!inner(display_name, email, avatar_url, account_status)";
+
+  const runNormalized = async (withSortOrder: boolean) => {
+    let query = service
+      .from("team_memberships")
+      .select(withSortOrder ? WITH_SORT_ORDER : WITHOUT_SORT_ORDER);
+    if (teamId) query = query.eq("team_id", teamId);
+    if (withSortOrder) query = query.order("sort_order", { ascending: true });
+    // id를 보조 정렬 키로 둬 같은 sort_order에서도 표시 순서가 결정적이도록 한다
+    const { data, error } = await query.order("id", { ascending: true });
+    return {
+      data: data as (Record<string, unknown> & { sort_order?: number })[] | null,
+      error,
+    };
+  };
+
+  let { data: tmRows, error: tmError } = await runNormalized(true);
+  if (tmError && (tmError as { code?: string }).code === "42703") {
+    // sort_order 컬럼만 없는 경우(V48 미적용) — identity 스키마는 살아 있으므로
+    // players로 폴백하지 않고 같은 정규화 쿼리를 sort_order 없이 재시도한다.
+    ({ data: tmRows, error: tmError } = await runNormalized(false));
+  }
   if (tmError) throw tmError;
 
   // gamification 데이터는 players에서 보완 (team_memberships에 없음)
@@ -379,9 +399,9 @@ async function queryAdminMembersNormalized(teamId: string | null): Promise<Playe
         status: effectiveStatus,
         level: gm?.level ?? null,
         exp: gm?.exp ?? null,
+        sort_order: typeof r.sort_order === "number" ? r.sort_order : 0,
       } as PlayerRow;
-    })
-    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "ko"));
+    });
 }
 
 async function queryAdminMembers(
@@ -398,12 +418,24 @@ async function queryAdminMembers(
   } catch (err) {
     if (!isIdentitySchemaUnavailable(err)) throw err;
     // V31 미적용 환경 폴백: players 직접 조회
+    // sort_order 컬럼이 아직 없을 수 있으므로 먼저 시도 후 폴백
     let legacyQuery = service
       .from("players")
-      .select("id, name, email, avatar_url, team_id, role, status, level, exp")
-      .order("name");
+      .select("id, name, email, avatar_url, team_id, role, status, level, exp, sort_order")
+      .order("sort_order", { ascending: true });
     legacyQuery = applyScope(legacyQuery, teamId);
-    const { data, error } = await legacyQuery;
+    let { data, error } = await legacyQuery;
+    if (error && (error as { code?: string }).code === "42703") {
+      // sort_order 컬럼 미존재 — V48 미적용
+      let fallbackQuery = service
+        .from("players")
+        .select("id, name, email, avatar_url, team_id, role, status, level, exp")
+        .order("id", { ascending: true });
+      fallbackQuery = applyScope(fallbackQuery, teamId);
+      const fb = await fallbackQuery;
+      data = fb.data as typeof data;
+      error = fb.error;
+    }
     if (error) throw error;
     rows = (data ?? []) as PlayerRow[];
   }
@@ -548,6 +580,34 @@ async function countProjectsByTeams(
   return counts;
 }
 
+async function countTasksByTeams(
+  teamIds: string[],
+): Promise<Map<string, number>> {
+  if (teamIds.length === 0) return new Map();
+  const service = createServiceSupabaseClient();
+  const counts = new Map<string, number>();
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await service
+      .from("tasks")
+      .select("team_id")
+      .in("team_id", teamIds)
+      .range(from, from + pageSize - 1);
+    if (error) {
+      if (error.code === "42P01" || error.code === "42703") return new Map();
+      throw error;
+    }
+    for (const row of data ?? []) {
+      const tid = row.team_id as string;
+      counts.set(tid, (counts.get(tid) ?? 0) + 1);
+    }
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+  }
+  return counts;
+}
+
 async function countOpenTasks(teamId: string | null) {
   const service = createServiceSupabaseClient();
   let query = service
@@ -609,9 +669,11 @@ export async function getAdminDashboard(
   const scopeTeams = effectiveTeamId
     ? teams.filter((team) => team.id === effectiveTeamId)
     : teams.filter((team) => team.status === "active");
-  const projectCountsByTeam = await countProjectsByTeams(
-    scopeTeams.map((team) => team.id),
-  );
+  const scopeTeamIds = scopeTeams.map((team) => team.id);
+  const [projectCountsByTeam, taskCountsByTeamDash] = await Promise.all([
+    countProjectsByTeams(scopeTeamIds),
+    countTasksByTeams(scopeTeamIds),
+  ]);
   const teamSummaries: AdminTeam[] = scopeTeams.map((team) => {
     const teamMembers = allMembers.filter(
       (member) => member.teamId === team.id,
@@ -624,6 +686,7 @@ export async function getAdminDashboard(
         (member) => member.status === "active" && member.role === "admin",
       ).length,
       projectCount: projectCountsByTeam.get(team.id) ?? 0,
+      taskCount: taskCountsByTeamDash.get(team.id) ?? 0,
       modules: ALL_TEAM_MODULES,
     };
   });
@@ -1208,6 +1271,40 @@ export async function removeTeamMembership(input: {
   });
 }
 
+export async function reorderTeamMembers(input: {
+  teamId: string;
+  order: { membershipId: string; playerId: number; sortOrder: number }[];
+}) {
+  const bootstrap = await requireAdminSession(input.teamId, "members.manage");
+  const service = createServiceSupabaseClient();
+
+  // 검증·전체 갱신·감사 로그를 V49 RPC 한 트랜잭션으로 처리한다.
+  // 개별 update 루프는 중간 실패 시 순서가 부분 저장되므로 사용하지 않는다.
+  const { error } = await service.rpc("admin_reorder_team_members", {
+    p_team_id: input.teamId,
+    p_order: input.order.map((item) => ({
+      membership_id: item.membershipId || null,
+      player_id: item.playerId > 0 ? item.playerId : null,
+      sort_order: item.sortOrder,
+    })),
+    p_actor_email: bootstrap.identity.email,
+  });
+  if (!error) return;
+
+  // 22023: RPC 내부 검증 실패 — 클라이언트 입력 문제이므로 400으로 변환
+  if (error.code === "22023") {
+    throw new AdminApiError(error.message, 400);
+  }
+  // 42883/PGRST202: V49 미적용 — 부분 저장 위험이 있으므로 조용히 폴백하지 않는다
+  if (error.code === "42883" || error.code === "PGRST202") {
+    throw new AdminApiError(
+      "구성원 순서 변경 기능을 사용하려면 V49 마이그레이션이 필요합니다.",
+      503,
+    );
+  }
+  throw error;
+}
+
 export async function listTeamsWithCounts() {
   const bootstrap = await requireAdminSession(null, "teams.read");
   const effectiveTeamId = bootstrap.currentScope.teamId;
@@ -1232,7 +1329,10 @@ export async function listTeamsWithCounts() {
     modulesByTeam.set(row.team_id, list);
   }
 
-  const projectCountsByTeam = await countProjectsByTeams(teamIds);
+  const [projectCountsByTeam, taskCountsByTeam] = await Promise.all([
+    countProjectsByTeams(teamIds),
+    countTasksByTeams(teamIds),
+  ]);
   return teams.map((team): AdminTeam => {
     const teamMembers = members.filter((member) => member.teamId === team.id);
     return {
@@ -1243,6 +1343,7 @@ export async function listTeamsWithCounts() {
         (member) => member.status === "active" && member.role === "admin",
       ).length,
       projectCount: projectCountsByTeam.get(team.id) ?? 0,
+      taskCount: taskCountsByTeam.get(team.id) ?? 0,
       modules: (modulesByTeam.get(team.id) ?? ALL_TEAM_MODULES) as AdminTeam["modules"],
     };
   });
