@@ -9,6 +9,7 @@ import {
     type GoogleCalendarConnection,
     type TeamCalendarTaskInput,
     upsertTeamCalendarTaskEvent,
+    TeamCalendarSyncError,
 } from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 
@@ -132,7 +133,11 @@ export async function POST() {
                 synced += 1;
             } catch (err) {
                 console.error(`[team-calendar-resync-task:${task.id}]`, err);
-                const message = "팀 캘린더 재동기화 실패";
+                // 사용자가 고칠 수 있는 사유는 업무별로 그대로 남긴다.
+                const message =
+                    err instanceof TeamCalendarSyncError
+                        ? err.message
+                        : "팀 캘린더 재동기화 실패";
                 errors.push({ id: task.id, message });
                 await supabase
                     .from("tasks")

@@ -8,6 +8,7 @@ import {
     getTeamCalendarAccessToken,
     type GoogleCalendarConnection,
     type TeamCalendarTaskInput,
+    TeamCalendarSyncError,
     upsertTeamCalendarTaskEvent,
 } from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
@@ -41,7 +42,7 @@ async function loadTeamCalendarContext(
         .maybeSingle();
     if (settingError) throw settingError;
     if (!setting?.calendar_id || !setting.connection_email) {
-        throw new Error("팀 캘린더 ID가 설정되어 있지 않습니다");
+        throw new TeamCalendarSyncError("팀 캘린더 ID가 설정되어 있지 않습니다");
     }
 
     let calendarId = existingCalendarId || null;
@@ -57,7 +58,9 @@ async function loadTeamCalendarContext(
         calendarId = memberCalendar?.calendar_id ?? null;
     }
     if (!calendarId) {
-        throw new Error("담당자별 캘린더 ID가 설정되어 있지 않습니다");
+        throw new TeamCalendarSyncError(
+            "담당자별 캘린더 ID가 설정되어 있지 않습니다",
+        );
     }
 
     const { data: connection, error: connectionError } = await supabase
@@ -68,7 +71,9 @@ async function loadTeamCalendarContext(
         .maybeSingle();
     if (connectionError) throw connectionError;
     if (!connection) {
-        throw new Error("팀 캘린더 연결 계정을 찾을 수 없습니다");
+        throw new TeamCalendarSyncError(
+            "팀 캘린더 연결 계정을 찾을 수 없습니다",
+        );
     }
 
     const accessToken = await getTeamCalendarAccessToken(
@@ -175,13 +180,20 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             htmlLink: event.htmlLink ?? null,
         });
     } catch (error) {
-        const message = "팀 캘린더 동기화에 실패했습니다.";
+        // 설정 누락·기간 누락처럼 사용자가 고칠 수 있는 사유는 그대로 알려준다.
+        const actionable = error instanceof TeamCalendarSyncError;
+        const message = actionable
+            ? error.message
+            : "팀 캘린더 동기화에 실패했습니다.";
         if (authorizedTeamId) {
             await supabase
                 .from("tasks")
                 .update({ team_calendar_sync_error: message })
                 .eq("team_id", authorizedTeamId)
                 .eq("id", taskId);
+        }
+        if (actionable) {
+            return NextResponse.json({ message }, { status: 409 });
         }
         return internalErrorResponse(
             "team-calendar-task-sync",
@@ -248,6 +260,12 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
 
         return NextResponse.json({ deleted: true });
     } catch (error) {
+        if (error instanceof TeamCalendarSyncError) {
+            return NextResponse.json(
+                { message: error.message },
+                { status: 409 },
+            );
+        }
         return internalErrorResponse(
             "team-calendar-task-delete",
             error,
