@@ -36,9 +36,8 @@ import {
     STATUS_COLORS,
 } from "@/shared/constants";
 import Avatar from "@/components/Avatar";
-import LevelUpOverlay from "@/components/LevelUpOverlay";
-import MvpOverlay from "@/components/MvpOverlay";
-import ExpPopup, { type ExpPopupType } from "@/components/ExpPopup";
+import dynamic from "next/dynamic";
+import type { ExpPopupType } from "@/components/ExpPopup";
 import AttendanceHeatmap from "@/components/AttendanceHeatmap";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { PageSpinner } from "@/components/Spinner";
@@ -67,12 +66,27 @@ import {
     badgeSelectStyles,
 } from "@/shared/styles/reactSelectStyles";
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
-import TiptapQuestContentEditor from "@/components/TiptapQuestContentEditor";
 import TaskContentInputs from "@/components/TaskContentInputs";
 import TaskContentList from "@/components/TaskContentList";
 import { sanitizeHtml } from "@/shared/utils/sanitizeHtml";
 import { stripHtmlTags } from "@/features/gamification/questContentDisplay";
 import SeasonBanner from "@/components/SeasonBanner";
+
+// 이벤트 발생 시에만 뜨는 오버레이·에디터는 초기 번들에서 제외한다
+// (canvas-confetti·framer-motion 오버레이·tiptap 을 첫 로드에 싣지 않기 위함).
+const LevelUpOverlay = dynamic(() => import("@/components/LevelUpOverlay"), {
+    ssr: false,
+});
+const MvpOverlay = dynamic(() => import("@/components/MvpOverlay"), {
+    ssr: false,
+});
+const ExpPopup = dynamic(() => import("@/components/ExpPopup"), {
+    ssr: false,
+});
+const TiptapQuestContentEditor = dynamic(
+    () => import("@/components/TiptapQuestContentEditor"),
+    { ssr: false },
+);
 
 /**
  * 상태 변경 RPC 실패 사유를 구분한다.
@@ -859,26 +873,43 @@ export default function HomePage() {
         if (member && teamId) {
             loadData();
 
-            // Realtime 援щ룆
+            // Realtime 구독 — 다른 팀의 변경까지 받으면 팀 수에 비례해
+            // 불필요한 loadData 리페치가 생기므로 팀으로 필터한다.
+            const teamFilter = `team_id=eq.${teamId}`;
             const channel = supabase
                 .channel(`home-realtime-${channelIdRef.current}`)
                 .on(
                     "postgres_changes",
-                    { event: "*", schema: "public", table: "quests" },
+                    {
+                        event: "*",
+                        schema: "public",
+                        table: "quests",
+                        filter: teamFilter,
+                    },
                     () => {
                         loadData();
                     },
                 )
                 .on(
                     "postgres_changes",
-                    { event: "*", schema: "public", table: "players" },
+                    {
+                        event: "*",
+                        schema: "public",
+                        table: "players",
+                        filter: teamFilter,
+                    },
                     () => {
                         loadData();
                     },
                 )
                 .on(
                     "postgres_changes",
-                    { event: "*", schema: "public", table: "tasks" },
+                    {
+                        event: "*",
+                        schema: "public",
+                        table: "tasks",
+                        filter: teamFilter,
+                    },
                     () => {
                         loadData();
                     },
