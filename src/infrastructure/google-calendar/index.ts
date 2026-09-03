@@ -6,6 +6,7 @@ import {
     encryptIntegrationToken,
 } from "@/infrastructure/security/tokenEncryption";
 import { listActiveTeamMembers } from "@/features/identity/server/identityRepository";
+import type { ContentItem } from "@/shared/types";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -15,19 +16,54 @@ const GOOGLE_CALENDAR_BASE_URL = "https://www.googleapis.com/calendar/v3";
 
 const FETCH_TIMEOUT_MS = 15_000;
 
-/** 외부 Google API 호출에 로컬 취소 타임아웃을 적용합니다. */
+/** 요청률 초과(429)와 일시적 서버 오류에 재시도할 횟수. */
+const RATE_LIMIT_RETRIES = 3;
+const RETRY_BASE_DELAY_MS = 500;
+const MAX_RETRY_DELAY_MS = 8_000;
+
+function sleep(ms: number) {
+    return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+/** Retry-After(초 또는 HTTP-date)를 밀리초로. 없으면 지수 백오프. */
+function retryDelayMs(res: Response, attempt: number) {
+    const header = res.headers.get("retry-after");
+    if (header) {
+        const seconds = Number(header);
+        if (Number.isFinite(seconds) && seconds >= 0) {
+            return Math.min(seconds * 1000, MAX_RETRY_DELAY_MS);
+        }
+        const at = Date.parse(header);
+        if (!Number.isNaN(at)) {
+            return Math.min(Math.max(at - Date.now(), 0), MAX_RETRY_DELAY_MS);
+        }
+    }
+    return Math.min(RETRY_BASE_DELAY_MS * 2 ** attempt, MAX_RETRY_DELAY_MS);
+}
+
+/**
+ * 외부 Google API 호출에 로컬 취소 타임아웃을 적용합니다.
+ * 429(요청률 초과)와 5xx 는 Retry-After 를 존중해 백오프 후 재시도합니다.
+ */
 async function fetchWithTimeout(
     url: string,
     options: RequestInit,
     timeoutMs = FETCH_TIMEOUT_MS,
 ): Promise<Response> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-        return await fetch(url, { ...options, signal: controller.signal });
-    } finally {
-        clearTimeout(timer);
+    let lastRes: Response | null = null;
+    for (let attempt = 0; attempt <= RATE_LIMIT_RETRIES; attempt += 1) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            lastRes = await fetch(url, { ...options, signal: controller.signal });
+        } finally {
+            clearTimeout(timer);
+        }
+        const retryable = lastRes.status === 429 || lastRes.status >= 500;
+        if (!retryable || attempt === RATE_LIMIT_RETRIES) return lastRes;
+        await sleep(retryDelayMs(lastRes, attempt));
     }
+    return lastRes as Response;
 }
 
 export type GoogleTokenResponse = {
@@ -94,11 +130,13 @@ export type TeamCalendarTaskInput = {
     member: string;
     proj: string;
     content: string;
+    content_items?: ContentItem[] | null;
     status?: string | null;
     start_date?: string | null;
     end_date?: string | null;
     show_on_team_calendar?: boolean | null;
     team_calendar_event_id?: string | null;
+    team_calendar_item_event_ids?: string[] | null;
     team_calendar_id?: string | null;
 };
 
@@ -198,7 +236,9 @@ async function getValidCalendarAccessToken(
     }
 
     if (!refreshToken) {
-        throw new Error("Calendar refresh token is missing");
+        throw new TeamCalendarSyncError(
+            "팀 캘린더 연결이 만료되었습니다. 관리 > 연동에서 캘린더를 다시 연결해 주세요.",
+        );
     }
 
     const refreshed = await refreshGoogleCalendarToken(refreshToken);
@@ -678,16 +718,45 @@ function toGoogleAllDayEnd(date: string) {
     return value.toISOString().slice(0, 10);
 }
 
-function buildTeamCalendarEvent(task: TeamCalendarTaskInput) {
-    const startDate = task.start_date || task.end_date;
-    const endDate = task.end_date || task.start_date || startDate;
+/**
+ * 사용자가 직접 조치할 수 있는 팀 캘린더 동기화 오류(설정 누락, 필수 값 누락 등).
+ * 라우트가 이 오류만 사유 그대로 노출하고, 나머지는 일반 메시지로 감춘다.
+ */
+export class TeamCalendarSyncError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "TeamCalendarSyncError";
+    }
+}
+
+/** 자체 일정이 있는 항목 / 없는 항목으로 업무 내용을 가른다. */
+function splitContentItemsBySchedule(task: TeamCalendarTaskInput) {
+    const items = (task.content_items ?? []).filter((ci) => ci.text?.trim());
+    const scheduled: { item: ContentItem; start: string; end: string }[] = [];
+    const unscheduled: ContentItem[] = [];
+    for (const item of items) {
+        const start = item.start_date || item.end_date;
+        const end = item.end_date || item.start_date;
+        if (start && end) scheduled.push({ item, start, end });
+        else unscheduled.push(item);
+    }
+    return { hasItems: items.length > 0, scheduled, unscheduled };
+}
+
+function buildTeamCalendarEvent(
+    task: TeamCalendarTaskInput,
+    override?: { title?: string; startDate?: string; endDate?: string },
+) {
+    const startDate = override?.startDate || task.start_date || task.end_date;
+    const endDate =
+        override?.endDate || task.end_date || task.start_date || startDate;
     if (!startDate) {
-        throw new Error(
+        throw new TeamCalendarSyncError(
             "팀 캘린더에 표시하려면 업무 기간 또는 마감일이 필요합니다",
         );
     }
 
-    const title = task.content?.trim() || "업무";
+    const title = override?.title?.trim() || task.content?.trim() || "업무";
     const project = task.proj?.trim();
     const memberPrefix = `[${task.member}]`;
     return {
@@ -718,6 +787,14 @@ function stableTaskEventId(taskId: number): string {
     return `v${taskId.toString().padStart(6, "0")}`;
 }
 
+/**
+ * 내용 항목 일정의 기본 ID. 업무 기간 일정(stableTaskEventId)과 겹치면 안 된다.
+ * Google 이벤트 ID는 base32hex(a-v, 0-9)만 허용하므로 'i'를 구분자로 쓴다.
+ */
+function stableTaskItemEventId(taskId: number, index: number): string {
+    return `${stableTaskEventId(taskId)}i${index.toString().padStart(2, "0")}`;
+}
+
 async function updateTeamCalendarEvent(params: {
     accessToken: string;
     url: string;
@@ -739,11 +816,17 @@ export async function upsertTeamCalendarTaskEvent(params: {
     accessToken: string;
     calendarId: string;
     task: TeamCalendarTaskInput;
+    override?: { title?: string; startDate?: string; endDate?: string };
+    /** 저장된 이벤트 ID가 없을 때 쓸 ID. 항목 일정은 업무 일정과 달라야 한다. */
+    fallbackEventId?: string;
 }) {
-    const { accessToken, calendarId, task } = params;
-    const event = buildTeamCalendarEvent(task);
+    const { accessToken, calendarId, task, override, fallbackEventId } = params;
+    const event = buildTeamCalendarEvent(task, override);
     const encodedCalendarId = encodeURIComponent(calendarId);
-    const eventId = task.team_calendar_event_id ?? stableTaskEventId(task.id);
+    const eventId =
+        task.team_calendar_event_id ??
+        fallbackEventId ??
+        stableTaskEventId(task.id);
     const url = `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodedCalendarId}/events/${encodeURIComponent(eventId)}`;
 
     const { res, json } = await updateTeamCalendarEvent({
@@ -756,26 +839,34 @@ export async function upsertTeamCalendarTaskEvent(params: {
         return json as GoogleCalendarEvent;
     }
 
-    if (res.status === 404) {
-        const insertRes = await fetchWithTimeout(
-            `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodedCalendarId}/events`,
-            {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                    "Content-Type": "application/json",
+    // 이벤트를 캘린더에서 지우면 404(없음) 또는 410(Gone)이 온다.
+    // deleteTeamCalendarTaskEvent 와 같은 기준으로 둘 다 "다시 만들기"로 처리한다.
+    if (res.status === 404 || res.status === 410) {
+        const insertEvent = async (body: Record<string, unknown>) => {
+            const insertRes = await fetchWithTimeout(
+                `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodedCalendarId}/events`,
+                {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify(body),
                 },
-                body: JSON.stringify({ ...event, id: eventId }),
-            },
-        );
-        const insertJson = await insertRes.json().catch(() => ({}));
+            );
+            return {
+                res: insertRes,
+                json: await insertRes.json().catch(() => ({})),
+            };
+        };
 
-        if (insertRes.ok) {
-            return insertJson as GoogleCalendarEvent;
+        const insert = await insertEvent({ ...event, id: eventId });
+        if (insert.res.ok) {
+            return insert.json as GoogleCalendarEvent;
         }
 
-        // 동시 생성 충돌 → 기존 이벤트 갱신으로 재시도합니다.
-        if (insertRes.status === 409) {
+        // 409 = 그 ID 가 이미 존재한다(동시 생성 또는 소프트 삭제). 갱신으로 재시도한다.
+        if (insert.res.status === 409) {
             const retry = await updateTeamCalendarEvent({
                 accessToken,
                 url,
@@ -784,6 +875,21 @@ export async function upsertTeamCalendarTaskEvent(params: {
             if (retry.res.ok) {
                 return retry.json as GoogleCalendarEvent;
             }
+
+            // 갱신마저 404/410 이면 그 ID 는 재사용할 수 없는 묘비다.
+            // 이때만 Google 이 새 ID 를 발급하게 한다. 다른 실패(403 등)에서
+            // 새로 만들면 살아 있는 일정과 중복된 사본이 생긴다.
+            if (retry.res.status === 404 || retry.res.status === 410) {
+                const fresh = await insertEvent(event);
+                if (fresh.res.ok) {
+                    return fresh.json as GoogleCalendarEvent;
+                }
+                throw new Error(
+                    fresh.json.error?.message ||
+                        "Failed to create team calendar event",
+                );
+            }
+
             throw new Error(
                 retry.json.error?.message ||
                     "Failed to sync team calendar event after conflict",
@@ -791,13 +897,146 @@ export async function upsertTeamCalendarTaskEvent(params: {
         }
 
         throw new Error(
-            insertJson.error?.message || "Failed to create team calendar event",
+            insert.json.error?.message ||
+                "Failed to create team calendar event",
         );
     }
 
     throw new Error(
         json.error?.message || "Failed to sync team calendar event",
     );
+}
+
+/**
+ * 업무 하나를 팀 캘린더 일정 집합으로 동기화한다.
+ *
+ * - 자체 일정이 있는 내용 항목 → 그 기간으로 항목별 일정
+ * - 일정이 없는 항목들 → 업무 기간 일정 하나에 모아서
+ * - content_items 가 없는 기존 업무 → 예전처럼 업무 기간 일정 하나
+ *
+ * 항목이 줄거나 일정이 빠지면 남는 일정은 지운다.
+ */
+export type TeamCalendarSyncProgress = {
+    baseEventId: string | null;
+    itemEventIds: string[];
+};
+
+/**
+ * 여러 일정 중 일부만 만들어진 뒤 실패했을 때 던진다.
+ * 이미 만들어진 이벤트 ID를 실어 보내, 호출부가 저장하고 다음 시도에서 재사용하게 한다.
+ * 저장하지 않으면 그 이벤트는 참조를 잃고 캘린더에 고아로 남는다.
+ */
+export class TeamCalendarPartialSyncError extends Error {
+    constructor(
+        readonly reason: unknown,
+        readonly progress: TeamCalendarSyncProgress,
+    ) {
+        super(reason instanceof Error ? reason.message : "팀 캘린더 동기화 실패");
+        this.name = "TeamCalendarPartialSyncError";
+    }
+}
+
+export async function syncTeamCalendarTaskEvents(params: {
+    accessToken: string;
+    calendarId: string;
+    task: TeamCalendarTaskInput;
+}) {
+    const { accessToken, calendarId, task } = params;
+    const { hasItems, scheduled, unscheduled } =
+        splitContentItemsBySchedule(task);
+
+    // 원격 쓰기 중간에 실패해도 이미 만든 이벤트 ID는 호출부가 저장할 수 있어야 한다.
+    // 저장하지 못하면 그 이벤트는 참조를 잃고 캘린더에 고아로 남는다.
+    const progress: TeamCalendarSyncProgress = {
+        baseEventId: task.team_calendar_event_id ?? null,
+        itemEventIds: [...(task.team_calendar_item_event_ids ?? [])],
+    };
+
+    async function syncEvents() {
+        // 업무 기간 일정: 항목이 없으면 기존 content 전체, 있으면 일정 없는 항목만 모은다.
+        const baseTitle = hasItems
+            ? unscheduled.map((ci) => ci.text.trim()).join("\n")
+            : task.content?.trim() || "";
+        const needsBaseEvent = baseTitle.length > 0;
+
+        let baseEventId = task.team_calendar_event_id ?? null;
+        let htmlLink: string | null = null;
+
+        if (needsBaseEvent) {
+            const event = await upsertTeamCalendarTaskEvent({
+                accessToken,
+                calendarId,
+                task: { ...task, team_calendar_event_id: baseEventId },
+                override: { title: baseTitle },
+            });
+            baseEventId = event.id;
+            progress.baseEventId = event.id;
+            htmlLink = event.htmlLink ?? null;
+        } else if (baseEventId) {
+            // 모든 항목이 자기 일정을 갖게 되면 업무 기간 일정은 비므로 지운다.
+            await deleteTeamCalendarTaskEvent({
+                accessToken,
+                calendarId,
+                eventId: baseEventId,
+            });
+            baseEventId = null;
+            progress.baseEventId = null;
+        }
+
+        const previousItemEventIds = task.team_calendar_item_event_ids ?? [];
+        const itemEventIds: string[] = [];
+        for (const [index, entry] of scheduled.entries()) {
+            const event = await upsertTeamCalendarTaskEvent({
+                accessToken,
+                calendarId,
+                task: {
+                    ...task,
+                    team_calendar_event_id: previousItemEventIds[index] ?? null,
+                },
+                override: {
+                    title: entry.item.text,
+                    startDate: entry.start,
+                    endDate: entry.end,
+                },
+                fallbackEventId: stableTaskItemEventId(task.id, index),
+            });
+            itemEventIds.push(event.id);
+            // 뒤 항목에서 실패해도 방금 만든 ID 를 잃지 않도록 즉시 반영한다.
+            // 아직 정리하지 않은 예전 ID 는 뒤에 남겨 다음 시도에서 지울 수 있게 한다.
+            progress.itemEventIds = [
+                ...itemEventIds,
+                ...previousItemEventIds.slice(itemEventIds.length),
+            ];
+            htmlLink ??= event.htmlLink ?? null;
+        }
+
+        // 이번에 쓰지 않은 예전 항목 일정 정리
+        for (const staleId of previousItemEventIds.slice(scheduled.length)) {
+            if (!staleId || itemEventIds.includes(staleId)) continue;
+            await deleteTeamCalendarTaskEvent({
+                accessToken,
+                calendarId,
+                eventId: staleId,
+            });
+        }
+        progress.itemEventIds = itemEventIds;
+
+        if (!baseEventId && itemEventIds.length === 0) {
+            throw new TeamCalendarSyncError(
+                "팀 캘린더에 표시할 업무 내용이 없습니다",
+            );
+        }
+
+        return { baseEventId, itemEventIds, htmlLink };
+    }
+
+    try {
+        return await syncEvents();
+    } catch (error) {
+        // 설정·필수값 누락은 아무것도 만들지 않았으므로 그대로 올린다.
+        if (error instanceof TeamCalendarSyncError) throw error;
+        throw new TeamCalendarPartialSyncError(error, progress);
+    }
 }
 
 export async function deleteTeamCalendarTaskEvent(params: {
@@ -850,7 +1089,7 @@ export async function createTeamCalendarEvent(params: {
     const allDay = input.eventType === "annual_leave";
     const endDate = input.endDate || input.date;
     if (!allDay && !input.startTime) {
-        throw new Error("시간 일정은 시작 시간이 필요합니다");
+        throw new TeamCalendarSyncError("시간 일정은 시작 시간이 필요합니다");
     }
     const event: Record<string, unknown> = {
         summary: teamEventSummary(input),

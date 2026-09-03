@@ -8,7 +8,9 @@ import {
     getTeamCalendarAccessToken,
     type GoogleCalendarConnection,
     type TeamCalendarTaskInput,
-    upsertTeamCalendarTaskEvent,
+    TeamCalendarPartialSyncError,
+    TeamCalendarSyncError,
+    syncTeamCalendarTaskEvents,
 } from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { resolveTeamMember } from "@/features/identity/server/identityRepository";
@@ -41,7 +43,7 @@ async function loadTeamCalendarContext(
         .maybeSingle();
     if (settingError) throw settingError;
     if (!setting?.calendar_id || !setting.connection_email) {
-        throw new Error("팀 캘린더 ID가 설정되어 있지 않습니다");
+        throw new TeamCalendarSyncError("팀 캘린더 ID가 설정되어 있지 않습니다");
     }
 
     let calendarId = existingCalendarId || null;
@@ -57,7 +59,9 @@ async function loadTeamCalendarContext(
         calendarId = memberCalendar?.calendar_id ?? null;
     }
     if (!calendarId) {
-        throw new Error("담당자별 캘린더 ID가 설정되어 있지 않습니다");
+        throw new TeamCalendarSyncError(
+            "담당자별 캘린더 ID가 설정되어 있지 않습니다",
+        );
     }
 
     const { data: connection, error: connectionError } = await supabase
@@ -68,7 +72,9 @@ async function loadTeamCalendarContext(
         .maybeSingle();
     if (connectionError) throw connectionError;
     if (!connection) {
-        throw new Error("팀 캘린더 연결 계정을 찾을 수 없습니다");
+        throw new TeamCalendarSyncError(
+            "팀 캘린더 연결 계정을 찾을 수 없습니다",
+        );
     }
 
     const accessToken = await getTeamCalendarAccessToken(
@@ -91,7 +97,7 @@ async function loadTask(
     const { data, error } = await supabase
         .from("tasks")
         .select(
-            "id, team_id, member, proj, content, status, start_date, end_date, show_on_team_calendar, team_calendar_event_id, team_calendar_id",
+            "id, team_id, member, proj, content, content_items, status, start_date, end_date, show_on_team_calendar, team_calendar_event_id, team_calendar_item_event_ids, team_calendar_id",
         )
         .eq("id", id)
         .maybeSingle();
@@ -136,23 +142,27 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             task.member,
             task.team_calendar_id,
         );
+        // 항목 일정만 있는 업무는 base ID가 null 이므로, 항목 ID까지 함께 봐야
+        // 캘린더가 바뀔 때 이전 캘린더의 일정이 남지 않는다.
+        const previousEventIds = [
+            task.team_calendar_event_id,
+            ...(task.team_calendar_item_event_ids ?? []),
+        ].filter((id): id is string => Boolean(id));
         const previousCalendarId =
-            task.team_calendar_event_id &&
+            previousEventIds.length > 0 &&
             (!task.team_calendar_id || task.team_calendar_id !== calendarId)
                 ? task.team_calendar_id || sharedCalendarId
                 : null;
-        if (previousCalendarId) {
-            await deleteTeamCalendarTaskEvent({
-                accessToken,
-                calendarId: previousCalendarId,
-                eventId: task.team_calendar_event_id as string,
-            });
-        }
-        const event = await upsertTeamCalendarTaskEvent({
+        const synced = await syncTeamCalendarTaskEvents({
             accessToken,
             calendarId,
+            // 캘린더가 바뀌었으면 이전 이벤트 ID는 새 캘린더에서 쓸 수 없다.
             task: previousCalendarId
-                ? { ...task, team_calendar_event_id: null }
+                ? {
+                      ...task,
+                      team_calendar_event_id: null,
+                      team_calendar_item_event_ids: null,
+                  }
                 : task,
         });
 
@@ -160,7 +170,10 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             .from("tasks")
             .update({
                 show_on_team_calendar: true,
-                team_calendar_event_id: event.id,
+                team_calendar_event_id: synced.baseEventId,
+                team_calendar_item_event_ids: synced.itemEventIds.length
+                    ? synced.itemEventIds
+                    : null,
                 team_calendar_id: calendarId,
                 team_calendar_synced_at: new Date().toISOString(),
                 team_calendar_sync_error: null,
@@ -169,19 +182,51 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             .eq("id", taskId);
         if (error) throw error;
 
+        // 이전 캘린더 정리는 새 일정과 DB 갱신이 모두 끝난 뒤에 한다.
+        // 먼저 지우면 동기화가 실패했을 때 지워진 ID 만 DB 에 남는다.
+        if (previousCalendarId) {
+            for (const staleId of previousEventIds) {
+                await deleteTeamCalendarTaskEvent({
+                    accessToken,
+                    calendarId: previousCalendarId,
+                    eventId: staleId,
+                });
+            }
+        }
+
         return NextResponse.json({
             synced: true,
-            eventId: event.id,
-            htmlLink: event.htmlLink ?? null,
+            eventId: synced.baseEventId,
+            itemEventIds: synced.itemEventIds,
+            htmlLink: synced.htmlLink,
         });
     } catch (error) {
-        const message = "팀 캘린더 동기화에 실패했습니다.";
+        // 설정 누락·기간 누락처럼 사용자가 고칠 수 있는 사유는 그대로 알려준다.
+        const actionable = error instanceof TeamCalendarSyncError;
+        const message = actionable
+            ? error.message
+            : "팀 캘린더 동기화에 실패했습니다.";
         if (authorizedTeamId) {
+            // 중간까지 만들어진 이벤트 ID 를 저장해야 다음 시도에서 재사용하고,
+            // 저장하지 않으면 그 일정이 캘린더에 고아로 남는다.
+            const progress =
+                error instanceof TeamCalendarPartialSyncError
+                    ? {
+                          team_calendar_event_id: error.progress.baseEventId,
+                          team_calendar_item_event_ids: error.progress
+                              .itemEventIds.length
+                              ? error.progress.itemEventIds
+                              : null,
+                      }
+                    : {};
             await supabase
                 .from("tasks")
-                .update({ team_calendar_sync_error: message })
+                .update({ ...progress, team_calendar_sync_error: message })
                 .eq("team_id", authorizedTeamId)
                 .eq("id", taskId);
+        }
+        if (actionable) {
+            return NextResponse.json({ message }, { status: 409 });
         }
         return internalErrorResponse(
             "team-calendar-task-sync",
@@ -218,7 +263,11 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
             return NextResponse.json({ message: "Forbidden" }, { status: 403 });
         }
 
-        if (task.team_calendar_event_id) {
+        const eventIds = [
+            task.team_calendar_event_id,
+            ...(task.team_calendar_item_event_ids ?? []),
+        ].filter((id): id is string => Boolean(id));
+        if (eventIds.length > 0) {
             const { calendarId, accessToken } =
                 await loadTeamCalendarContext(
                     supabase,
@@ -226,28 +275,53 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
                     task.member,
                     task.team_calendar_id,
                 );
-            await deleteTeamCalendarTaskEvent({
-                accessToken,
-                calendarId,
-                eventId: task.team_calendar_event_id,
-            });
+            for (const eventId of eventIds) {
+                await deleteTeamCalendarTaskEvent({
+                    accessToken,
+                    calendarId,
+                    eventId,
+                });
+            }
             // 삭제된 일정 식별자를 남겨두면 이후 동기화가 없는 일정을 가리키게 된다.
             // 읽어온 event_id 를 조건에 포함해, 그사이 재동기화로 새 일정이 생겼다면 건드리지 않는다.
-            const { error } = await supabase
+            // 읽어온 ID 스냅샷과 정확히 일치할 때만 지운다.
+            // 그사이 재동기화가 새 일정을 만들었다면 건드리지 않는다.
+            // 항목 일정만 있는 업무는 base ID 가 null 이라, 두 컬럼을 모두 봐야 한다.
+            let cleanup = supabase
                 .from("tasks")
                 .update({
                     team_calendar_event_id: null,
+                    team_calendar_item_event_ids: null,
                     team_calendar_synced_at: null,
                     team_calendar_sync_error: null,
                 })
                 .eq("team_id", task.team_id)
-                .eq("id", taskId)
-                .eq("team_calendar_event_id", task.team_calendar_event_id);
+                .eq("id", taskId);
+            cleanup = task.team_calendar_event_id
+                ? cleanup.eq(
+                      "team_calendar_event_id",
+                      task.team_calendar_event_id,
+                  )
+                : cleanup.is("team_calendar_event_id", null);
+            cleanup = task.team_calendar_item_event_ids?.length
+                ? cleanup.filter(
+                      "team_calendar_item_event_ids",
+                      "eq",
+                      JSON.stringify(task.team_calendar_item_event_ids),
+                  )
+                : cleanup.is("team_calendar_item_event_ids", null);
+            const { error } = await cleanup;
             if (error) throw error;
         }
 
         return NextResponse.json({ deleted: true });
     } catch (error) {
+        if (error instanceof TeamCalendarSyncError) {
+            return NextResponse.json(
+                { message: error.message },
+                { status: 409 },
+            );
+        }
         return internalErrorResponse(
             "team-calendar-task-delete",
             error,

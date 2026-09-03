@@ -7,8 +7,9 @@ import Tooltip from '@/components/Tooltip'
 import Select from 'react-select'
 import { modalFormSelectStyles } from '@/shared/styles/reactSelectStyles'
 import { useAuth } from '@/components/AuthProvider'
+import AuthGuard from '@/components/AuthGuard'
 import type { Project } from '@/shared/types'
-import { findProjectId, findTeamMemberId, normalizeProject } from '@/shared/utils/utils'
+import { findProjectId, findTeamMemberId, getDiff, normalizeProject } from '@/shared/utils/utils'
 
 type Quest = {
   id: number
@@ -20,14 +21,6 @@ type Quest = {
   status: string
   end_date: string | null
   created_at: string
-}
-
-function getDiff(dateStr: string | null) {
-  if (!dateStr) return null
-  const d = new Date(dateStr)
-  const n = new Date()
-  d.setHours(0,0,0,0); n.setHours(0,0,0,0)
-  return Math.round((d.getTime() - n.getTime()) / (1000*60*60*24))
 }
 
 export default function QuestsPage() {
@@ -137,7 +130,11 @@ export default function QuestsPage() {
 
   async function deleteQuest(id: number) {
     if (!confirm('삭제할까요?')) return
-    await supabase.from('quests').delete().eq('id', id)
+    const { error } = await supabase.from('quests').delete().eq('id', id)
+    if (error) {
+      showToastMsg('삭제에 실패했어요')
+      return
+    }
     loadQuests()
   }
 
@@ -146,6 +143,7 @@ export default function QuestsPage() {
   const done     = filtered.filter(q => q.status === '완료').length
 
   return (
+    <AuthGuard>
     <div className="min-h-screen bg-stone-50">
       {/* 헤더 */}
       <div className="bg-white border-b border-stone-200 px-4 py-3 sticky top-0 z-10">
@@ -342,5 +340,6 @@ export default function QuestsPage() {
         </div>
       )}
     </div>
+    </AuthGuard>
   )
 }

@@ -100,7 +100,8 @@ export default function TaskEditModal({
             setEditDateRange(undefined);
         }
         setShowEditDatePicker(false);
-    }, [task]);
+        // teamId 가 늦게 도착하면 위에서 early return 되므로 deps 에 함께 둔다.
+    }, [task, teamId]);
 
     useEffect(() => {
         if (!task) return;

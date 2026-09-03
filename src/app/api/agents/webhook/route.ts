@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireAdminSession } from "@/features/admin/server/adminRepository";
+import {
+    AdminApiError,
+    requireAdminSession,
+} from "@/features/admin/server/adminRepository";
+import { adminErrorResponse } from "@/features/admin/server/http";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import {
     createServiceSupabaseClient,
@@ -8,6 +12,7 @@ import {
 import {
     decryptIntegrationToken,
     encryptIntegrationToken,
+    isEncryptedIntegrationToken,
 } from "@/infrastructure/security/tokenEncryption";
 import {
     resolveTeamMember,
@@ -59,12 +64,13 @@ export async function GET() {
 
         if (error) throw error;
         const ownWebhookUrl = decryptIntegrationToken(data?.webhook_url) ?? "";
-        const encryptedOwnWebhookUrl = encryptIntegrationToken(ownWebhookUrl);
-        if (data?.webhook_url && encryptedOwnWebhookUrl !== data.webhook_url) {
+        // 암호문은 매번 IV 가 달라 재암호화 결과를 비교하면 항상 달라진다.
+        // 그 비교로는 요청마다 같은 행을 다시 쓰게 되므로, 평문으로 남은 값만 한 번 옮긴다.
+        if (data?.webhook_url && !isEncryptedIntegrationToken(data.webhook_url)) {
             const { error: encryptionError } = await service
                 .from("agent_member_webhooks")
                 .update({
-                    webhook_url: encryptedOwnWebhookUrl,
+                    webhook_url: encryptIntegrationToken(ownWebhookUrl),
                     updated_at: new Date().toISOString(),
                 })
                 .eq("team_id", teamId)
@@ -114,6 +120,8 @@ export async function GET() {
             updatedAt: data?.updated_at ?? null,
         });
     } catch (error) {
+        // requireAdminSession 의 권한 오류는 사유가 곧 해결 방법이라 그대로 노출한다.
+        if (error instanceof AdminApiError) return adminErrorResponse(error);
         return internalErrorResponse(
             "agent-webhook-get",
             error,
@@ -194,6 +202,8 @@ export async function PUT(req: NextRequest) {
             updatedAt: data?.updated_at ?? null,
         });
     } catch (error) {
+        // requireAdminSession 의 권한 오류는 사유가 곧 해결 방법이라 그대로 노출한다.
+        if (error instanceof AdminApiError) return adminErrorResponse(error);
         return internalErrorResponse(
             "agent-webhook-put",
             error,
@@ -244,6 +254,8 @@ export async function DELETE(req: NextRequest) {
 
         return NextResponse.json({ deleted: true, member: targetMember });
     } catch (error) {
+        // requireAdminSession 의 권한 오류는 사유가 곧 해결 방법이라 그대로 노출한다.
+        if (error instanceof AdminApiError) return adminErrorResponse(error);
         return internalErrorResponse(
             "agent-webhook-delete",
             error,

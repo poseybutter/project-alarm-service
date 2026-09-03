@@ -1402,7 +1402,27 @@ export async function createAdminTeam(input: {
     module,
     enabled: enabledModules.has(module),
   }));
-  await service.from("team_modules").insert(moduleRows);
+  const { error: moduleError } = await service
+    .from("team_modules")
+    .insert(moduleRows);
+  // 팀 행은 이미 커밋된 뒤다. 모듈 없는 팀을 남기면 같은 ID 로 재시도할 때
+  // 기본 키 충돌이 나므로, 방금 만든 팀을 되돌리고 처음부터 다시 하게 한다.
+  if (moduleError) {
+    const { error: rollbackError } = await service
+      .from("teams")
+      .delete()
+      .eq("id", data.id);
+    if (rollbackError) {
+      throw new AdminApiError(
+        `팀 "${data.name}"은 생성됐지만 모듈 초기화에 실패했고 되돌리지도 못했습니다. 팀 설정에서 모듈을 다시 저장해 주세요.`,
+        500,
+      );
+    }
+    throw new AdminApiError(
+      "모듈 초기화에 실패해 팀 생성을 취소했습니다. 다시 시도해 주세요.",
+      500,
+    );
+  }
 
   await writeAdminAudit({
     actorEmail: bootstrap.identity.email,
