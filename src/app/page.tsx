@@ -748,7 +748,7 @@ export default function HomePage() {
                 const newIndex = prev.findIndex((item) => item.id === over.id);
                 if (oldIndex === -1 || newIndex === -1) return prev;
                 const reordered = arrayMove(prev, oldIndex, newIndex);
-                // quest ??낅쭔 order_index ???
+                // quest 타입만 order_index 를 저장한다
                 reordered.forEach((item, i) => {
                     if (item.type === "quest") {
                         void supabase
@@ -888,7 +888,7 @@ export default function HomePage() {
         const today = new Date(`${todayYmd}T00:00:00Z`);
         if (today.getUTCDay() !== 1) return;
 
-        // ?대쾲 二??붿슂?쇱뿉 ?대? ?レ븯?쇰㈃ ?ㅼ떆 ?꾩슦吏 ?딆쓬
+        // 이번 주 월요일에 이미 닫았으면 다시 띄우지 않음
         const thisMonday = todayYmd;
         const dismissedKey = `mvp_popup_dismissed_week_${teamId}`;
         if (localStorage.getItem(dismissedKey) === thisMonday)
@@ -975,7 +975,8 @@ export default function HomePage() {
         };
     }, [member, teamId, authLoading]);
 
-    // myTasks/quests 蹂寃????듯빀 紐⑸줉 ?ш뎄??(?쒕옒洹?以묒뿉??allQuestItems留?蹂寃쎈릺誘濡?deps 遺덈?)
+    // myTasks/quests 가 바뀌면 통합 목록을 다시 만든다
+    // (드래그 중에는 allQuestItems 만 바뀌므로 deps 에 넣지 않는다)
     useEffect(() => {
         const todayStr = toLocalYmd(new Date());
         const todayTasks = myTasks.filter((t) => {
@@ -1097,11 +1098,11 @@ export default function HomePage() {
         if (completingQuestIds.has(quest.id)) return;
         const { clientX, clientY } = e;
 
-        // ?좊땲硫붿씠???쒖옉
+        // 완료 애니메이션 시작
         setCompletingQuestIds((prev) => new Set([...prev, quest.id]));
         await new Promise<void>((resolve) => setTimeout(resolve, 650));
 
-        // DB ?낅뜲?댄듃 + EXP 吏湲?(?쒕쾭 RPC 媛 ?먯옄?곸쑝濡?
+        // DB 반영 + EXP 지급을 서버 RPC 가 한 번에 처리한다
         const result = await rpcSetQuestDone(quest.id, true, member).catch(
             () => null,
         );
@@ -1118,7 +1119,7 @@ export default function HomePage() {
             showToastMsg(`완료! +${result?.amount ?? 0} EXP`);
         }
 
-        // ?좊땲硫붿씠??醫낅즺 + ?꾨즺 紐⑸줉 ?대룞
+        // 애니메이션 종료 후 완료 목록으로 옮긴다
         setCompletingQuestIds((prev) => {
             const next = new Set(prev);
             next.delete(quest.id);
@@ -1175,7 +1176,7 @@ export default function HomePage() {
 
 
     async function undoQuest(quest: Quest) {
-        // ?꾨즺 痍⑥냼 ???쒕쾭 RPC 媛 ?곹깭 ?섎룎由?+ ?먯닔 李④컧(-10).
+        // 완료 취소 시 서버 RPC 가 상태 되돌리기와 점수 차감을 함께 처리한다
         await rpcSetQuestDone(quest.id, false, member!).catch(() => null);
         setCompletedQuestsThisSession((prev) =>
             prev.filter((q) => q.id !== quest.id),
@@ -1263,7 +1264,7 @@ export default function HomePage() {
         task: Task,
         anchor?: { x: number; y: number },
     ) {
-        // ?곹깭 蹂寃?+ ?먯닔???쒕쾭 RPC 媛 ?먯옄?곸쑝濡?泥섎━.
+        // 상태 변경과 점수 반영을 서버 RPC 가 한 번에 처리한다
         const result = await rpcSetTaskStatus(id, status, task.member).catch(
             () => null,
         );
@@ -1469,7 +1470,7 @@ export default function HomePage() {
 
     const activeMyTasks = myTasks.filter((t) => t.status !== "완료");
 
-    // ?ㅻ뒛???섏뒪??吏꾪뻾 諛?
+    // 오늘의 퀘스트 진행률
     const completedCount = completedQuestsThisSession.length;
     const totalQuestCount = allQuestItems.length + completedCount;
     const progressPct =

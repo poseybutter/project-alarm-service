@@ -51,7 +51,10 @@ function nextSeasonInfo(rangeEnd: string): {
 
     // Dec 31 종료 → 다음 해 Jan 1 ~ Dec 31
     const nextYear = m === 12 && d === 31 ? y + 1 : y;
-    const nextStart = new Date(y, m - 1, d + 1);
+    // 로컬 Date 로 만들고 toISOString(UTC) 으로 읽으면 서버 TZ 에 따라 하루 밀린다.
+    // 날짜 산술을 UTC 로 통일한다.
+    const nextStart = new Date(`${rangeEnd}T00:00:00Z`);
+    nextStart.setUTCDate(nextStart.getUTCDate() + 1);
     const ns = nextStart.toISOString().slice(0, 10);
     return {
         label: `${nextYear} 시즌`,
