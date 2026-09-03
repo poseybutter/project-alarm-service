@@ -97,12 +97,14 @@ export type TaskEditModalProps = {
     task: Task | null;
     onClose: () => void;
     onSaved: () => void | Promise<void>;
+    onDelete?: (taskId: number) => void | Promise<void>;
 };
 
 export default function TaskEditModal({
     task,
     onClose,
     onSaved,
+    onDelete,
 }: TaskEditModalProps) {
     const { teamId } = useAuth();
     const [projects, setProjects] = useState<Project[]>([]);
@@ -130,7 +132,7 @@ export default function TaskEditModal({
             status: task.status || "대기",
             is_plan: task.is_plan ?? false,
             is_starred: task.is_starred ?? false,
-            show_on_team_calendar: true,
+            show_on_team_calendar: task.show_on_team_calendar ?? false,
         });
         if (task.start_date || task.end_date) {
             setEditDateRange({
@@ -254,24 +256,26 @@ export default function TaskEditModal({
                 status: editForm.status,
                 is_plan: editForm.is_plan ?? false,
                 is_starred: editForm.is_starred ?? false,
-                show_on_team_calendar: true,
+                show_on_team_calendar: editForm.show_on_team_calendar ?? false,
             })
             .eq("id", task.id);
         if (error) {
             alert("업무 수정에 실패했어요");
             return;
         }
-        void (async () => {
-            const res = await fetch(`/api/agents/team-calendar/tasks/${task.id}`, {
-                method: "POST",
+        if (editForm.show_on_team_calendar) {
+            void (async () => {
+                const res = await fetch(`/api/agents/team-calendar/tasks/${task.id}`, {
+                    method: "POST",
+                });
+                const json = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    throw new Error(json.message || "팀 캘린더 동기화 실패");
+                }
+            })().catch((err) => {
+                console.warn("[team-calendar]", err instanceof Error ? err.message : "동기화 실패");
             });
-            const json = await res.json().catch(() => ({}));
-            if (!res.ok) {
-                throw new Error(json.message || "팀 캘린더 동기화 실패");
-            }
-        })().catch((err) => {
-            alert(err instanceof Error ? err.message : "팀 캘린더 동기화 실패");
-        });
+        }
         await Promise.resolve(onSaved());
         handleClose();
     }
@@ -625,13 +629,27 @@ export default function TaskEditModal({
                                 document.body,
                             )}
                     </div>
-                    <button
-                        type="button"
-                        onClick={() => void saveEdit()}
-                        className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm"
-                    >
-                        저장하기
-                    </button>
+                    <div className="grid grid-cols-2 gap-2">
+                        {onDelete && task ? (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (!confirm("정말 삭제할까요?")) return;
+                                    void Promise.resolve(onDelete(task.id)).then(() => handleClose());
+                                }}
+                                className="rounded-xl border border-red-300 bg-white py-3.5 text-sm font-bold text-red-500 hover:bg-red-50 transition-colors"
+                            >
+                                삭제하기
+                            </button>
+                        ) : <span />}
+                        <button
+                            type="button"
+                            onClick={() => void saveEdit()}
+                            className="bg-stone-800 text-white font-bold py-3.5 rounded-xl text-sm hover:bg-stone-900 transition-colors"
+                        >
+                            저장하기
+                        </button>
+                    </div>
                 </div>
                 {toast && (
                     <div className="fixed bottom-24 left-1/2 z-[260] -translate-x-1/2 rounded-full bg-stone-900 px-4 py-2 text-xs font-bold text-white shadow-lg">
