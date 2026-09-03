@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { LEVELS } from "@/features/gamification/levels";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import {
-    consumeRateLimit,
+    consumeSharedRateLimit,
     rateLimitResponse,
     requestRateLimitKey,
 } from "@/shared/server/rateLimit";
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 외부 채팅 웹훅 발송이므로 남용을 막는다.
-    const rate = consumeRateLimit(
+    const rate = await consumeSharedRateLimit(
         requestRateLimitKey(request, "notify-level-up", user.email),
         { limit: 20, windowMs: 60 * 1000 },
     );

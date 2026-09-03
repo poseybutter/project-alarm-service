@@ -12,7 +12,7 @@ import {
 } from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import {
-    consumeRateLimit,
+    consumeSharedRateLimit,
     rateLimitResponse,
     requestRateLimitKey,
 } from "@/shared/server/rateLimit";
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 일정 생성마다 Google API 호출 + 전체 재동기화가 돌므로 남용을 막는다.
-    const rate = consumeRateLimit(
+    const rate = await consumeSharedRateLimit(
         requestRateLimitKey(req, "team-calendar-events", user.email),
         { limit: 20, windowMs: 60 * 1000 },
     );

@@ -15,7 +15,7 @@ import {
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { mapWithConcurrency } from "@/shared/server/concurrency";
 import {
-    consumeRateLimit,
+    consumeSharedRateLimit,
     rateLimitResponse,
     requestRateLimitKey,
 } from "@/shared/server/rateLimit";
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     }
 
     // 배치 이어받기 루프(최대 50회)가 정상 케이스이므로 그보다 넉넉히 잡는다.
-    const rate = consumeRateLimit(
+    const rate = await consumeSharedRateLimit(
         requestRateLimitKey(request, "team-calendar-resync", user.email),
         { limit: 60, windowMs: 60 * 1000 },
     );
