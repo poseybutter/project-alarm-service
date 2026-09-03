@@ -999,10 +999,11 @@ export default function ReportPage() {
 
     const allMemberOptions = useMemo(() => {
         const taskMembers = new Set(curTasks.map((t) => t.member).filter(Boolean));
+        const hasUnassigned = curTasks.some((t) => !t.member);
         // 관리자에서 정한 구성원 순서(members)를 유지하고, 목록에 없는 이름은 뒤에 붙인다
         const ordered = members.filter((m) => taskMembers.has(m));
         const extra = [...taskMembers].filter((m) => !members.includes(m));
-        return [...ordered, ...extra];
+        return [...ordered, ...extra, ...(hasUnassigned ? ["미지정"] : [])];
     }, [curTasks, members]);
 
     const canOpenEdit = !isGuest && isEditableWindow();
@@ -1659,7 +1660,7 @@ export default function ReportPage() {
                                             .map((member) => ({
                                                 key: member,
                                                 tasks: curTasks.filter(
-                                                    (t) => t.member === member,
+                                                    (t) => member === "미지정" ? !t.member : t.member === member,
                                                 ),
                                             }))
                                             .filter((grp) => grp.tasks.length > 0);
