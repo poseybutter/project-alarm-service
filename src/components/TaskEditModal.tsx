@@ -264,7 +264,9 @@ export default function TaskEditModal({
             return;
         }
         if (!editForm.show_on_team_calendar && task.show_on_team_calendar) {
-            void fetch(`/api/agents/team-calendar/tasks/${task.id}`, { method: "DELETE" }).catch((err) => {
+            void fetch(`/api/agents/team-calendar/tasks/${task.id}`, { method: "DELETE" }).then((res) => {
+                if (!res.ok) console.warn("[team-calendar] delete failed:", res.status);
+            }).catch((err) => {
                 console.warn("[team-calendar] delete failed", err);
             });
         } else if (editForm.show_on_team_calendar) {
