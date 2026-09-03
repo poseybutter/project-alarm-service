@@ -1340,8 +1340,8 @@ export default function ReportPage() {
         [assignments, sortAssignments],
     );
     const assignCopyText = useMemo(
-        () => formatAssignments(assignments),
-        [assignments],
+        () => formatAssignments(sortAssignments(assignments)),
+        [assignments, sortAssignments],
     );
 
     function openAddAssignment() {
