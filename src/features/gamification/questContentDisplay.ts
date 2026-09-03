@@ -19,6 +19,18 @@ export function questRichTextIsEffectivelyEmpty(
     return text.trim().length === 0;
 }
 
+/** HTML 태그를 반복 제거하여 순수 텍스트만 추출 (중첩 태그 안전) */
+export function stripHtmlTags(html: string | null | undefined): string {
+    if (!html) return "";
+    let text = html;
+    let prev;
+    do {
+        prev = text;
+        text = text.replace(/<[^>]*>/g, "");
+    } while (text !== prev);
+    return text.trim();
+}
+
 /** 레거시 플레인 텍스트를 에디터 초기 HTML로 (이미 HTML이면 그대로) */
 export function toQuestEditorInitialHtml(
     stored: string | null | undefined,
