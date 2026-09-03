@@ -198,7 +198,9 @@ async function getValidCalendarAccessToken(
     }
 
     if (!refreshToken) {
-        throw new Error("Calendar refresh token is missing");
+        throw new TeamCalendarSyncError(
+            "팀 캘린더 연결이 만료되었습니다. 관리 > 연동에서 캘린더를 다시 연결해 주세요.",
+        );
     }
 
     const refreshed = await refreshGoogleCalendarToken(refreshToken);
@@ -678,11 +680,22 @@ function toGoogleAllDayEnd(date: string) {
     return value.toISOString().slice(0, 10);
 }
 
+/**
+ * 사용자가 직접 조치할 수 있는 팀 캘린더 동기화 오류(설정 누락, 필수 값 누락 등).
+ * 라우트가 이 오류만 사유 그대로 노출하고, 나머지는 일반 메시지로 감춘다.
+ */
+export class TeamCalendarSyncError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "TeamCalendarSyncError";
+    }
+}
+
 function buildTeamCalendarEvent(task: TeamCalendarTaskInput) {
     const startDate = task.start_date || task.end_date;
     const endDate = task.end_date || task.start_date || startDate;
     if (!startDate) {
-        throw new Error(
+        throw new TeamCalendarSyncError(
             "팀 캘린더에 표시하려면 업무 기간 또는 마감일이 필요합니다",
         );
     }
@@ -850,7 +863,7 @@ export async function createTeamCalendarEvent(params: {
     const allDay = input.eventType === "annual_leave";
     const endDate = input.endDate || input.date;
     if (!allDay && !input.startTime) {
-        throw new Error("시간 일정은 시작 시간이 필요합니다");
+        throw new TeamCalendarSyncError("시간 일정은 시작 시간이 필요합니다");
     }
     const event: Record<string, unknown> = {
         summary: teamEventSummary(input),
