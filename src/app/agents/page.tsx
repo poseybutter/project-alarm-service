@@ -560,7 +560,7 @@ export default function AgentsPage() {
                             <h1 className="text-base font-bold text-stone-900">
                                 모닝 알림 에이전트
                             </h1>
-                            <p className="mt-0.5 text-xs text-stone-400">
+                            <p className="hidden sm:block mt-0.5 text-xs text-stone-400">
                                 일정, 업무, 오늘의 퀘스트를 모아 개인 Google Chat으로 보냅니다.
                             </p>
                         </div>
@@ -574,7 +574,6 @@ export default function AgentsPage() {
                             >
                                 <i className="ri-settings-3-line text-lg" />
                             </button>
-                            <AgentButton />
                             <NotificationButton />
                             <TeamSwitcher />
                             <UserMenu />

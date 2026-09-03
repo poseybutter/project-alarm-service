@@ -417,7 +417,7 @@ function HomeMyTaskRow({
                     )}
                     <span className="truncate text-sm font-medium text-stone-800">{t.proj}</span>
                 </div>
-                {t.content && <TaskContentList content={t.content} className="mt-1 text-xs leading-relaxed text-stone-600" />}
+                {t.content && <TaskContentList content={t.content} contentItems={t.content_items} className="mt-1 text-xs leading-relaxed text-stone-600" />}
                 {t.issue && (
                     <p className="mt-1.5 rounded-lg border border-amber-200 bg-amber-100/80 px-2 py-1 text-xs text-amber-800">이슈: {t.issue}</p>
                 )}
@@ -1068,7 +1068,7 @@ export default function HomePage() {
         try {
             const result = await rpcAttendanceCheck(member);
             if (!result.success) {
-                showToastMsg(result.message || "?ㅻ쪟");
+                showToastMsg(result.message || "오류");
                 return;
             }
             pushExpPopup(
@@ -2503,7 +2503,7 @@ export default function HomePage() {
                         />
                     ))}
 
-                    {/* ?좎뒪??*/}
+                    {/* 토스트 */}
                     {toast && (
                         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-stone-800 text-white text-sm px-5 py-2.5 rounded-full shadow-lg z-50 whitespace-nowrap">
                             {toast}

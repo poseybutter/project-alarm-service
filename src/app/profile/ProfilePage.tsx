@@ -421,7 +421,7 @@ export default function ProfilePage() {
                         </h1>
                         <div className="flex items-center gap-2">
                             <TeamSwitcher />
-                            <AgentButton />
+
                             <NotificationButton />
                             <UserMenu />
                         </div>
@@ -1219,41 +1219,62 @@ export default function ProfilePage() {
                                                 const calMonthEnd = `${effortCalMonth.getFullYear()}-${String(effortCalMonth.getMonth() + 1).padStart(2, "0")}-${String(calMonthLastDay).padStart(2, "0")}`;
                                                 const myTasks = tasks.filter((t) => {
                                                     if (t.member !== member) return false;
+                                                    // Task 자체 일정 겹침
                                                     const s = t.start_date || t.end_date;
                                                     const e = t.end_date || t.start_date;
-                                                    return s && e && s <= calMonthEnd && e >= calMonthStart;
+                                                    if (s && e && s <= calMonthEnd && e >= calMonthStart) return true;
+                                                    // content_items 개별 일정 겹침
+                                                    if (t.content_items && t.content_items.length > 0) {
+                                                        return t.content_items.some((ci) => {
+                                                            const cs = ci.start_date || ci.end_date;
+                                                            const ce = ci.end_date || ci.start_date;
+                                                            return cs && ce && cs <= calMonthEnd && ce >= calMonthStart;
+                                                        });
+                                                    }
+                                                    return false;
                                                 });
                                                 const calTasks = effortCalProj
                                                     ? myTasks.filter((t) => t.proj === effortCalProj)
                                                     : myTasks;
-                                                // 날짜별 공수 맵 (YYYY-MM-DD → minutes) — 업무 공수를 해당 날짜에 그대로 표시
+                                                // 날짜별 공수/업무 존재 맵 — content_items 개별 일정 반영
                                                 const dayWorkload = new Map<string, number>();
-                                                for (const t of calTasks) {
-                                                    if (t.is_plan) continue;
-                                                    const wl = t.workload || 0;
-                                                    if (!wl) continue;
-                                                    const s = t.start_date || t.end_date;
-                                                    const e = t.end_date || t.start_date;
-                                                    if (!s || !e) continue;
+                                                const dayHasTasks = new Set<string>();
+
+                                                function addRange(s: string, e: string, wl: number) {
                                                     const startD = new Date(s + "T00:00:00");
                                                     const endD = new Date(e + "T00:00:00");
-                                                    const numDays = Math.max(1, Math.floor((endD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24)) + 1);
-                                                    const dailyWl = wl / numDays;
                                                     for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
                                                         const key = toLocalYmd(d);
-                                                        dayWorkload.set(key, (dayWorkload.get(key) ?? 0) + dailyWl);
+                                                        dayHasTasks.add(key);
+                                                        if (wl > 0) dayWorkload.set(key, (dayWorkload.get(key) ?? 0) + wl);
                                                     }
                                                 }
-                                                // 날짜별 업무 존재 여부 (공수 무관)
-                                                const dayHasTasks = new Set<string>();
+
                                                 for (const t of calTasks) {
-                                                    const s = t.start_date || t.end_date;
-                                                    const e = t.end_date || t.start_date;
-                                                    if (!s || !e) continue;
-                                                    const startD2 = new Date(s + "T00:00:00");
-                                                    const endD2 = new Date(e + "T00:00:00");
-                                                    for (let d2 = new Date(startD2); d2 <= endD2; d2.setDate(d2.getDate() + 1)) {
-                                                        dayHasTasks.add(toLocalYmd(d2));
+                                                    const items = t.content_items && t.content_items.length > 0 ? t.content_items : null;
+                                                    if (items) {
+                                                        // content_items: 개별 일정 있는 항목은 개별로
+                                                        let fallbackWl = 0;
+                                                        for (const ci of items) {
+                                                            const cs = ci.start_date || ci.end_date;
+                                                            const ce = ci.end_date || ci.start_date;
+                                                            if (cs && ce) {
+                                                                addRange(cs, ce, ci.workload || 0);
+                                                            } else {
+                                                                // 개별 일정 없는 항목 공수는 Task 일정으로 폴백
+                                                                fallbackWl += ci.workload || 0;
+                                                            }
+                                                        }
+                                                        if (fallbackWl > 0) {
+                                                            const s = t.start_date || t.end_date;
+                                                            const e = t.end_date || t.start_date;
+                                                            if (s && e) addRange(s, e, fallbackWl);
+                                                        }
+                                                    } else {
+                                                        // 기존 Task 단위
+                                                        const s = t.start_date || t.end_date;
+                                                        const e = t.end_date || t.start_date;
+                                                        if (s && e) addRange(s, e, t.workload || 0);
                                                     }
                                                 }
                                                 // 달력 그리드 생성
@@ -1277,7 +1298,7 @@ export default function ProfilePage() {
                                                         {/* 프로젝트 셀렉트 */}
                                                         <div className="px-4 pt-3 pb-2">
                                                             <Select
-                                                                options={[...new Set(myTasks.map((t) => t.proj).filter(Boolean))]
+                                                                options={[...new Set(tasks.filter((t) => t.member === member).map((t) => t.proj).filter(Boolean))]
                                                                     .sort((a, b) => a.localeCompare(b, "ko"))
                                                                     .map((p) => ({ value: p, label: p }))}
                                                                 value={effortCalProj ? { value: effortCalProj, label: effortCalProj } : null}
