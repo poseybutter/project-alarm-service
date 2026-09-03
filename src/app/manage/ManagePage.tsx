@@ -1479,7 +1479,7 @@ export default function ManagePage() {
                                                                 )}
                                                                 {a.note && <span className="truncate">· {a.note}</span>}
                                                             </div>
-                                                            <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                                                            <div className="shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                                                                 <AccInspectionBadgeSelect
                                                                     status={a.inspection_status}
                                                                     disabled={!canRow}
