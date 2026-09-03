@@ -115,7 +115,7 @@ export default function ProfilePage() {
     >("week");
     const [historyProjFilter, setHistoryProjFilter] = useState("");
     const [historyStatusFilter, setHistoryStatusFilter] = useState("");
-    const [historyView] = useState<"list" | "effort">("effort");
+    const [historyView, setHistoryView] = useState<"list" | "effort">("effort");
     const [effortCalProj, setEffortCalProj] = useState<string>("");
     const [effortCalMonth, setEffortCalMonth] = useState(() => new Date());
     const [effortCalDay, setEffortCalDay] = useState<string | null>(null);
@@ -1250,9 +1250,11 @@ export default function ProfilePage() {
                                                     if (!s || !e) continue;
                                                     const startD = new Date(s + "T00:00:00");
                                                     const endD = new Date(e + "T00:00:00");
+                                                    const numDays = Math.max(1, Math.floor((endD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+                                                    const dailyWl = wl / numDays;
                                                     for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
                                                         const key = toLocalYmd(d);
-                                                        dayWorkload.set(key, (dayWorkload.get(key) ?? 0) + wl);
+                                                        dayWorkload.set(key, (dayWorkload.get(key) ?? 0) + dailyWl);
                                                     }
                                                 }
                                                 // 날짜별 업무 존재 여부 (공수 무관)
@@ -1356,8 +1358,8 @@ export default function ProfilePage() {
                                                                         if (day === null) return <span key={di} className="min-h-[3.5rem]" />;
                                                                         const key = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
                                                                         const isWeekend = di === 0 || di === 6;
-                                                                        const wl = isWeekend ? 0 : dayWorkload.get(key);
-                                                                        const hasTask = !isWeekend && dayHasTasks.has(key);
+                                                                        const wl = dayWorkload.get(key);
+                                                                        const hasTask = dayHasTasks.has(key);
                                                                         const isSelected = effortCalDay === key && !isWeekend;
                                                                         return (
                                                                             <button

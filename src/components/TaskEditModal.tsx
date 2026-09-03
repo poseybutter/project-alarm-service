@@ -263,7 +263,11 @@ export default function TaskEditModal({
             alert("업무 수정에 실패했어요");
             return;
         }
-        if (editForm.show_on_team_calendar) {
+        if (!editForm.show_on_team_calendar && task.show_on_team_calendar) {
+            void fetch(`/api/agents/team-calendar/tasks/${task.id}`, { method: "DELETE" }).catch((err) => {
+                console.warn("[team-calendar] delete failed", err);
+            });
+        } else if (editForm.show_on_team_calendar) {
             void (async () => {
                 const res = await fetch(`/api/agents/team-calendar/tasks/${task.id}`, {
                     method: "POST",
@@ -635,7 +639,9 @@ export default function TaskEditModal({
                                 type="button"
                                 onClick={() => {
                                     if (!confirm("정말 삭제할까요?")) return;
-                                    void Promise.resolve(onDelete(task.id)).then(() => handleClose());
+                                    void Promise.resolve(onDelete(task.id))
+                                        .then(() => handleClose())
+                                        .catch(() => showToast("삭제에 실패했어요"));
                                 }}
                                 className="rounded-xl border border-red-300 bg-white py-3.5 text-sm font-bold text-red-500 hover:bg-red-50 transition-colors"
                             >

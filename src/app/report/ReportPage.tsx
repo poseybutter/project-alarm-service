@@ -2407,6 +2407,7 @@ export default function ReportPage() {
                                         구분
                                     </label>
                                     <Select
+                                        aria-label="구분 선택"
                                         options={[
                                             "프로젝트",
                                             "개편",
@@ -2443,6 +2444,7 @@ export default function ReportPage() {
                                         표시할 목록
                                     </label>
                                     <Select
+                                        aria-label="표시할 목록 선택"
                                         options={[
                                             {
                                                 value: "진행중",
