@@ -284,7 +284,10 @@ export default function ProfilePage() {
             showToastMsg("프로필 이미지는 5MB 이하여야 해요.");
             return;
         }
-        const fileName = `player-${playerId}.${ext}`;
+        // 고정 경로에 upsert 하면 DB 갱신이 실패해도 기존 이미지가 이미 덮인 뒤다.
+        // 파일마다 다른 경로에 올리고, 이전 파일은 DB 갱신이 성공한 뒤에만 지운다.
+        // (같은 파일을 다시 올리면 경로가 같지만 내용이 동일하므로 덮어써도 무해하다)
+        const fileName = `player-${playerId}-${file.lastModified}-${file.size}.${ext}`;
 
         const { error: uploadError } = await supabase.storage
             .from("avatars")
@@ -300,11 +303,17 @@ export default function ProfilePage() {
             .getPublicUrl(fileName);
         const url = `${data.publicUrl}?t=${file.lastModified}`;
 
-        await supabase
+        const { error: avatarUpdateError } = await supabase
             .from("players")
             .update({ avatar_url: url })
             .eq("team_id", teamId)
             .eq("id", playerId);
+        if (avatarUpdateError) {
+            // 방금 올린 파일은 아무도 참조하지 않으므로 되돌린다.
+            await supabase.storage.from("avatars").remove([fileName]);
+            showToastMsg("프로필 이미지 저장에 실패했어요");
+            return;
+        }
 
         const previousPath = avatarStoragePath(avatarUrl);
         if (previousPath && previousPath !== fileName) {
@@ -318,16 +327,20 @@ export default function ProfilePage() {
     async function deleteAvatar() {
         if (!member || !teamId || !playerId) return;
         const objectPath = avatarStoragePath(avatarUrl);
-        if (objectPath) {
-            await supabase.storage.from("avatars").remove([objectPath]);
-        }
 
-        // players 테이블 avatar_url 초기화
-        await supabase
+        // 파일을 먼저 지우면 DB 갱신 실패 시 avatar_url 이 없는 파일을 가리킨다.
+        const { error: avatarDeleteError } = await supabase
             .from("players")
             .update({ avatar_url: null })
             .eq("team_id", teamId)
             .eq("id", playerId);
+        if (avatarDeleteError) {
+            showToastMsg("프로필 이미지 삭제에 실패했어요");
+            return;
+        }
+        if (objectPath) {
+            await supabase.storage.from("avatars").remove([objectPath]);
+        }
         showToastMsg("프로필 이미지 삭제 완료!");
         refreshAvatar();
         loadAll();

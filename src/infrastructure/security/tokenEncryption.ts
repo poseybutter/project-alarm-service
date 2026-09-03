@@ -20,6 +20,11 @@ function encryptionKey() {
     return key;
 }
 
+/** 이미 암호화된 값인지 — 평문 마이그레이션 대상만 다시 쓰기 위해 쓴다. */
+export function isEncryptedIntegrationToken(value: string | null | undefined) {
+    return Boolean(value?.startsWith(`${PREFIX}:`));
+}
+
 export function encryptIntegrationToken(value: string | null | undefined) {
     if (!value || value.startsWith(`${PREFIX}:`)) return value ?? null;
     const key = encryptionKey();
