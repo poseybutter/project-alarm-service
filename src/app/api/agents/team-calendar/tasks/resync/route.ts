@@ -13,13 +13,34 @@ import {
     TeamCalendarSyncError,
 } from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
+import { mapWithConcurrency } from "@/shared/server/concurrency";
+import {
+    consumeSharedRateLimit,
+    rateLimitResponse,
+    requestRateLimitKey,
+} from "@/shared/server/rateLimit";
 
-// 업무 수만큼 Google API 를 순차 호출하므로 기본 실행 시간으로는 잘릴 수 있다.
+// 업무 수만큼 Google API 를 호출하므로 기본 실행 시간으로는 잘릴 수 있다.
 export const maxDuration = 60;
 
 /** 한 요청에서 처리할 업무 수 상한. 남으면 nextCursor 로 이어받는다. */
 const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 200;
+
+/**
+ * 업무 동기화 동시 처리 한도. 연결 계정 하나로 호출하므로 Google 의
+ * 사용자당 요청률 한도를 넘지 않게 낮춰 잡는다. 넘치면 429 백오프가 감속한다.
+ */
+const SYNC_CONCURRENCY = 4;
+
+const MISSING_MEMBER_CALENDAR_MESSAGE =
+    "담당자별 캘린더 ID가 설정되어 있지 않습니다";
+
+/** 업무 하나의 처리 결과. 배치가 끝난 뒤 입력 순서대로 집계한다. */
+type TaskSyncOutcome =
+    | { kind: "synced" }
+    | { kind: "skipped"; id: number; message: string }
+    | { kind: "failed"; id: number; message: string };
 
 export async function POST(request: Request) {
     const { user, role, teamId } = await getServerCurrentTeamRole();
@@ -29,6 +50,13 @@ export async function POST(request: Request) {
     if (role !== "admin") {
         return NextResponse.json({ message: "Forbidden" }, { status: 403 });
     }
+
+    // 배치 이어받기 루프(최대 50회)가 정상 케이스이므로 그보다 넉넉히 잡는다.
+    const rate = await consumeSharedRateLimit(
+        requestRateLimitKey(request, "team-calendar-resync", user.email),
+        { limit: 60, windowMs: 60 * 1000 },
+    );
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
 
     const supabase = createServiceSupabaseClient();
 
@@ -104,22 +132,19 @@ export async function POST(request: Request) {
         const tasks = (page ?? []).slice(0, limit);
         const nextCursor = hasMore ? tasks[tasks.length - 1].id : null;
 
-        let synced = 0;
-        let skipped = 0;
-        const errors: Array<{ id: number; message: string }> = [];
-
-        for (const task of (tasks ?? []) as TeamCalendarTaskInput[]) {
+        // 순차 처리는 안전하지만 느리다. Google 요청률 한도 아래로 동시 처리하고,
+        // 결과는 입력 순서대로 받아 집계·응답 형태는 순차 때와 동일하게 유지한다.
+        const syncOneTask = async (
+            task: TeamCalendarTaskInput,
+        ): Promise<TaskSyncOutcome> => {
             const targetCalendarId = calendarByMember.get(task.member);
             if (!targetCalendarId) {
-                skipped += 1;
-                const message = "담당자별 캘린더 ID가 설정되어 있지 않습니다";
-                errors.push({ id: task.id, message });
-                await supabase
-                    .from("tasks")
-                    .update({ team_calendar_sync_error: message })
-                    .eq("team_id", teamId)
-                    .eq("id", task.id);
-                continue;
+                // 같은 사유의 스킵이므로 DB 기록은 배치가 끝난 뒤 한 번에 모아 쓴다.
+                return {
+                    kind: "skipped",
+                    id: task.id,
+                    message: MISSING_MEMBER_CALENDAR_MESSAGE,
+                };
             }
 
             try {
@@ -172,7 +197,7 @@ export async function POST(request: Request) {
                         });
                     }
                 }
-                synced += 1;
+                return { kind: "synced" };
             } catch (err) {
                 console.error(`[team-calendar-resync-task:${task.id}]`, err);
                 // 사용자가 고칠 수 있는 사유는 업무별로 그대로 남긴다.
@@ -180,8 +205,8 @@ export async function POST(request: Request) {
                     err instanceof TeamCalendarSyncError
                         ? err.message
                         : "팀 캘린더 재동기화 실패";
-                errors.push({ id: task.id, message });
                 // 중간까지 만들어진 이벤트 ID 를 저장해야 고아 일정이 남지 않는다.
+                // 진행분은 업무마다 다르므로 모아 쓰지 않고 즉시 기록한다.
                 const progress =
                     err instanceof TeamCalendarPartialSyncError
                         ? {
@@ -197,7 +222,41 @@ export async function POST(request: Request) {
                     .update({ ...progress, team_calendar_sync_error: message })
                     .eq("team_id", teamId)
                     .eq("id", task.id);
+                return { kind: "failed", id: task.id, message };
             }
+        };
+
+        const outcomes = await mapWithConcurrency(
+            tasks as TeamCalendarTaskInput[],
+            SYNC_CONCURRENCY,
+            syncOneTask,
+        );
+
+        let synced = 0;
+        let skipped = 0;
+        const errors: Array<{ id: number; message: string }> = [];
+        const skippedTaskIds: number[] = [];
+        for (const outcome of outcomes) {
+            if (outcome.kind === "synced") {
+                synced += 1;
+                continue;
+            }
+            errors.push({ id: outcome.id, message: outcome.message });
+            if (outcome.kind === "skipped") {
+                skipped += 1;
+                skippedTaskIds.push(outcome.id);
+            }
+        }
+
+        // 스킵 사유는 전부 같은 메시지이므로 업무별 갱신 대신 한 번에 쓴다.
+        if (skippedTaskIds.length > 0) {
+            await supabase
+                .from("tasks")
+                .update({
+                    team_calendar_sync_error: MISSING_MEMBER_CALENDAR_MESSAGE,
+                })
+                .eq("team_id", teamId)
+                .in("id", skippedTaskIds);
         }
 
         return NextResponse.json({

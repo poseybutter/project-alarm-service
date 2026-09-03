@@ -17,7 +17,12 @@ import UserMenu from "@/components/UserMenu";
 import TeamSwitcher from "@/components/TeamSwitcher";
 import NotificationButton from "@/components/NotificationButton";
 import Avatar from "@/components/Avatar";
-import TaskEditModal from "@/components/TaskEditModal";
+import dynamic from "next/dynamic";
+
+// 열기 전에는 필요 없는 모달은 초기 번들에서 제외한다.
+const TaskEditModal = dynamic(() => import("@/components/TaskEditModal"), {
+    ssr: false,
+});
 import TaskContentList from "@/components/TaskContentList";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { DayPicker, DateRange } from "react-day-picker";
@@ -350,7 +355,7 @@ export default function ProfilePage() {
         if (!member || isAttending) return;
         setIsAttending(true);
         try {
-            const result = await rpcAttendanceCheck(member);
+            const result = await rpcAttendanceCheck(member, teamId);
             if (!result.success) {
                 showToastMsg(result.message || "오류");
                 return;

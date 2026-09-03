@@ -8,7 +8,6 @@ import {
     loadNormalizedIdentity,
     listActiveTeamMembers,
 } from "@/features/identity/server/identityRepository";
-import { getMemberName } from "@/infrastructure/supabase/auth";
 import type {
     ModuleKey,
     TeamContextOption,
@@ -148,10 +147,7 @@ async function loadTeamContext(requestedTeamId?: string, strictTeamSelection = f
         teams,
         members: memberNames,
         memberOptions,
-        member:
-            currentMember?.name ||
-            getMemberName(user.email ?? "") ||
-            identity.profile.displayName,
+        member: currentMember?.name || identity.profile.displayName,
         playerId: currentPlayerId,
         avatarUrl,
         role: membership?.role ?? "viewer",
