@@ -9,6 +9,7 @@ import {
     type GoogleCalendarConnection,
     type TeamCalendarTaskInput,
     syncTeamCalendarTaskEvents,
+    TeamCalendarPartialSyncError,
     TeamCalendarSyncError,
 } from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
@@ -96,19 +97,20 @@ export async function POST() {
             }
 
             try {
+                // 항목 일정만 있는 업무는 base ID가 null 이므로, 항목 ID까지 함께 봐야
+                // 캘린더가 바뀔 때 이전 캘린더의 일정이 남지 않는다.
+                const previousEventIds = [
+                    task.team_calendar_event_id,
+                    ...(task.team_calendar_item_event_ids ?? []),
+                ].filter((id): id is string => Boolean(id));
                 const previousCalendarId =
-                    task.team_calendar_event_id &&
-                    (!task.team_calendar_id ||
-                        task.team_calendar_id !== targetCalendarId)
+                    previousEventIds.length > 0 &&
+                    (!task.team_calendar_id || task.team_calendar_id !== targetCalendarId)
                         ? task.team_calendar_id || setting.calendar_id
                         : null;
 
                 if (previousCalendarId) {
-                    for (const staleId of [
-                        task.team_calendar_event_id,
-                        ...(task.team_calendar_item_event_ids ?? []),
-                    ]) {
-                        if (!staleId) continue;
+                    for (const staleId of previousEventIds) {
                         await deleteTeamCalendarTaskEvent({
                             accessToken,
                             calendarId: previousCalendarId,
@@ -152,9 +154,20 @@ export async function POST() {
                         ? err.message
                         : "팀 캘린더 재동기화 실패";
                 errors.push({ id: task.id, message });
+                // 중간까지 만들어진 이벤트 ID 를 저장해야 고아 일정이 남지 않는다.
+                const progress =
+                    err instanceof TeamCalendarPartialSyncError
+                        ? {
+                              team_calendar_event_id: err.progress.baseEventId,
+                              team_calendar_item_event_ids: err.progress
+                                  .itemEventIds.length
+                                  ? err.progress.itemEventIds
+                                  : null,
+                          }
+                        : {};
                 await supabase
                     .from("tasks")
-                    .update({ team_calendar_sync_error: message })
+                    .update({ ...progress, team_calendar_sync_error: message })
                     .eq("team_id", teamId)
                     .eq("id", task.id);
             }
