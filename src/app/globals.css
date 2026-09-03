@@ -1,4 +1,5 @@
-@import "pretendard/dist/web/variable/pretendardvariable.css";
+/* 풀 빌드(단일 2MB woff2) 대신 unicode-range 슬라이스 빌드 — 쓰는 글리프만 내려받는다 */
+@import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 @import "tailwindcss";
 
 /* 인증 화면 — 픽셀 스프라이트 애니메이션 */
