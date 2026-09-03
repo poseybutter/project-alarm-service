@@ -20,7 +20,6 @@ import TeamSwitcher from "@/components/TeamSwitcher";
 import Avatar from "@/components/Avatar";
 import LevelUpOverlay from "@/components/LevelUpOverlay";
 import ExpPopup, { type ExpPopupType } from "@/components/ExpPopup";
-import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import TaskEditModal from "@/components/TaskEditModal";
 import { PageSpinner } from "@/components/Spinner";
@@ -159,9 +158,9 @@ export default function TasksPage() {
         }
         // 업무 삭제 성공 후 캘린더 동기화 (실패해도 업무는 이미 삭제됨)
         deleteTaskFromTeamCalendar(id).catch((err) => {
-            showToastMsg(
-                err instanceof Error ? err.message : "팀 캘린더 일정 삭제 실패",
-            );
+            const msg = err instanceof Error ? err.message : "팀 캘린더 일정 삭제 실패";
+            console.warn("[team-calendar] delete failed:", msg);
+            showToastMsg(msg);
         });
         loadTasks();
     }
@@ -197,14 +196,14 @@ export default function TasksPage() {
     return (
         <AuthGuard>
             <div className="min-h-screen bg-[#f7f6f3]">
-                {/* ?ㅻ뜑 */}
+                {/* 헤더 */}
                 <div className="bg-white border-b border-stone-200 px-4 py-3 sticky top-0 z-10">
                     <div className="max-w-2xl mx-auto flex justify-between items-center">
                         <div>
                             <h1 className="text-base font-bold text-stone-900">
                                 업무 관리
                             </h1>
-                            <p className="text-xs text-stone-400 mt-0.5">
+                            <p className="hidden sm:block text-xs text-stone-400 mt-0.5">
                                 미완료 업무를 관리하고 리포트 포함 여부를 조정합니다.
                             </p>
                         </div>
@@ -219,7 +218,7 @@ export default function TasksPage() {
                                 </button>
                             )}
                             {/* ?뚮┝ + ?좎?硫붾돱??Header 而댄룷?뚰듃 ?놁씠 吏곸젒 */}
-                            <AgentButton />
+
                             <NotificationButton />
                             <UserMenu />
                         </div>
@@ -333,7 +332,7 @@ export default function TasksPage() {
                 ))}
             </div>
 
-            {/* ?좎뒪??*/}
+            {/* 토스트 */}
             {toast && (
                 <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-stone-800 text-white text-sm px-5 py-2.5 rounded-full shadow-lg z-50 whitespace-nowrap">
                     {toast}

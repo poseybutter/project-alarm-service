@@ -1,7 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DayPicker } from "react-day-picker";
 import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
@@ -10,11 +10,10 @@ import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import UserMenu from "@/components/UserMenu";
 import TeamSwitcher from "@/components/TeamSwitcher";
-import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import Avatar from "@/components/Avatar";
-import Tooltip from "@/components/Tooltip";
+
 import { PageSpinner } from "@/components/Spinner";
 import type { Accessibility, Project } from "@/shared/types";
 import {
@@ -214,89 +213,9 @@ export default function ManagePage() {
         is_new: false,
     } as const;
 
-    useEffect(() => {
-        if (member && teamId) void loadData();
-        // loadData is intentionally defined as a local page action.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [member, teamId]);
-
-    useEffect(() => {
-        function handleAccessibilityChanged() {
-            void loadData();
-        }
-
-        window.addEventListener(
-            "accessibility:changed",
-            handleAccessibilityChanged,
-        );
-        return () =>
-            window.removeEventListener(
-                "accessibility:changed",
-                handleAccessibilityChanged,
-            );
-        // loadData is intentionally defined as a local page action.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    const projNameOptions = useMemo(
-        () =>
-            projects
-                .filter((p) => showArchived || !p.is_archived)
-                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
-                .map((p) => ({ value: p.name, label: p.name })),
-        [projects, showArchived],
-    );
-
-    const accTabProjFilterOptions = useMemo(
-        () =>
-            [...new Set(accessibility.map((a) => a.proj).filter(Boolean))]
-                .sort((a, b) => a.localeCompare(b, "ko"))
-                .map((p) => ({ value: p, label: p })),
-        [accessibility],
-    );
-
-    const accModalProjOptions = useMemo(
-        () =>
-            projects
-                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
-                .map((p) => ({ value: p.name, label: p.name })),
-        [projects],
-    );
-
-    const accModalSelectStyles = useMemo(
-        () => ({
-            ...selectStyles,
-            control: (
-                base: Record<string, unknown>,
-                state: { isFocused: boolean },
-            ) => ({
-                ...base,
-                fontSize: "14px",
-                borderColor: state.isFocused ? "#f59e0b" : "#e7e5e4",
-                borderRadius: "8px",
-                boxShadow: state.isFocused ? "0 0 0 2px #fde68a" : "none",
-                "&:hover": { borderColor: "#d6d3d1" },
-                minHeight: "42px",
-                height: "42px",
-            }),
-            valueContainer: (base: Record<string, unknown>) => ({
-                ...base,
-                height: "42px",
-                padding: "0 12px",
-            }),
-            indicatorsContainer: (base: Record<string, unknown>) => ({
-                ...base,
-                height: "42px",
-            }),
-            placeholder: (base: Record<string, unknown>) => ({
-                ...base,
-                fontSize: "14px",
-            }),
-        }),
-        [],
-    );
-
-    async function loadData() {
+    // loadData를 useEffect보다 먼저 선언 (react-hooks/immutability)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 데이터 로딩 effect
+    const loadData = useCallback(async () => {
         if (!teamId) return;
         const generation = ++loadGenerationRef.current;
         setLoading(true);
@@ -366,7 +285,86 @@ export default function ManagePage() {
                 );
             }
         }
-    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [teamId]);
+
+    useEffect(() => {
+        if (member && teamId) void loadData();
+    }, [member, teamId, loadData]);
+
+    useEffect(() => {
+        function handleAccessibilityChanged() {
+            void loadData();
+        }
+
+        window.addEventListener(
+            "accessibility:changed",
+            handleAccessibilityChanged,
+        );
+        return () =>
+            window.removeEventListener(
+                "accessibility:changed",
+                handleAccessibilityChanged,
+            );
+    }, [loadData]);
+
+    const projNameOptions = useMemo(
+        () =>
+            projects
+                .filter((p) => showArchived || !p.is_archived)
+                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+                .map((p) => ({ value: p.name, label: p.name })),
+        [projects, showArchived],
+    );
+
+    const accTabProjFilterOptions = useMemo(
+        () =>
+            [...new Set(accessibility.map((a) => a.proj).filter(Boolean))]
+                .sort((a, b) => a.localeCompare(b, "ko"))
+                .map((p) => ({ value: p, label: p })),
+        [accessibility],
+    );
+
+    const accModalProjOptions = useMemo(
+        () =>
+            projects
+                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+                .map((p) => ({ value: p.name, label: p.name })),
+        [projects],
+    );
+
+    const accModalSelectStyles = useMemo(
+        () => ({
+            ...selectStyles,
+            control: (
+                base: Record<string, unknown>,
+                state: { isFocused: boolean },
+            ) => ({
+                ...base,
+                fontSize: "14px",
+                borderColor: state.isFocused ? "#f59e0b" : "#e7e5e4",
+                borderRadius: "8px",
+                boxShadow: state.isFocused ? "0 0 0 2px #fde68a" : "none",
+                "&:hover": { borderColor: "#d6d3d1" },
+                minHeight: "42px",
+                height: "42px",
+            }),
+            valueContainer: (base: Record<string, unknown>) => ({
+                ...base,
+                height: "42px",
+                padding: "0 12px",
+            }),
+            indicatorsContainer: (base: Record<string, unknown>) => ({
+                ...base,
+                height: "42px",
+            }),
+            placeholder: (base: Record<string, unknown>) => ({
+                ...base,
+                fontSize: "14px",
+            }),
+        }),
+        [],
+    );
 
     function showToastMsg(msg: string) {
         setToast(msg);
@@ -658,9 +656,9 @@ export default function ManagePage() {
             }
         }
         if (nextStatus === "신청완료") {
-            const snoozedUntil = new Date(
-                Date.now() + 14 * 24 * 60 * 60 * 1000,
-            ).toISOString();
+            const TWO_WEEKS_MS = 14 * 24 * 60 * 60 * 1000;
+            // eslint-disable-next-line react-hooks/purity -- 이벤트 핸들러 내부 호출
+            const snoozedUntil = new Date(Date.now() + TWO_WEEKS_MS).toISOString();
             const res = await fetch("/api/accessibility-mission-snoozes", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -835,7 +833,6 @@ export default function ManagePage() {
                                     + 접근성 추가
                                 </button>
                             )}
-                            <AgentButton />
                             <NotificationButton />
                             <UserMenu />
                         </div>
@@ -861,6 +858,18 @@ export default function ManagePage() {
                             접근성
                         </button>
                     </div>
+
+                    {teamId === "ud2" && (
+                        <a
+                            href="https://docs.google.com/spreadsheets/d/1ACScLXCcap3Vvz9eH7sXX0yOcZKcV8blH53h6C63ObE/edit?gid=1191028141#gid=1191028141"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mb-4 flex items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-500 transition-colors hover:bg-stone-50 hover:border-amber-300"
+                        >
+                            퍼블팀 웹접근성 및 유지보수 현황 엑셀 바로가기
+                            <i className="ri-external-link-line text-amber-500" aria-hidden />
+                        </a>
+                    )}
 
                     {loading ? (
                         <PageSpinner />
@@ -1111,85 +1120,6 @@ export default function ManagePage() {
                                                                 size={20}
                                                             />
                                                         ))}
-                                                    {!isGuest && (
-                                                        <div
-                                                            className="flex gap-1.5"
-                                                            onClick={(e) =>
-                                                                e.stopPropagation()
-                                                            }
-                                                        >
-                                                            <Tooltip label="수정">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() =>
-                                                                        openProjModalForEdit(
-                                                                            p,
-                                                                        )
-                                                                    }
-                                                                    aria-label="수정"
-                                                                    className="text-base text-stone-400 hover:text-amber-600 font-medium"
-                                                                >
-                                                                    <i
-                                                                        className="ri-edit-line"
-                                                                        aria-hidden
-                                                                    />
-                                                                </button>
-                                                            </Tooltip>
-                                                            <Tooltip label="삭제">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() =>
-                                                                        void deleteProject(
-                                                                            p.id,
-                                                                        )
-                                                                    }
-                                                                    aria-label="삭제"
-                                                                    className="text-base text-stone-400 hover:text-red-500"
-                                                                >
-                                                                    <i
-                                                                        className="ri-delete-bin-line"
-                                                                        aria-hidden
-                                                                    />
-                                                                </button>
-                                                            </Tooltip>
-                                                            <Tooltip
-                                                                label={
-                                                                    p.is_archived
-                                                                        ? "복원"
-                                                                        : "보관"
-                                                                }
-                                                            >
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={(
-                                                                        e,
-                                                                    ) => {
-                                                                        e.stopPropagation();
-                                                                        void toggleArchive(
-                                                                            p.id,
-                                                                            p.is_archived ??
-                                                                                false,
-                                                                        );
-                                                                    }}
-                                                                    aria-label={
-                                                                        p.is_archived
-                                                                            ? "복원"
-                                                                            : "보관"
-                                                                    }
-                                                                    className="text-base text-stone-400 hover:text-stone-600"
-                                                                >
-                                                                    <i
-                                                                        className={
-                                                                            p.is_archived
-                                                                                ? "ri-inbox-unarchive-line"
-                                                                                : "ri-archive-line"
-                                                                        }
-                                                                        aria-hidden
-                                                                    />
-                                                                </button>
-                                                            </Tooltip>
-                                                        </div>
-                                                    )}
                                                     {isOpen ? (
                                                         <i
                                                             className="ri-arrow-up-s-line text-stone-400"
@@ -1296,6 +1226,13 @@ export default function ManagePage() {
                                                             <span className="text-xs text-stone-600 leading-relaxed">
                                                                 {p.note}
                                                             </span>
+                                                        </div>
+                                                    )}
+                                                    {!isGuest && (
+                                                        <div className="flex gap-2 mt-3 pt-2 border-t border-stone-100">
+                                                            <button type="button" onClick={() => openProjModalForEdit(p)} className="flex-1 rounded-lg bg-amber-500 py-2 text-xs font-medium text-white hover:bg-amber-600 transition-colors">수정</button>
+                                                            <button type="button" onClick={() => void deleteProject(p.id)} className="flex-1 rounded-lg border border-red-300 py-2 text-xs font-medium text-red-500 hover:bg-red-50 transition-colors">삭제</button>
+                                                            <button type="button" onClick={() => void toggleArchive(p.id, p.is_archived ?? false)} className="flex-1 rounded-lg bg-stone-700 py-2 text-xs font-medium text-white hover:bg-stone-800 transition-colors">{p.is_archived ? "복원" : "보관"}</button>
                                                         </div>
                                                     )}
                                                 </div>
@@ -1501,115 +1438,56 @@ export default function ManagePage() {
                                         return (
                                             <div
                                                 key={a.id}
-                                                className={`flex items-center justify-between px-4 py-3
+                                                role={canRow ? "button" : undefined}
+                                                tabIndex={canRow ? 0 : undefined}
+                                                className={`px-4 py-3 transition-colors
                       ${isSkipped ? "bg-stone-50 opacity-70" : isUrgent ? "bg-red-50" : isWarning ? "bg-amber-50" : ""}
-                      ${i < filteredAcc.length - 1 ? "border-b border-stone-100" : ""}`}
+                      ${i < filteredAcc.length - 1 ? "border-b border-stone-100" : ""}
+                      ${canRow ? "cursor-pointer hover:bg-stone-50/60" : ""}`}
+                                                onClick={() => canRow && openAccModalForEdit(a)}
+                                                onKeyDown={(e) => {
+                                                    if (canRow && (e.key === "Enter" || e.key === " ")) {
+                                                        e.preventDefault();
+                                                        openAccModalForEdit(a);
+                                                    }
+                                                }}
                                             >
-                                                <div className="flex items-center gap-2 flex-1 min-w-0">
-                                                    <Avatar
-                                                        name={a.member}
-                                                        size={24}
-                                                    />
-                                                    <div className="min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                    <Avatar name={a.member} size={24} />
+                                                    <div className="min-w-0 flex-1">
                                                         <div className="flex items-center gap-1.5 flex-wrap">
                                                             {a.is_new && (
-                                                                <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded font-bold shrink-0">
-                                                                    NEW
-                                                                </span>
+                                                                <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded font-bold shrink-0">NEW</span>
                                                             )}
-                                                            <p className="text-sm font-medium text-stone-800 truncate">
-                                                                {a.proj}
-                                                            </p>
-                                                        </div>
-                                                        <div className="flex items-center gap-2 text-xs mt-0.5 flex-wrap">
-                                                            {a.end_date && (
-                                                                <span
-                                                                    className={
-                                                                        isDueWithin45
-                                                                            ? "text-red-500 font-bold"
-                                                                              : "text-stone-400"
-                                                                    }
-                                                                >
-                                                                    만료:{" "}
-                                                                    {a.end_date.slice(
-                                                                        0,
-                                                                        10,
-                                                                    )}
-                                                                    {diff !==
-                                                                        null &&
-                                                                        ` (${diff < 0 ? "기한초과 " + Math.abs(diff) + "일" : "D-" + diff})`}
-                                                                </span>
-                                                            )}
-                                                            {a.note && (
-                                                                <span className="text-stone-400 truncate">
-                                                                    · {a.note}
-                                                                </span>
-                                                            )}
+                                                            <p className="text-sm font-medium text-stone-800 truncate">{a.proj}</p>
                                                         </div>
                                                         <div className="mt-1 flex items-center gap-1.5 text-[11px] text-stone-400">
-                                                            <i
-                                                                className="ri-history-line text-xs"
-                                                                aria-hidden
-                                                            />
+                                                            <i className="ri-history-line text-xs" aria-hidden />
                                                             <span className="min-w-0 truncate">
                                                                 {a.status_updated_at
                                                                     ? `상태 변경: ${a.previous_inspection_status ? `${a.previous_inspection_status} → ` : ""}${a.inspection_status} · ${formatAccStatusUpdatedAt(a.status_updated_at)}${a.status_updated_by ? ` · ${a.status_updated_by}` : ""}`
                                                                     : `상태 기록 없음 · 현재 ${a.inspection_status}`}
                                                             </span>
                                                         </div>
+                                                        <div className="mt-1 flex w-full items-center justify-between text-xs text-stone-400">
+                                                            <div className="flex items-center gap-2">
+                                                                {a.end_date && (
+                                                                    <span className={isDueWithin45 ? "text-red-500 font-bold" : ""}>
+                                                                        만료: {a.end_date.slice(0, 10)}
+                                                                        {diff !== null && ` (${diff < 0 ? "기한초과 " + Math.abs(diff) + "일" : "D-" + diff})`}
+                                                                    </span>
+                                                                )}
+                                                                {a.note && <span className="truncate">· {a.note}</span>}
+                                                            </div>
+                                                            <div className="shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                                                                <AccInspectionBadgeSelect
+                                                                    status={a.inspection_status}
+                                                                    disabled={!canRow}
+                                                                    onChange={(next) => void updateAccStatus(a.id, next)}
+                                                                />
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                                <div className="flex items-center gap-2 shrink-0">
-                                                    <AccInspectionBadgeSelect
-                                                        status={
-                                                            a.inspection_status
-                                                        }
-                                                        disabled={!canRow}
-                                                        onChange={(next) =>
-                                                            void updateAccStatus(
-                                                                a.id,
-                                                                next,
-                                                            )
-                                                        }
-                                                    />
-                                                    {canRow && (
-                                                        <>
-                                                            <Tooltip label="수정">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() =>
-                                                                        openAccModalForEdit(
-                                                                            a,
-                                                                        )
-                                                                    }
-                                                                    aria-label="수정"
-                                                                    className="text-base text-stone-400 hover:text-amber-600 font-medium whitespace-nowrap"
-                                                                >
-                                                                    <i
-                                                                        className="ri-edit-line"
-                                                                        aria-hidden
-                                                                    />
-                                                                </button>
-                                                            </Tooltip>
-                                                            <Tooltip label="삭제">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() =>
-                                                                        void deleteAcc(
-                                                                            a.id,
-                                                                        )
-                                                                    }
-                                                                    aria-label="삭제"
-                                                                    className="text-base text-stone-400 hover:text-red-500 whitespace-nowrap"
-                                                                >
-                                                                    <i
-                                                                        className="ri-delete-bin-line"
-                                                                        aria-hidden
-                                                                    />
-                                                                </button>
-                                                            </Tooltip>
-                                                        </>
-                                                    )}
                                                 </div>
                                             </div>
                                         );
@@ -2241,13 +2119,35 @@ export default function ManagePage() {
                                         }
                                     />
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={() => void saveAccessibility()}
-                                    className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm"
-                                >
-                                    {editAcc ? "저장하기" : "등록하기"}
-                                </button>
+                                {editAcc ? (
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                void deleteAcc(editAcc.id);
+                                                closeAccModal();
+                                            }}
+                                            className="rounded-xl border border-red-300 bg-white py-3.5 text-sm font-bold text-red-500 hover:bg-red-50 transition-colors"
+                                        >
+                                            삭제하기
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => void saveAccessibility()}
+                                            className="bg-stone-800 text-white font-bold py-3.5 rounded-xl text-sm hover:bg-stone-900 transition-colors"
+                                        >
+                                            저장하기
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={() => void saveAccessibility()}
+                                        className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm"
+                                    >
+                                        등록하기
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>

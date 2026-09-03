@@ -17,8 +17,8 @@ import {
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import Header from "@/components/Header";
-import Tooltip from "@/components/Tooltip";
-import type { Quest, Player, Task, Project } from "@/shared/types";
+import type { Quest, Player, Task, Project, ContentItem } from "@/shared/types";
+import { getContentItems, contentItemsPayload } from "@/shared/utils/contentItems";
 import {
     findProjectId,
     getDiff,
@@ -34,7 +34,6 @@ import {
     BAR_COLORS,
     TYPE_COLORS,
     STATUS_COLORS,
-    WORKLOAD_PRESETS,
 } from "@/shared/constants";
 import Avatar from "@/components/Avatar";
 import LevelUpOverlay from "@/components/LevelUpOverlay";
@@ -72,6 +71,7 @@ import TiptapQuestContentEditor from "@/components/TiptapQuestContentEditor";
 import TaskContentInputs from "@/components/TaskContentInputs";
 import TaskContentList from "@/components/TaskContentList";
 import { sanitizeHtml } from "@/shared/utils/sanitizeHtml";
+import { stripHtmlTags } from "@/features/gamification/questContentDisplay";
 import SeasonBanner from "@/components/SeasonBanner";
 
 function QuestCardContent({
@@ -125,6 +125,7 @@ type QuestFormModalProps = {
     setQuestForm: React.Dispatch<React.SetStateAction<QuestFormType>>;
     onSubmit: () => void;
     onClose: () => void;
+    onDelete?: () => void;
     projects: Project[];
     editorMountKey: string;
 };
@@ -152,6 +153,7 @@ function QuestFormModal({
     setQuestForm,
     onSubmit,
     onClose,
+    onDelete,
     projects,
     editorMountKey,
 }: QuestFormModalProps) {
@@ -316,12 +318,29 @@ function QuestFormModal({
                                 document.body,
                             )}
                     </div>
-                    <button
-                        onClick={onSubmit}
-                        className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm"
-                    >
-                        {title === "퀘스트 추가" ? "추가하기" : "저장하기"}
-                    </button>
+                    {onDelete ? (
+                        <div className="grid grid-cols-2 gap-2">
+                            <button
+                                onClick={() => { if (confirm("정말 삭제할까요?")) onDelete(); }}
+                                className="rounded-xl border border-red-300 bg-white py-3.5 text-sm font-bold text-red-500 hover:bg-red-50 transition-colors"
+                            >
+                                삭제하기
+                            </button>
+                            <button
+                                onClick={onSubmit}
+                                className="bg-stone-800 text-white font-bold py-3.5 rounded-xl text-sm hover:bg-stone-900 transition-colors"
+                            >
+                                저장하기
+                            </button>
+                        </div>
+                    ) : (
+                        <button
+                            onClick={onSubmit}
+                            className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm"
+                        >
+                            추가하기
+                        </button>
+                    )}
                 </div>
             </div>
         </div>
@@ -343,64 +362,19 @@ function periodButtonLabel(range: DateRange | undefined): {
 const EMPTY_EDIT_TASK = {
     type: "",
     proj: "",
-    content: "",
+    contentItems: [{ text: "", workload: 0 }] as ContentItem[],
     priority: "",
-    workload: 0,
     issue: "",
     status: "",
     is_plan: false,
     is_starred: false,
 };
 
-function HomeWorkloadInput({
-    value,
-    onChange,
-}: {
-    value: number;
-    onChange: (v: number) => void;
-}) {
-    return (
-        <div>
-            <div className="mb-1.5 flex items-center justify-between">
-                <label className="text-xs font-medium text-stone-500">
-                    공수
-                </label>
-                {value > 0 && (
-                    <span className="text-xs font-medium text-amber-600">
-                        {formatWorkload(value)}
-                    </span>
-                )}
-            </div>
-            <input
-                type="number"
-                className="mb-2 w-full rounded-lg border border-stone-200 px-3 py-2.5 text-sm"
-                placeholder="분 직접 입력"
-                value={value || ""}
-                onChange={(e) => onChange(parseInt(e.target.value) || 0)}
-            />
-            <div className="flex flex-wrap gap-1.5">
-                {WORKLOAD_PRESETS.map((p) => (
-                    <button
-                        type="button"
-                        key={p.label}
-                        onClick={() => onChange(p.value)}
-                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all
-                ${value === p.value ? "border-amber-500 bg-amber-500 text-white" : "border-stone-200 bg-stone-50 text-stone-600"}`}
-                    >
-                        {p.label}
-                    </button>
-                ))}
-            </div>
-        </div>
-    );
-}
-
 function HomeMyTaskRow({
     task: t,
     showBorderBottom,
     onStatusChange,
     onEdit,
-    onDelete,
     onCompleting,
 }: {
     task: Task;
@@ -422,134 +396,63 @@ function HomeMyTaskRow({
         diff === null ? "" : diff < 0 ? `D+${Math.abs(diff)}` : `D-${diff}`;
     return (
         <div
-            className={`px-4 py-3 ${showBorderBottom ? "border-b border-stone-100" : ""} ${t.priority === "긴급" ? "bg-amber-50" : ""}`}
+            role={onEdit ? "button" : undefined}
+            tabIndex={onEdit ? 0 : undefined}
+            className={`px-4 py-3 transition-colors ${showBorderBottom ? "border-b border-stone-100" : ""} ${t.priority === "긴급" ? "bg-amber-50" : ""} ${onEdit ? "cursor-pointer hover:bg-stone-50/60" : ""}`}
+            onClick={() => onEdit?.(t)}
+            onKeyDown={(e) => {
+                if (onEdit && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    onEdit(t);
+                }
+            }}
         >
-            <div className="flex gap-3">
-                {/* ?쇱そ: ?띿뒪???뺣낫 */}
-                <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                        {t.is_starred && (
-                            <span className="shrink-0 text-xs" title="핵심 프로젝트">
-                                ⭐
-                            </span>
-                        )}
-                        {t.type && (
-                            <span
-                                className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[t.type] || "bg-gray-100 text-gray-600"}`}
-                            >
-                                {t.type}
-                            </span>
-                        )}
-                        <span className="truncate text-sm font-medium text-stone-800">
-                            {t.proj}
-                        </span>
-                    </div>
-                    {t.content && (
-                        <TaskContentList
-                            content={t.content}
-                            className="mt-1 text-xs leading-relaxed text-stone-600"
-                        />
+            <div>
+                <div className="flex flex-wrap items-center gap-2">
+                    {t.is_starred && <span className="shrink-0 text-xs" title="핵심 프로젝트">⭐</span>}
+                    {t.type && (
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[t.type] || "bg-gray-100 text-gray-600"}`}>{t.type}</span>
                     )}
-                    {t.issue && (
-                        <p className="mt-1.5 rounded-lg border border-amber-200 bg-amber-100/80 px-2 py-1 text-xs text-amber-800">
-                            이슈: {t.issue}
-                        </p>
-                    )}
-                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-stone-400">
-                        {t.workload > 0 && (
-                            <span>{formatWorkload(t.workload)}</span>
-                        )}
+                    <span className="truncate text-sm font-medium text-stone-800">{t.proj}</span>
+                </div>
+                {t.content && <TaskContentList content={t.content} contentItems={t.content_items} className="mt-1 text-xs leading-relaxed text-stone-600" />}
+                {t.issue && (
+                    <p className="mt-1.5 rounded-lg border border-amber-200 bg-amber-100/80 px-2 py-1 text-xs text-amber-800">이슈: {t.issue}</p>
+                )}
+                <div className="mt-1 flex w-full items-center justify-between text-xs text-stone-400">
+                    <div className="flex items-center gap-2">
+                        {t.workload > 0 && <span>{formatWorkload(t.workload)}</span>}
                         {t.start_date && t.end_date && (
                             <span className={ddayRed ? "font-medium text-red-500" : ""}>
-                                {t.start_date.slice(5).replace("-", "/")} ~{" "}
-                                {t.end_date.slice(5).replace("-", "/")}
-                                {ddayLabel && ` · ${ddayLabel}`}
+                                {t.start_date.slice(5).replace("-", "/")} ~ {t.end_date.slice(5).replace("-", "/")}{ddayLabel && ` · ${ddayLabel}`}
                             </span>
                         )}
                         {!t.start_date && t.end_date && (
                             <span className={ddayRed ? "font-medium text-red-500" : ""}>
-                                ~{t.end_date.slice(5).replace("-", "/")}
-                                {ddayLabel && ` · ${ddayLabel}`}
+                                ~{t.end_date.slice(5).replace("-", "/")}{ddayLabel && ` · ${ddayLabel}`}
                             </span>
                         )}
-                        {t.workload === 0 && !t.start_date && !t.end_date && (
-                            <span>기간 미정</span>
-                        )}
+                        {t.workload === 0 && !t.start_date && !t.end_date && <span>기간 미정</span>}
                     </div>
-                </div>
-
-                {/* ?ㅻⅨ履? ?곹깭 select + ?섏젙/??젣 踰꾪듉 */}
-                <div className="flex shrink-0 flex-col justify-between items-end gap-1.5">
-                    <div
-                        ref={statusWrapRef}
-                        className={`rounded-lg ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}
-                    >
-                        <Select
-                            options={[
-                                "대기",
-                                "시작 전",
-                                "진행중",
-                                "지연/보류",
-                                "완료",
-                            ].map((s) => ({ value: s, label: s }))}
-                            value={{ value: t.status, label: t.status }}
-                            onChange={(opt) => {
-                                if (!opt) return;
-                                const r =
-                                    statusWrapRef.current?.getBoundingClientRect();
-                                if (opt.value === "완료" && t.status !== "완료") {
-                                    onCompleting?.(t.id);
-                                }
-                                void onStatusChange(t.id, opt.value, t, {
-                                    x: (r?.left ?? 0) + (r?.width ?? 0) / 2,
-                                    y: (r?.top ?? 0) + (r?.height ?? 0) / 2,
-                                });
-                            }}
-                            isSearchable={false}
-                            isClearable={false}
-                            styles={badgeSelectStyles}
-                            menuPortalTarget={
-                                typeof document !== "undefined"
-                                    ? document.body
-                                    : null
-                            }
-                            menuPlacement="auto"
-                        />
-                    </div>
-                    {(onEdit || onDelete) && (
-                        <div className="flex items-center gap-2">
-                            {onEdit && (
-                                <Tooltip label="수정">
-                                    <button
-                                        type="button"
-                                        onClick={() => onEdit(t)}
-                                        aria-label="수정"
-                                        className="text-base text-stone-300 transition-colors hover:text-amber-500"
-                                    >
-                                        <i
-                                            className="ri-edit-line"
-                                            aria-hidden
-                                        />
-                                    </button>
-                                </Tooltip>
-                            )}
-                            {onDelete && (
-                                <Tooltip label="삭제">
-                                    <button
-                                        type="button"
-                                        onClick={() => onDelete(t.id)}
-                                        aria-label="삭제"
-                                        className="text-base text-stone-300 transition-colors hover:text-red-400"
-                                    >
-                                        <i
-                                            className="ri-delete-bin-line"
-                                            aria-hidden
-                                        />
-                                    </button>
-                                </Tooltip>
-                            )}
+                    <div className="shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                        <div ref={statusWrapRef} className={`rounded-lg ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}>
+                            <Select
+                                options={["대기", "시작 전", "진행중", "지연/보류", "완료"].map((s) => ({ value: s, label: s }))}
+                                value={{ value: t.status, label: t.status }}
+                                onChange={(opt) => {
+                                    if (!opt) return;
+                                    const r = statusWrapRef.current?.getBoundingClientRect();
+                                    if (opt.value === "완료" && t.status !== "완료") onCompleting?.(t.id);
+                                    void onStatusChange(t.id, opt.value, t, { x: (r?.left ?? 0) + (r?.width ?? 0) / 2, y: (r?.top ?? 0) + (r?.height ?? 0) / 2 });
+                                }}
+                                isSearchable={false}
+                                isClearable={false}
+                                styles={badgeSelectStyles}
+                                menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                                menuPlacement="auto"
+                            />
                         </div>
-                    )}
+                    </div>
                 </div>
             </div>
         </div>
@@ -625,7 +528,7 @@ function TodayTaskItem({
         <div
             ref={setNodeRef}
             style={style}
-            className={`flex items-center gap-3 px-4 py-3 bg-stone-50/60 ${
+            className={`flex items-start gap-3 px-4 py-3 ${
                 isCompleting
                     ? "quest-completing"
                     : isDragging
@@ -649,38 +552,26 @@ function TodayTaskItem({
                     ⠿
                 </button>
             )}
-            <span className="shrink-0 text-base leading-none">🗡️</span>
             <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-1.5">
-                    {t.is_starred && (
-                        <span className="shrink-0 text-xs" title="핵심 프로젝트">
-                            ⭐
-                        </span>
-                    )}
+                <p className="text-sm font-medium text-stone-800">{t.proj}</p>
+                {t.content && (
+                    <p className="mt-0.5 text-sm text-stone-500 line-clamp-1">{t.content.split("\n")[0]}</p>
+                )}
+                <div className="mt-0.5 flex flex-wrap items-center gap-2">
                     {t.type && (
-                        <span
-                            className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[t.type] || "bg-gray-100 text-gray-600"}`}
-                        >
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${TYPE_COLORS[t.type] || "bg-gray-100 text-gray-600"}`}>
                             {t.type}
                         </span>
                     )}
-                    <span className="truncate text-sm font-medium text-stone-700">
-                        {t.proj}
-                    </span>
+                    {t.is_starred && <span className="text-xs" title="핵심 프로젝트">⭐</span>}
                 </div>
-                {t.content && (
-                    <p className="mt-0.5 break-words text-xs text-stone-500 line-clamp-1">
-                        {t.content}
-                    </p>
-                )}
             </div>
             <button
                 type="button"
                 onClick={() => onExclude(t.id)}
-                className="shrink-0 text-stone-300 transition-colors hover:text-red-400 text-lg leading-none"
-                title="오늘 목록에서 빼기"
+                className="shrink-0 self-center rounded px-2 py-1 text-xs font-medium text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500"
             >
-                −
+                거절하기
             </button>
         </div>
     );
@@ -695,7 +586,6 @@ function SortableQuestItem({
     myTasks,
     onComplete,
     onEdit,
-    onDelete,
 }: {
     sortableId: string;
     quest: Quest;
@@ -705,7 +595,6 @@ function SortableQuestItem({
     myTasks: Task[];
     onComplete: (q: Quest, e: React.MouseEvent) => void;
     onEdit: (q: Quest) => void;
-    onDelete: (id: number) => void;
 }) {
     const {
         attributes,
@@ -728,6 +617,8 @@ function SortableQuestItem({
             ? myTasks.find((t) => Number(t.id) === Number(q.task_id))?.proj
             : undefined;
 
+    const projName = q.proj || linkedProj;
+
     return (
         <div
             ref={setNodeRef}
@@ -744,7 +635,6 @@ function SortableQuestItem({
                     : ""
             }`}
         >
-            {/* ?쒕옒洹??몃뱾 */}
             {showDragHandle && (
                 <button
                     type="button"
@@ -757,7 +647,6 @@ function SortableQuestItem({
                     ⠿
                 </button>
             )}
-            {/* ?꾨즺 踰꾪듉 / ?꾩씠肄?*/}
             <button
                 onClick={(ev) => { if (!isCompleting) onComplete(q, ev); }}
                 disabled={isCompleting}
@@ -769,51 +658,29 @@ function SortableQuestItem({
             <div className={`min-w-0 flex-1 ${isCompleting ? "opacity-60" : ""}`}>
                 <QuestCardContent content={q.content} completing={isCompleting} />
                 <div className="mt-0.5 flex flex-wrap items-center gap-2">
-                    {(q.proj || linkedProj) && (
-                        <span className="truncate text-xs text-stone-400">
-                            {q.proj || linkedProj}
-                        </span>
+                    {projName && (
+                        <span className="truncate text-xs text-stone-500">{projName}</span>
                     )}
                     {q.end_date && (
-                        <span
-                            className={`text-xs font-medium ${diff !== null && diff <= 3 ? "text-red-500" : "text-stone-400"}`}
-                        >
+                        <span className={`text-xs font-medium ${diff !== null && diff <= 3 ? "text-red-500" : "text-stone-500"}`}>
                             {q.end_date.slice(5).replace("-", "/")}
-                            {diff !== null &&
-                                ` D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
+                            {diff !== null && ` D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
                         </span>
+                    )}
+                    {!isCompleting && (
+                        <span className="text-xs font-bold text-green-600">+10 EXP</span>
                     )}
                 </div>
             </div>
-            <div className="flex shrink-0 items-start gap-1.5 pt-0.5">
-                {!isCompleting && (
-                    <span className="text-xs font-medium text-green-600">
-                        +10 EXP
-                    </span>
-                )}
-                {!isCompleting && (
-                                <Tooltip label="수정">
-                        <button
-                            onClick={() => onEdit(q)}
-                            aria-label="수정"
-                            className="text-base text-stone-300 transition-colors hover:text-amber-500"
-                        >
-                            <i className="ri-edit-line" aria-hidden />
-                        </button>
-                    </Tooltip>
-                )}
-                {!isCompleting && (
-                    <Tooltip label="삭제">
-                        <button
-                            onClick={() => onDelete(q.id)}
-                            aria-label="삭제"
-                            className="text-base text-stone-300 transition-colors hover:text-red-400"
-                        >
-                            <i className="ri-delete-bin-line" aria-hidden />
-                        </button>
-                    </Tooltip>
-                )}
-            </div>
+            {!isCompleting && (
+                <button
+                    onClick={() => onEdit(q)}
+                    aria-label="수정"
+                    className="shrink-0 self-center text-base text-stone-400 transition-colors hover:text-amber-500"
+                >
+                    <i className="ri-edit-line" aria-hidden />
+                </button>
+            )}
         </div>
     );
 }
@@ -832,6 +699,7 @@ export default function HomePage() {
 
     const channelIdRef = useRef(Math.random().toString(36).slice(2));
     const loadGenerationRef = useRef(0);
+    const [showQuestModal, setShowQuestModal] = useState(false);
     const [player, setPlayer] = useState<Player | null>(null);
     const [quests, setQuests] = useState<Quest[]>([]);
     const [myTasks, setMyTasks] = useState<Task[]>([]);
@@ -859,6 +727,7 @@ export default function HomePage() {
     const [editDateRange, setEditDateRange] = useState<DateRange | undefined>();
     const [showEditDatePicker, setShowEditDatePicker] = useState(false);
     const [editProjTab, setEditProjTab] = useState<"mine" | "all">("mine");
+    const [declineConfirm, setDeclineConfirm] = useState<{ type: "task" | "quest"; id: number } | null>(null);
 
     const sensors = useSensors(
         useSensor(PointerSensor, {
@@ -1197,7 +1066,7 @@ export default function HomePage() {
         try {
             const result = await rpcAttendanceCheck(member);
             if (!result.success) {
-                showToastMsg(result.message || "?ㅻ쪟");
+                showToastMsg(result.message || "오류");
                 return;
             }
             pushExpPopup(
@@ -1300,11 +1169,6 @@ export default function HomePage() {
         loadData();
     }
 
-    async function deleteQuest(id: number) {
-        if (!confirm("삭제할까요?")) return;
-        await supabase.from("quests").delete().eq("id", id);
-        loadData();
-    }
 
     async function undoQuest(quest: Quest) {
         // ?꾨즺 痍⑥냼 ???쒕쾭 RPC 媛 ?곹깭 ?섎룎由?+ ?먯닔 李④컧(-10).
@@ -1327,11 +1191,24 @@ export default function HomePage() {
         }, 650);
     }
 
-    async function excludeToday(taskId: number) {
-        await supabase
-            .from("tasks")
-            .update({ is_excluded_today: true })
-            .eq("id", taskId);
+    function excludeToday(taskId: number) {
+        setDeclineConfirm({ type: "task", id: taskId });
+    }
+
+    async function confirmDecline() {
+        if (!declineConfirm) return;
+        if (declineConfirm.type === "task") {
+            const { error } = await supabase
+                .from("tasks")
+                .update({ is_excluded_today: true })
+                .eq("id", declineConfirm.id);
+            if (error) { showToastMsg("처리 중 오류가 발생했어요"); return; }
+        } else {
+            const { error } = await supabase.from("quests").delete().eq("id", declineConfirm.id);
+            if (error) { showToastMsg("퀘스트 삭제 중 오류가 발생했어요"); return; }
+        }
+        setDeclineConfirm(null);
+        showToastMsg("흠... 다음엔 꼭 해오거라.");
         loadData();
     }
 
@@ -1403,13 +1280,11 @@ export default function HomePage() {
                 });
             }
         }
-        void syncTaskToTeamCalendar(id).catch((err) => {
-            showToastMsg(
-                err instanceof Error
-                    ? err.message
-                    : "팀 캘린더 동기화 실패",
-            );
-        });
+        if (task.show_on_team_calendar) {
+            void syncTaskToTeamCalendar(id).catch((err) => {
+                showToastMsg(err instanceof Error ? err.message : "팀 캘린더 동기화 실패");
+            });
+        }
         loadData();
     }
 
@@ -1439,8 +1314,9 @@ export default function HomePage() {
         return json;
     }
 
-    async function deleteMyTask(id: number) {
-        if (!confirm("삭제할까요?")) return;
+    /** 팀 캘린더 정리 -> 업무 삭제. 취소/실패 시 false 를 반환한다. */
+    async function deleteMyTask(id: number): Promise<boolean> {
+        if (!confirm("삭제할까요?")) return false;
         try {
             await deleteTaskFromTeamCalendar(id);
         } catch (err) {
@@ -1449,11 +1325,16 @@ export default function HomePage() {
                     `${err instanceof Error ? err.message : "팀 캘린더 일정 삭제 실패"}\n그래도 업무를 삭제할까요?`,
                 )
             ) {
-                return;
+                return false;
             }
         }
-        await supabase.from("tasks").delete().eq("id", id);
+        const { error } = await supabase.from("tasks").delete().eq("id", id);
+        if (error) {
+            showToastMsg("업무 삭제 중 오류가 발생했어요");
+            return false;
+        }
         loadData();
+        return true;
     }
 
     function openEditTask(task: Task) {
@@ -1461,9 +1342,8 @@ export default function HomePage() {
         setEditForm({
             type: task.type || "",
             proj: task.proj || "",
-            content: task.content || "",
+            contentItems: getContentItems(task),
             priority: task.priority || "",
-            workload: task.workload || 0,
             issue: task.issue || "",
             status: task.status || "대기",
             is_plan: task.is_plan ?? false,
@@ -1497,13 +1377,14 @@ export default function HomePage() {
             alert("업무 캘린더 등록을 위해 기간 또는 마감일을 선택해주세요");
             return;
         }
+        const ciPayload = contentItemsPayload(editForm.contentItems);
         await supabase
             .from("tasks")
             .update({
                 type: editForm.type,
                 proj: editForm.proj,
                 project_id: selectedProjectId,
-                content: editForm.content,
+                ...ciPayload,
                 priority: editForm.priority || null,
                 start_date: editDateRange?.from
                     ? toLocalYmd(editDateRange.from)
@@ -1513,7 +1394,6 @@ export default function HomePage() {
                     : editDateRange?.from
                       ? toLocalYmd(editDateRange.from)
                       : null,
-                workload: editForm.workload || 0,
                 issue: editForm.issue || null,
                 status: editForm.status,
                 is_plan: editForm.is_plan ?? false,
@@ -1602,8 +1482,8 @@ export default function HomePage() {
                             <SeasonBanner teamId={teamId} currentMember={member} />
                         )}
 
-                        {/* ?꾨줈??移대뱶 */}
-                        <div className="bg-white rounded-2xl border border-stone-200 p-4 mb-3">
+                        {/* 프로필 카드 */}
+                        <div className="rounded-2xl border border-stone-200 bg-gradient-to-br from-white to-amber-50/40 p-4 mb-3 shadow-sm">
                             <div className="flex items-center gap-3 mb-3">
                                 {isGuest ? (
                                     <div className="w-10 h-10 rounded-full bg-stone-100 flex items-center justify-center text-xl">
@@ -1803,171 +1683,259 @@ export default function HomePage() {
                             </>
                         ) : (
                             <>
-                                {/* ?ㅽ꺈 */}
-                                <div className="grid grid-cols-3 gap-2 mb-3">
-                                    {[
-                                        {
-                                            icon: "☀️",
-                                            label: "출석체크",
-                                            value: attended ? "완료" : "미완료",
-                                            onClick: player
-                                                ? (ev: React.MouseEvent) =>
-                                                      void handleAttend(ev)
-                                                : null,
-                                            highlight: !attended && Boolean(player),
-                                        },
-                                        {
-                                            icon: "📋",
-                                            label: "퀘스트",
-                                            value: allQuestItems.length,
-                                            onClick: null,
-                                            highlight: false,
-                                        },
-                                        {
-                                            icon: "📊",
-                                            label: "월 EXP",
-                                            value: stats.exp,
-                                            onClick: null,
-                                            highlight: false,
-                                        },
-                                    ].map((s) => (
-                                        <button
-                                            key={s.label}
-                                            onClick={s.onClick || undefined}
-                                            disabled={!s.onClick}
-                                            className={`rounded-xl border p-2.5 text-center transition-all
-                  ${s.highlight ? "bg-amber-500 border-amber-500 text-white" : "bg-white border-stone-200 text-stone-800"}
-                  ${!s.onClick ? "cursor-default" : ""}`}
-                                        >
-                                            <div className="text-lg">
-                                                {s.icon}
-                                            </div>
-                                            <div className="text-sm font-bold mt-0.5">
-                                                {s.value}
-                                            </div>
-                                            <div
-                                                className={`text-xs mt-0.5 ${s.highlight ? "text-amber-100" : "text-stone-400"}`}
-                                            >
-                                                {s.label}
-                                            </div>
-                                        </button>
-                                    ))}
-                                </div>
-
-                                {/* ?ㅻ뒛???섏뒪??*/}
+                                {/* NPC 퀘스트 */}
                                 <div className="mb-3">
-                                    <div className="mb-2 flex items-end justify-between">
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="text-xs font-bold uppercase tracking-wide text-stone-500">
-                                                📋 오늘의 퀘스트
-                                            </span>
-                                            <span className="text-xs text-stone-400">
-                                                {completedCount}/
-                                                {totalQuestCount} 완료
-                                                {allQuestsDone &&
-                                                    totalQuestCount > 0 &&
-                                                    " 🎉"}
-                                            </span>
+                                    <div className="w-full text-center">
+                                        {/* NPC 클릭 영역 (말풍선 + 이미지 + 이름표) */}
+                                        {/* 말풍선 */}
+                                        <div className="relative mx-auto w-fit rounded-xl border border-stone-200 bg-white px-4 py-2.5 mb-8 shadow-sm">
+                                            <p className="text-sm font-medium text-stone-700">전사가 되고 싶은 자는 나에게...</p>
+                                            <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 size-2.5 rotate-45 border-b border-r border-stone-200 bg-white" />
                                         </div>
-                                        <button
-                                            onClick={() => {
-                                                setQuestAddEditorNonce(
-                                                    (n) => n + 1,
-                                                );
-                                                setShowAddQuest(true);
-                                            }}
-                                            className="rounded-lg bg-amber-500 px-2.5 py-1 text-xs font-medium text-white"
-                                        >
-                                            + 추가
-                                        </button>
-                                    </div>
-                                    <div className="mb-2 h-2 overflow-hidden rounded-full bg-stone-200">
-                                        <div
-                                            className={`h-full rounded-full transition-all duration-500 ${allQuestsDone ? "bg-green-400" : "bg-amber-400"}`}
-                                            style={{ width: `${progressPct}%` }}
-                                        />
-                                    </div>
-                                    <p className="mb-2 text-xs text-stone-400">
-                                        💡 오늘 기간인 업무가 자동으로 추가돼요. 드래그(⠿)로 우선순위를 정할 수 있어요!
-                                    </p>
-
-                                    {allQuestItems.length === 0 &&
-                                    completedQuestsThisSession.length === 0 ? (
-                                        <div className="rounded-xl border border-stone-200 bg-white py-10 text-center">
-                                            <p className="text-sm text-stone-400">
-                                                오늘 퀘스트가 없어요
-                                            </p>
-                                            <p className="mt-1 text-xs text-stone-300">
-                                                + 추가 버튼으로 퀘스트를 만들어보세요!
-                                            </p>
+                                        {/* NPC + 전구 버튼 */}
+                                        <div className="relative inline-block">
+                                            {(totalQuestCount === 0 || totalQuestCount - completedCount > 0) && (
+                                                <button
+                                                    type="button"
+                                                    aria-label="퀘스트 보기"
+                                                    onClick={() => setShowQuestModal(true)}
+                                                    className="absolute -top-5 -right-6 z-[5] transition-transform hover:scale-110 active:scale-95"
+                                                >
+                                                    <div className="rounded-xl border border-stone-300 bg-white px-2 py-1.5 shadow animate-bounce">
+                                                        <span className="text-lg">💡</span>
+                                                    </div>
+                                                    <svg className="absolute -bottom-2 left-1.5" width="12" height="10" viewBox="0 0 12 10" fill="none">
+                                                        <path d="M6 0C6 0 2 4 0 10" stroke="#d6d3d1" strokeWidth="1" fill="none" />
+                                                        <path d="M6.5 0C6.5 0 2.5 4 0.5 9.5" stroke="white" strokeWidth="2" fill="none" />
+                                                    </svg>
+                                                </button>
+                                            )}
+                                            {allQuestsDone && totalQuestCount > 0 && (
+                                                <button
+                                                    type="button"
+                                                    aria-label="모든 퀘스트 완료"
+                                                    onClick={() => setShowQuestModal(true)}
+                                                    className="absolute -top-5 -right-6 z-[5] transition-transform hover:scale-110 active:scale-95"
+                                                >
+                                                    <div className="rounded-xl border border-stone-300 bg-white px-2 py-1.5 shadow">
+                                                        <span className="text-lg">✅</span>
+                                                    </div>
+                                                    <svg className="absolute -bottom-2 left-1.5" width="12" height="10" viewBox="0 0 12 10" fill="none">
+                                                        <path d="M6 0C6 0 2 4 0 10" stroke="#d6d3d1" strokeWidth="1" fill="none" />
+                                                        <path d="M6.5 0C6.5 0 2.5 4 0.5 9.5" stroke="white" strokeWidth="2" fill="none" />
+                                                    </svg>
+                                                </button>
+                                            )}
+                                            <img src="/npc.webp" alt="NPC" className="w-20 h-20 object-contain" />
                                         </div>
-                                    ) : (
-                                        <SortableContext
-                                            items={allQuestItems.map((item) => item.id)}
-                                            strategy={verticalListSortingStrategy}
-                                        >
-                                            <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
-                                                {allQuestItems.map((item, i) => {
-                                                    const showBorderBottom =
-                                                        i < allQuestItems.length - 1 ||
-                                                        completedQuestsThisSession.length > 0;
-                                                    const showDragHandle = allQuestItems.length > 1;
-                                                    if (item.type === "task") {
-                                                        return (
-                                                            <TodayTaskItem
-                                                                key={item.id}
-                                                                id={item.id}
-                                                                task={item.data}
-                                                                showBorderBottom={showBorderBottom}
-                                                                showDragHandle={showDragHandle}
-                                                                isCompleting={completingTaskIds.has(item.data.id)}
-                                                                onExclude={excludeToday}
-                                                            />
-                                                        );
-                                                    }
-                                                    return (
-                                                        <SortableQuestItem
-                                                            key={item.id}
-                                                            sortableId={item.id}
-                                                            quest={item.data}
-                                                            showBorderBottom={showBorderBottom}
-                                                            showDragHandle={showDragHandle}
-                                                            isCompleting={completingQuestIds.has(item.data.id)}
-                                                            myTasks={myTasks}
-                                                            onComplete={completeQuest}
-                                                            onEdit={openEditQuest}
-                                                            onDelete={deleteQuest}
-                                                        />
-                                                    );
-                                                })}
-                                                {completedQuestsThisSession.length >
-                                                    0 && (
-                                                    <>
-                                                        {allQuestItems.length > 0 && (
-                                                            <div className="border-t border-stone-100" />
-                                                        )}
-                                                        {completedQuestsThisSession.map(
-                                                            (q, i) => (
-                                                                <CompletedQuestItem
-                                                                    key={q.id}
-                                                                    quest={q}
-                                                                    showBorderBottom={
-                                                                        i <
-                                                                        completedQuestsThisSession.length -
-                                                                            1
-                                                                    }
-                                                                    onUndo={
-                                                                        undoQuest
-                                                                    }
-                                                                />
-                                                            ),
-                                                        )}
-                                                    </>
+                                        <div className="mt-0.5 mx-auto w-24 rounded bg-stone-800/80 py-px text-center leading-none">
+                                            <span className="text-xs font-bold text-amber-300">주먹펴고 일어서</span>
+                                        </div>
+                                        {/* 퀘스트 목록 (클릭 영역 밖) */}
+                                        {allQuestItems.length > 0 && (
+                                            <div className="mt-3 space-y-1 text-left">
+                                                {allQuestItems.slice(0, 5).map((item) => (
+                                                    <div key={item.id} className="flex items-start gap-1.5">
+                                                        <span className="shrink-0 text-sm leading-none mt-0.5">
+                                                            {item.type === "task" ? "🗡️" : completingQuestIds.has(item.data.id) ? "✨" : "⚔️"}
+                                                        </span>
+                                                        <p className={`text-sm leading-snug line-clamp-1 ${item.type === "quest" && completingQuestIds.has((item.data as Quest).id) ? "line-through text-stone-400" : "text-stone-700"}`}>
+                                                            {item.type === "task" ? (item.data as Task).proj : stripHtmlTags((item.data as Quest).content)}
+                                                        </p>
+                                                    </div>
+                                                ))}
+                                                {allQuestItems.length > 5 && (
+                                                    <p className="text-[11px] text-stone-400">+{allQuestItems.length - 5}개 더</p>
                                                 )}
                                             </div>
-                                        </SortableContext>
-                                    )}
+                                        )}
+                                        {/* 프로그레스 */}
+                                        {totalQuestCount > 0 && (
+                                            <div className="mt-2 flex items-center gap-2">
+                                                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-stone-200">
+                                                    <div
+                                                        className={`h-full rounded-full transition-all duration-500 ${allQuestsDone ? "bg-green-400" : "bg-amber-400"}`}
+                                                        style={{ width: `${progressPct}%` }}
+                                                    />
+                                                </div>
+                                                <span className="shrink-0 text-[11px] font-bold text-stone-400">{completedCount}/{totalQuestCount}</span>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
+
+                                {/* 퀘스트 모달 */}
+                                {showQuestModal && (
+                                    <div
+                                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+                                        onClick={() => setShowQuestModal(false)}
+                                    >
+                                        <div
+                                            className="w-full max-w-lg overflow-hidden rounded-xl border-2 border-amber-800/50 shadow-2xl"
+                                            style={{ background: "linear-gradient(to bottom, #f5e6c8, #efe0c0)" }}
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            {/* NPC 대화 영역 */}
+                                            <div className="px-4 pt-4 pb-3 border-b-2 border-amber-800/20">
+                                                <div className="flex gap-3">
+                                                    <div className="shrink-0 flex flex-col items-center gap-1">
+                                                        <div className="rounded-lg border-2 border-amber-800/30 bg-amber-50 p-1.5 shadow-inner">
+                                                            <img src="/npc.webp" alt="NPC" className="w-16 h-16 object-contain" />
+                                                        </div>
+                                                        <span className="text-[11px] font-bold text-amber-900/70">주먹펴고 일어서</span>
+                                                    </div>
+                                                    <div className="min-w-0 flex-1 rounded-lg border border-amber-800/20 bg-white/50 px-4 py-3 shadow-inner">
+                                                        <p className="whitespace-pre-line text-sm leading-relaxed text-amber-950">
+                                                            {allQuestsDone && totalQuestCount > 0
+                                                                ? "모든 퀘스트를 완료했구나! 대단해. 내일 다시 오거라."
+                                                                : totalQuestCount === 0
+                                                                ? "오늘은 할 일이 없구나... 아래에서 퀘스트를 추가해보거라."
+                                                                : "아래 퀘스트를 수행하거라! ...\n⠿ 표시를 끌어서 순서를 바꿀 수 있다.\n중요한 것부터 위에 두거라."}
+                                                        </p>
+                                                        {totalQuestCount > 0 && (
+                                                            <div className="mt-2 flex items-center gap-2">
+                                                                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-amber-200/50">
+                                                                    <div
+                                                                        className={`h-full rounded-full transition-all duration-500 ${allQuestsDone ? "bg-green-500" : "bg-amber-600"}`}
+                                                                        style={{ width: `${progressPct}%` }}
+                                                                    />
+                                                                </div>
+                                                                <span className="shrink-0 text-xs font-bold text-amber-800">{completedCount}/{totalQuestCount}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            {/* 퀘스트 목록 */}
+                                            <div className="max-h-[60vh] overflow-y-auto bg-white/80">
+                                                <div className="flex items-center justify-between px-4 py-2.5 border-b border-amber-800/15 bg-amber-100/30">
+                                                    <span className="text-sm font-bold text-amber-900">⚔️ 퀘스트 목록</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setQuestAddEditorNonce((n) => n + 1); setShowAddQuest(true); }}
+                                                        className="rounded bg-amber-700 px-2.5 py-1 text-xs font-bold text-amber-100 hover:bg-amber-800 transition-colors"
+                                                    >
+                                                        + 추가
+                                                    </button>
+                                                </div>
+                                                {allQuestItems.length === 0 && completedQuestsThisSession.length === 0 ? (
+                                                    <div className="py-10 text-center">
+                                                        <p className="text-sm text-stone-500">퀘스트가 없어요</p>
+                                                        <p className="mt-1 text-xs text-stone-400">+ 추가 버튼으로 퀘스트를 만들어보세요!</p>
+                                                    </div>
+                                                ) : (
+                                                    <SortableContext
+                                                        items={allQuestItems.map((item) => item.id)}
+                                                        strategy={verticalListSortingStrategy}
+                                                    >
+                                                        <div className="divide-y divide-stone-100">
+                                                            {allQuestItems.map((item, i) => {
+                                                                const showBorderBottom = i < allQuestItems.length - 1 || completedQuestsThisSession.length > 0;
+                                                                const showDragHandle = allQuestItems.length > 1;
+                                                                if (item.type === "task") {
+                                                                    return (
+                                                                        <TodayTaskItem
+                                                                            key={item.id}
+                                                                            id={item.id}
+                                                                            task={item.data}
+                                                                            showBorderBottom={showBorderBottom}
+                                                                            showDragHandle={showDragHandle}
+                                                                            isCompleting={completingTaskIds.has(item.data.id)}
+                                                                            onExclude={excludeToday}
+                                                                        />
+                                                                    );
+                                                                }
+                                                                return (
+                                                                    <SortableQuestItem
+                                                                        key={item.id}
+                                                                        sortableId={item.id}
+                                                                        quest={item.data}
+                                                                        showBorderBottom={showBorderBottom}
+                                                                        showDragHandle={showDragHandle}
+                                                                        isCompleting={completingQuestIds.has(item.data.id)}
+                                                                        myTasks={myTasks}
+                                                                        onComplete={completeQuest}
+                                                                        onEdit={openEditQuest}
+                                                                    />
+                                                                );
+                                                            })}
+                                                            {completedQuestsThisSession.length > 0 && (
+                                                                <>
+                                                                    {completedQuestsThisSession.map((q, i) => (
+                                                                        <CompletedQuestItem
+                                                                            key={q.id}
+                                                                            quest={q}
+                                                                            showBorderBottom={i < completedQuestsThisSession.length - 1}
+                                                                            onUndo={undoQuest}
+                                                                        />
+                                                                    ))}
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    </SortableContext>
+                                                )}
+                                            </div>
+                                            {/* 하단 닫기 */}
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowQuestModal(false)}
+                                                className="w-full border-t-2 border-amber-800/20 bg-amber-900/10 py-3 text-sm font-bold text-amber-900/70 transition-colors hover:bg-amber-900/20"
+                                            >
+                                                닫기
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* NPC 거절 확인 모달 */}
+                                {declineConfirm && (
+                                    <div
+                                        className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4"
+                                        onClick={() => setDeclineConfirm(null)}
+                                    >
+                                        <div
+                                            className="w-full max-w-sm overflow-hidden rounded-xl border-2 border-amber-800/50 shadow-2xl"
+                                            style={{ background: "linear-gradient(to bottom, #f5e6c8, #efe0c0)" }}
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            <div className="flex gap-3 px-4 pt-4 pb-3">
+                                                <div className="shrink-0">
+                                                    <div className="rounded-lg border-2 border-amber-800/30 bg-amber-50 p-1.5">
+                                                        <img src="/npc.webp" alt="NPC" className="w-14 h-14 object-contain" />
+                                                    </div>
+                                                </div>
+                                                <div className="min-w-0 flex-1 rounded-lg border border-amber-800/20 bg-white/50 px-4 py-3">
+                                                    <p className="text-sm font-medium text-amber-950">
+                                                        {declineConfirm.type === "quest"
+                                                            ? "정말이냐? 후회하게 만들어주겠다..."
+                                                            : "포기하겠다고? 후회하게 만들어주겠다..."}
+                                                    </p>
+                                                    <p className="mt-1 text-xs text-amber-800/60">
+                                                        {declineConfirm.type === "quest"
+                                                            ? "이 퀘스트는 완전히 사라지게 된다."
+                                                            : "오늘 목록에서 사라지지만 내일 다시 나타날 수 있다."}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2 px-4 pb-4">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void confirmDecline()}
+                                                    className="rounded-lg bg-red-500 py-2.5 text-sm font-bold text-white transition-colors hover:bg-red-600"
+                                                >
+                                                    포기한다
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setDeclineConfirm(null)}
+                                                    className="rounded-lg bg-amber-600 py-2.5 text-sm font-bold text-white transition-colors hover:bg-amber-700"
+                                                >
+                                                    역시 하겠다
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* 내 업무 */}
                                 <div className="mb-3">
@@ -2094,6 +2062,16 @@ export default function HomePage() {
                                     proj: "",
                                     end_date: "",
                                 });
+                            }}
+                            onDelete={async () => {
+                                const { error } = await supabase.from("quests").delete().eq("id", editTarget.id);
+                                if (error) {
+                                    showToastMsg("퀘스트 삭제 중 오류가 발생했어요");
+                                    return;
+                                }
+                                setShowEditQuest(false);
+                                setEditTarget(null);
+                                loadData();
                             }}
                         />
                     )}
@@ -2369,20 +2347,11 @@ export default function HomePage() {
                                         />
                                     </div>
                                     <TaskContentInputs
-                                        value={editForm.content}
-                                        onChange={(content) =>
+                                        items={editForm.contentItems}
+                                        onChange={(contentItems) =>
                                             setEditForm({
                                                 ...editForm,
-                                                content,
-                                            })
-                                        }
-                                    />
-                                    <HomeWorkloadInput
-                                        value={editForm.workload}
-                                        onChange={(v) =>
-                                            setEditForm({
-                                                ...editForm,
-                                                workload: v,
+                                                contentItems,
                                             })
                                         }
                                     />
@@ -2476,13 +2445,30 @@ export default function HomePage() {
                                                 document.body,
                                             )}
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => void saveEditTask()}
-                                        className="w-full rounded-xl bg-amber-500 py-3.5 text-sm font-bold text-white"
-                                    >
-                                        저장하기
-                                    </button>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (!editTask) return;
+                                                const targetId = editTask.id;
+                                                void (async () => {
+                                                    if (!(await deleteMyTask(targetId))) return;
+                                                    setShowEditTask(false);
+                                                    setEditTask(null);
+                                                })();
+                                            }}
+                                            className="rounded-xl border border-red-300 bg-white py-3.5 text-sm font-bold text-red-500 hover:bg-red-50 transition-colors"
+                                        >
+                                            삭제하기
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => void saveEditTask()}
+                                            className="rounded-xl bg-stone-800 py-3.5 text-sm font-bold text-white hover:bg-stone-900 transition-colors"
+                                        >
+                                            저장하기
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -2524,7 +2510,7 @@ export default function HomePage() {
                         />
                     ))}
 
-                    {/* ?좎뒪??*/}
+                    {/* 토스트 */}
                     {toast && (
                         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-stone-800 text-white text-sm px-5 py-2.5 rounded-full shadow-lg z-50 whitespace-nowrap">
                             {toast}

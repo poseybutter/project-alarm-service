@@ -6,7 +6,6 @@ import type { Task } from "@/shared/types";
 import { getDiff, formatWorkload } from "@/shared/utils/utils";
 import { TYPE_COLORS, STATUS_COLORS, normalizeStatus } from "@/shared/constants";
 import { badgeSelectStyles } from "@/shared/styles/reactSelectStyles";
-import Tooltip from "@/components/Tooltip";
 import TaskContentList from "@/components/TaskContentList";
 
 const STATUS_OPTIONS = [
@@ -87,7 +86,6 @@ export default function TaskCard({
     canEdit,
     onStatusChange,
     onEdit,
-    onDelete,
 }: TaskCardProps) {
     const diff = getDiff(t.end_date);
     const isUrgent = diff !== null && diff <= 7 && t.status !== "완료";
@@ -134,6 +132,7 @@ export default function TaskCard({
                     {t.content && (
                         <TaskContentList
                             content={t.content}
+                            contentItems={t.content_items}
                             className={`mb-1 text-xs leading-relaxed ${isDone ? "text-stone-300 line-through" : "text-stone-500"}`}
                         />
                     )}
@@ -150,27 +149,29 @@ export default function TaskCard({
                         </div>
                     )}
                     {/* 기간 + 공수 + 상태 */}
-                    <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-xs text-stone-400">
-                        {t.is_plan && (
-                            <span className="text-[10px] px-1.5 py-0.5 bg-violet-100 text-violet-600 rounded font-bold shrink-0">
-                                리포트 포함
-                            </span>
-                        )}
-                        {t.workload > 0 && <span>{formatWorkload(t.workload)}</span>}
-                        {t.start_date && t.end_date && (
-                            <span className={isUrgent ? "text-red-500 font-medium" : ""}>
-                                {t.start_date.slice(5).replace("-", "/")} ~{" "}
-                                {t.end_date.slice(5).replace("-", "/")}
-                                {diff !== null && ` · D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
-                            </span>
-                        )}
-                        {!t.start_date && t.end_date && (
-                            <span className={isUrgent ? "text-red-500 font-medium" : ""}>
-                                ~{t.end_date.slice(5).replace("-", "/")}
-                                {diff !== null && ` · D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
-                            </span>
-                        )}
-                        <div className="ml-auto shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                    <div className="mt-1 flex w-full items-center justify-between text-xs text-stone-400">
+                        <div className="flex items-center gap-2">
+                            {t.is_plan && (
+                                <span className="text-[10px] px-1.5 py-0.5 bg-violet-100 text-violet-600 rounded font-bold shrink-0">
+                                    리포트 포함
+                                </span>
+                            )}
+                            {t.workload > 0 && <span>{formatWorkload(t.workload)}</span>}
+                            {t.start_date && t.end_date && (
+                                <span className={isUrgent ? "text-red-500 font-medium" : ""}>
+                                    {t.start_date.slice(5).replace("-", "/")} ~{" "}
+                                    {t.end_date.slice(5).replace("-", "/")}
+                                    {diff !== null && ` · D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
+                                </span>
+                            )}
+                            {!t.start_date && t.end_date && (
+                                <span className={isUrgent ? "text-red-500 font-medium" : ""}>
+                                    ~{t.end_date.slice(5).replace("-", "/")}
+                                    {diff !== null && ` · D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
+                                </span>
+                            )}
+                        </div>
+                        <div className="shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                             <TaskStatusBadgeSelect
                                 task={t}
                                 disabled={disabled}

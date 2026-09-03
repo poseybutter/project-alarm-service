@@ -7,10 +7,11 @@ import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
 import Select from "react-select";
 import { supabase } from "@/infrastructure/supabase/client";
-import type { Project } from "@/shared/types";
+import type { Project, ContentItem } from "@/shared/types";
 import type { TeamMemberOption } from "@/features/team-context/types";
-import { findProjectId, findTeamMemberId, formatWorkload } from "@/shared/utils/utils";
-import { WORKLOAD_PRESETS, getMemberColors } from "@/shared/constants";
+import { findProjectId, findTeamMemberId } from "@/shared/utils/utils";
+import { contentItemsPayload } from "@/shared/utils/contentItems";
+import { getMemberColors } from "@/shared/constants";
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import Avatar from "@/components/Avatar";
 import TaskContentInputs from "@/components/TaskContentInputs";
@@ -25,11 +26,10 @@ const EMPTY_FORM = {
     member: "",
     type: "",
     proj: "",
-    content: "",
+    contentItems: [{ text: "", workload: 0 }] as ContentItem[],
     priority: "",
     start_date: "",
     end_date: "",
-    workload: 0,
     issue: "",
     is_plan: false,
     is_starred: false,
@@ -49,47 +49,6 @@ function periodButtonLabel(range: DateRange | undefined): {
 }
 
 /** 공수(분) 직접 입력과 프리셋 선택 UI. */
-function WorkloadInput({
-    value,
-    onChange,
-}: {
-    value: number;
-    onChange: (v: number) => void;
-}) {
-    return (
-        <div>
-            <div className="flex justify-between items-center mb-1.5">
-                <label className="text-xs font-medium text-stone-500">공수</label>
-                {value > 0 && (
-                    <span className="text-xs text-amber-600 font-medium">
-                        {formatWorkload(value)}
-                    </span>
-                )}
-            </div>
-            <input
-                type="number"
-                className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm mb-2"
-                placeholder="분 직접 입력"
-                value={value || ""}
-                onChange={(e) => onChange(parseInt(e.target.value) || 0)}
-            />
-            <div className="flex gap-1.5 flex-wrap">
-                {WORKLOAD_PRESETS.map((p) => (
-                    <button
-                        type="button"
-                        key={p.label}
-                        onClick={() => onChange(p.value)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
-                ${value === p.value ? "bg-amber-500 text-white border-amber-500" : "bg-stone-50 text-stone-600 border-stone-200"}`}
-                    >
-                        {p.label}
-                    </button>
-                ))}
-            </div>
-        </div>
-    );
-}
-
 interface AddTaskModalProps {
     open: boolean;
     onClose: () => void;
@@ -214,7 +173,7 @@ export default function AddTaskModal({
                         type: form.type,
                         proj: form.proj,
                         project_id: selectedProjectId,
-                        content: form.content,
+                        ...contentItemsPayload(form.contentItems),
                         priority: form.priority || null,
                         start_date: formDateRange?.from
                             ? toLocalYmd(formDateRange.from)
@@ -222,12 +181,11 @@ export default function AddTaskModal({
                         end_date: formDateRange?.to
                             ? toLocalYmd(formDateRange.to)
                             : null,
-                        workload: form.workload || 0,
                         issue: form.issue || null,
                         status: "대기",
                         is_plan: form.is_plan ?? false,
                         is_starred: form.is_starred ?? false,
-                        show_on_team_calendar: true,
+                        show_on_team_calendar: form.show_on_team_calendar ?? true,
                         team_id: teamId,
                     },
                 ])
@@ -492,14 +450,9 @@ export default function AddTaskModal({
                         />
                     </div>
                     <TaskContentInputs
-                        value={form.content}
-                        onChange={(content) => setForm({ ...form, content })}
+                        items={form.contentItems}
+                        onChange={(contentItems) => setForm({ ...form, contentItems })}
                         placeholder="예: 메인 슬라이드 리브리핑"
-                    />
-                    {/* 공수 */}
-                    <WorkloadInput
-                        value={form.workload}
-                        onChange={(v) => setForm({ ...form, workload: v })}
                     />
                     {/* 기간 선택 모달 */}
                     <div className="relative z-20">
