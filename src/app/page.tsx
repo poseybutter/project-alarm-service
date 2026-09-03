@@ -434,7 +434,7 @@ function HomeMyTaskRow({
                         )}
                         {t.workload === 0 && !t.start_date && !t.end_date && <span>기간 미정</span>}
                     </div>
-                    <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <div className="shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                         <div ref={statusWrapRef} className={`rounded-lg ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}>
                             <Select
                                 options={["대기", "시작 전", "진행중", "지연/보류", "완료"].map((s) => ({ value: s, label: s }))}
