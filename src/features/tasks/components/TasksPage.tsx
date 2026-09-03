@@ -27,6 +27,18 @@ import TaskFilters from "@/features/tasks/components/TaskFilters";
 
 
 /** 업무 목록 페이지. 필터링·그룹화·상태 변경·삭제·경험치 팝업·팀 캘린더 동기화를 조정한다. */
+/**
+ * 상태 변경 RPC 실패 사유를 구분한다.
+ * 권한 거부는 RLS(42501) 또는 함수의 명시적 예외(P0001)로 오고,
+ * 그 밖의 실패(없는 업무 P0002, 네트워크 오류 등)까지 권한 문제로 알리면 오해를 준다.
+ */
+function statusChangeErrorMessage(error: unknown) {
+    const code = (error as { code?: string } | null)?.code;
+    return code === "42501" || code === "P0001"
+        ? "권한이 없어 상태를 변경할 수 없어요"
+        : "상태를 변경하지 못했어요";
+}
+
 export default function TasksPage() {
     const {
         member: currentMember,
@@ -111,11 +123,15 @@ export default function TasksPage() {
         // 상태 변경과 점수 반영을 서버 RPC 가 한 번에 처리한다
         // (완료·긴급·정시 판정까지 모두 서버에서 결정한다)
         // 권한이 없으면 RPC 가 throw 하므로 null 로 떨어진다
+        let rpcError: unknown = null;
         const result = await rpcSetTaskStatus(id, status, task.member).catch(
-            () => null,
+            (err) => {
+                rpcError = err;
+                return null;
+            },
         );
         if (!result) {
-            showToastMsg("권한이 없어 상태를 변경할 수 없어요");
+            showToastMsg(statusChangeErrorMessage(rpcError));
             return;
         }
         // 완료로 '진입'할 때(sign > 0)만 EXP 팝업과 레벨업 연출을 띄운다

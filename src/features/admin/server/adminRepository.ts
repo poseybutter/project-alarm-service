@@ -1405,10 +1405,21 @@ export async function createAdminTeam(input: {
   const { error: moduleError } = await service
     .from("team_modules")
     .insert(moduleRows);
-  // 팀 행은 이미 만들어진 뒤라, 모듈만 빠진 상태를 그대로 알려야 뒤처리를 할 수 있다.
+  // 팀 행은 이미 커밋된 뒤다. 모듈 없는 팀을 남기면 같은 ID 로 재시도할 때
+  // 기본 키 충돌이 나므로, 방금 만든 팀을 되돌리고 처음부터 다시 하게 한다.
   if (moduleError) {
+    const { error: rollbackError } = await service
+      .from("teams")
+      .delete()
+      .eq("id", data.id);
+    if (rollbackError) {
+      throw new AdminApiError(
+        `팀 "${data.name}"은 생성됐지만 모듈 초기화에 실패했고 되돌리지도 못했습니다. 팀 설정에서 모듈을 다시 저장해 주세요.`,
+        500,
+      );
+    }
     throw new AdminApiError(
-      `팀 "${data.name}"은 생성됐지만 모듈 초기화에 실패했습니다. 팀 설정에서 모듈을 다시 저장해 주세요.`,
+      "모듈 초기화에 실패해 팀 생성을 취소했습니다. 다시 시도해 주세요.",
       500,
     );
   }
