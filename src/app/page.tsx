@@ -72,6 +72,7 @@ import TiptapQuestContentEditor from "@/components/TiptapQuestContentEditor";
 import TaskContentInputs from "@/components/TaskContentInputs";
 import TaskContentList from "@/components/TaskContentList";
 import { sanitizeHtml } from "@/shared/utils/sanitizeHtml";
+import { stripHtmlTags } from "@/features/gamification/questContentDisplay";
 import SeasonBanner from "@/components/SeasonBanner";
 
 function QuestCardContent({
@@ -1773,7 +1774,7 @@ export default function HomePage() {
                                                             {item.type === "task" ? "🗡️" : completingQuestIds.has(item.data.id) ? "✨" : "⚔️"}
                                                         </span>
                                                         <p className={`text-sm leading-snug line-clamp-1 ${item.type === "quest" && completingQuestIds.has((item.data as Quest).id) ? "line-through text-stone-400" : "text-stone-700"}`}>
-                                                            {item.type === "task" ? (item.data as Task).proj : (item.data as Quest).content.replace(/<[^>]*>/g, "")}
+                                                            {item.type === "task" ? (item.data as Task).proj : stripHtmlTags((item.data as Quest).content)}
                                                         </p>
                                                     </div>
                                                 ))}
