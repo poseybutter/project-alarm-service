@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/infrastructure/supabase/client";
-import type { Task, Project } from "@/shared/types";
-import { findProjectId, formatWorkload, normalizeProject } from "@/shared/utils/utils";
-import { WORKLOAD_PRESETS } from "@/shared/constants";
+import type { Task, Project, ContentItem } from "@/shared/types";
+import { findProjectId, normalizeProject } from "@/shared/utils/utils";
+import { getContentItems, contentItemsPayload } from "@/shared/utils/contentItems";
 import { useAuth } from "@/components/AuthProvider";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { DayPicker, DateRange } from "react-day-picker";
@@ -38,60 +38,14 @@ function parseYmdToLocalDate(value: string | null): Date | undefined {
 const EMPTY_EDIT = {
     type: "",
     proj: "",
-    content: "",
+    contentItems: [{ text: "", workload: 0 }] as ContentItem[],
     priority: "",
-    workload: 0,
     issue: "",
     status: "",
     is_plan: false,
     is_starred: false,
     show_on_team_calendar: true,
 };
-
-function WorkloadInput({
-    value,
-    onChange,
-}: {
-    value: number;
-    onChange: (v: number) => void;
-}) {
-    return (
-        <div>
-            <div className="flex justify-between items-center mb-1.5">
-                <label className="text-xs font-medium text-stone-500">
-                    공수
-                </label>
-                {value > 0 && (
-                    <span className="text-xs text-amber-600 font-medium">
-                        {formatWorkload(value)}
-                    </span>
-                )}
-            </div>
-            <input
-                type="number"
-                className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm mb-2"
-                placeholder="분 직접 입력"
-                value={value || ""}
-                onChange={(e) =>
-                    onChange(parseInt(e.target.value, 10) || 0)
-                }
-            />
-            <div className="flex gap-1.5 flex-wrap">
-                {WORKLOAD_PRESETS.map((p) => (
-                    <button
-                        type="button"
-                        key={p.label}
-                        onClick={() => onChange(p.value)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
-                ${value === p.value ? "bg-amber-500 text-white border-amber-500" : "bg-stone-50 text-stone-600 border-stone-200"}`}
-                    >
-                        {p.label}
-                    </button>
-                ))}
-            </div>
-        </div>
-    );
-}
 
 export type TaskEditModalProps = {
     task: Task | null;
@@ -125,9 +79,8 @@ export default function TaskEditModal({
         setEditForm({
             type: task.type || "",
             proj: task.proj || "",
-            content: task.content || "",
+            contentItems: getContentItems(task),
             priority: task.priority || "",
-            workload: task.workload || 0,
             issue: task.issue || "",
             status: task.status || "대기",
             is_plan: task.is_plan ?? false,
@@ -237,13 +190,14 @@ export default function TaskEditModal({
             showToast("업무 캘린더 등록을 위해 기간 또는 마감일을 선택해주세요");
             return;
         }
+        const ciPayload = contentItemsPayload(editForm.contentItems);
         const { error } = await supabase
             .from("tasks")
             .update({
                 type: editForm.type,
                 proj: editForm.proj,
                 project_id: selectedProjectId,
-                content: editForm.content,
+                ...ciPayload,
                 priority: editForm.priority || null,
                 start_date: editDateRange?.from
                     ? toLocalYmd(editDateRange.from)
@@ -251,7 +205,6 @@ export default function TaskEditModal({
                 end_date: editDateRange?.to
                     ? toLocalYmd(editDateRange.to)
                     : null,
-                workload: editForm.workload || 0,
                 issue: editForm.issue || null,
                 status: editForm.status,
                 is_plan: editForm.is_plan ?? false,
@@ -545,20 +498,11 @@ export default function TaskEditModal({
                         />
                     </div>
                     <TaskContentInputs
-                        value={editForm.content}
-                        onChange={(content) =>
+                        items={editForm.contentItems}
+                        onChange={(contentItems) =>
                             setEditForm({
                                 ...editForm,
-                                content,
-                            })
-                        }
-                    />
-                    <WorkloadInput
-                        value={editForm.workload}
-                        onChange={(v) =>
-                            setEditForm({
-                                ...editForm,
-                                workload: v,
+                                contentItems,
                             })
                         }
                     />

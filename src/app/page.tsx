@@ -18,7 +18,8 @@ import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import Header from "@/components/Header";
 import Tooltip from "@/components/Tooltip";
-import type { Quest, Player, Task, Project } from "@/shared/types";
+import type { Quest, Player, Task, Project, ContentItem } from "@/shared/types";
+import { getContentItems, contentItemsPayload } from "@/shared/utils/contentItems";
 import {
     findProjectId,
     getDiff,
@@ -363,57 +364,13 @@ function periodButtonLabel(range: DateRange | undefined): {
 const EMPTY_EDIT_TASK = {
     type: "",
     proj: "",
-    content: "",
+    contentItems: [{ text: "", workload: 0 }] as ContentItem[],
     priority: "",
-    workload: 0,
     issue: "",
     status: "",
     is_plan: false,
     is_starred: false,
 };
-
-function HomeWorkloadInput({
-    value,
-    onChange,
-}: {
-    value: number;
-    onChange: (v: number) => void;
-}) {
-    return (
-        <div>
-            <div className="mb-1.5 flex items-center justify-between">
-                <label className="text-xs font-medium text-stone-500">
-                    공수
-                </label>
-                {value > 0 && (
-                    <span className="text-xs font-medium text-amber-600">
-                        {formatWorkload(value)}
-                    </span>
-                )}
-            </div>
-            <input
-                type="number"
-                className="mb-2 w-full rounded-lg border border-stone-200 px-3 py-2.5 text-sm"
-                placeholder="분 직접 입력"
-                value={value || ""}
-                onChange={(e) => onChange(parseInt(e.target.value) || 0)}
-            />
-            <div className="flex flex-wrap gap-1.5">
-                {WORKLOAD_PRESETS.map((p) => (
-                    <button
-                        type="button"
-                        key={p.label}
-                        onClick={() => onChange(p.value)}
-                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all
-                ${value === p.value ? "border-amber-500 bg-amber-500 text-white" : "border-stone-200 bg-stone-50 text-stone-600"}`}
-                    >
-                        {p.label}
-                    </button>
-                ))}
-            </div>
-        </div>
-    );
-}
 
 function HomeMyTaskRow({
     task: t,
@@ -1384,9 +1341,8 @@ export default function HomePage() {
         setEditForm({
             type: task.type || "",
             proj: task.proj || "",
-            content: task.content || "",
+            contentItems: getContentItems(task),
             priority: task.priority || "",
-            workload: task.workload || 0,
             issue: task.issue || "",
             status: task.status || "대기",
             is_plan: task.is_plan ?? false,
@@ -1420,13 +1376,14 @@ export default function HomePage() {
             alert("업무 캘린더 등록을 위해 기간 또는 마감일을 선택해주세요");
             return;
         }
+        const ciPayload = contentItemsPayload(editForm.contentItems);
         await supabase
             .from("tasks")
             .update({
                 type: editForm.type,
                 proj: editForm.proj,
                 project_id: selectedProjectId,
-                content: editForm.content,
+                ...ciPayload,
                 priority: editForm.priority || null,
                 start_date: editDateRange?.from
                     ? toLocalYmd(editDateRange.from)
@@ -1436,7 +1393,6 @@ export default function HomePage() {
                     : editDateRange?.from
                       ? toLocalYmd(editDateRange.from)
                       : null,
-                workload: editForm.workload || 0,
                 issue: editForm.issue || null,
                 status: editForm.status,
                 is_plan: editForm.is_plan ?? false,
@@ -2386,20 +2342,11 @@ export default function HomePage() {
                                         />
                                     </div>
                                     <TaskContentInputs
-                                        value={editForm.content}
-                                        onChange={(content) =>
+                                        items={editForm.contentItems}
+                                        onChange={(contentItems) =>
                                             setEditForm({
                                                 ...editForm,
-                                                content,
-                                            })
-                                        }
-                                    />
-                                    <HomeWorkloadInput
-                                        value={editForm.workload}
-                                        onChange={(v) =>
-                                            setEditForm({
-                                                ...editForm,
-                                                workload: v,
+                                                contentItems,
                                             })
                                         }
                                     />
