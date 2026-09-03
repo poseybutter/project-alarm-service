@@ -1,10 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   Archive,
   Blocks,
+  GripVertical,
   Pencil,
   Plus,
   RotateCcw,
@@ -76,8 +94,19 @@ export function TeamsPage() {
   const [deletePrompt, setDeletePrompt] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [managerCandidateId, setManagerCandidateId] = useState("");
+  const [revokeTarget, setRevokeTarget] = useState<AdminMember | null>(null);
   const [roleSavingId, setRoleSavingId] = useState<string | null>(null);
   const [roleMessage, setRoleMessage] = useState<string | null>(null);
+  const [orderItems, setOrderItems] = useState<AdminMember[]>([]);
+  const [orderSaving, setOrderSaving] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 50, tolerance: 5 } }),
+    // 키보드 재정렬: 핸들에 포커스 후 Space로 집고 방향키로 이동, Space로 놓기
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   // 팀 이름 → 팀 ID 자동 생성 (영문·숫자만 추출, 공백→하이픈)
   useEffect(() => {
@@ -111,10 +140,21 @@ export function TeamsPage() {
         draftDescription.trim() !== (selected.description ?? "") ||
         ALL_TEAM_MODULES.some((m) => draftModules.has(m) !== selected.modules.includes(m))),
   );
-  const selectedTeamMembers = (membersData?.members ?? []).filter(
-    (member) =>
-      member.teamId === selected?.id && member.status === "active",
+  const selectedTeamMembers = useMemo(
+    () =>
+      (membersData?.members ?? [])
+        .filter(
+          (member) =>
+            member.teamId === selected?.id && member.status === "active",
+        )
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [membersData, selected?.id],
   );
+
+  // 드로어가 열리거나 멤버 데이터가 갱신되면 정렬 목록 동기화
+  useEffect(() => {
+    if (!orderSaving) setOrderItems(selectedTeamMembers);
+  }, [selectedTeamMembers, orderSaving]);
   const selectedTeamAdmins = selectedTeamMembers.filter(
     (member) => member.role === "admin",
   );
@@ -124,6 +164,7 @@ export function TeamsPage() {
 
   function resetFeedback() {
     setSaveError(null);
+    setOrderError(null);
     setDiscardPrompt(false);
     setDeletePrompt(false);
     setDeleteConfirmation("");
@@ -142,6 +183,8 @@ export function TeamsPage() {
   }
 
   function openTeam(team: AdminTeam) {
+    // 다른 팀 순서 저장이 끝나기 전 전환하면 목록·오류가 섞인다
+    if (orderSaving) return;
     resetFeedback();
     setSelected(team);
     setDraftName(team.name);
@@ -150,7 +193,8 @@ export function TeamsPage() {
   }
 
   function closeTeamDrawer() {
-    if (saving) return;
+    // 순서 저장 중 팀을 바꾸면 이전 팀의 목록·오류가 새 팀 화면에 남는다
+    if (saving || orderSaving) return;
     if (dirty) {
       setDiscardPrompt(true);
       return;
@@ -323,6 +367,68 @@ export function TeamsPage() {
     }
   }
 
+  // 순서 저장은 이벤트 핸들러에서만 수행한다.
+  // (상태 업데이터는 순수해야 하며, Strict Mode에서 재실행되면 요청·감사 로그가 중복된다)
+  const saveMemberOrder = useCallback(
+    async (teamId: string, next: AdminMember[], previous: AdminMember[]) => {
+      try {
+        const res = await fetch("/api/admin/members", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "reorder",
+            teamId,
+            order: next.map((m, i) => ({
+              membershipId: m.membershipId ?? "",
+              playerId: m.id,
+              sortOrder: i,
+            })),
+          }),
+        });
+        if (!res.ok) {
+          const payload = (await res.json().catch(() => null)) as {
+            message?: string;
+          } | null;
+          throw new Error(payload?.message ?? "구성원 순서를 저장하지 못했습니다.");
+        }
+        await reloadMembers();
+      } catch (err) {
+        // 실패 시 낙관적 순서를 되돌린다 (RPC가 원자적이므로 서버는 이전 상태 그대로)
+        setOrderItems(previous);
+        setOrderError(
+          err instanceof Error ? err.message : "구성원 순서를 저장하지 못했습니다.",
+        );
+      } finally {
+        setOrderSaving(false);
+      }
+    },
+    [reloadMembers],
+  );
+
+  const handleMemberDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      // 저장 중에는 새 드래그를 받지 않는다 (요청 경합으로 옛 순서가 덮어쓰는 것 방지)
+      if (!over || active.id === over.id || !selected || orderSaving) return;
+
+      const previous = orderItems;
+      const oldIndex = previous.findIndex(
+        (m) => (m.membershipId ?? String(m.id)) === active.id,
+      );
+      const newIndex = previous.findIndex(
+        (m) => (m.membershipId ?? String(m.id)) === over.id,
+      );
+      if (oldIndex === -1 || newIndex === -1) return;
+
+      const reordered = arrayMove(previous, oldIndex, newIndex);
+      setOrderItems(reordered);
+      setOrderError(null);
+      setOrderSaving(true);
+      void saveMemberOrder(selected.id, reordered, previous);
+    },
+    [selected, orderItems, orderSaving, saveMemberOrder],
+  );
+
   return (
     <AdminPage
       title="팀 관리"
@@ -374,14 +480,25 @@ export function TeamsPage() {
         />
       )}
       {!loading && !error && teams.length === 0 && (
-        <EmptyState
-          title={data?.teams.length ? "조건에 맞는 팀이 없습니다" : "등록된 팀이 없습니다"}
-          description={
-            data?.teams.length
-              ? "검색어나 상태 필터를 변경해 주세요."
-              : "첫 팀을 만든 뒤 구성원을 배정해 주세요."
-          }
-        />
+        <div className="mt-6 text-center">
+          <EmptyState
+            title={data?.teams.length ? "조건에 맞는 팀이 없습니다" : "등록된 팀이 없습니다"}
+            description={
+              data?.teams.length
+                ? "검색어나 상태 필터를 변경해 주세요."
+                : "첫 팀을 만든 뒤 구성원을 배정해 주세요."
+            }
+          />
+          {!data?.teams.length && identity.isOrganizationAdmin && (
+            <AdminButton
+              variant="primary"
+              className="mt-4"
+              onClick={openCreateDrawer}
+            >
+              <Plus size={14} /> 팀 생성
+            </AdminButton>
+          )}
+        </div>
       )}
       {!loading && !error && teams.length > 0 && (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -587,9 +704,7 @@ export function TeamsPage() {
                           <AdminButton
                             variant="ghost"
                             className="min-h-8 shrink-0 px-2 text-red-700"
-                            onClick={() =>
-                              void changeTeamManager(member, false)
-                            }
+                            onClick={() => setRevokeTarget(member)}
                             disabled={
                               roleSavingId !== null || isSelf || isLastAdmin
                             }
@@ -684,6 +799,59 @@ export function TeamsPage() {
               )}
             </section>
 
+            {identity.isOrganizationAdmin &&
+              selectedTeamMembers.length > 0 && (
+                <section aria-labelledby="member-order-title">
+                  <div className="flex items-center gap-2">
+                    <GripVertical className="text-stone-500" size={17} />
+                    <h3
+                      id="member-order-title"
+                      className="text-sm font-extrabold"
+                    >
+                      구성원 순서
+                    </h3>
+                    {orderSaving && (
+                      <span className="text-[10px] text-stone-400">
+                        저장 중…
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-stone-500">
+                    드래그하여 표시 순서를 변경합니다. 업무·리포트 등 팀 내
+                    구성원 목록에 반영됩니다.
+                  </p>
+                  {orderError && (
+                    <p
+                      role="alert"
+                      className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700"
+                    >
+                      {orderError}
+                    </p>
+                  )}
+                  <div className="mt-3 space-y-1">
+                    <DndContext
+                      sensors={dndSensors}
+                      onDragEnd={handleMemberDragEnd}
+                    >
+                      <SortableContext
+                        items={orderItems.map(
+                          (m) => m.membershipId ?? String(m.id),
+                        )}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        {orderItems.map((member) => (
+                          <SortableMemberRow
+                            key={member.membershipId ?? String(member.id)}
+                            member={member}
+                            disabled={orderSaving}
+                          />
+                        ))}
+                      </SortableContext>
+                    </DndContext>
+                  </div>
+                </section>
+              )}
+
             {identity.isOrganizationAdmin ? (
               <fieldset className="space-y-4" disabled={saving}>
                 <legend className="text-sm font-extrabold">기본 정보</legend>
@@ -762,7 +930,10 @@ export function TeamsPage() {
                       )}
                     </AdminButton>
                   )}
-                  <AdminButton onClick={closeTeamDrawer} disabled={saving}>
+                  <AdminButton
+                    onClick={closeTeamDrawer}
+                    disabled={saving || orderSaving}
+                  >
                     취소
                   </AdminButton>
                   <AdminButton
@@ -809,6 +980,67 @@ export function TeamsPage() {
         )}
       </AdminDrawer>
 
+      <AdminModal
+        open={revokeTarget !== null}
+        role="alertdialog"
+        labelledBy="revoke-admin-title"
+        onClose={() => !roleSavingId && setRevokeTarget(null)}
+        className="m-auto w-[calc(100%_-_2rem)] max-w-sm rounded-md border-2 border-stone-950 bg-white shadow-2xl"
+      >
+        <div className="relative p-5">
+          <button
+            type="button"
+            className="admin-icon-button absolute right-3 top-3"
+            aria-label="닫기"
+            onClick={() => setRevokeTarget(null)}
+            disabled={roleSavingId !== null}
+          >
+            <X size={18} />
+          </button>
+          <div className="flex gap-3 pr-9">
+            <span className="grid size-9 shrink-0 place-items-center rounded bg-amber-100 text-amber-700">
+              <ShieldMinus size={18} />
+            </span>
+            <div>
+              <h2 id="revoke-admin-title" className="text-base font-extrabold">
+                팀 관리자 권한 해제
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-stone-600">
+                <strong>{revokeTarget?.name}</strong>님의 관리자 권한을
+                해제하면 팀 설정 변경과 구성원 관리가 불가능해집니다.
+              </p>
+            </div>
+          </div>
+          <div className="mt-5 flex justify-end gap-2 border-t border-stone-200 pt-4">
+            <AdminButton
+              onClick={() => setRevokeTarget(null)}
+              disabled={roleSavingId !== null}
+            >
+              취소
+            </AdminButton>
+            <AdminButton
+              variant="danger"
+              onClick={() => {
+                if (revokeTarget) {
+                  void changeTeamManager(revokeTarget, false).then(() =>
+                    setRevokeTarget(null),
+                  );
+                }
+              }}
+              disabled={roleSavingId !== null}
+            >
+              {roleSavingId !== null ? (
+                <SavingLabel label="변경 중" />
+              ) : (
+                <>
+                  <ShieldMinus size={14} /> 권한 해제
+                </>
+              )}
+            </AdminButton>
+          </div>
+        </div>
+      </AdminModal>
+
       {selected && (
         <AdminModal
           open={deletePrompt}
@@ -854,6 +1086,12 @@ export function TeamsPage() {
                       {selected.projectCount}건
                     </strong>
                   </li>
+                  <li>
+                    업무{" "}
+                    <strong className="text-stone-700">
+                      {selected.taskCount}건
+                    </strong>
+                  </li>
                 </ul>
               </div>
             </div>
@@ -893,6 +1131,59 @@ export function TeamsPage() {
         </AdminModal>
       )}
     </AdminPage>
+  );
+}
+
+function SortableMemberRow({
+  member,
+  disabled = false,
+}: {
+  member: AdminMember;
+  disabled?: boolean;
+}) {
+  const sortableId = member.membershipId ?? String(member.id);
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: sortableId, disabled });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-3 rounded-md border bg-white px-3 py-2.5 ${
+        isDragging
+          ? "border-dashed border-amber-400 opacity-50"
+          : "border-stone-200"
+      }`}
+    >
+      {/*
+        attributes에 tabIndex=0·role·aria-roledescription이 포함되므로 덮어쓰지 않는다.
+        키보드 사용자는 이 핸들에 포커스한 뒤 Space로 집고 방향키로 이동한다.
+      */}
+      <button
+        type="button"
+        {...listeners}
+        {...attributes}
+        disabled={disabled}
+        className="touch-none cursor-grab self-center text-stone-300 hover:text-stone-500 focus-visible:text-stone-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 active:cursor-grabbing disabled:cursor-not-allowed"
+        aria-label={`${member.name} 순서 변경`}
+      >
+        <GripVertical size={16} />
+      </button>
+      <span className="grid size-7 shrink-0 place-items-center rounded bg-stone-100 text-[11px] font-black text-stone-600">
+        {member.name.slice(0, 1)}
+      </span>
+      <span className="min-w-0 flex-1">
+        <strong className="block truncate text-xs">{member.name}</strong>
+        <span className="block truncate font-mono text-[10px] text-stone-400">
+          {member.email}
+        </span>
+      </span>
+    </div>
   );
 }
 
