@@ -35,6 +35,11 @@ export async function GET(req: NextRequest) {
     const agentTypeParam = req.nextUrl.searchParams.get("agentType");
     const scopeParam = req.nextUrl.searchParams.get("scope");
     const limitParam = Number(req.nextUrl.searchParams.get("limit") ?? 50);
+    // 클라이언트가 준 값이므로 상한 없이 넘기면 테이블 크기만큼 읽게 된다.
+    const limit =
+        Number.isFinite(limitParam) && limitParam > 0
+            ? Math.min(limitParam, 200)
+            : 50;
 
     const status =
         statusParam && STATUSES.has(statusParam as AgentSuggestionStatus)
@@ -51,7 +56,7 @@ export async function GET(req: NextRequest) {
             teamId,
             status,
             agentType,
-            limit: Number.isFinite(limitParam) ? limitParam : 50,
+            limit,
         });
 
         const shouldShowTeam = role === "admin" && scopeParam === "team";
