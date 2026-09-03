@@ -834,7 +834,6 @@ export default function ManagePage() {
                                     + 접근성 추가
                                 </button>
                             )}
-                            <AgentButton />
                             <NotificationButton />
                             <UserMenu />
                         </div>

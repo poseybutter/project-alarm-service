@@ -1,6 +1,9 @@
 export type ContentItem = {
     text: string;
     workload: number;
+    status?: string;
+    start_date?: string | null;
+    end_date?: string | null;
 };
 
 export type Task = {

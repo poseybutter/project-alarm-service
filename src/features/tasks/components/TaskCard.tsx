@@ -132,6 +132,7 @@ export default function TaskCard({
                     {t.content && (
                         <TaskContentList
                             content={t.content}
+                            contentItems={t.content_items}
                             className={`mb-1 text-xs leading-relaxed ${isDone ? "text-stone-300 line-through" : "text-stone-500"}`}
                         />
                     )}

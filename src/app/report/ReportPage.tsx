@@ -441,13 +441,17 @@ function contentToCardHtml(
         t.is_plan && t.status !== "완료" && !hasWeekOverlap
             ? planDatePrefix(t)
             : "";
-    const taskLines = (t.content || "")
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean);
+    const items = t.content_items && t.content_items.length > 0 ? t.content_items : null;
+    const taskLines = items
+        ? items.filter((ci) => ci.text.trim()).map((ci) => ci.text.trim())
+        : (t.content || "").split("\n").map((line) => line.trim()).filter(Boolean);
     const formattedLines = taskLines.map((line, index) => {
         const prefix = index === 0 ? datePrefix : "";
-        return `⇒ ${prefix}${briefingEscapedToHtmlWithBold(escapeHtml(line))}`;
+        const ci = items?.[index];
+        const statusTag = ci?.status && ci.status !== "진행중"
+            ? ` <span style="color:${ci.status === "완료" ? "#16a34a" : ci.status === "지연/보류" ? "#dc2626" : "#78716c"};font-size:11px"> — ${escapeHtml(ci.status)}</span>`
+            : "";
+        return `⇒ ${prefix}${briefingEscapedToHtmlWithBold(escapeHtml(line))}${statusTag}`;
     });
 
     if (formattedLines.length > 0) {
@@ -1467,7 +1471,7 @@ export default function ReportPage() {
                         </h1>
                         <div className="flex items-center gap-2">
                             <TeamSwitcher />
-                            <AgentButton />
+
                             <NotificationButton />
                             <UserMenu />
                         </div>
