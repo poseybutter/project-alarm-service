@@ -1,7 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DayPicker } from "react-day-picker";
 import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
@@ -14,7 +14,7 @@ import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import Avatar from "@/components/Avatar";
-import Tooltip from "@/components/Tooltip";
+
 import { PageSpinner } from "@/components/Spinner";
 import type { Accessibility, Project } from "@/shared/types";
 import {
@@ -214,89 +214,9 @@ export default function ManagePage() {
         is_new: false,
     } as const;
 
-    useEffect(() => {
-        if (member && teamId) void loadData();
-        // loadData is intentionally defined as a local page action.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [member, teamId]);
-
-    useEffect(() => {
-        function handleAccessibilityChanged() {
-            void loadData();
-        }
-
-        window.addEventListener(
-            "accessibility:changed",
-            handleAccessibilityChanged,
-        );
-        return () =>
-            window.removeEventListener(
-                "accessibility:changed",
-                handleAccessibilityChanged,
-            );
-        // loadData is intentionally defined as a local page action.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    const projNameOptions = useMemo(
-        () =>
-            projects
-                .filter((p) => showArchived || !p.is_archived)
-                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
-                .map((p) => ({ value: p.name, label: p.name })),
-        [projects, showArchived],
-    );
-
-    const accTabProjFilterOptions = useMemo(
-        () =>
-            [...new Set(accessibility.map((a) => a.proj).filter(Boolean))]
-                .sort((a, b) => a.localeCompare(b, "ko"))
-                .map((p) => ({ value: p, label: p })),
-        [accessibility],
-    );
-
-    const accModalProjOptions = useMemo(
-        () =>
-            projects
-                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
-                .map((p) => ({ value: p.name, label: p.name })),
-        [projects],
-    );
-
-    const accModalSelectStyles = useMemo(
-        () => ({
-            ...selectStyles,
-            control: (
-                base: Record<string, unknown>,
-                state: { isFocused: boolean },
-            ) => ({
-                ...base,
-                fontSize: "14px",
-                borderColor: state.isFocused ? "#f59e0b" : "#e7e5e4",
-                borderRadius: "8px",
-                boxShadow: state.isFocused ? "0 0 0 2px #fde68a" : "none",
-                "&:hover": { borderColor: "#d6d3d1" },
-                minHeight: "42px",
-                height: "42px",
-            }),
-            valueContainer: (base: Record<string, unknown>) => ({
-                ...base,
-                height: "42px",
-                padding: "0 12px",
-            }),
-            indicatorsContainer: (base: Record<string, unknown>) => ({
-                ...base,
-                height: "42px",
-            }),
-            placeholder: (base: Record<string, unknown>) => ({
-                ...base,
-                fontSize: "14px",
-            }),
-        }),
-        [],
-    );
-
-    async function loadData() {
+    // loadData를 useEffect보다 먼저 선언 (react-hooks/immutability)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 데이터 로딩 effect
+    const loadData = useCallback(async () => {
         if (!teamId) return;
         const generation = ++loadGenerationRef.current;
         setLoading(true);
@@ -366,7 +286,86 @@ export default function ManagePage() {
                 );
             }
         }
-    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [teamId]);
+
+    useEffect(() => {
+        if (member && teamId) void loadData();
+    }, [member, teamId, loadData]);
+
+    useEffect(() => {
+        function handleAccessibilityChanged() {
+            void loadData();
+        }
+
+        window.addEventListener(
+            "accessibility:changed",
+            handleAccessibilityChanged,
+        );
+        return () =>
+            window.removeEventListener(
+                "accessibility:changed",
+                handleAccessibilityChanged,
+            );
+    }, [loadData]);
+
+    const projNameOptions = useMemo(
+        () =>
+            projects
+                .filter((p) => showArchived || !p.is_archived)
+                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+                .map((p) => ({ value: p.name, label: p.name })),
+        [projects, showArchived],
+    );
+
+    const accTabProjFilterOptions = useMemo(
+        () =>
+            [...new Set(accessibility.map((a) => a.proj).filter(Boolean))]
+                .sort((a, b) => a.localeCompare(b, "ko"))
+                .map((p) => ({ value: p, label: p })),
+        [accessibility],
+    );
+
+    const accModalProjOptions = useMemo(
+        () =>
+            projects
+                .sort((a, b) => a.name.localeCompare(b.name, "ko"))
+                .map((p) => ({ value: p.name, label: p.name })),
+        [projects],
+    );
+
+    const accModalSelectStyles = useMemo(
+        () => ({
+            ...selectStyles,
+            control: (
+                base: Record<string, unknown>,
+                state: { isFocused: boolean },
+            ) => ({
+                ...base,
+                fontSize: "14px",
+                borderColor: state.isFocused ? "#f59e0b" : "#e7e5e4",
+                borderRadius: "8px",
+                boxShadow: state.isFocused ? "0 0 0 2px #fde68a" : "none",
+                "&:hover": { borderColor: "#d6d3d1" },
+                minHeight: "42px",
+                height: "42px",
+            }),
+            valueContainer: (base: Record<string, unknown>) => ({
+                ...base,
+                height: "42px",
+                padding: "0 12px",
+            }),
+            indicatorsContainer: (base: Record<string, unknown>) => ({
+                ...base,
+                height: "42px",
+            }),
+            placeholder: (base: Record<string, unknown>) => ({
+                ...base,
+                fontSize: "14px",
+            }),
+        }),
+        [],
+    );
 
     function showToastMsg(msg: string) {
         setToast(msg);
@@ -658,9 +657,9 @@ export default function ManagePage() {
             }
         }
         if (nextStatus === "신청완료") {
-            const snoozedUntil = new Date(
-                Date.now() + 14 * 24 * 60 * 60 * 1000,
-            ).toISOString();
+            const TWO_WEEKS_MS = 14 * 24 * 60 * 60 * 1000;
+            // eslint-disable-next-line react-hooks/purity -- 이벤트 핸들러 내부 호출
+            const snoozedUntil = new Date(Date.now() + TWO_WEEKS_MS).toISOString();
             const res = await fetch("/api/accessibility-mission-snoozes", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
