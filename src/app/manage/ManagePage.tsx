@@ -10,7 +10,6 @@ import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import UserMenu from "@/components/UserMenu";
 import TeamSwitcher from "@/components/TeamSwitcher";
-import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import Avatar from "@/components/Avatar";

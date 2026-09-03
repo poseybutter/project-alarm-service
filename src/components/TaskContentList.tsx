@@ -1,5 +1,4 @@
 import type { ContentItem } from "@/shared/types";
-import { formatWorkload } from "@/shared/utils/utils";
 
 const STATUS_COLORS: Record<string, string> = {
     "대기": "bg-stone-100 text-stone-500",

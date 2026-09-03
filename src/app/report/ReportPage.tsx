@@ -17,7 +17,6 @@ import TeamSwitcher from "@/components/TeamSwitcher";
 import Avatar from "@/components/Avatar";
 import { supabase } from "@/infrastructure/supabase/client";
 import AuthGuard from "@/components/AuthGuard";
-import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import { useAuth } from "@/components/AuthProvider";
 import { PageSpinner } from "@/components/Spinner";
@@ -25,7 +24,6 @@ import type { Task } from "@/shared/types";
 import { normalizeStatus } from "@/shared/constants";
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import TiptapSectionEditor from "@/components/TiptapSectionEditor";
-import Tooltip from "@/components/Tooltip";
 import Select from "react-select";
 import { modalFormSelectStyles } from "@/shared/styles/reactSelectStyles";
 import { sanitizeHtml } from "@/shared/utils/sanitizeHtml";
@@ -441,9 +439,13 @@ function contentToCardHtml(
         t.is_plan && t.status !== "완료" && !hasWeekOverlap
             ? planDatePrefix(t)
             : "";
-    const items = t.content_items && t.content_items.length > 0 ? t.content_items : null;
+    // 빈 항목을 먼저 걸러낸 배열을 기준으로 텍스트와 상태 태그를 함께 만든다 (인덱스 어긋남 방지)
+    const items =
+        t.content_items && t.content_items.length > 0
+            ? t.content_items.filter((ci) => ci.text.trim())
+            : null;
     const taskLines = items
-        ? items.filter((ci) => ci.text.trim()).map((ci) => ci.text.trim())
+        ? items.map((ci) => ci.text.trim())
         : (t.content || "").split("\n").map((line) => line.trim()).filter(Boolean);
     const formattedLines = taskLines.map((line, index) => {
         const prefix = index === 0 ? datePrefix : "";

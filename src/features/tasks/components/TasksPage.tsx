@@ -20,7 +20,6 @@ import TeamSwitcher from "@/components/TeamSwitcher";
 import Avatar from "@/components/Avatar";
 import LevelUpOverlay from "@/components/LevelUpOverlay";
 import ExpPopup, { type ExpPopupType } from "@/components/ExpPopup";
-import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import TaskEditModal from "@/components/TaskEditModal";
 import { PageSpinner } from "@/components/Spinner";

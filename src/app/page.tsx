@@ -17,7 +17,6 @@ import {
 import { useAuth } from "@/components/AuthProvider";
 import AuthGuard from "@/components/AuthGuard";
 import Header from "@/components/Header";
-import Tooltip from "@/components/Tooltip";
 import type { Quest, Player, Task, Project, ContentItem } from "@/shared/types";
 import { getContentItems, contentItemsPayload } from "@/shared/utils/contentItems";
 import {
@@ -35,7 +34,6 @@ import {
     BAR_COLORS,
     TYPE_COLORS,
     STATUS_COLORS,
-    WORKLOAD_PRESETS,
 } from "@/shared/constants";
 import Avatar from "@/components/Avatar";
 import LevelUpOverlay from "@/components/LevelUpOverlay";
@@ -1284,7 +1282,7 @@ export default function HomePage() {
         }
         if (task.show_on_team_calendar) {
             void syncTaskToTeamCalendar(id).catch((err) => {
-                console.warn("[team-calendar]", err instanceof Error ? err.message : "동기화 실패");
+                showToastMsg(err instanceof Error ? err.message : "팀 캘린더 동기화 실패");
             });
         }
         loadData();
@@ -1316,8 +1314,9 @@ export default function HomePage() {
         return json;
     }
 
-    async function deleteMyTask(id: number) {
-        if (!confirm("삭제할까요?")) return;
+    /** 팀 캘린더 정리 -> 업무 삭제. 취소/실패 시 false 를 반환한다. */
+    async function deleteMyTask(id: number): Promise<boolean> {
+        if (!confirm("삭제할까요?")) return false;
         try {
             await deleteTaskFromTeamCalendar(id);
         } catch (err) {
@@ -1326,11 +1325,16 @@ export default function HomePage() {
                     `${err instanceof Error ? err.message : "팀 캘린더 일정 삭제 실패"}\n그래도 업무를 삭제할까요?`,
                 )
             ) {
-                return;
+                return false;
             }
         }
-        await supabase.from("tasks").delete().eq("id", id);
+        const { error } = await supabase.from("tasks").delete().eq("id", id);
+        if (error) {
+            showToastMsg("업무 삭제 중 오류가 발생했어요");
+            return false;
+        }
         loadData();
+        return true;
     }
 
     function openEditTask(task: Task) {
@@ -2060,7 +2064,11 @@ export default function HomePage() {
                                 });
                             }}
                             onDelete={async () => {
-                                await supabase.from("quests").delete().eq("id", editTarget.id);
+                                const { error } = await supabase.from("quests").delete().eq("id", editTarget.id);
+                                if (error) {
+                                    showToastMsg("퀘스트 삭제 중 오류가 발생했어요");
+                                    return;
+                                }
                                 setShowEditQuest(false);
                                 setEditTarget(null);
                                 loadData();
@@ -2441,13 +2449,12 @@ export default function HomePage() {
                                         <button
                                             type="button"
                                             onClick={() => {
-                                                if (!editTask || !confirm("정말 삭제할까요?")) return;
+                                                if (!editTask) return;
+                                                const targetId = editTask.id;
                                                 void (async () => {
-                                                    try { await deleteTaskFromTeamCalendar(editTask.id); } catch (err) { console.warn("[team-calendar] delete failed", err); }
-                                                    await supabase.from("tasks").delete().eq("id", editTask.id);
+                                                    if (!(await deleteMyTask(targetId))) return;
                                                     setShowEditTask(false);
                                                     setEditTask(null);
-                                                    loadData();
                                                 })();
                                             }}
                                             className="rounded-xl border border-red-300 bg-white py-3.5 text-sm font-bold text-red-500 hover:bg-red-50 transition-colors"
