@@ -874,47 +874,48 @@ export default function HomePage() {
             loadData();
 
             // Realtime 구독 — 다른 팀의 변경까지 받으면 팀 수에 비례해
-            // 불필요한 loadData 리페치가 생기므로 팀으로 필터한다.
+            // 불필요한 loadData 리페치가 생기므로 INSERT/UPDATE 는 팀으로
+            // 필터한다. DELETE 페이로드에는 PK 만 있어 필터를 걸면 이벤트가
+            // 아예 오지 않으므로 무필터로 받는다. (리페치는 팀 스코프 쿼리)
             const teamFilter = `team_id=eq.${teamId}`;
-            const channel = supabase
-                .channel(`home-realtime-${channelIdRef.current}`)
-                .on(
-                    "postgres_changes",
-                    {
-                        event: "*",
-                        schema: "public",
-                        table: "quests",
-                        filter: teamFilter,
-                    },
-                    () => {
-                        loadData();
-                    },
-                )
-                .on(
-                    "postgres_changes",
-                    {
-                        event: "*",
-                        schema: "public",
-                        table: "players",
-                        filter: teamFilter,
-                    },
-                    () => {
-                        loadData();
-                    },
-                )
-                .on(
-                    "postgres_changes",
-                    {
-                        event: "*",
-                        schema: "public",
-                        table: "tasks",
-                        filter: teamFilter,
-                    },
-                    () => {
-                        loadData();
-                    },
-                )
-                .subscribe();
+            let channel = supabase.channel(
+                `home-realtime-${channelIdRef.current}`,
+            );
+            for (const table of ["quests", "players", "tasks"] as const) {
+                channel = channel
+                    .on(
+                        "postgres_changes",
+                        {
+                            event: "INSERT",
+                            schema: "public",
+                            table,
+                            filter: teamFilter,
+                        },
+                        () => {
+                            loadData();
+                        },
+                    )
+                    .on(
+                        "postgres_changes",
+                        {
+                            event: "UPDATE",
+                            schema: "public",
+                            table,
+                            filter: teamFilter,
+                        },
+                        () => {
+                            loadData();
+                        },
+                    )
+                    .on(
+                        "postgres_changes",
+                        { event: "DELETE", schema: "public", table },
+                        () => {
+                            loadData();
+                        },
+                    );
+            }
+            channel.subscribe();
 
             return () => {
                 supabase.removeChannel(channel).catch(console.error);
