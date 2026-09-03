@@ -8,7 +8,7 @@ import {
     getTeamCalendarAccessToken,
     type GoogleCalendarConnection,
     type TeamCalendarTaskInput,
-    upsertTeamCalendarTaskEvent,
+    syncTeamCalendarTaskEvents,
     TeamCalendarSyncError,
 } from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
@@ -72,7 +72,7 @@ export async function POST() {
         const { data: tasks, error: taskError } = await supabase
             .from("tasks")
             .select(
-                "id, member, proj, content, status, start_date, end_date, show_on_team_calendar, team_calendar_event_id, team_calendar_id",
+                "id, member, proj, content, content_items, status, start_date, end_date, show_on_team_calendar, team_calendar_event_id, team_calendar_item_event_ids, team_calendar_id",
             )
             .eq("team_id", teamId);
         if (taskError) throw taskError;
@@ -104,25 +104,38 @@ export async function POST() {
                         : null;
 
                 if (previousCalendarId) {
-                    await deleteTeamCalendarTaskEvent({
-                        accessToken,
-                        calendarId: previousCalendarId,
-                        eventId: task.team_calendar_event_id as string,
-                    });
+                    for (const staleId of [
+                        task.team_calendar_event_id,
+                        ...(task.team_calendar_item_event_ids ?? []),
+                    ]) {
+                        if (!staleId) continue;
+                        await deleteTeamCalendarTaskEvent({
+                            accessToken,
+                            calendarId: previousCalendarId,
+                            eventId: staleId,
+                        });
+                    }
                 }
 
-                const event = await upsertTeamCalendarTaskEvent({
+                const result = await syncTeamCalendarTaskEvents({
                     accessToken,
                     calendarId: targetCalendarId,
                     task: previousCalendarId
-                        ? { ...task, team_calendar_event_id: null }
+                        ? {
+                              ...task,
+                              team_calendar_event_id: null,
+                              team_calendar_item_event_ids: null,
+                          }
                         : task,
                 });
 
                 const { error: updateError } = await supabase
                     .from("tasks")
                     .update({
-                        team_calendar_event_id: event.id,
+                        team_calendar_event_id: result.baseEventId,
+                        team_calendar_item_event_ids: result.itemEventIds.length
+                            ? result.itemEventIds
+                            : null,
                         team_calendar_id: targetCalendarId,
                         team_calendar_synced_at: new Date().toISOString(),
                         team_calendar_sync_error: null,
