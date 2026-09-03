@@ -1,4 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
+import {
+    consumeSharedRateLimit,
+    rateLimitResponse,
+    requestRateLimitKey,
+} from "@/shared/server/rateLimit";
+import { isCronAuthorized } from "@/shared/server/cronAuth";
 import { TEAM_ID } from "@/shared/constants";
 import { createServiceSupabaseClient } from "@/infrastructure/supabase/server";
 import {
@@ -41,15 +47,6 @@ type PlayerNotificationTarget = {
 const DEFAULT_MORNING_SEND_TIME = "08:30:00";
 const PUBLIC_HOLIDAYS_API_BASE_URL = "https://date.nager.at/api/v3/PublicHolidays";
 
-function isAuthorized(req: NextRequest) {
-    const secret = process.env.CRON_SECRET;
-    if (!secret && process.env.NODE_ENV !== "production") return true;
-    if (secret && req.headers.get("authorization") === `Bearer ${secret}`) {
-        return true;
-    }
-
-    return false;
-}
 
 function todayKstYmd(now = new Date()) {
     return new Intl.DateTimeFormat("en-CA", {
@@ -195,9 +192,16 @@ async function buildFreshSuggestion(
 }
 
 async function handleMorningBriefings(req: NextRequest) {
-    if (!isAuthorized(req)) {
+    if (!isCronAuthorized(req)) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
+
+    // 시크릿 유출 시에도 대량 재발송을 막는 2차 방어선
+    const rate = await consumeSharedRateLimit(
+        requestRateLimitKey(req, "cron-morning-briefing"),
+        { limit: 10, windowMs: 5 * 60 * 1000 },
+    );
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
 
     const supabase = createServiceSupabaseClient();
     let teamMembers;

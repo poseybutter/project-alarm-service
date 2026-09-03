@@ -10,17 +10,17 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
+import {
+    consumeSharedRateLimit,
+    rateLimitResponse,
+    requestRateLimitKey,
+} from "@/shared/server/rateLimit";
+import { isCronAuthorized } from "@/shared/server/cronAuth";
 import { createServiceSupabaseClient } from "@/infrastructure/supabase/server";
 import { calcLevel } from "@/features/gamification/maple";
 import { getTeamRoster } from "@/features/gamification/api/getTeamRoster";
 import { AWARD_TITLE_TO_ID } from "@/features/gamification/titles";
 
-function isAuthorized(req: NextRequest) {
-    const secret = process.env.CRON_SECRET;
-    if (!secret && process.env.NODE_ENV !== "production") return true;
-    if (secret && req.headers.get("authorization") === `Bearer ${secret}`) return true;
-    return false;
-}
 
 /** 오늘 날짜 (KST 기준 YYYY-MM-DD) */
 function todayKst() {
@@ -69,9 +69,16 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-    if (!isAuthorized(req)) {
+    if (!isCronAuthorized(req)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // 시크릿 유출 시에도 파괴적 작업의 반복 실행을 막는 2차 방어선
+    const rate = await consumeSharedRateLimit(
+        requestRateLimitKey(req, "cron-seasons-close"),
+        { limit: 5, windowMs: 5 * 60 * 1000 },
+    );
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
 
     const force = req.nextUrl.searchParams.get("force") === "true";
     const supabase = createServiceSupabaseClient();

@@ -355,7 +355,7 @@ export default function ProfilePage() {
         if (!member || isAttending) return;
         setIsAttending(true);
         try {
-            const result = await rpcAttendanceCheck(member);
+            const result = await rpcAttendanceCheck(member, teamId);
             if (!result.success) {
                 showToastMsg(result.message || "오류");
                 return;
