@@ -108,8 +108,9 @@ export default function TasksPage() {
         task: Task,
         anchor?: { x: number; y: number },
     ) {
-        // ?곹깭 蹂寃?+ ?먯닔???쒕쾭 RPC 媛 ?먯옄?곸쑝濡?泥섎━(?꾨즺/湲닿툒/?뺤떆 ?먯젙 紐⑤몢 ?쒕쾭痢?.
-        // 沅뚰븳 ?놁쑝硫?RPC 媛 throw ???좎뒪??
+        // 상태 변경과 점수 반영을 서버 RPC 가 한 번에 처리한다
+        // (완료·긴급·정시 판정까지 모두 서버에서 결정한다)
+        // 권한이 없으면 RPC 가 throw 하므로 null 로 떨어진다
         const result = await rpcSetTaskStatus(id, status, task.member).catch(
             () => null,
         );
@@ -117,7 +118,7 @@ export default function TasksPage() {
             showToastMsg("권한이 없어 상태를 변경할 수 없어요");
             return;
         }
-        // ?꾨즺 "吏꾩엯"(sign>0)???뚮쭔 EXP ?앹뾽/?덈꺼???곗텧.
+        // 완료로 '진입'할 때(sign > 0)만 EXP 팝업과 레벨업 연출을 띄운다
         if (result.scored && result.sign > 0) {
             if (anchor) {
                 pushExpPopup(
