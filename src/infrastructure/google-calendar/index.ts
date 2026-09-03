@@ -769,26 +769,34 @@ export async function upsertTeamCalendarTaskEvent(params: {
         return json as GoogleCalendarEvent;
     }
 
-    if (res.status === 404) {
-        const insertRes = await fetchWithTimeout(
-            `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodedCalendarId}/events`,
-            {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                    "Content-Type": "application/json",
+    // 이벤트를 캘린더에서 지우면 404(없음) 또는 410(Gone)이 온다.
+    // deleteTeamCalendarTaskEvent 와 같은 기준으로 둘 다 "다시 만들기"로 처리한다.
+    if (res.status === 404 || res.status === 410) {
+        const insertEvent = async (body: Record<string, unknown>) => {
+            const insertRes = await fetchWithTimeout(
+                `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodedCalendarId}/events`,
+                {
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify(body),
                 },
-                body: JSON.stringify({ ...event, id: eventId }),
-            },
-        );
-        const insertJson = await insertRes.json().catch(() => ({}));
+            );
+            return {
+                res: insertRes,
+                json: await insertRes.json().catch(() => ({})),
+            };
+        };
 
-        if (insertRes.ok) {
-            return insertJson as GoogleCalendarEvent;
+        const insert = await insertEvent({ ...event, id: eventId });
+        if (insert.res.ok) {
+            return insert.json as GoogleCalendarEvent;
         }
 
         // 동시 생성 충돌 → 기존 이벤트 갱신으로 재시도합니다.
-        if (insertRes.status === 409) {
+        if (insert.res.status === 409) {
             const retry = await updateTeamCalendarEvent({
                 accessToken,
                 url,
@@ -797,14 +805,19 @@ export async function upsertTeamCalendarTaskEvent(params: {
             if (retry.res.ok) {
                 return retry.json as GoogleCalendarEvent;
             }
-            throw new Error(
-                retry.json.error?.message ||
-                    "Failed to sync team calendar event after conflict",
-            );
+        }
+
+        // 지운 이벤트의 ID 는 재사용이 막히는 경우가 있다(409 후 갱신도 410).
+        // 그때는 Google 이 ID 를 새로 발급하게 하고, 호출부가 그 ID 를 저장한다.
+        const fresh = await insertEvent(event);
+        if (fresh.res.ok) {
+            return fresh.json as GoogleCalendarEvent;
         }
 
         throw new Error(
-            insertJson.error?.message || "Failed to create team calendar event",
+            fresh.json.error?.message ||
+                insert.json.error?.message ||
+                "Failed to create team calendar event",
         );
     }
 
