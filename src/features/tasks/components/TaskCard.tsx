@@ -95,10 +95,12 @@ export default function TaskCard({
 
     return (
         <div
-            className={`px-4 py-3
+            className={`px-4 py-3 transition-colors
                           ${!isLast ? "border-b border-stone-100" : ""}
                           ${isDone ? "opacity-50" : ""}
-                          ${t.priority === "긴급" || normalizeStatus(t.status) === "지연/보류" ? "bg-amber-50" : ""}`}
+                          ${t.priority === "긴급" || normalizeStatus(t.status) === "지연/보류" ? "bg-amber-50" : ""}
+                          ${canEdit ? "cursor-pointer hover:bg-stone-50/60" : ""}`}
+            onClick={() => canEdit && onEdit(t)}
         >
             <div className="flex gap-3">
                 <div className="flex-1 min-w-0">
@@ -164,34 +166,12 @@ export default function TaskCard({
                         )}
                     </div>
                 </div>
-                <div className="flex flex-col justify-between items-end gap-1.5 shrink-0">
+                <div className="flex flex-col justify-between items-end gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                     <TaskStatusBadgeSelect
                         task={t}
                         disabled={disabled}
                         onChange={onStatusChange}
                     />
-                    {canEdit && (
-                        <div className="flex items-center gap-2">
-                            <Tooltip label="수정">
-                                <button
-                                    onClick={() => onEdit(t)}
-                                    aria-label="수정"
-                                    className="text-base text-stone-300 hover:text-amber-500 transition-colors"
-                                >
-                                    <i className="ri-edit-line" aria-hidden />
-                                </button>
-                            </Tooltip>
-                            <Tooltip label="삭제">
-                                <button
-                                    onClick={() => onDelete(t.id)}
-                                    aria-label="삭제"
-                                    className="text-base text-stone-300 hover:text-red-400 transition-colors"
-                                >
-                                    <i className="ri-delete-bin-line" aria-hidden />
-                                </button>
-                            </Tooltip>
-                        </div>
-                    )}
                 </div>
             </div>
         </div>
