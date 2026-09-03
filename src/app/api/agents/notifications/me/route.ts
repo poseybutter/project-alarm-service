@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import {
+    consumeSharedRateLimit,
+    rateLimitResponse,
+    requestRateLimitKey,
+} from "@/shared/server/rateLimit";
+import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
 } from "@/infrastructure/supabase/server";
@@ -16,11 +21,18 @@ import {
 import type { Accessibility, Task } from "@/shared/types";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 
-export async function POST() {
+export async function POST(req: Request) {
     const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
     if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
+
+    // Google Calendar 동기화를 동반하므로 남용을 막는다 (calendar-sync 와 동일 기준)
+    const rate = await consumeSharedRateLimit(
+        requestRateLimitKey(req, "agent-notifications-me", user.email),
+        { limit: 10, windowMs: 5 * 60 * 1000 },
+    );
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
 
     try {
         const serviceSupabase = createServiceSupabaseClient();
