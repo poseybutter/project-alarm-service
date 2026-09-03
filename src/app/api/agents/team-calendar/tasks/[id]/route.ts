@@ -153,15 +153,6 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             (!task.team_calendar_id || task.team_calendar_id !== calendarId)
                 ? task.team_calendar_id || sharedCalendarId
                 : null;
-        if (previousCalendarId) {
-            for (const staleId of previousEventIds) {
-                await deleteTeamCalendarTaskEvent({
-                    accessToken,
-                    calendarId: previousCalendarId,
-                    eventId: staleId,
-                });
-            }
-        }
         const synced = await syncTeamCalendarTaskEvents({
             accessToken,
             calendarId,
@@ -190,6 +181,18 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             .eq("team_id", task.team_id)
             .eq("id", taskId);
         if (error) throw error;
+
+        // 이전 캘린더 정리는 새 일정과 DB 갱신이 모두 끝난 뒤에 한다.
+        // 먼저 지우면 동기화가 실패했을 때 지워진 ID 만 DB 에 남는다.
+        if (previousCalendarId) {
+            for (const staleId of previousEventIds) {
+                await deleteTeamCalendarTaskEvent({
+                    accessToken,
+                    calendarId: previousCalendarId,
+                    eventId: staleId,
+                });
+            }
+        }
 
         return NextResponse.json({
             synced: true,

@@ -109,16 +109,6 @@ export async function POST() {
                         ? task.team_calendar_id || setting.calendar_id
                         : null;
 
-                if (previousCalendarId) {
-                    for (const staleId of previousEventIds) {
-                        await deleteTeamCalendarTaskEvent({
-                            accessToken,
-                            calendarId: previousCalendarId,
-                            eventId: staleId,
-                        });
-                    }
-                }
-
                 const result = await syncTeamCalendarTaskEvents({
                     accessToken,
                     calendarId: targetCalendarId,
@@ -145,6 +135,17 @@ export async function POST() {
                     .eq("team_id", teamId)
                     .eq("id", task.id);
                 if (updateError) throw updateError;
+
+                // 이전 캘린더 정리는 새 일정과 DB 갱신이 끝난 뒤에 한다.
+                if (previousCalendarId) {
+                    for (const staleId of previousEventIds) {
+                        await deleteTeamCalendarTaskEvent({
+                            accessToken,
+                            calendarId: previousCalendarId,
+                            eventId: staleId,
+                        });
+                    }
+                }
                 synced += 1;
             } catch (err) {
                 console.error(`[team-calendar-resync-task:${task.id}]`, err);

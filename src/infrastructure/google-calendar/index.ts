@@ -830,7 +830,7 @@ export async function upsertTeamCalendarTaskEvent(params: {
             return insert.json as GoogleCalendarEvent;
         }
 
-        // 동시 생성 충돌 → 기존 이벤트 갱신으로 재시도합니다.
+        // 409 = 그 ID 가 이미 존재한다(동시 생성 또는 소프트 삭제). 갱신으로 재시도한다.
         if (insert.res.status === 409) {
             const retry = await updateTeamCalendarEvent({
                 accessToken,
@@ -840,18 +840,29 @@ export async function upsertTeamCalendarTaskEvent(params: {
             if (retry.res.ok) {
                 return retry.json as GoogleCalendarEvent;
             }
-        }
 
-        // 지운 이벤트의 ID 는 재사용이 막히는 경우가 있다(409 후 갱신도 410).
-        // 그때는 Google 이 ID 를 새로 발급하게 하고, 호출부가 그 ID 를 저장한다.
-        const fresh = await insertEvent(event);
-        if (fresh.res.ok) {
-            return fresh.json as GoogleCalendarEvent;
+            // 갱신마저 404/410 이면 그 ID 는 재사용할 수 없는 묘비다.
+            // 이때만 Google 이 새 ID 를 발급하게 한다. 다른 실패(403 등)에서
+            // 새로 만들면 살아 있는 일정과 중복된 사본이 생긴다.
+            if (retry.res.status === 404 || retry.res.status === 410) {
+                const fresh = await insertEvent(event);
+                if (fresh.res.ok) {
+                    return fresh.json as GoogleCalendarEvent;
+                }
+                throw new Error(
+                    fresh.json.error?.message ||
+                        "Failed to create team calendar event",
+                );
+            }
+
+            throw new Error(
+                retry.json.error?.message ||
+                    "Failed to sync team calendar event after conflict",
+            );
         }
 
         throw new Error(
-            fresh.json.error?.message ||
-                insert.json.error?.message ||
+            insert.json.error?.message ||
                 "Failed to create team calendar event",
         );
     }
