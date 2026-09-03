@@ -135,11 +135,16 @@ function formatEventTime(event: CalendarEventInput) {
 
 function taskLine(item: AlertTask, index: number) {
     const { task } = item;
-    const content = taskContentLines(task.content);
+    const content = taskContentEntries(task);
     const project = `${task.is_starred ? "⭐ " : ""}${task.proj}`;
     const contentText =
         content.length > 0
-            ? `\n${content.map((line) => `   • ${line}`).join("\n")}`
+            ? `\n${content
+                  .map(
+                      (entry) =>
+                          `   • ${entry.text}${entry.status ? ` (${entry.status})` : ""}`,
+                  )
+                  .join("\n")}`
             : "";
     return `${index}. ${project}${contentText}\n   ${task.status || "상태 없음"} · ${taskDueText(item)}`;
 }
@@ -190,6 +195,28 @@ function taskContentLines(value: string | null | undefined) {
         .filter(Boolean);
 }
 
+/** 업무 내용 한 줄. content_items 로 등록했다면 항목별 상태가 함께 온다. */
+type TaskContentEntry = { text: string; status?: string };
+
+/** content_items 가 있으면 항목별 상태를 살리고, 없으면 기존 content 를 줄 단위로 쓴다. */
+function taskContentEntries(task: Task): TaskContentEntry[] {
+    if (task.content_items && task.content_items.length > 0) {
+        return task.content_items
+            .map((ci) => ({ text: (ci.text || "").trim(), status: ci.status }))
+            .filter((entry) => entry.text);
+    }
+    return taskContentLines(task.content).map((text) => ({ text }));
+}
+
+/** 항목 상태 색 — 앱의 TaskContentList 배지 색과 맞춘다. */
+const CONTENT_STATUS_COLORS: Record<string, string> = {
+    "완료": "#16a34a",
+    "지연/보류": "#dc2626",
+    "진행중": "#2563eb",
+    "대기": "#78716c",
+    "시작 전": "#78716c",
+};
+
 function escapeGChatText(value: string) {
     return value
         .replace(/&/g, "&amp;")
@@ -197,18 +224,26 @@ function escapeGChatText(value: string) {
         .replace(/>/g, "&gt;");
 }
 
+function taskContentCardLine(entry: TaskContentEntry) {
+    const text = escapeGChatText(entry.text);
+    if (!entry.status) return `• ${text}`;
+    const color = CONTENT_STATUS_COLORS[entry.status] ?? "#78716c";
+    const label = `<font color="${color}">${escapeGChatText(entry.status)}</font>`;
+    // 완료 항목은 앱과 동일하게 취소선으로 끝난 일을 구분한다
+    const body = entry.status === "완료" ? `<s>${text}</s>` : text;
+    return `• ${body} ${label}`;
+}
+
 function taskCardText(item: AlertTask, index: number) {
     const { task } = item;
-    const content = taskContentLines(task.content);
+    const content = taskContentEntries(task);
     const status = task.status ? escapeGChatText(task.status) : "상태 없음";
     const project = escapeGChatText(
         `${task.is_starred ? "⭐ " : ""}${task.proj || "프로젝트 없음"}`,
     );
     const body =
         content.length > 0
-            ? `<br>${content
-                  .map((line) => `• ${escapeGChatText(line)}`)
-                  .join("<br>")}`
+            ? `<br>${content.map(taskContentCardLine).join("<br>")}`
             : "";
     return `<b>${index}. ${project}</b>${body}<br><font color="#777777">${status}</font> · ${taskDueCard(item)}`;
 }
