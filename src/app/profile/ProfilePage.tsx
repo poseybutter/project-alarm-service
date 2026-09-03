@@ -1290,10 +1290,9 @@ export default function ProfilePage() {
                                                         {/* 프로젝트 셀렉트 */}
                                                         <div className="px-4 pt-3 pb-2">
                                                             <Select
-                                                                options={effortByProject.map((r) => ({
-                                                                    value: r.proj,
-                                                                    label: r.proj,
-                                                                }))}
+                                                                options={[...new Set(myTasks.map((t) => t.proj).filter(Boolean))]
+                                                                    .sort((a, b) => a.localeCompare(b, "ko"))
+                                                                    .map((p) => ({ value: p, label: p }))}
                                                                 value={effortCalProj ? { value: effortCalProj, label: effortCalProj } : null}
                                                                 onChange={(opt) => setEffortCalProj(opt?.value ?? "")}
                                                                 placeholder="전체 프로젝트"

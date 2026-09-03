@@ -634,7 +634,7 @@ export default function TaskEditModal({
                             )}
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                        {onDelete && task ? (
+                        {onDelete ? (
                             <button
                                 type="button"
                                 onClick={() => {
