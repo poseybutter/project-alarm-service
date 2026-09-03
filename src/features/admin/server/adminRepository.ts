@@ -33,6 +33,7 @@ import type {
   TeamModuleKey,
 } from "@/features/admin/types";
 import { ALL_TEAM_MODULES } from "@/features/admin/types";
+import { mapWithConcurrency } from "@/shared/server/concurrency";
 
 type PlayerRow = {
   id: number;
@@ -552,60 +553,40 @@ async function countScopedRows(table: string, teamId: string | null) {
   return count ?? 0;
 }
 
-async function countProjectsByTeams(
+/**
+ * 팀별 행 수를 head-count 쿼리로 집계한다.
+ * 테이블 전체를 1000행씩 내려받아 세면 행 수에 비례해 느려지므로,
+ * 집계는 DB 에 맡기고 팀당 카운트 한 건만 받는다.
+ */
+async function countRowsByTeams(
+  table: "projects" | "tasks",
   teamIds: string[],
 ): Promise<Map<string, number>> {
   if (teamIds.length === 0) return new Map();
   const service = createServiceSupabaseClient();
-  const counts = new Map<string, number>();
-  let from = 0;
-  const pageSize = 1000;
-  while (true) {
-    const { data, error } = await service
-      .from("projects")
-      .select("team_id")
-      .in("team_id", teamIds)
-      .range(from, from + pageSize - 1);
-    if (error) {
-      if (error.code === "42P01" || error.code === "42703") return new Map();
-      throw error;
-    }
-    for (const row of data ?? []) {
-      const tid = row.team_id as string;
-      counts.set(tid, (counts.get(tid) ?? 0) + 1);
-    }
-    if (!data || data.length < pageSize) break;
-    from += pageSize;
+  try {
+    const entries = await mapWithConcurrency(teamIds, 8, async (teamId) => {
+      const { count, error } = await service
+        .from(table)
+        .select("id", { count: "exact", head: true })
+        .eq("team_id", teamId);
+      if (error) throw error;
+      return [teamId, count ?? 0] as const;
+    });
+    return new Map(entries);
+  } catch (error) {
+    const code = (error as { code?: string } | null)?.code;
+    if (code === "42P01" || code === "42703") return new Map();
+    throw error;
   }
-  return counts;
 }
 
-async function countTasksByTeams(
-  teamIds: string[],
-): Promise<Map<string, number>> {
-  if (teamIds.length === 0) return new Map();
-  const service = createServiceSupabaseClient();
-  const counts = new Map<string, number>();
-  let from = 0;
-  const pageSize = 1000;
-  while (true) {
-    const { data, error } = await service
-      .from("tasks")
-      .select("team_id")
-      .in("team_id", teamIds)
-      .range(from, from + pageSize - 1);
-    if (error) {
-      if (error.code === "42P01" || error.code === "42703") return new Map();
-      throw error;
-    }
-    for (const row of data ?? []) {
-      const tid = row.team_id as string;
-      counts.set(tid, (counts.get(tid) ?? 0) + 1);
-    }
-    if (!data || data.length < pageSize) break;
-    from += pageSize;
-  }
-  return counts;
+async function countProjectsByTeams(teamIds: string[]) {
+  return countRowsByTeams("projects", teamIds);
+}
+
+async function countTasksByTeams(teamIds: string[]) {
+  return countRowsByTeams("tasks", teamIds);
 }
 
 async function countOpenTasks(teamId: string | null) {
