@@ -7,7 +7,7 @@ import {
 import { createAgentSuggestions } from "@/features/agents/server/suggestions";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import {
-    consumeRateLimit,
+    consumeSharedRateLimit,
     rateLimitResponse,
     requestRateLimitKey,
 } from "@/shared/server/rateLimit";
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 팀 데이터 전반을 읽는 무거운 생성 작업이므로 남용을 막는다.
-    const rate = consumeRateLimit(
+    const rate = await consumeSharedRateLimit(
         requestRateLimitKey(req, "agent-notifications-generate", user.email),
         { limit: 20, windowMs: 60 * 1000 },
     );

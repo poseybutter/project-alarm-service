@@ -14,7 +14,7 @@ import {
 } from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import {
-    consumeRateLimit,
+    consumeSharedRateLimit,
     rateLimitResponse,
     requestRateLimitKey,
 } from "@/shared/server/rateLimit";
@@ -130,7 +130,7 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
         }
         // 업무 저장마다 Google API 동기화가 돌므로 남용을 막는다 (저장·삭제 합산).
-        const rate = consumeRateLimit(
+        const rate = await consumeSharedRateLimit(
             requestRateLimitKey(_req, "team-calendar-task-sync", user.email),
             { limit: 60, windowMs: 60 * 1000 },
         );
@@ -263,7 +263,7 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
         if (!user?.email || !role) {
             return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
         }
-        const rate = consumeRateLimit(
+        const rate = await consumeSharedRateLimit(
             requestRateLimitKey(_req, "team-calendar-task-sync", user.email),
             { limit: 60, windowMs: 60 * 1000 },
         );

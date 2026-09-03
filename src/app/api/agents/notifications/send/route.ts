@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import {
-    consumeRateLimit,
+    consumeSharedRateLimit,
     rateLimitResponse,
     requestRateLimitKey,
 } from "@/shared/server/rateLimit";
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 외부 채팅 웹훅 발송이므로 남용을 막는다.
-    const rate = consumeRateLimit(
+    const rate = await consumeSharedRateLimit(
         requestRateLimitKey(req, "agent-notifications-send", user.email),
         { limit: 30, windowMs: 60 * 1000 },
     );
