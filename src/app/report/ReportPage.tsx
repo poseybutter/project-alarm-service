@@ -425,10 +425,22 @@ function planDatePrefix(t: Task): string {
     return s && e ? `${s}~${e} ` : e ? `~${e} ` : "";
 }
 
-function contentToCardHtml(t: Task): string {
-    // 계획 항목(미완료)만 기간 접두 — 구 브리핑 형식과 동일
+function contentToCardHtml(
+    t: Task,
+    weekWindow?: { from: string; to: string },
+): string {
+    // 계획 항목(미완료)만 기간 접두 — 단, 이번주 포함 업무는 기간 생략
+    const hasWeekOverlap =
+        weekWindow &&
+        (() => {
+            const s = t.start_date || t.end_date;
+            const e = t.end_date || t.start_date;
+            return s && e && s <= weekWindow.to && e >= weekWindow.from;
+        })();
     const datePrefix =
-        t.is_plan && t.status !== "완료" ? planDatePrefix(t) : "";
+        t.is_plan && t.status !== "완료" && !hasWeekOverlap
+            ? planDatePrefix(t)
+            : "";
     const taskLines = (t.content || "")
         .split("\n")
         .map((line) => line.trim())
@@ -635,6 +647,7 @@ export default function ReportPage() {
         setEditMode(false);
     }, [wOff]);
     const [assignTab, setAssignTab] = useState<"active" | "waiting">("active");
+    const [assignSort, setAssignSort] = useState<"type" | "newest">("newest");
     const assignTabBarRef = useRef<HTMLDivElement>(null);
     // 구분(업무 유형) 탭바 드래그 스크롤
     const briefTabBarRef = useRef<HTMLDivElement>(null);
@@ -695,6 +708,10 @@ export default function ReportPage() {
     const [copiedProj, setCopiedProj] = useState<string | null>(null);
     // 주간 브리핑: 선택된 구분(업무 유형) 탭
     const [briefTypeTab, setBriefTypeTab] = useState<string>("프로젝트");
+    // 주간 브리핑: 그룹 기준 (카테고리별 / 담당자별)
+    const [briefGroupBy, setBriefGroupBy] = useState<"type" | "member">("type");
+    // 담당자별 보기: 선택된 담당자 탭
+    const [briefMemberTab, setBriefMemberTab] = useState<string>("");
     // 업무별 브리핑 카드: 저장된 내용(task_id→HTML), 편집 드래프트, 저장중/복사 표시
     const [savedBriefTasks, setSavedBriefTasks] = useState<
         Record<number, string>
@@ -979,6 +996,15 @@ export default function ReportPage() {
     );
 
     const curTasks = mode === "weekly" ? wTasks : mTasks;
+
+    const allMemberOptions = useMemo(() => {
+        const taskMembers = new Set(curTasks.map((t) => t.member).filter(Boolean));
+        const hasUnassigned = curTasks.some((t) => !t.member);
+        // 관리자에서 정한 구성원 순서(members)를 유지하고, 목록에 없는 이름은 뒤에 붙인다
+        const ordered = members.filter((m) => taskMembers.has(m));
+        const extra = [...taskMembers].filter((m) => !members.includes(m));
+        return [...ordered, ...extra, ...(hasUnassigned ? ["미지정"] : [])];
+    }, [curTasks, members]);
 
     const canOpenEdit = !isGuest && isEditableWindow();
     const editAllowed = canOpenEdit && editMode;
@@ -1298,24 +1324,24 @@ export default function ReportPage() {
         );
     }
 
+    const sortAssignments = useCallback(
+        (list: Assignment[]) => {
+            if (assignSort === "newest") return [...list].sort((a, b) => b.id - a.id);
+            return [...list].sort((a, b) => assignTypeRank(a.type) - assignTypeRank(b.type));
+        },
+        [assignSort],
+    );
     const assignActive = useMemo(
-        () =>
-            assignments
-                .filter((a) => a.status === "진행중")
-                // 구분별로 같은 종류끼리 모음 (같은 구분 내에서는 기존 sort_order 유지 — 안정 정렬)
-                .sort((a, b) => assignTypeRank(a.type) - assignTypeRank(b.type)),
-        [assignments],
+        () => sortAssignments(assignments.filter((a) => a.status === "진행중")),
+        [assignments, sortAssignments],
     );
     const assignWaiting = useMemo(
-        () =>
-            assignments
-                .filter((a) => a.status === "배정대기")
-                .sort((a, b) => assignTypeRank(a.type) - assignTypeRank(b.type)),
-        [assignments],
+        () => sortAssignments(assignments.filter((a) => a.status === "배정대기")),
+        [assignments, sortAssignments],
     );
     const assignCopyText = useMemo(
-        () => formatAssignments(assignments),
-        [assignments],
+        () => formatAssignments(sortAssignments(assignments)),
+        [assignments, sortAssignments],
     );
 
     function openAddAssignment() {
@@ -1579,50 +1605,87 @@ export default function ReportPage() {
                                             주간 브리핑
                                         </p>
                                     </div>
-                                    {canOpenEdit && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setEditMode((v) => !v)}
-                                            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${editMode ? "bg-stone-800 text-white" : "border border-stone-300 text-stone-500 hover:border-stone-400 hover:text-stone-700"}`}
-                                        >
-                                            <i className={`text-sm ${editMode ? "ri-lock-unlock-line" : "ri-edit-line"}`} aria-hidden />
-                                            {editMode ? "편집 중" : "편집"}
-                                        </button>
-                                    )}
+                                    <div className="flex items-center gap-2">
+                                        <label className="relative block">
+                                            <select
+                                                value={briefGroupBy}
+                                                onChange={(e) => setBriefGroupBy(e.target.value as "type" | "member")}
+                                                className="appearance-none rounded-lg border border-stone-300 bg-white py-1.5 pl-2.5 pr-7 text-xs font-medium text-stone-600 outline-none transition-colors hover:border-stone-400 focus:border-amber-500"
+                                            >
+                                                <option value="type">카테고리별</option>
+                                                <option value="member">담당자별</option>
+                                            </select>
+                                            <i className="ri-arrow-down-s-line pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-sm text-stone-400" aria-hidden />
+                                        </label>
+                                        {canOpenEdit && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditMode((v) => !v)}
+                                                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${editMode ? "bg-stone-800 text-white" : "border border-stone-300 text-stone-500 hover:border-stone-400 hover:text-stone-700"}`}
+                                            >
+                                                <i className={`text-sm ${editMode ? "ri-lock-unlock-line" : "ri-edit-line"}`} aria-hidden />
+                                                {editMode ? "편집 중" : "편집"}
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
-                                {/* 구분(업무 유형) 탭 → 선택된 구분의 업무를 상태별로 나열 */}
+                                {/* 그룹 기준(카테고리별/담당자별) 탭 → 선택된 그룹의 업무를 상태별로 나열 */}
                                 {(() => {
-                                    const typeOf = (t: Task) =>
-                                        TYPE_SORT_ORDER.includes(t.type ?? "")
-                                            ? (t.type as string)
-                                            : "기타";
-                                    const typeGroups = [...TYPE_SORT_ORDER, "기타"]
-                                        .map((type) => ({
-                                            type,
-                                            tasks: curTasks.filter(
-                                                (t) => typeOf(t) === type,
-                                            ),
-                                        }))
-                                        .filter((grp) => grp.tasks.length > 0);
-                                    if (!typeGroups.length)
+                                    type BriefGroup = { key: string; tasks: Task[] };
+                                    let groups: BriefGroup[];
+                                    let activeKey: string;
+                                    let setActiveKey: (key: string) => void;
+
+                                    if (briefGroupBy === "type") {
+                                        const typeOf = (t: Task) =>
+                                            TYPE_SORT_ORDER.includes(t.type ?? "")
+                                                ? (t.type as string)
+                                                : "기타";
+                                        groups = [...TYPE_SORT_ORDER, "기타"]
+                                            .map((type) => ({
+                                                key: type,
+                                                tasks: curTasks.filter(
+                                                    (t) => typeOf(t) === type,
+                                                ),
+                                            }))
+                                            .filter((grp) => grp.tasks.length > 0);
+                                        activeKey = groups.some(
+                                            (g) => g.key === briefTypeTab,
+                                        )
+                                            ? briefTypeTab
+                                            : groups[0]?.key ?? "";
+                                        setActiveKey = setBriefTypeTab;
+                                    } else {
+                                        groups = allMemberOptions
+                                            .map((member) => ({
+                                                key: member,
+                                                tasks: curTasks.filter(
+                                                    (t) => member === "미지정" ? !t.member : t.member === member,
+                                                ),
+                                            }))
+                                            .filter((grp) => grp.tasks.length > 0);
+                                        activeKey = groups.some(
+                                            (g) => g.key === briefMemberTab,
+                                        )
+                                            ? briefMemberTab
+                                            : groups[0]?.key ?? "";
+                                        setActiveKey = setBriefMemberTab;
+                                    }
+
+                                    if (!groups.length)
                                         return (
                                             <p className="py-8 text-center text-sm text-stone-400">
                                                 브리핑할 업무가 없습니다.
                                             </p>
                                         );
                                     const canEdit = editAllowed;
-                                    const activeType = typeGroups.some(
-                                        (grp) => grp.type === briefTypeTab,
-                                    )
-                                        ? briefTypeTab
-                                        : typeGroups[0].type;
                                     const activeGroup =
-                                        typeGroups.find(
-                                            (grp) => grp.type === activeType,
-                                        ) ?? typeGroups[0];
+                                        groups.find(
+                                            (g) => g.key === activeKey,
+                                        ) ?? groups[0];
                                     return (
                                         <>
-                                            {/* 구분(업무 유형) 탭 바 */}
+                                            {/* 그룹 탭 바 */}
                                             <div
                                                 ref={briefTabBarRef}
                                                 className="flex gap-1 border-b border-stone-200 mb-3 overflow-x-auto overflow-y-hidden scrollbar-none select-none cursor-grab active:cursor-grabbing"
@@ -1662,16 +1725,16 @@ export default function ReportPage() {
                                                         false;
                                                 }}
                                             >
-                                                {typeGroups.map((grp) => {
+                                                {groups.map((grp) => {
                                                     const isActive =
-                                                        grp.type === activeType;
+                                                        grp.key === activeKey;
                                                     return (
                                                         <button
-                                                            key={grp.type}
+                                                            key={grp.key}
                                                             type="button"
                                                             onClick={() =>
-                                                                setBriefTypeTab(
-                                                                    grp.type,
+                                                                setActiveKey(
+                                                                    grp.key,
                                                                 )
                                                             }
                                                             className={`shrink-0 flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
@@ -1682,15 +1745,15 @@ export default function ReportPage() {
                                                         >
                                                             <span
                                                                 className={
-                                                                    isActive
+                                                                    isActive && briefGroupBy === "type"
                                                                         ? TYPE_TEXT_COLOR[
                                                                               grp
-                                                                                  .type
+                                                                                  .key
                                                                           ] ?? ""
                                                                         : ""
                                                                 }
                                                             >
-                                                                {grp.type}
+                                                                {grp.key}
                                                             </span>
                                                             <span
                                                                 className={`text-xs rounded-full px-1.5 py-0.5 ${isActive ? "bg-stone-800 text-white" : "bg-stone-100 text-stone-500"}`}
@@ -1703,7 +1766,7 @@ export default function ReportPage() {
                                             </div>
                                             {[activeGroup].map((grp) => (
                                                 <div
-                                                    key={grp.type}
+                                                    key={grp.key}
                                                     className="bg-white rounded-xl border border-stone-200 overflow-hidden"
                                                 >
                                                     {/* 카드 헤더: 건수 + 전체 복사 */}
@@ -1730,6 +1793,7 @@ export default function ReportPage() {
                                                                     ] ??
                                                                     contentToCardHtml(
                                                                         t,
+                                                                        wk,
                                                                     );
                                                                 const text =
                                                                     buildBriefProjects(
@@ -1749,13 +1813,13 @@ export default function ReportPage() {
                                                                     text,
                                                                     (v) =>
                                                                         setCopiedTypeGroup(
-                                                                            v ? grp.type : null,
+                                                                            v ? grp.key : null,
                                                                         ),
                                                                 );
                                                             }}
-                                                            className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${copiedTypeGroup === grp.type ? "bg-green-500 text-white" : "bg-stone-800 text-white"}`}
+                                                            className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${copiedTypeGroup === grp.key ? "bg-green-500 text-white" : "bg-stone-800 text-white"}`}
                                                         >
-                                                            {copiedTypeGroup === grp.type
+                                                            {copiedTypeGroup === grp.key
                                                                 ? "복사됨!"
                                                                 : "전체 복사"}
                                                         </button>
@@ -1770,216 +1834,116 @@ export default function ReportPage() {
                                                             savedBriefTasks[
                                                                 t.id
                                                             ] ??
-                                                            contentToCardHtml(t);
-                                                        const projects =
-                                                            buildBriefProjects(
-                                                                grp.tasks,
-                                                            );
-                                                        return STATUS_BRIEF_GROUPS.map(
-                                                            (g, r) => {
-                                                                const projs =
-                                                                    projects.filter(
-                                                                        (p) =>
-                                                                            p.bucket ===
-                                                                            r,
-                                                                    );
-                                                                if (!projs.length)
-                                                                    return null;
-                                                                return (
-                                                                    <div
-                                                                        key={
-                                                                            g.key
-                                                                        }
+                                                            contentToCardHtml(t, wk);
+
+                                                        const renderProj = (p: BriefProject) => (
+                                                            <div key={p.proj} className="p-4 space-y-3">
+                                                                <div className="mb-0 flex items-center justify-between gap-2">
+                                                                    <p className="text-[13px] font-bold text-stone-800">
+                                                                        {p.starred && <span className="mr-1" title="핵심 프로젝트">⭐</span>}
+                                                                        {p.type && (
+                                                                            <span className={TYPE_TEXT_COLOR[p.type] ?? "text-stone-500"}>
+                                                                                [{p.type}]{" "}
+                                                                            </span>
+                                                                        )}
+                                                                        {p.proj}
+                                                                        {p.members.length > 0 && (
+                                                                            <span className="ml-1 font-medium text-stone-400">
+                                                                                @{p.members.join(", ")}
+                                                                            </span>
+                                                                        )}
+                                                                    </p>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => void copySection(projectCopyText(p, taskHtml), (v) => setCopiedProj(v ? p.proj : null))}
+                                                                        className={`shrink-0 rounded-md p-1 transition-colors ${copiedProj === p.proj ? "text-green-600" : "text-stone-400 hover:bg-stone-100 hover:text-stone-700"}`}
+                                                                        title={copiedProj === p.proj ? "복사됨" : "복사"}
+                                                                        aria-label="복사"
                                                                     >
-                                                                        {/* 상태 서브헤더 */}
+                                                                        <i className={`text-base ${copiedProj === p.proj ? "ri-check-line" : "ri-file-copy-line"}`} aria-hidden />
+                                                                    </button>
+                                                                </div>
+                                                                {p.tasks.map((t) => {
+                                                                    const savedHtml = savedBriefTasks[t.id];
+                                                                    const cardInitial = noticeHtmlHasText(savedHtml) ? savedHtml : contentToCardHtml(t, wk);
+                                                                    return (
+                                                                        <div key={t.id} className="space-y-2">
+                                                                            {isDoneTagged(p, t) && (
+                                                                                <span className="inline-block rounded bg-stone-100 px-1.5 py-0.5 text-[11px] font-medium text-stone-500">완료</span>
+                                                                            )}
+                                                                            <TiptapSectionEditor
+                                                                                key={`btask-${t.id}-${wOff}-${briefingEditorKey}`}
+                                                                                content={cardInitial}
+                                                                                onChange={(html) => { briefTaskDraftRef.current[t.id] = html; }}
+                                                                                editable={canEdit}
+                                                                                showToolbar={canEdit}
+                                                                                placeholder="업무 내용을 입력하세요..."
+                                                                            />
+                                                                            {canEdit && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    disabled={savingTaskId === t.id}
+                                                                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); void saveBriefingTask(t.id, briefTaskDraftRef.current[t.id] ?? cardInitial); }}
+                                                                                    className="w-full rounded-xl bg-amber-500 py-2.5 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50"
+                                                                                >
+                                                                                    {savingTaskId === t.id ? "저장 중…" : "저장"}
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        );
+
+                                                        const renderStatusGroups = (projects: BriefProject[]) =>
+                                                            STATUS_BRIEF_GROUPS.map((g, r) => {
+                                                                const projs = projects.filter((p) => p.bucket === r);
+                                                                if (!projs.length) return null;
+                                                                return (
+                                                                    <div key={g.key}>
                                                                         <div className="flex items-center gap-1.5 px-4 pt-3 pb-1">
-                                                                            <span className="text-base">
-                                                                                {
-                                                                                    g.emoji
-                                                                                }
-                                                                            </span>
-                                                                            <span className="text-sm font-semibold text-stone-600">
-                                                                                {
-                                                                                    g.key
-                                                                                }
-                                                                            </span>
-                                                                            <span className="text-sm text-stone-400">
-                                                                                {
-                                                                                    projs.length
-                                                                                }
-                                                                            </span>
+                                                                            <span className="text-base">{g.emoji}</span>
+                                                                            <span className="text-sm font-semibold text-stone-600">{g.key}</span>
+                                                                            <span className="text-sm text-stone-400">{projs.length}</span>
                                                                         </div>
                                                                         <div className="divide-y divide-stone-100">
-                                                                            {projs.map(
-                                                                                (
-                                                                                    p,
-                                                                                ) => (
-                                                                                    <div
-                                                                                        key={
-                                                                                            p.proj
-                                                                                        }
-                                                                                        className="p-4 space-y-3"
-                                                                                    >
-                                                                                        {/* 프로젝트 헤더: ⭐ [타입] 프로젝트명 + 복사 */}
-                                                                                        <div className="flex items-start justify-between gap-2">
-                                                                                            <p className="text-[13px] font-bold text-stone-800">
-                                                                                                {p.starred && (
-                                                                                                    <span
-                                                                                                        className="mr-1"
-                                                                                                        title="핵심 프로젝트"
-                                                                                                    >
-                                                                                                        ⭐
-                                                                                                    </span>
-                                                                                                )}
-                                                                                                {p.type && (
-                                                                                                    <span
-                                                                                                        className={
-                                                                                                            TYPE_TEXT_COLOR[
-                                                                                                                p
-                                                                                                                    .type
-                                                                                                            ] ??
-                                                                                                            "text-stone-500"
-                                                                                                        }
-                                                                                                    >
-                                                                                                        [{p.type}]{" "}
-                                                                                                    </span>
-                                                                                                )}
-                                                                                                {p.proj}
-                                                                                                {p.members.length > 0 && (
-                                                                                                    <span className="ml-1 font-medium text-stone-400">
-                                                                                                        @{p.members.join(", ")}
-                                                                                                    </span>
-                                                                                                )}
-                                                                                            </p>
-                                                                                            <button
-                                                                                                type="button"
-                                                                                                onClick={() =>
-                                                                                                    void copySection(
-                                                                                                        projectCopyText(
-                                                                                                            p,
-                                                                                                            taskHtml,
-                                                                                                        ),
-                                                                                                        (
-                                                                                                            v,
-                                                                                                        ) =>
-                                                                                                            setCopiedProj(
-                                                                                                                v
-                                                                                                                    ? p.proj
-                                                                                                                    : null,
-                                                                                                            ),
-                                                                                                    )
-                                                                                                }
-                                                                                                className={`shrink-0 rounded-md p-1 transition-colors ${copiedProj === p.proj ? "text-green-600" : "text-stone-400 hover:bg-stone-100 hover:text-stone-700"}`}
-                                                                                                title={
-                                                                                                    copiedProj ===
-                                                                                                    p.proj
-                                                                                                        ? "복사됨"
-                                                                                                        : "복사"
-                                                                                                }
-                                                                                                aria-label="복사"
-                                                                                            >
-                                                                                                <i
-                                                                                                    className={`text-base ${copiedProj === p.proj ? "ri-check-line" : "ri-file-copy-line"}`}
-                                                                                                    aria-hidden
-                                                                                                />
-                                                                                            </button>
-                                                                                        </div>
-                                                                                        {/* 업무별 블록: @담당자 + 완료 태그 + 에디터 + 저장 */}
-                                                                                        {p.tasks.map(
-                                                                                            (
-                                                                                                t,
-                                                                                            ) => {
-                                                                                                const savedHtml =
-                                                                                                    savedBriefTasks[
-                                                                                                        t
-                                                                                                            .id
-                                                                                                    ];
-                                                                                                const cardInitial =
-                                                                                                    noticeHtmlHasText(
-                                                                                                        savedHtml,
-                                                                                                    )
-                                                                                                        ? savedHtml
-                                                                                                        : contentToCardHtml(
-                                                                                                              t,
-                                                                                                          );
-                                                                                                return (
-                                                                                                    <div
-                                                                                                        key={
-                                                                                                            t.id
-                                                                                                        }
-                                                                                                        className="space-y-2"
-                                                                                                    >
-                                                                                                        {isDoneTagged(
-                                                                                                            p,
-                                                                                                            t,
-                                                                                                        ) && (
-                                                                                                            <span className="inline-block rounded bg-stone-100 px-1.5 py-0.5 text-[11px] font-medium text-stone-500">
-                                                                                                                완료
-                                                                                                            </span>
-                                                                                                        )}
-                                                                                                        <TiptapSectionEditor
-                                                                                                            key={`btask-${t.id}-${wOff}-${briefingEditorKey}`}
-                                                                                                            content={
-                                                                                                                cardInitial
-                                                                                                            }
-                                                                                                            onChange={(
-                                                                                                                html,
-                                                                                                            ) => {
-                                                                                                                briefTaskDraftRef.current[
-                                                                                                                    t.id
-                                                                                                                ] =
-                                                                                                                    html;
-                                                                                                            }}
-                                                                                                            editable={
-                                                                                                                canEdit
-                                                                                                            }
-                                                                                                            showToolbar={
-                                                                                                                canEdit
-                                                                                                            }
-                                                                                                            placeholder="업무 내용을 입력하세요..."
-                                                                                                        />
-                                                                                                        {canEdit && (
-                                                                                                            <button
-                                                                                                                type="button"
-                                                                                                                disabled={
-                                                                                                                    savingTaskId ===
-                                                                                                                    t.id
-                                                                                                                }
-                                                                                                                onClick={(
-                                                                                                                    e,
-                                                                                                                ) => {
-                                                                                                                    e.preventDefault();
-                                                                                                                    e.stopPropagation();
-                                                                                                                    void saveBriefingTask(
-                                                                                                                        t.id,
-                                                                                                                        briefTaskDraftRef
-                                                                                                                            .current[
-                                                                                                                            t
-                                                                                                                                .id
-                                                                                                                        ] ??
-                                                                                                                            cardInitial,
-                                                                                                                    );
-                                                                                                                }}
-                                                                                                                className="w-full rounded-xl bg-amber-500 py-2.5 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50"
-                                                                                                            >
-                                                                                                                {savingTaskId ===
-                                                                                                                t.id
-                                                                                                                    ? "저장 중…"
-                                                                                                                    : "저장"}
-                                                                                                            </button>
-                                                                                                        )}
-                                                                                                    </div>
-                                                                                                );
-                                                                                            },
-                                                                                        )}
-                                                                                    </div>
-                                                                                ),
-                                                                            )}
+                                                                            {projs.map(renderProj)}
                                                                         </div>
                                                                     </div>
                                                                 );
-                                                            },
-                                                        );
+                                                            });
+
+                                                        /* 담당자별: 카테고리 → 상태 → 프로젝트 */
+                                                        if (briefGroupBy === "member") {
+                                                            const typeOf = (t: Task) =>
+                                                                TYPE_SORT_ORDER.includes(t.type ?? "")
+                                                                    ? (t.type as string)
+                                                                    : "기타";
+                                                            const typeSections = [...TYPE_SORT_ORDER, "기타"]
+                                                                .map((type) => ({
+                                                                    type,
+                                                                    tasks: grp.tasks.filter((t) => typeOf(t) === type),
+                                                                }))
+                                                                .filter((s) => s.tasks.length > 0);
+
+                                                            return typeSections.map((section, si) => (
+                                                                <div key={section.type}>
+                                                                    <div className="flex items-center gap-1.5 px-4 pt-5 pb-1">
+                                                                        <span className={`text-sm font-bold ${TYPE_TEXT_COLOR[section.type] ?? "text-stone-600"}`}>
+                                                                            {section.type}
+                                                                        </span>
+                                                                        <span className="text-xs text-stone-400">{section.tasks.length}건</span>
+                                                                    </div>
+                                                                    {renderStatusGroups(buildBriefProjects(section.tasks))}
+                                                                    {si < typeSections.length - 1 && (
+                                                                        <div className="mx-4 border-b border-stone-200" />
+                                                                    )}
+                                                                </div>
+                                                            ));
+                                                        }
+
+                                                        /* 카테고리별: 상태 → 프로젝트 (기존) */
+                                                        return renderStatusGroups(buildBriefProjects(grp.tasks));
                                                     })()}
                                                 </div>
                                             ))}
@@ -1999,13 +1963,26 @@ export default function ReportPage() {
                                                 담당 배정
                                             </p>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={copyAssignmentsBlock}
-                                            className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${copiedAssign ? "bg-green-500 text-white" : "bg-stone-800 text-white"}`}
-                                        >
-                                            {copiedAssign ? "복사됨!" : "전체 복사"}
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            <label className="relative block">
+                                                <select
+                                                    value={assignSort}
+                                                    onChange={(e) => setAssignSort(e.target.value as "type" | "newest")}
+                                                    className="appearance-none rounded-lg border border-stone-300 bg-white py-1.5 pl-2.5 pr-7 text-xs font-medium text-stone-600 outline-none transition-colors hover:border-stone-400 focus:border-amber-500"
+                                                >
+                                                    <option value="newest">전체</option>
+                                                    <option value="type">카테고리별</option>
+                                                </select>
+                                                <i className="ri-arrow-down-s-line pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-sm text-stone-400" aria-hidden />
+                                            </label>
+                                            <button
+                                                type="button"
+                                                onClick={copyAssignmentsBlock}
+                                                className={`shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${copiedAssign ? "bg-green-500 text-white" : "bg-stone-800 text-white"}`}
+                                            >
+                                                {copiedAssign ? "복사됨!" : "전체 복사"}
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {/* 탭 바 */}
@@ -2431,6 +2408,7 @@ export default function ReportPage() {
                                         구분
                                     </label>
                                     <Select
+                                        aria-label="구분 선택"
                                         options={[
                                             "프로젝트",
                                             "개편",
@@ -2467,6 +2445,7 @@ export default function ReportPage() {
                                         표시할 목록
                                     </label>
                                     <Select
+                                        aria-label="표시할 목록 선택"
                                         options={[
                                             {
                                                 value: "진행중",

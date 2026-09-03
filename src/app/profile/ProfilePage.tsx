@@ -115,6 +115,11 @@ export default function ProfilePage() {
     >("week");
     const [historyProjFilter, setHistoryProjFilter] = useState("");
     const [historyStatusFilter, setHistoryStatusFilter] = useState("");
+    const [historyView] = useState<"list" | "effort">("effort");
+    const [effortCalProj, setEffortCalProj] = useState<string>("");
+    const [effortCalMonth, setEffortCalMonth] = useState(() => new Date());
+    const [effortCalDay, setEffortCalDay] = useState<string | null>(null);
+    const [effortCalPicker, setEffortCalPicker] = useState<"year" | "month" | null>(null);
     const [dateRange, setDateRange] = useState<DateRange | undefined>();
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [isAttending, setIsAttending] = useState(false);
@@ -936,8 +941,8 @@ export default function ProfilePage() {
                                 </div>
                             ) : (
                                 <>
-                                    {/* 기간 필터 */}
-                                    <div className="flex gap-2 mb-3 flex-wrap">
+                                    {/* 기간 필터 (목록 뷰에서만) */}
+                                    {historyView === "list" && <div className="flex gap-2 mb-3 flex-wrap">
                                         {[
                                             { key: "week", label: "이번 주" },
                                             {
@@ -982,9 +987,9 @@ export default function ProfilePage() {
                                                     : f.label}
                                             </button>
                                         ))}
-                                    </div>
+                                    </div>}
 
-                                    {showDatePicker && (
+                                    {historyView === "list" && showDatePicker && (
                                         <div className="bg-white rounded-2xl border border-stone-200 mb-3 overflow-hidden shadow-lg">
                                             {/* 상단 선택 현황 */}
                                             <div className="grid grid-cols-2 divide-x divide-stone-100 border-b border-stone-100">
@@ -1061,8 +1066,8 @@ export default function ProfilePage() {
                                         </div>
                                     )}
 
-                                    {/* 프로젝트/상태 필터 */}
-                                    <div className="flex gap-2 mb-3">
+                                    {/* 프로젝트/상태 필터 (목록 뷰에서만) */}
+                                    {historyView === "list" && <div className="flex gap-2 mb-3">
                                         <div className="flex-1 min-w-0">
                                             <Select
                                                 options={[
@@ -1144,9 +1149,10 @@ export default function ProfilePage() {
                                                 }
                                             />
                                         </div>
-                                    </div>
+                                    </div>}
 
-                                    {/* 통계 */}
+                                    {/* 통계 (목록 뷰에서만) */}
+                                    {historyView === "list" &&
                                     <div className="grid grid-cols-3 gap-2 mb-3">
                                         {[
                                             {
@@ -1190,9 +1196,9 @@ export default function ProfilePage() {
                                                 </div>
                                             </div>
                                         ))}
-                                    </div>
+                                    </div>}
 
-                                    {historyTasks.length === 0 ? (
+                                    {historyTasks.length === 0 && historyView === "list" ? (
                                         <div className="text-center py-12 text-stone-400 text-sm">
                                             <div className="text-4xl mb-3">
                                                 📂
@@ -1202,6 +1208,297 @@ export default function ProfilePage() {
                                                 개인 데이터 조회 — 팀 전체는
                                                 리포트에서 확인
                                             </p>
+                                        </div>
+                                    ) : historyView === "effort" ? (
+                                        <div>
+                                            {/* 공수 달력 */}
+                                            {(() => {
+                                                // 달력 월 기준 전체 업무 (기간 필터 무관)
+                                                const calMonthStart = `${effortCalMonth.getFullYear()}-${String(effortCalMonth.getMonth() + 1).padStart(2, "0")}-01`;
+                                                const calMonthLastDay = new Date(effortCalMonth.getFullYear(), effortCalMonth.getMonth() + 1, 0).getDate();
+                                                const calMonthEnd = `${effortCalMonth.getFullYear()}-${String(effortCalMonth.getMonth() + 1).padStart(2, "0")}-${String(calMonthLastDay).padStart(2, "0")}`;
+                                                const myTasks = tasks.filter((t) => {
+                                                    if (t.member !== member) return false;
+                                                    const s = t.start_date || t.end_date;
+                                                    const e = t.end_date || t.start_date;
+                                                    return s && e && s <= calMonthEnd && e >= calMonthStart;
+                                                });
+                                                const calTasks = effortCalProj
+                                                    ? myTasks.filter((t) => t.proj === effortCalProj)
+                                                    : myTasks;
+                                                // 날짜별 공수 맵 (YYYY-MM-DD → minutes) — 업무 공수를 해당 날짜에 그대로 표시
+                                                const dayWorkload = new Map<string, number>();
+                                                for (const t of calTasks) {
+                                                    if (t.is_plan) continue;
+                                                    const wl = t.workload || 0;
+                                                    if (!wl) continue;
+                                                    const s = t.start_date || t.end_date;
+                                                    const e = t.end_date || t.start_date;
+                                                    if (!s || !e) continue;
+                                                    const startD = new Date(s + "T00:00:00");
+                                                    const endD = new Date(e + "T00:00:00");
+                                                    const numDays = Math.max(1, Math.floor((endD.getTime() - startD.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+                                                    const dailyWl = wl / numDays;
+                                                    for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+                                                        const key = toLocalYmd(d);
+                                                        dayWorkload.set(key, (dayWorkload.get(key) ?? 0) + dailyWl);
+                                                    }
+                                                }
+                                                // 날짜별 업무 존재 여부 (공수 무관)
+                                                const dayHasTasks = new Set<string>();
+                                                for (const t of calTasks) {
+                                                    const s = t.start_date || t.end_date;
+                                                    const e = t.end_date || t.start_date;
+                                                    if (!s || !e) continue;
+                                                    const startD2 = new Date(s + "T00:00:00");
+                                                    const endD2 = new Date(e + "T00:00:00");
+                                                    for (let d2 = new Date(startD2); d2 <= endD2; d2.setDate(d2.getDate() + 1)) {
+                                                        dayHasTasks.add(toLocalYmd(d2));
+                                                    }
+                                                }
+                                                // 달력 그리드 생성
+                                                const calYear = effortCalMonth.getFullYear();
+                                                const calMonth = effortCalMonth.getMonth();
+                                                const firstDay = new Date(calYear, calMonth, 1);
+                                                const lastDay = new Date(calYear, calMonth + 1, 0);
+                                                const startPad = firstDay.getDay(); // 0=일 ~ 6=토
+                                                const totalDays = lastDay.getDate();
+                                                const weeks: (number | null)[][] = [];
+                                                let week: (number | null)[] = Array(startPad).fill(null);
+                                                for (let d = 1; d <= totalDays; d++) {
+                                                    week.push(d);
+                                                    if (week.length === 7) { weeks.push(week); week = []; }
+                                                }
+                                                if (week.length > 0) { while (week.length < 7) week.push(null); weeks.push(week); }
+                                                const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
+
+                                                return (
+                                                    <div className="bg-white rounded-xl border border-stone-200 mb-3 overflow-hidden">
+                                                        {/* 프로젝트 셀렉트 */}
+                                                        <div className="px-4 pt-3 pb-2">
+                                                            <Select
+                                                                options={[...new Set(myTasks.map((t) => t.proj).filter(Boolean))]
+                                                                    .sort((a, b) => a.localeCompare(b, "ko"))
+                                                                    .map((p) => ({ value: p, label: p }))}
+                                                                value={effortCalProj ? { value: effortCalProj, label: effortCalProj } : null}
+                                                                onChange={(opt) => setEffortCalProj(opt?.value ?? "")}
+                                                                placeholder="전체 프로젝트"
+                                                                isClearable
+                                                                isSearchable
+                                                                styles={taskFilterProjectSelectStyles}
+                                                                menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                                                                noOptionsMessage={() => "프로젝트가 없어요"}
+                                                            />
+                                                        </div>
+                                                        {/* 월 네비게이션 (연도/월 그리드 피커) */}
+                                                        {(() => {
+                                                            const years = Array.from({ length: 11 }, (_, i) => 2020 + i);
+                                                            const monthNames = ["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
+                                                            return (
+                                                                <div className="relative flex items-center justify-between px-4 py-1.5">
+                                                                    <button type="button" onClick={() => setEffortCalMonth(new Date(calYear, calMonth - 1, 1))} className="p-1 text-stone-400 hover:text-stone-700" aria-label="이전 달">
+                                                                        <i className="ri-arrow-left-s-line text-base" aria-hidden />
+                                                                    </button>
+                                                                    <div className="flex items-center gap-0.5">
+                                                                        <button type="button" onClick={() => setEffortCalPicker((v) => v === "year" ? null : "year")} className="px-1 text-sm font-bold text-stone-800 hover:text-amber-600">{calYear}년</button>
+                                                                        <button type="button" onClick={() => setEffortCalPicker((v) => v === "month" ? null : "month")} className="px-1 text-sm font-bold text-stone-800 hover:text-amber-600">{calMonth + 1}월</button>
+                                                                    </div>
+                                                                    <button type="button" onClick={() => setEffortCalMonth(new Date(calYear, calMonth + 1, 1))} className="p-1 text-stone-400 hover:text-stone-700" aria-label="다음 달">
+                                                                        <i className="ri-arrow-right-s-line text-base" aria-hidden />
+                                                                    </button>
+                                                                    {effortCalPicker === "year" && (
+                                                                        <div className="absolute left-1/2 top-8 z-10 w-56 -translate-x-1/2 rounded-xl border border-stone-200 bg-white p-3 shadow-lg">
+                                                                            <div className="grid grid-cols-3 gap-1.5">
+                                                                                {years.map((y) => (
+                                                                                    <button key={y} type="button" onClick={() => { setEffortCalMonth(new Date(y, calMonth, 1)); setEffortCalPicker(null); }}
+                                                                                        className={`rounded-lg py-1.5 text-xs font-medium transition-all ${y === calYear ? "bg-amber-500 text-white" : "text-stone-600 hover:bg-amber-50 hover:text-amber-700"}`}
+                                                                                    >{y}</button>
+                                                                                ))}
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                    {effortCalPicker === "month" && (
+                                                                        <div className="absolute left-1/2 top-8 z-10 w-56 -translate-x-1/2 rounded-xl border border-stone-200 bg-white p-3 shadow-lg">
+                                                                            <div className="grid grid-cols-4 gap-1.5">
+                                                                                {monthNames.map((mn, i) => (
+                                                                                    <button key={mn} type="button" onClick={() => { setEffortCalMonth(new Date(calYear, i, 1)); setEffortCalPicker(null); }}
+                                                                                        className={`rounded-lg py-1.5 text-xs font-medium transition-all ${i === calMonth ? "bg-amber-500 text-white" : "text-stone-600 hover:bg-amber-50 hover:text-amber-700"}`}
+                                                                                    >{mn}</button>
+                                                                                ))}
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })()}
+                                                        {/* 달력 그리드 */}
+                                                        <div className="px-3 pb-3">
+                                                            <div className="grid grid-cols-7 text-center text-[10px] font-bold text-stone-400 mb-1">
+                                                                {weekdays.map((wd) => (
+                                                                    <span key={wd} className="py-1">{wd}</span>
+                                                                ))}
+                                                            </div>
+                                                            {weeks.map((wk, wi) => (
+                                                                <div key={wi} className="grid grid-cols-7 text-center">
+                                                                    {wk.map((day, di) => {
+                                                                        if (day === null) return <span key={di} className="min-h-[3.5rem]" />;
+                                                                        const key = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                                                                        const isWeekend = di === 0 || di === 6;
+                                                                        const wl = dayWorkload.get(key);
+                                                                        const hasTask = dayHasTasks.has(key);
+                                                                        const isSelected = effortCalDay === key && !isWeekend;
+                                                                        return (
+                                                                            <button
+                                                                                key={di}
+                                                                                type="button"
+                                                                                onClick={() => !isWeekend && setEffortCalDay(isSelected ? null : hasTask ? key : null)}
+                                                                                className={`flex flex-col items-center justify-start py-1.5 min-h-[3.5rem] rounded-lg transition-colors ${isWeekend ? "cursor-default opacity-30" : isSelected ? "bg-amber-50 ring-1 ring-amber-400" : hasTask ? "hover:bg-stone-50 cursor-pointer" : "cursor-default"}`}
+                                                                            >
+                                                                                <span className={`text-xs font-medium ${di === 0 ? "text-red-400" : di === 6 ? "text-blue-400" : "text-stone-600"}`}>
+                                                                                    {day}
+                                                                                </span>
+                                                                                {wl ? (
+                                                                                    <span className="mt-1 rounded bg-amber-500 px-1 py-0.5 text-[11px] font-bold leading-tight text-white">
+                                                                                        {formatWorkload(wl)}
+                                                                                    </span>
+                                                                                ) : hasTask ? (
+                                                                                    <span className="mt-1.5 size-1.5 rounded-full bg-stone-300" />
+                                                                                ) : null}
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        {/* 선택된 날짜의 업무 목록 */}
+                                                        {effortCalDay && (() => {
+                                                            const dayTasks = calTasks.filter((t) => {
+                                                                const s = t.start_date || t.end_date;
+                                                                const e = t.end_date || t.start_date;
+                                                                return s && e && s <= effortCalDay && e >= effortCalDay;
+                                                            });
+                                                            if (!dayTasks.length) return null;
+                                                            const [, m, d] = effortCalDay.split("-");
+                                                            return (
+                                                                <div className="border-t border-stone-200 px-4 py-3">
+                                                                    <p className="text-xs font-bold text-stone-500 mb-2">{Number(m)}/{Number(d)} 업무</p>
+                                                                    <div className="space-y-1">
+                                                                        {dayTasks.map((t) => (
+                                                                            <button
+                                                                                key={t.id}
+                                                                                type="button"
+                                                                                onClick={() => canEditHistoryTask(t.member ?? "") && setHistoryEditTask(t)}
+                                                                                className={`flex w-full items-start justify-between gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${canEditHistoryTask(t.member ?? "") ? "hover:bg-stone-50 cursor-pointer" : "cursor-default"}`}
+                                                                            >
+                                                                                <div className="min-w-0 flex-1">
+                                                                                    <div className="flex items-center gap-1.5">
+                                                                                        {t.type && (
+                                                                                            <span className={`shrink-0 rounded px-1 py-0.5 text-[10px] font-medium ${{
+                                                                                                프로젝트: "bg-violet-100 text-violet-700",
+                                                                                                유지보수: "bg-red-100 text-red-700",
+                                                                                                고도화: "bg-green-100 text-green-700",
+                                                                                                접근성: "bg-sky-100 text-sky-700",
+                                                                                                업무지원: "bg-blue-100 text-blue-700",
+                                                                                            }[t.type] || "bg-gray-100 text-gray-600"}`}>{t.type}</span>
+                                                                                        )}
+                                                                                        <p className="text-xs font-medium text-stone-700 truncate">{t.proj}</p>
+                                                                                    </div>
+                                                                                    {t.content && <p className="text-[11px] text-stone-400 mt-0.5">{t.content.split("\n")[0]}</p>}
+                                                                                </div>
+                                                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                                                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${{
+                                                                                        완료: "bg-green-100 text-green-700",
+                                                                                        진행중: "bg-blue-100 text-blue-700",
+                                                                                        "지연/보류": "bg-red-100 text-red-700",
+                                                                                    }[normalizeStatus(t.status)] || "bg-gray-100 text-gray-600"}`}>{normalizeStatus(t.status)}</span>
+                                                                                    {t.workload > 0 && (
+                                                                                        <span className="text-[11px] font-medium text-amber-600">{formatWorkload(t.workload)}</span>
+                                                                                    )}
+                                                                                </div>
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                );
+                                            })()}
+
+                                            {/* 월별 프로젝트 공수 테이블 (달력 월 기준) */}
+                                            {(() => {
+                                                const mStart = `${effortCalMonth.getFullYear()}-${String(effortCalMonth.getMonth() + 1).padStart(2, "0")}-01`;
+                                                const mLastDay = new Date(effortCalMonth.getFullYear(), effortCalMonth.getMonth() + 1, 0).getDate();
+                                                const mEnd = `${effortCalMonth.getFullYear()}-${String(effortCalMonth.getMonth() + 1).padStart(2, "0")}-${String(mLastDay).padStart(2, "0")}`;
+                                                const monthTasks = tasks.filter((t) => {
+                                                    if (t.member !== member) return false;
+                                                    const s = t.start_date || t.end_date;
+                                                    const e = t.end_date || t.start_date;
+                                                    return s && e && s <= mEnd && e >= mStart;
+                                                });
+                                                const monthEffort = (() => {
+                                                    const map = new Map<string, { count: number; workload: number }>();
+                                                    for (const t of monthTasks) {
+                                                        const proj = t.proj || "(프로젝트 없음)";
+                                                        const entry = map.get(proj) ?? { count: 0, workload: 0 };
+                                                        entry.count += 1;
+                                                        if (!t.is_plan) entry.workload += t.workload || 0;
+                                                        map.set(proj, entry);
+                                                    }
+                                                    return [...map.entries()]
+                                                        .map(([proj, { count, workload }]) => ({ proj, count, workload }))
+                                                        .sort((a, b) => b.workload - a.workload);
+                                                })();
+                                                const mLabel = `${effortCalMonth.getFullYear()}년 ${effortCalMonth.getMonth() + 1}월`;
+                                                return (
+                                                    <>
+                                                        <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
+                                                            <div className="grid grid-cols-[1fr_auto_auto] gap-4 px-4 py-2.5 bg-stone-50 border-b border-stone-200 text-xs font-bold text-stone-500">
+                                                                <span>{mLabel} 프로젝트</span>
+                                                                <span className="text-right w-10">건수</span>
+                                                                <span className="text-right w-16">공수</span>
+                                                            </div>
+                                                            {monthEffort.length === 0 ? (
+                                                                <p className="px-4 py-6 text-center text-xs text-stone-400">해당 월에 업무가 없어요</p>
+                                                            ) : (
+                                                                <>
+                                                                    {monthEffort.map((row, i) => (
+                                                                        <div key={row.proj} className={`grid grid-cols-[1fr_auto_auto] gap-4 px-4 py-3 text-sm ${i < monthEffort.length - 1 ? "border-b border-stone-100" : ""}`}>
+                                                                            <span className="text-stone-800 font-medium truncate">{row.proj}</span>
+                                                                            <span className="text-stone-500 text-right tabular-nums w-10">{row.count}</span>
+                                                                            <span className="text-amber-600 font-medium text-right tabular-nums w-16">{formatWorkload(row.workload) || "-"}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                    <div className="grid grid-cols-[1fr_auto_auto] gap-4 px-4 py-3 bg-stone-50 border-t border-stone-200 text-sm font-bold">
+                                                                        <span className="text-stone-600">합계</span>
+                                                                        <span className="text-stone-600 text-right tabular-nums w-10">{monthEffort.reduce((s, r) => s + r.count, 0)}</span>
+                                                                        <span className="text-amber-600 text-right tabular-nums w-16">{formatWorkload(monthEffort.reduce((s, r) => s + r.workload, 0)) || "-"}</span>
+                                                                    </div>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                        {monthEffort.length > 0 && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const header = `${mLabel} 프로젝트\t건수\t공수`;
+                                                                    const rows = monthEffort.map((r) => `${r.proj}\t${r.count}\t${formatWorkload(r.workload) || "-"}`);
+                                                                    const totalCount = monthEffort.reduce((s, r) => s + r.count, 0);
+                                                                    const totalWorkload = monthEffort.reduce((s, r) => s + r.workload, 0);
+                                                                    const total = `합계\t${totalCount}\t${formatWorkload(totalWorkload) || "-"}`;
+                                                                    void navigator.clipboard.writeText([header, ...rows, total].join("\n")).then(
+                                                                        () => showToastMsg("공수 요약이 복사되었어요"),
+                                                                        () => showToastMsg("복사에 실패했어요"),
+                                                                    );
+                                                                }}
+                                                                className="mt-3 w-full py-2.5 text-xs font-medium text-stone-500 bg-white border border-stone-200 rounded-xl hover:bg-stone-50 transition-colors"
+                                                            >
+                                                                전체 복사
+                                                            </button>
+                                                        )}
+                                                    </>
+                                                );
+                                            })()}
                                         </div>
                                     ) : (
                                         <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
@@ -1623,6 +1920,7 @@ export default function ProfilePage() {
                     task={historyEditTask}
                     onClose={() => setHistoryEditTask(null)}
                     onSaved={loadAll}
+                    onDelete={(id) => deleteHistoryTask(id)}
                 />
             </div>
         </AuthGuard>
