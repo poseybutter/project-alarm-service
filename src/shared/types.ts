@@ -1,3 +1,8 @@
+export type ContentItem = {
+    text: string;
+    workload: number;
+};
+
 export type Task = {
     id: number;
     team_id?: string;
@@ -7,6 +12,7 @@ export type Task = {
     type: string;
     proj: string;
     content: string;
+    content_items?: ContentItem[] | null;
     status: string;
     progress: number;
     workload: number;
