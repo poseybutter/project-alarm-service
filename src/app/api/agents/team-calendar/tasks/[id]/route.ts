@@ -231,6 +231,17 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
                 calendarId,
                 eventId: task.team_calendar_event_id,
             });
+            // 삭제된 일정 식별자를 남겨두면 이후 동기화가 없는 일정을 가리키게 된다
+            const { error } = await supabase
+                .from("tasks")
+                .update({
+                    team_calendar_event_id: null,
+                    team_calendar_synced_at: null,
+                    team_calendar_sync_error: null,
+                })
+                .eq("team_id", task.team_id)
+                .eq("id", taskId);
+            if (error) throw error;
         }
 
         return NextResponse.json({ deleted: true });

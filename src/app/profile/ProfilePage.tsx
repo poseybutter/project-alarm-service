@@ -15,7 +15,6 @@ import AuthGuard from "@/components/AuthGuard";
 import Tooltip from "@/components/Tooltip";
 import UserMenu from "@/components/UserMenu";
 import TeamSwitcher from "@/components/TeamSwitcher";
-import AgentButton from "@/components/AgentButton";
 import NotificationButton from "@/components/NotificationButton";
 import Avatar from "@/components/Avatar";
 import TaskEditModal from "@/components/TaskEditModal";
@@ -73,6 +72,21 @@ function taskOverlapsRange(task: Task, start: Date, end: Date) {
 
     if (!taskStart || !taskEnd) return false;
     return taskStart <= end && taskEnd >= start;
+}
+
+/**
+ * 업무 자체 일정 또는 content_items 개별 일정이 [from, to] (YYYY-MM-DD)와 겹치는지.
+ * 공수 달력·날짜별 목록·월별 집계가 같은 기준을 쓰도록 공통화한다.
+ */
+function taskOverlapsYmd(task: Task, from: string, to: string) {
+    const s = task.start_date || task.end_date;
+    const e = task.end_date || task.start_date;
+    if (s && e && s <= to && e >= from) return true;
+    return (task.content_items ?? []).some((ci) => {
+        const cs = ci.start_date || ci.end_date;
+        const ce = ci.end_date || ci.start_date;
+        return !!cs && !!ce && cs <= to && ce >= from;
+    });
 }
 
 function avatarStoragePath(publicUrl: string | null | undefined) {
@@ -1217,22 +1231,9 @@ export default function ProfilePage() {
                                                 const calMonthStart = `${effortCalMonth.getFullYear()}-${String(effortCalMonth.getMonth() + 1).padStart(2, "0")}-01`;
                                                 const calMonthLastDay = new Date(effortCalMonth.getFullYear(), effortCalMonth.getMonth() + 1, 0).getDate();
                                                 const calMonthEnd = `${effortCalMonth.getFullYear()}-${String(effortCalMonth.getMonth() + 1).padStart(2, "0")}-${String(calMonthLastDay).padStart(2, "0")}`;
-                                                const myTasks = tasks.filter((t) => {
-                                                    if (t.member !== member) return false;
-                                                    // Task 자체 일정 겹침
-                                                    const s = t.start_date || t.end_date;
-                                                    const e = t.end_date || t.start_date;
-                                                    if (s && e && s <= calMonthEnd && e >= calMonthStart) return true;
-                                                    // content_items 개별 일정 겹침
-                                                    if (t.content_items && t.content_items.length > 0) {
-                                                        return t.content_items.some((ci) => {
-                                                            const cs = ci.start_date || ci.end_date;
-                                                            const ce = ci.end_date || ci.start_date;
-                                                            return cs && ce && cs <= calMonthEnd && ce >= calMonthStart;
-                                                        });
-                                                    }
-                                                    return false;
-                                                });
+                                                const myTasks = tasks.filter(
+                                                    (t) => t.member === member && taskOverlapsYmd(t, calMonthStart, calMonthEnd),
+                                                );
                                                 const calTasks = effortCalProj
                                                     ? myTasks.filter((t) => t.proj === effortCalProj)
                                                     : myTasks;
@@ -1393,11 +1394,9 @@ export default function ProfilePage() {
                                                         </div>
                                                         {/* 선택된 날짜의 업무 목록 */}
                                                         {effortCalDay && (() => {
-                                                            const dayTasks = calTasks.filter((t) => {
-                                                                const s = t.start_date || t.end_date;
-                                                                const e = t.end_date || t.start_date;
-                                                                return s && e && s <= effortCalDay && e >= effortCalDay;
-                                                            });
+                                                            const dayTasks = calTasks.filter((t) =>
+                                                                taskOverlapsYmd(t, effortCalDay, effortCalDay),
+                                                            );
                                                             if (!dayTasks.length) return null;
                                                             const [, m, d] = effortCalDay.split("-");
                                                             return (
@@ -1451,12 +1450,9 @@ export default function ProfilePage() {
                                                 const mStart = `${effortCalMonth.getFullYear()}-${String(effortCalMonth.getMonth() + 1).padStart(2, "0")}-01`;
                                                 const mLastDay = new Date(effortCalMonth.getFullYear(), effortCalMonth.getMonth() + 1, 0).getDate();
                                                 const mEnd = `${effortCalMonth.getFullYear()}-${String(effortCalMonth.getMonth() + 1).padStart(2, "0")}-${String(mLastDay).padStart(2, "0")}`;
-                                                const monthTasks = tasks.filter((t) => {
-                                                    if (t.member !== member) return false;
-                                                    const s = t.start_date || t.end_date;
-                                                    const e = t.end_date || t.start_date;
-                                                    return s && e && s <= mEnd && e >= mStart;
-                                                });
+                                                const monthTasks = tasks.filter(
+                                                    (t) => t.member === member && taskOverlapsYmd(t, mStart, mEnd),
+                                                );
                                                 const monthEffort = (() => {
                                                     const map = new Map<string, { count: number; workload: number }>();
                                                     for (const t of monthTasks) {

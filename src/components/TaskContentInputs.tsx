@@ -88,7 +88,7 @@ function WorkloadTag({ value, onChange }: { value: number; onChange: (v: number)
                                 className="w-full rounded border border-stone-200 px-2 py-1 text-xs text-center"
                                 placeholder="분"
                                 value={value || ""}
-                                onChange={(e) => onChange(parseInt(e.target.value) || 0)}
+                                onChange={(e) => onChange(Math.max(0, parseInt(e.target.value, 10) || 0))}
                                 onKeyDown={(e) => { if (e.key === "Enter") { setOpen(false); setCustomMode(false); } }}
                             />
                         </div>
@@ -252,7 +252,6 @@ function DateTag({ startDate, endDate, onChange }: {
 function SortableItem({
     id,
     item,
-    index,
     itemCount,
     placeholder,
     onUpdateText,
@@ -263,7 +262,6 @@ function SortableItem({
 }: {
     id: string;
     item: ContentItem;
-    index: number;
     itemCount: number;
     placeholder: string;
     onUpdateText: (text: string) => void;
@@ -272,7 +270,7 @@ function SortableItem({
     onUpdateDates: (s: string | null, e: string | null) => void;
     onRemove: () => void;
 }) {
-    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+    const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
     const style: React.CSSProperties = {
         transform: CSS.Transform.toString(transform ? { ...transform, scaleX: 1, scaleY: 1 } : null),
         transition: isDragging ? undefined : "transform 0ms",
@@ -410,7 +408,6 @@ export default function TaskContentInputs({
                                 key={ids[index]}
                                 id={ids[index]}
                                 item={item}
-                                index={index}
                                 itemCount={items.length}
                                 placeholder={index === 0 ? placeholder : "업무 내용 추가"}
                                 onUpdateText={(text) => updateText(index, text)}

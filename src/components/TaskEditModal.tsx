@@ -18,6 +18,10 @@ import {
 } from "@/shared/styles/reactSelectStyles";
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import TaskContentInputs from "@/components/TaskContentInputs";
+import {
+    syncTaskToTeamCalendar,
+    deleteTaskFromTeamCalendar,
+} from "@/features/tasks/api/teamCalendarSync";
 
 function periodButtonLabel(range: DateRange | undefined): {
     text: string;
@@ -216,23 +220,18 @@ export default function TaskEditModal({
             alert("업무 수정에 실패했어요");
             return;
         }
+        // 캘린더 반영 실패는 모달이 닫힌 뒤에도 보이도록 alert 로 알린다 (토스트는 모달과 함께 사라짐)
         if (!editForm.show_on_team_calendar && task.show_on_team_calendar) {
-            void fetch(`/api/agents/team-calendar/tasks/${task.id}`, { method: "DELETE" }).then((res) => {
-                if (!res.ok) console.warn("[team-calendar] delete failed:", res.status);
-            }).catch((err) => {
-                console.warn("[team-calendar] delete failed", err);
+            void deleteTaskFromTeamCalendar(task.id).catch((err) => {
+                alert(
+                    `${err instanceof Error ? err.message : "팀 캘린더 일정 삭제 실패"}\n팀 캘린더에 일정이 남아 있을 수 있어요.`,
+                );
             });
         } else if (editForm.show_on_team_calendar) {
-            void (async () => {
-                const res = await fetch(`/api/agents/team-calendar/tasks/${task.id}`, {
-                    method: "POST",
-                });
-                const json = await res.json().catch(() => ({}));
-                if (!res.ok) {
-                    throw new Error(json.message || "팀 캘린더 동기화 실패");
-                }
-            })().catch((err) => {
-                console.warn("[team-calendar]", err instanceof Error ? err.message : "동기화 실패");
+            void syncTaskToTeamCalendar(task.id).catch((err) => {
+                alert(
+                    `${err instanceof Error ? err.message : "팀 캘린더 동기화 실패"}\n팀 캘린더 일정이 최신 상태가 아닐 수 있어요.`,
+                );
             });
         }
         await Promise.resolve(onSaved());

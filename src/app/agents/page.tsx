@@ -5,7 +5,6 @@ import AuthGuard from "@/components/AuthGuard";
 import NotificationButton from "@/components/NotificationButton";
 import UserMenu from "@/components/UserMenu";
 import TeamSwitcher from "@/components/TeamSwitcher";
-import AgentButton from "@/components/AgentButton";
 import { useAuth } from "@/components/AuthProvider";
 import { sanitizeHtml } from "@/shared/utils/sanitizeHtml";
 import type {
