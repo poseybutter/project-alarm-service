@@ -6,6 +6,7 @@ import {
     encryptIntegrationToken,
 } from "@/infrastructure/security/tokenEncryption";
 import { listActiveTeamMembers } from "@/features/identity/server/identityRepository";
+import type { ContentItem } from "@/shared/types";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -94,11 +95,13 @@ export type TeamCalendarTaskInput = {
     member: string;
     proj: string;
     content: string;
+    content_items?: ContentItem[] | null;
     status?: string | null;
     start_date?: string | null;
     end_date?: string | null;
     show_on_team_calendar?: boolean | null;
     team_calendar_event_id?: string | null;
+    team_calendar_item_event_ids?: string[] | null;
     team_calendar_id?: string | null;
 };
 
@@ -691,16 +694,34 @@ export class TeamCalendarSyncError extends Error {
     }
 }
 
-function buildTeamCalendarEvent(task: TeamCalendarTaskInput) {
-    const startDate = task.start_date || task.end_date;
-    const endDate = task.end_date || task.start_date || startDate;
+/** 자체 일정이 있는 항목 / 없는 항목으로 업무 내용을 가른다. */
+function splitContentItemsBySchedule(task: TeamCalendarTaskInput) {
+    const items = (task.content_items ?? []).filter((ci) => ci.text?.trim());
+    const scheduled: { item: ContentItem; start: string; end: string }[] = [];
+    const unscheduled: ContentItem[] = [];
+    for (const item of items) {
+        const start = item.start_date || item.end_date;
+        const end = item.end_date || item.start_date;
+        if (start && end) scheduled.push({ item, start, end });
+        else unscheduled.push(item);
+    }
+    return { hasItems: items.length > 0, scheduled, unscheduled };
+}
+
+function buildTeamCalendarEvent(
+    task: TeamCalendarTaskInput,
+    override?: { title?: string; startDate?: string; endDate?: string },
+) {
+    const startDate = override?.startDate || task.start_date || task.end_date;
+    const endDate =
+        override?.endDate || task.end_date || task.start_date || startDate;
     if (!startDate) {
         throw new TeamCalendarSyncError(
             "팀 캘린더에 표시하려면 업무 기간 또는 마감일이 필요합니다",
         );
     }
 
-    const title = task.content?.trim() || "업무";
+    const title = override?.title?.trim() || task.content?.trim() || "업무";
     const project = task.proj?.trim();
     const memberPrefix = `[${task.member}]`;
     return {
@@ -731,6 +752,14 @@ function stableTaskEventId(taskId: number): string {
     return `v${taskId.toString().padStart(6, "0")}`;
 }
 
+/**
+ * 내용 항목 일정의 기본 ID. 업무 기간 일정(stableTaskEventId)과 겹치면 안 된다.
+ * Google 이벤트 ID는 base32hex(a-v, 0-9)만 허용하므로 'i'를 구분자로 쓴다.
+ */
+function stableTaskItemEventId(taskId: number, index: number): string {
+    return `${stableTaskEventId(taskId)}i${index.toString().padStart(2, "0")}`;
+}
+
 async function updateTeamCalendarEvent(params: {
     accessToken: string;
     url: string;
@@ -752,11 +781,17 @@ export async function upsertTeamCalendarTaskEvent(params: {
     accessToken: string;
     calendarId: string;
     task: TeamCalendarTaskInput;
+    override?: { title?: string; startDate?: string; endDate?: string };
+    /** 저장된 이벤트 ID가 없을 때 쓸 ID. 항목 일정은 업무 일정과 달라야 한다. */
+    fallbackEventId?: string;
 }) {
-    const { accessToken, calendarId, task } = params;
-    const event = buildTeamCalendarEvent(task);
+    const { accessToken, calendarId, task, override, fallbackEventId } = params;
+    const event = buildTeamCalendarEvent(task, override);
     const encodedCalendarId = encodeURIComponent(calendarId);
-    const eventId = task.team_calendar_event_id ?? stableTaskEventId(task.id);
+    const eventId =
+        task.team_calendar_event_id ??
+        fallbackEventId ??
+        stableTaskEventId(task.id);
     const url = `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodedCalendarId}/events/${encodeURIComponent(eventId)}`;
 
     const { res, json } = await updateTeamCalendarEvent({
@@ -824,6 +859,92 @@ export async function upsertTeamCalendarTaskEvent(params: {
     throw new Error(
         json.error?.message || "Failed to sync team calendar event",
     );
+}
+
+/**
+ * 업무 하나를 팀 캘린더 일정 집합으로 동기화한다.
+ *
+ * - 자체 일정이 있는 내용 항목 → 그 기간으로 항목별 일정
+ * - 일정이 없는 항목들 → 업무 기간 일정 하나에 모아서
+ * - content_items 가 없는 기존 업무 → 예전처럼 업무 기간 일정 하나
+ *
+ * 항목이 줄거나 일정이 빠지면 남는 일정은 지운다.
+ */
+export async function syncTeamCalendarTaskEvents(params: {
+    accessToken: string;
+    calendarId: string;
+    task: TeamCalendarTaskInput;
+}) {
+    const { accessToken, calendarId, task } = params;
+    const { hasItems, scheduled, unscheduled } =
+        splitContentItemsBySchedule(task);
+
+    // 업무 기간 일정: 항목이 없으면 기존 content 전체, 있으면 일정 없는 항목만 모은다.
+    const baseTitle = hasItems
+        ? unscheduled.map((ci) => ci.text.trim()).join("\n")
+        : task.content?.trim() || "";
+    const needsBaseEvent = baseTitle.length > 0;
+
+    let baseEventId = task.team_calendar_event_id ?? null;
+    let htmlLink: string | null = null;
+
+    if (needsBaseEvent) {
+        const event = await upsertTeamCalendarTaskEvent({
+            accessToken,
+            calendarId,
+            task: { ...task, team_calendar_event_id: baseEventId },
+            override: { title: baseTitle },
+        });
+        baseEventId = event.id;
+        htmlLink = event.htmlLink ?? null;
+    } else if (baseEventId) {
+        // 모든 항목이 자기 일정을 갖게 되면 업무 기간 일정은 비므로 지운다.
+        await deleteTeamCalendarTaskEvent({
+            accessToken,
+            calendarId,
+            eventId: baseEventId,
+        });
+        baseEventId = null;
+    }
+
+    const previousItemEventIds = task.team_calendar_item_event_ids ?? [];
+    const itemEventIds: string[] = [];
+    for (const [index, entry] of scheduled.entries()) {
+        const event = await upsertTeamCalendarTaskEvent({
+            accessToken,
+            calendarId,
+            task: {
+                ...task,
+                team_calendar_event_id: previousItemEventIds[index] ?? null,
+            },
+            override: {
+                title: entry.item.text,
+                startDate: entry.start,
+                endDate: entry.end,
+            },
+            fallbackEventId: stableTaskItemEventId(task.id, index),
+        });
+        itemEventIds.push(event.id);
+        htmlLink ??= event.htmlLink ?? null;
+    }
+
+    // 이번에 쓰지 않은 예전 항목 일정 정리
+    for (const staleId of previousItemEventIds.slice(scheduled.length)) {
+        if (!staleId || itemEventIds.includes(staleId)) continue;
+        await deleteTeamCalendarTaskEvent({
+            accessToken,
+            calendarId,
+            eventId: staleId,
+        });
+    }
+
+    if (!baseEventId && itemEventIds.length === 0) {
+        throw new TeamCalendarSyncError(
+            "팀 캘린더에 표시할 업무 내용이 없습니다",
+        );
+    }
+
+    return { baseEventId, itemEventIds, htmlLink };
 }
 
 export async function deleteTeamCalendarTaskEvent(params: {

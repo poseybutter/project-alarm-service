@@ -9,7 +9,7 @@ import {
     type GoogleCalendarConnection,
     type TeamCalendarTaskInput,
     TeamCalendarSyncError,
-    upsertTeamCalendarTaskEvent,
+    syncTeamCalendarTaskEvents,
 } from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { resolveTeamMember } from "@/features/identity/server/identityRepository";
@@ -96,7 +96,7 @@ async function loadTask(
     const { data, error } = await supabase
         .from("tasks")
         .select(
-            "id, team_id, member, proj, content, status, start_date, end_date, show_on_team_calendar, team_calendar_event_id, team_calendar_id",
+            "id, team_id, member, proj, content, content_items, status, start_date, end_date, show_on_team_calendar, team_calendar_event_id, team_calendar_item_event_ids, team_calendar_id",
         )
         .eq("id", id)
         .maybeSingle();
@@ -147,17 +147,28 @@ export async function POST(_req: NextRequest, context: RouteContext) {
                 ? task.team_calendar_id || sharedCalendarId
                 : null;
         if (previousCalendarId) {
-            await deleteTeamCalendarTaskEvent({
-                accessToken,
-                calendarId: previousCalendarId,
-                eventId: task.team_calendar_event_id as string,
-            });
+            for (const staleId of [
+                task.team_calendar_event_id,
+                ...(task.team_calendar_item_event_ids ?? []),
+            ]) {
+                if (!staleId) continue;
+                await deleteTeamCalendarTaskEvent({
+                    accessToken,
+                    calendarId: previousCalendarId,
+                    eventId: staleId,
+                });
+            }
         }
-        const event = await upsertTeamCalendarTaskEvent({
+        const synced = await syncTeamCalendarTaskEvents({
             accessToken,
             calendarId,
+            // 캘린더가 바뀌었으면 이전 이벤트 ID는 새 캘린더에서 쓸 수 없다.
             task: previousCalendarId
-                ? { ...task, team_calendar_event_id: null }
+                ? {
+                      ...task,
+                      team_calendar_event_id: null,
+                      team_calendar_item_event_ids: null,
+                  }
                 : task,
         });
 
@@ -165,7 +176,10 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             .from("tasks")
             .update({
                 show_on_team_calendar: true,
-                team_calendar_event_id: event.id,
+                team_calendar_event_id: synced.baseEventId,
+                team_calendar_item_event_ids: synced.itemEventIds.length
+                    ? synced.itemEventIds
+                    : null,
                 team_calendar_id: calendarId,
                 team_calendar_synced_at: new Date().toISOString(),
                 team_calendar_sync_error: null,
@@ -176,8 +190,9 @@ export async function POST(_req: NextRequest, context: RouteContext) {
 
         return NextResponse.json({
             synced: true,
-            eventId: event.id,
-            htmlLink: event.htmlLink ?? null,
+            eventId: synced.baseEventId,
+            itemEventIds: synced.itemEventIds,
+            htmlLink: synced.htmlLink,
         });
     } catch (error) {
         // 설정 누락·기간 누락처럼 사용자가 고칠 수 있는 사유는 그대로 알려준다.
@@ -230,7 +245,11 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
             return NextResponse.json({ message: "Forbidden" }, { status: 403 });
         }
 
-        if (task.team_calendar_event_id) {
+        const eventIds = [
+            task.team_calendar_event_id,
+            ...(task.team_calendar_item_event_ids ?? []),
+        ].filter((id): id is string => Boolean(id));
+        if (eventIds.length > 0) {
             const { calendarId, accessToken } =
                 await loadTeamCalendarContext(
                     supabase,
@@ -238,23 +257,32 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
                     task.member,
                     task.team_calendar_id,
                 );
-            await deleteTeamCalendarTaskEvent({
-                accessToken,
-                calendarId,
-                eventId: task.team_calendar_event_id,
-            });
+            for (const eventId of eventIds) {
+                await deleteTeamCalendarTaskEvent({
+                    accessToken,
+                    calendarId,
+                    eventId,
+                });
+            }
             // 삭제된 일정 식별자를 남겨두면 이후 동기화가 없는 일정을 가리키게 된다.
             // 읽어온 event_id 를 조건에 포함해, 그사이 재동기화로 새 일정이 생겼다면 건드리지 않는다.
-            const { error } = await supabase
+            const cleanup = supabase
                 .from("tasks")
                 .update({
                     team_calendar_event_id: null,
+                    team_calendar_item_event_ids: null,
                     team_calendar_synced_at: null,
                     team_calendar_sync_error: null,
                 })
                 .eq("team_id", task.team_id)
-                .eq("id", taskId)
-                .eq("team_calendar_event_id", task.team_calendar_event_id);
+                .eq("id", taskId);
+            // 업무 기간 일정이 없던 업무는 NULL 이므로 eq 가 아니라 is 로 비교해야 한다.
+            const { error } = await (task.team_calendar_event_id
+                ? cleanup.eq(
+                      "team_calendar_event_id",
+                      task.team_calendar_event_id,
+                  )
+                : cleanup.is("team_calendar_event_id", null));
             if (error) throw error;
         }
 
