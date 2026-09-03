@@ -16,8 +16,15 @@ import {
 import type { AgentSuggestion, NotificationSuggestionPayload } from "@/features/agents/server/types";
 import type { Accessibility, Task } from "@/shared/types";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
+import { mapWithConcurrency } from "@/shared/server/concurrency";
 import { decryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
 import { listActiveTeamMembers } from "@/features/identity/server/identityRepository";
+
+// 멤버 수만큼 캘린더 동기화·웹훅 발송을 하므로 기본 실행 시간으로는 잘릴 수 있다.
+export const maxDuration = 60;
+
+/** 멤버별 브리핑 동시 처리 한도. 멤버당 Google 호출은 개인 캘린더 1회 수준이라 낮게 잡는다. */
+const MEMBER_CONCURRENCY = 3;
 
 type NotificationSetting = {
     member: string;
@@ -122,6 +129,8 @@ function isNotificationPayload(
 async function buildFreshSuggestion(
     supabase: ReturnType<typeof createServiceSupabaseClient>,
     setting: NotificationSetting,
+    // 팀 캘린더는 멤버마다 다르지 않으므로 호출부가 한 번만 동기화해 공유한다.
+    loadTeamCalendarEvents: () => ReturnType<typeof syncTodayTeamCalendarEvents>,
 ) {
     const { data: calendarConnection, error: connectionError } = await supabase
         .from("agent_calendar_connections")
@@ -137,9 +146,7 @@ async function buildFreshSuggestion(
               connection: calendarConnection as GoogleCalendarConnection,
           })
         : [];
-    const teamCalendarEvents = await syncTodayTeamCalendarEvents(supabase, {
-        teamId: TEAM_ID,
-    });
+    const teamCalendarEvents = await loadTeamCalendarEvents();
 
     const [
         { data: tasks, error: taskError },
@@ -253,11 +260,35 @@ async function handleMorningBriefings(req: NextRequest) {
             })
             .filter((setting) => setting.morning_enabled);
 
-        for (const setting of targets) {
+        // 팀 캘린더 동기화는 멤버마다 같은 결과라 요청당 한 번만 수행한다.
+        // 실패는 캐시하지 않아 다음 멤버 처리에서 재시도할 수 있다.
+        let teamEventsPromise: ReturnType<
+            typeof syncTodayTeamCalendarEvents
+        > | null = null;
+        const loadTeamCalendarEvents = () => {
+            teamEventsPromise ??= syncTodayTeamCalendarEvents(supabase, {
+                teamId: TEAM_ID,
+            }).catch((err) => {
+                teamEventsPromise = null;
+                throw err;
+            });
+            return teamEventsPromise;
+        };
+
+        type BriefingOutcome =
+            | { kind: "sent"; member: string; title: string }
+            | { kind: "skipped"; member: string; reason: string };
+
+        const processTarget = async (
+            setting: NotificationSetting,
+        ): Promise<BriefingOutcome> => {
             try {
                 if (!forceSend && !isDueNow(setting.morning_send_time)) {
-                    skipped.push({ member: setting.member, reason: "not_due" });
-                    continue;
+                    return {
+                        kind: "skipped",
+                        member: setting.member,
+                        reason: "not_due",
+                    };
                 }
 
                 const dedupeKey = `morning-briefing:${setting.email}:${today}`;
@@ -269,11 +300,11 @@ async function handleMorningBriefings(req: NextRequest) {
                         cooldownHours: 24,
                     }))
                 ) {
-                    skipped.push({
+                    return {
+                        kind: "skipped",
                         member: setting.member,
                         reason: "already_sent",
-                    });
-                    continue;
+                    };
                 }
 
                 const { data: webhookRow, error: webhookError } = await supabase
@@ -284,20 +315,24 @@ async function handleMorningBriefings(req: NextRequest) {
                     .maybeSingle();
                 if (webhookError) throw webhookError;
                 if (!webhookRow?.webhook_url) {
-                    skipped.push({
+                    return {
+                        kind: "skipped",
                         member: setting.member,
                         reason: "missing_webhook",
-                    });
-                    continue;
+                    };
                 }
 
-                const fresh = await buildFreshSuggestion(supabase, setting);
+                const fresh = await buildFreshSuggestion(
+                    supabase,
+                    setting,
+                    loadTeamCalendarEvents,
+                );
                 if (!fresh) {
-                    skipped.push({
+                    return {
+                        kind: "skipped",
                         member: setting.member,
                         reason: "empty_briefing",
-                    });
-                    continue;
+                    };
                 }
 
                 const { data: created, error: createError } = await supabase
@@ -315,11 +350,11 @@ async function handleMorningBriefings(req: NextRequest) {
                     .maybeSingle();
                 if (createError) throw createError;
                 if (!created) {
-                    skipped.push({
+                    return {
+                        kind: "skipped",
                         member: setting.member,
                         reason: "empty_briefing",
-                    });
-                    continue;
+                    };
                 }
 
                 const suggestion = created as AgentSuggestion;
@@ -343,11 +378,11 @@ async function handleMorningBriefings(req: NextRequest) {
                 if (staleCleanupError) throw staleCleanupError;
 
                 if (!isNotificationPayload(suggestion.payload)) {
-                    skipped.push({
+                    return {
+                        kind: "skipped",
                         member: setting.member,
                         reason: "invalid_payload",
-                    });
-                    continue;
+                    };
                 }
 
                 await sendGoogleChatMessage({
@@ -385,13 +420,31 @@ async function handleMorningBriefings(req: NextRequest) {
                     .eq("id", suggestion.id);
                 if (suggestionUpdateError) throw suggestionUpdateError;
 
-                sent.push({ member: setting.member, title: suggestion.title });
+                return {
+                    kind: "sent",
+                    member: setting.member,
+                    title: suggestion.title,
+                };
             } catch (err) {
                 console.error("[morning-briefing-member]", err);
-                skipped.push({
+                return {
+                    kind: "skipped",
                     member: setting.member,
                     reason: "delivery_failed",
-                });
+                };
+            }
+        };
+
+        const outcomes = await mapWithConcurrency(
+            targets,
+            MEMBER_CONCURRENCY,
+            processTarget,
+        );
+        for (const outcome of outcomes) {
+            if (outcome.kind === "sent") {
+                sent.push({ member: outcome.member, title: outcome.title });
+            } else {
+                skipped.push({ member: outcome.member, reason: outcome.reason });
             }
         }
 
