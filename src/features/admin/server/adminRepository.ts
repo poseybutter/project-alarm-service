@@ -175,7 +175,7 @@ export async function requireAdminSession(
   if (!user?.email) throw new AdminApiError("로그인이 필요합니다.", 401);
 
   // loadActor·loadOrganizationAdmin은 인증 판단에 필요하므로 병렬 실행.
-  // loadTeams는 인증 확인 후에만 실행해 미인증 사용자의 불필요한 DB 조회를 막는다.
+  // loadTeams는 서비스롤을 사용하므로 권한 확인 후에만 실행한다.
   const [memberships, isOrganizationAdmin] = await Promise.all([
     loadActor(user.email),
     loadOrganizationAdmin(user.email),

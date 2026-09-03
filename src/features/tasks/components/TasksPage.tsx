@@ -148,7 +148,6 @@ export default function TasksPage() {
 
     /** 업무를 삭제한다. Supabase 삭제 성공 후 팀 캘린더 일정 삭제를 fire-and-forget으로 실행한다. */
     async function deleteTask(id: number) {
-        if (!confirm("삭제할까요?")) return;
         const { data, error } = await supabase
             .from("tasks")
             .delete()
@@ -313,6 +312,7 @@ export default function TasksPage() {
                     task={editTask}
                     onClose={() => setEditTask(null)}
                     onSaved={loadTasks}
+                    onDelete={deleteTask}
                 />
 
                 <LevelUpOverlay
