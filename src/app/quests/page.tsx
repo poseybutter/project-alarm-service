@@ -137,7 +137,11 @@ export default function QuestsPage() {
 
   async function deleteQuest(id: number) {
     if (!confirm('삭제할까요?')) return
-    await supabase.from('quests').delete().eq('id', id)
+    const { error } = await supabase.from('quests').delete().eq('id', id)
+    if (error) {
+      showToastMsg('삭제에 실패했어요')
+      return
+    }
     loadQuests()
   }
 

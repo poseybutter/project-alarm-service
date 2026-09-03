@@ -743,10 +743,14 @@ export default function ManagePage() {
     }
 
     async function toggleArchive(id: number, current: boolean) {
-        await supabase
+        const { error } = await supabase
             .from("projects")
             .update({ is_archived: !current })
             .eq("id", id);
+        if (error) {
+            showToastMsg(current ? "보관 해제에 실패했습니다." : "보관에 실패했습니다.");
+            return;
+        }
         await loadData();
     }
 

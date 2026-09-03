@@ -175,16 +175,27 @@ export default function AccessibilityPage() {
     }
 
     async function updateInspection(id: number, status: string) {
-        await supabase
+        const { error } = await supabase
             .from("accessibility")
             .update({ inspection_status: status })
             .eq("id", id);
+        if (error) {
+            alert("상태 변경에 실패했어요");
+            return;
+        }
         loadItems();
     }
 
     async function deleteItem(id: number) {
         if (!confirm("삭제할까요?")) return;
-        await supabase.from("accessibility").delete().eq("id", id);
+        const { error } = await supabase
+            .from("accessibility")
+            .delete()
+            .eq("id", id);
+        if (error) {
+            alert("삭제에 실패했어요");
+            return;
+        }
         loadItems();
     }
 
