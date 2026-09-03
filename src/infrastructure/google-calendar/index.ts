@@ -16,19 +16,54 @@ const GOOGLE_CALENDAR_BASE_URL = "https://www.googleapis.com/calendar/v3";
 
 const FETCH_TIMEOUT_MS = 15_000;
 
-/** 외부 Google API 호출에 로컬 취소 타임아웃을 적용합니다. */
+/** 요청률 초과(429)와 일시적 서버 오류에 재시도할 횟수. */
+const RATE_LIMIT_RETRIES = 3;
+const RETRY_BASE_DELAY_MS = 500;
+const MAX_RETRY_DELAY_MS = 8_000;
+
+function sleep(ms: number) {
+    return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+/** Retry-After(초 또는 HTTP-date)를 밀리초로. 없으면 지수 백오프. */
+function retryDelayMs(res: Response, attempt: number) {
+    const header = res.headers.get("retry-after");
+    if (header) {
+        const seconds = Number(header);
+        if (Number.isFinite(seconds) && seconds >= 0) {
+            return Math.min(seconds * 1000, MAX_RETRY_DELAY_MS);
+        }
+        const at = Date.parse(header);
+        if (!Number.isNaN(at)) {
+            return Math.min(Math.max(at - Date.now(), 0), MAX_RETRY_DELAY_MS);
+        }
+    }
+    return Math.min(RETRY_BASE_DELAY_MS * 2 ** attempt, MAX_RETRY_DELAY_MS);
+}
+
+/**
+ * 외부 Google API 호출에 로컬 취소 타임아웃을 적용합니다.
+ * 429(요청률 초과)와 5xx 는 Retry-After 를 존중해 백오프 후 재시도합니다.
+ */
 async function fetchWithTimeout(
     url: string,
     options: RequestInit,
     timeoutMs = FETCH_TIMEOUT_MS,
 ): Promise<Response> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-        return await fetch(url, { ...options, signal: controller.signal });
-    } finally {
-        clearTimeout(timer);
+    let lastRes: Response | null = null;
+    for (let attempt = 0; attempt <= RATE_LIMIT_RETRIES; attempt += 1) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            lastRes = await fetch(url, { ...options, signal: controller.signal });
+        } finally {
+            clearTimeout(timer);
+        }
+        const retryable = lastRes.status === 429 || lastRes.status >= 500;
+        if (!retryable || attempt === RATE_LIMIT_RETRIES) return lastRes;
+        await sleep(retryDelayMs(lastRes, attempt));
     }
+    return lastRes as Response;
 }
 
 export type GoogleTokenResponse = {
