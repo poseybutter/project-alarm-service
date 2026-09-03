@@ -1146,7 +1146,7 @@ export default function HomePage() {
             (m, q) => Math.max(m, q.order_index ?? 0),
             0,
         );
-        await supabase.from("quests").insert([
+        const { error } = await supabase.from("quests").insert([
             {
                 member: member,
                 player_id: playerId,
@@ -1160,6 +1160,10 @@ export default function HomePage() {
                 team_id: teamId,
             },
         ]);
+        if (error) {
+            showToastMsg("퀘스트 등록에 실패했어요");
+            return;
+        }
         setShowAddQuest(false);
         setQuestForm({
             content: "",
@@ -1229,7 +1233,7 @@ export default function HomePage() {
             showToastMsg("현재 팀의 프로젝트를 다시 선택해주세요");
             return;
         }
-        await supabase
+        const { error } = await supabase
             .from("quests")
             .update({
                 content: questForm.content,
@@ -1239,6 +1243,10 @@ export default function HomePage() {
                 task_id: editTarget.task_id ?? null,
             })
             .eq("id", editTarget.id);
+        if (error) {
+            showToastMsg("퀘스트 저장에 실패했어요");
+            return;
+        }
         setShowEditQuest(false);
         setEditTarget(null);
         setQuestForm({
@@ -1378,7 +1386,7 @@ export default function HomePage() {
             return;
         }
         const ciPayload = contentItemsPayload(editForm.contentItems);
-        await supabase
+        const { error } = await supabase
             .from("tasks")
             .update({
                 type: editForm.type,
@@ -1401,6 +1409,10 @@ export default function HomePage() {
                 show_on_team_calendar: true,
             })
             .eq("id", editTask.id);
+        if (error) {
+            showToastMsg("업무 저장에 실패했어요");
+            return;
+        }
         void syncTaskToTeamCalendar(editTask.id).catch((err) => {
             showToastMsg(
                 err instanceof Error

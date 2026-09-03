@@ -1402,7 +1402,16 @@ export async function createAdminTeam(input: {
     module,
     enabled: enabledModules.has(module),
   }));
-  await service.from("team_modules").insert(moduleRows);
+  const { error: moduleError } = await service
+    .from("team_modules")
+    .insert(moduleRows);
+  // 팀 행은 이미 만들어진 뒤라, 모듈만 빠진 상태를 그대로 알려야 뒤처리를 할 수 있다.
+  if (moduleError) {
+    throw new AdminApiError(
+      `팀 "${data.name}"은 생성됐지만 모듈 초기화에 실패했습니다. 팀 설정에서 모듈을 다시 저장해 주세요.`,
+      500,
+    );
+  }
 
   await writeAdminAudit({
     actorEmail: bootstrap.identity.email,

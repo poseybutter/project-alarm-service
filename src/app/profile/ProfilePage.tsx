@@ -300,11 +300,15 @@ export default function ProfilePage() {
             .getPublicUrl(fileName);
         const url = `${data.publicUrl}?t=${file.lastModified}`;
 
-        await supabase
+        const { error: avatarUpdateError } = await supabase
             .from("players")
             .update({ avatar_url: url })
             .eq("team_id", teamId)
             .eq("id", playerId);
+        if (avatarUpdateError) {
+            showToastMsg("프로필 이미지 저장에 실패했어요");
+            return;
+        }
 
         const previousPath = avatarStoragePath(avatarUrl);
         if (previousPath && previousPath !== fileName) {
@@ -323,11 +327,15 @@ export default function ProfilePage() {
         }
 
         // players 테이블 avatar_url 초기화
-        await supabase
+        const { error: avatarDeleteError } = await supabase
             .from("players")
             .update({ avatar_url: null })
             .eq("team_id", teamId)
             .eq("id", playerId);
+        if (avatarDeleteError) {
+            showToastMsg("프로필 이미지 삭제에 실패했어요");
+            return;
+        }
         showToastMsg("프로필 이미지 삭제 완료!");
         refreshAvatar();
         loadAll();
