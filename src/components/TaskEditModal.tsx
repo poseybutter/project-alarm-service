@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/infrastructure/supabase/client";
-import type { Task, Project } from "@/shared/types";
-import { findProjectId, formatWorkload, normalizeProject } from "@/shared/utils/utils";
-import { WORKLOAD_PRESETS } from "@/shared/constants";
+import type { Task, Project, ContentItem } from "@/shared/types";
+import { findProjectId, normalizeProject } from "@/shared/utils/utils";
+import { getContentItems, contentItemsPayload } from "@/shared/utils/contentItems";
 import { useAuth } from "@/components/AuthProvider";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import { DayPicker, DateRange } from "react-day-picker";
@@ -18,6 +18,10 @@ import {
 } from "@/shared/styles/reactSelectStyles";
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import TaskContentInputs from "@/components/TaskContentInputs";
+import {
+    syncTaskToTeamCalendar,
+    deleteTaskFromTeamCalendar,
+} from "@/features/tasks/api/teamCalendarSync";
 
 function periodButtonLabel(range: DateRange | undefined): {
     text: string;
@@ -38,60 +42,14 @@ function parseYmdToLocalDate(value: string | null): Date | undefined {
 const EMPTY_EDIT = {
     type: "",
     proj: "",
-    content: "",
+    contentItems: [{ text: "", workload: 0 }] as ContentItem[],
     priority: "",
-    workload: 0,
     issue: "",
     status: "",
     is_plan: false,
     is_starred: false,
     show_on_team_calendar: true,
 };
-
-function WorkloadInput({
-    value,
-    onChange,
-}: {
-    value: number;
-    onChange: (v: number) => void;
-}) {
-    return (
-        <div>
-            <div className="flex justify-between items-center mb-1.5">
-                <label className="text-xs font-medium text-stone-500">
-                    공수
-                </label>
-                {value > 0 && (
-                    <span className="text-xs text-amber-600 font-medium">
-                        {formatWorkload(value)}
-                    </span>
-                )}
-            </div>
-            <input
-                type="number"
-                className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm mb-2"
-                placeholder="분 직접 입력"
-                value={value || ""}
-                onChange={(e) =>
-                    onChange(parseInt(e.target.value, 10) || 0)
-                }
-            />
-            <div className="flex gap-1.5 flex-wrap">
-                {WORKLOAD_PRESETS.map((p) => (
-                    <button
-                        type="button"
-                        key={p.label}
-                        onClick={() => onChange(p.value)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
-                ${value === p.value ? "bg-amber-500 text-white border-amber-500" : "bg-stone-50 text-stone-600 border-stone-200"}`}
-                    >
-                        {p.label}
-                    </button>
-                ))}
-            </div>
-        </div>
-    );
-}
 
 export type TaskEditModalProps = {
     task: Task | null;
@@ -125,9 +83,8 @@ export default function TaskEditModal({
         setEditForm({
             type: task.type || "",
             proj: task.proj || "",
-            content: task.content || "",
+            contentItems: getContentItems(task),
             priority: task.priority || "",
-            workload: task.workload || 0,
             issue: task.issue || "",
             status: task.status || "대기",
             is_plan: task.is_plan ?? false,
@@ -237,13 +194,14 @@ export default function TaskEditModal({
             showToast("업무 캘린더 등록을 위해 기간 또는 마감일을 선택해주세요");
             return;
         }
+        const ciPayload = contentItemsPayload(editForm.contentItems);
         const { error } = await supabase
             .from("tasks")
             .update({
                 type: editForm.type,
                 proj: editForm.proj,
                 project_id: selectedProjectId,
-                content: editForm.content,
+                ...ciPayload,
                 priority: editForm.priority || null,
                 start_date: editDateRange?.from
                     ? toLocalYmd(editDateRange.from)
@@ -251,7 +209,6 @@ export default function TaskEditModal({
                 end_date: editDateRange?.to
                     ? toLocalYmd(editDateRange.to)
                     : null,
-                workload: editForm.workload || 0,
                 issue: editForm.issue || null,
                 status: editForm.status,
                 is_plan: editForm.is_plan ?? false,
@@ -263,23 +220,18 @@ export default function TaskEditModal({
             alert("업무 수정에 실패했어요");
             return;
         }
+        // 캘린더 반영 실패는 모달이 닫힌 뒤에도 보이도록 alert 로 알린다 (토스트는 모달과 함께 사라짐)
         if (!editForm.show_on_team_calendar && task.show_on_team_calendar) {
-            void fetch(`/api/agents/team-calendar/tasks/${task.id}`, { method: "DELETE" }).then((res) => {
-                if (!res.ok) console.warn("[team-calendar] delete failed:", res.status);
-            }).catch((err) => {
-                console.warn("[team-calendar] delete failed", err);
+            void deleteTaskFromTeamCalendar(task.id).catch((err) => {
+                alert(
+                    `${err instanceof Error ? err.message : "팀 캘린더 일정 삭제 실패"}\n팀 캘린더에 일정이 남아 있을 수 있어요.`,
+                );
             });
         } else if (editForm.show_on_team_calendar) {
-            void (async () => {
-                const res = await fetch(`/api/agents/team-calendar/tasks/${task.id}`, {
-                    method: "POST",
-                });
-                const json = await res.json().catch(() => ({}));
-                if (!res.ok) {
-                    throw new Error(json.message || "팀 캘린더 동기화 실패");
-                }
-            })().catch((err) => {
-                console.warn("[team-calendar]", err instanceof Error ? err.message : "동기화 실패");
+            void syncTaskToTeamCalendar(task.id).catch((err) => {
+                alert(
+                    `${err instanceof Error ? err.message : "팀 캘린더 동기화 실패"}\n팀 캘린더 일정이 최신 상태가 아닐 수 있어요.`,
+                );
             });
         }
         await Promise.resolve(onSaved());
@@ -545,20 +497,11 @@ export default function TaskEditModal({
                         />
                     </div>
                     <TaskContentInputs
-                        value={editForm.content}
-                        onChange={(content) =>
+                        items={editForm.contentItems}
+                        onChange={(contentItems) =>
                             setEditForm({
                                 ...editForm,
-                                content,
-                            })
-                        }
-                    />
-                    <WorkloadInput
-                        value={editForm.workload}
-                        onChange={(v) =>
-                            setEditForm({
-                                ...editForm,
-                                workload: v,
+                                contentItems,
                             })
                         }
                     />

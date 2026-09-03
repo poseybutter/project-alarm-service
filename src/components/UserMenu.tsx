@@ -79,6 +79,12 @@ export default function UserMenu() {
           >
             <span>🏠</span> 홈으로
           </button>
+          <button
+            onClick={() => { router.push('/agents'); setOpen(false) }}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-stone-700 hover:bg-stone-50 transition-colors"
+          >
+            <span>🤖</span> 알림 에이전트
+          </button>
           {role === 'admin' && (
             <button
               onClick={() => { router.push('/admin'); setOpen(false) }}
