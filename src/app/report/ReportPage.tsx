@@ -1200,60 +1200,6 @@ export default function ReportPage() {
                         {members.slice(0, 3).map((m) => (
                             <Avatar key={m} name={m} size={20} />
                         ))}
-                        {isLeader && (
-                            <div
-                                className="flex gap-1.5"
-                                onClick={(e) => e.stopPropagation()}
-                            >
-                                <Tooltip label="수정">
-                                    <button
-                                        type="button"
-                                        onClick={() => openEditAssignment(a)}
-                                        aria-label="수정"
-                                        className="text-base text-stone-400 hover:text-amber-600"
-                                    >
-                                        <i
-                                            className="ri-edit-line"
-                                            aria-hidden
-                                        />
-                                    </button>
-                                </Tooltip>
-                                <Tooltip label="삭제">
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            void deleteAssignment(a.id)
-                                        }
-                                        aria-label="삭제"
-                                        className="text-base text-stone-400 hover:text-red-500"
-                                    >
-                                        <i
-                                            className="ri-delete-bin-line"
-                                            aria-hidden
-                                        />
-                                    </button>
-                                </Tooltip>
-                            </div>
-                        )}
-                        <button
-                            type="button"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                void copySection(
-                                    assignmentCopyText(a),
-                                    (v) =>
-                                        setCopiedAssignId(v ? a.id : null),
-                                );
-                            }}
-                            className={`shrink-0 rounded-md p-1 transition-colors ${copiedAssignId === a.id ? "text-green-600" : "text-stone-400 hover:bg-stone-100 hover:text-stone-700"}`}
-                            title={copiedAssignId === a.id ? "복사됨" : "복사"}
-                            aria-label="복사"
-                        >
-                            <i
-                                className={`text-base ${copiedAssignId === a.id ? "ri-check-line" : "ri-file-copy-line"}`}
-                                aria-hidden
-                            />
-                        </button>
                         <i
                             className={`${isOpen ? "ri-arrow-up-s-line" : "ri-arrow-down-s-line"} text-stone-400`}
                             aria-hidden
@@ -1262,6 +1208,21 @@ export default function ReportPage() {
                 </div>
                 {isOpen && (
                     <div className="space-y-1.5 px-4 pb-4 pt-1">
+                        <div className="flex justify-end">
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    void copySection(
+                                        assignmentCopyText(a),
+                                        (v) => setCopiedAssignId(v ? a.id : null),
+                                    )
+                                }
+                                className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${copiedAssignId === a.id ? "text-green-600" : "text-stone-400 hover:bg-stone-100 hover:text-stone-700"}`}
+                            >
+                                <i className={`text-sm mr-1 ${copiedAssignId === a.id ? "ri-check-line" : "ri-file-copy-line"}`} aria-hidden />
+                                {copiedAssignId === a.id ? "복사됨" : "복사"}
+                            </button>
+                        </div>
                         {members.length > 0 && (
                             <div className="flex items-start gap-2">
                                 <span className="w-12 shrink-0 text-xs text-stone-400">
@@ -1316,6 +1277,24 @@ export default function ReportPage() {
                                             ) : null,
                                         )}
                                 </div>
+                            </div>
+                        )}
+                        {isLeader && (
+                            <div className="flex gap-2 mt-3 pt-2 border-t border-stone-100">
+                                <button
+                                    type="button"
+                                    onClick={() => openEditAssignment(a)}
+                                    className="flex-1 rounded-lg bg-amber-500 py-2 text-xs font-medium text-white hover:bg-amber-600 transition-colors"
+                                >
+                                    수정
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => void deleteAssignment(a.id)}
+                                    className="flex-1 rounded-lg border border-red-300 py-2 text-xs font-medium text-red-500 hover:bg-red-50 transition-colors"
+                                >
+                                    삭제
+                                </button>
                             </div>
                         )}
                     </div>

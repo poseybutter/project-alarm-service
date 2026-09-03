@@ -110,7 +110,7 @@ export const badgeSelectStyles: StylesConfig<
         boxShadow: "none",
         minHeight: "28px",
         height: "28px",
-        width: "7.5rem",
+        width: "6rem",
         cursor: "pointer",
         "&:hover": { borderColor: "transparent" },
     }),

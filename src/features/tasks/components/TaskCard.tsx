@@ -150,27 +150,29 @@ export default function TaskCard({
                         </div>
                     )}
                     {/* 기간 + 공수 + 상태 */}
-                    <div className="mt-1 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-xs text-stone-400">
-                        {t.is_plan && (
-                            <span className="text-[10px] px-1.5 py-0.5 bg-violet-100 text-violet-600 rounded font-bold shrink-0">
-                                리포트 포함
-                            </span>
-                        )}
-                        {t.workload > 0 && <span>{formatWorkload(t.workload)}</span>}
-                        {t.start_date && t.end_date && (
-                            <span className={isUrgent ? "text-red-500 font-medium" : ""}>
-                                {t.start_date.slice(5).replace("-", "/")} ~{" "}
-                                {t.end_date.slice(5).replace("-", "/")}
-                                {diff !== null && ` · D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
-                            </span>
-                        )}
-                        {!t.start_date && t.end_date && (
-                            <span className={isUrgent ? "text-red-500 font-medium" : ""}>
-                                ~{t.end_date.slice(5).replace("-", "/")}
-                                {diff !== null && ` · D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
-                            </span>
-                        )}
-                        <div className="ml-auto shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                    <div className="mt-1 flex w-full items-center justify-between text-xs text-stone-400">
+                        <div className="flex items-center gap-2">
+                            {t.is_plan && (
+                                <span className="text-[10px] px-1.5 py-0.5 bg-violet-100 text-violet-600 rounded font-bold shrink-0">
+                                    리포트 포함
+                                </span>
+                            )}
+                            {t.workload > 0 && <span>{formatWorkload(t.workload)}</span>}
+                            {t.start_date && t.end_date && (
+                                <span className={isUrgent ? "text-red-500 font-medium" : ""}>
+                                    {t.start_date.slice(5).replace("-", "/")} ~{" "}
+                                    {t.end_date.slice(5).replace("-", "/")}
+                                    {diff !== null && ` · D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
+                                </span>
+                            )}
+                            {!t.start_date && t.end_date && (
+                                <span className={isUrgent ? "text-red-500 font-medium" : ""}>
+                                    ~{t.end_date.slice(5).replace("-", "/")}
+                                    {diff !== null && ` · D${diff < 0 ? "+" + Math.abs(diff) : "-" + diff}`}
+                                </span>
+                            )}
+                        </div>
+                        <div className="shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                             <TaskStatusBadgeSelect
                                 task={t}
                                 disabled={disabled}
