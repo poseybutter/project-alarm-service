@@ -420,7 +420,6 @@ function HomeMyTaskRow({
     showBorderBottom,
     onStatusChange,
     onEdit,
-    onDelete,
     onCompleting,
 }: {
     task: Task;
@@ -442,8 +441,16 @@ function HomeMyTaskRow({
         diff === null ? "" : diff < 0 ? `D+${Math.abs(diff)}` : `D-${diff}`;
     return (
         <div
+            role={onEdit ? "button" : undefined}
+            tabIndex={onEdit ? 0 : undefined}
             className={`px-4 py-3 transition-colors ${showBorderBottom ? "border-b border-stone-100" : ""} ${t.priority === "긴급" ? "bg-amber-50" : ""} ${onEdit ? "cursor-pointer hover:bg-stone-50/60" : ""}`}
             onClick={() => onEdit?.(t)}
+            onKeyDown={(e) => {
+                if (onEdit && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault();
+                    onEdit(t);
+                }
+            }}
         >
             <div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -624,7 +631,6 @@ function SortableQuestItem({
     myTasks,
     onComplete,
     onEdit,
-    onDelete,
 }: {
     sortableId: string;
     quest: Quest;
@@ -634,7 +640,6 @@ function SortableQuestItem({
     myTasks: Task[];
     onComplete: (q: Quest, e: React.MouseEvent) => void;
     onEdit: (q: Quest) => void;
-    onDelete: (id: number) => void;
 }) {
     const {
         attributes,
@@ -1241,12 +1246,14 @@ export default function HomePage() {
     async function confirmDecline() {
         if (!declineConfirm) return;
         if (declineConfirm.type === "task") {
-            await supabase
+            const { error } = await supabase
                 .from("tasks")
                 .update({ is_excluded_today: true })
                 .eq("id", declineConfirm.id);
+            if (error) { showToastMsg("처리 중 오류가 발생했어요"); return; }
         } else {
-            await supabase.from("quests").delete().eq("id", declineConfirm.id);
+            const { error } = await supabase.from("quests").delete().eq("id", declineConfirm.id);
+            if (error) { showToastMsg("퀘스트 삭제 중 오류가 발생했어요"); return; }
         }
         setDeclineConfirm(null);
         showToastMsg("흠... 다음엔 꼭 해오거라.");
@@ -1730,9 +1737,10 @@ export default function HomePage() {
                                         </div>
                                         {/* NPC + 전구 버튼 */}
                                         <div className="relative inline-block">
-                                            {totalQuestCount - completedCount > 0 && (
+                                            {(totalQuestCount === 0 || totalQuestCount - completedCount > 0) && (
                                                 <button
                                                     type="button"
+                                                    aria-label="퀘스트 보기"
                                                     onClick={() => setShowQuestModal(true)}
                                                     className="absolute -top-5 -right-6 z-[5] transition-transform hover:scale-110 active:scale-95"
                                                 >
@@ -1748,6 +1756,7 @@ export default function HomePage() {
                                             {allQuestsDone && totalQuestCount > 0 && (
                                                 <button
                                                     type="button"
+                                                    aria-label="모든 퀘스트 완료"
                                                     onClick={() => setShowQuestModal(true)}
                                                     className="absolute -top-5 -right-6 z-[5] transition-transform hover:scale-110 active:scale-95"
                                                 >
@@ -1890,7 +1899,6 @@ export default function HomePage() {
                                                                         myTasks={myTasks}
                                                                         onComplete={completeQuest}
                                                                         onEdit={openEditQuest}
-                                                                        onDelete={deleteQuest}
                                                                     />
                                                                 );
                                                             })}
@@ -2491,7 +2499,7 @@ export default function HomePage() {
                                             onClick={() => {
                                                 if (!editTask || !confirm("정말 삭제할까요?")) return;
                                                 void (async () => {
-                                                    try { await deleteTaskFromTeamCalendar(editTask.id); } catch { /* ignore */ }
+                                                    try { await deleteTaskFromTeamCalendar(editTask.id); } catch (err) { console.warn("[team-calendar] delete failed", err); }
                                                     await supabase.from("tasks").delete().eq("id", editTask.id);
                                                     setShowEditTask(false);
                                                     setEditTask(null);

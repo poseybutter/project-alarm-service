@@ -1440,11 +1440,19 @@ export default function ManagePage() {
                                         return (
                                             <div
                                                 key={a.id}
+                                                role={canRow ? "button" : undefined}
+                                                tabIndex={canRow ? 0 : undefined}
                                                 className={`px-4 py-3 transition-colors
                       ${isSkipped ? "bg-stone-50 opacity-70" : isUrgent ? "bg-red-50" : isWarning ? "bg-amber-50" : ""}
                       ${i < filteredAcc.length - 1 ? "border-b border-stone-100" : ""}
                       ${canRow ? "cursor-pointer hover:bg-stone-50/60" : ""}`}
                                                 onClick={() => canRow && openAccModalForEdit(a)}
+                                                onKeyDown={(e) => {
+                                                    if (canRow && (e.key === "Enter" || e.key === " ")) {
+                                                        e.preventDefault();
+                                                        openAccModalForEdit(a);
+                                                    }
+                                                }}
                                             >
                                                 <div className="flex items-center gap-2">
                                                     <Avatar name={a.member} size={24} />
@@ -2118,7 +2126,6 @@ export default function ManagePage() {
                                         <button
                                             type="button"
                                             onClick={() => {
-                                                if (!confirm("정말 삭제할까요?")) return;
                                                 void deleteAcc(editAcc.id);
                                                 closeAccModal();
                                             }}
