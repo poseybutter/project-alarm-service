@@ -151,7 +151,8 @@ describe("업무 내용 항목별 캘린더 일정", () => {
             if (call.method !== "PUT" && call.method !== "POST") return null;
             writes += 1;
             // 업무 기간 일정 + 첫 항목까지 성공시키고 두 번째 항목에서 끊는다.
-            return writes >= 3 ? { status: 500, json: { error: { message: "boom" } } } : null;
+            // 403 은 재시도 대상이 아니라 곧바로 실패한다 (429/5xx 는 백오프 재시도)
+            return writes >= 3 ? { status: 403, json: { error: { message: "boom" } } } : null;
         });
         const err = await run({
             ...BASE,
@@ -165,6 +166,30 @@ describe("업무 내용 항목별 캘린더 일정", () => {
         expect(err).toBeInstanceOf(TeamCalendarPartialSyncError);
         expect(err.progress.baseEventId).toBeTruthy();
         expect(err.progress.itemEventIds).toHaveLength(1);
+    });
+
+    it("429 는 Retry-After 를 존중해 재시도한다", async () => {
+        let first = true;
+        vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+            calls.push({
+                method: init.method ?? "GET",
+                url,
+                body: init.body ? JSON.parse(init.body as string) : null,
+            });
+            if (first) {
+                first = false;
+                return new Response(JSON.stringify({ error: { message: "rate" } }), {
+                    status: 429,
+                    headers: { "retry-after": "0" },
+                });
+            }
+            const id = decodeURIComponent(url.split("/events/")[1] ?? "") || "generated-id";
+            return new Response(JSON.stringify({ id, htmlLink: `link/${id}` }), { status: 200 });
+        }));
+
+        const r = await run(BASE);
+        expect(calls).toHaveLength(2); // 429 한 번 + 재시도 성공
+        expect(r.baseEventId).toBeTruthy();
     });
 
     it("설정·필수값 누락은 진행분 없이 그대로 올린다", async () => {

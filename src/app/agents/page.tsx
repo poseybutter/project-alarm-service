@@ -292,18 +292,38 @@ export default function AgentsPage() {
             }
 
             try {
-                const resyncRes = await fetch(
-                    "/api/agents/team-calendar/tasks/resync",
-                    { method: "POST" },
-                );
-                const resyncJson = await resyncRes.json();
-                if (!resyncRes.ok) {
-                    throw new Error(
-                        resyncJson.message || "기존 업무 캘린더 재동기화 실패",
+                // 재동기화는 배치로 나뉘어 온다. nextCursor 가 없을 때까지 이어받는다.
+                let cursor: number | null = null;
+                let synced = 0;
+                let failed = 0;
+                // 업무가 계속 늘어나도 무한 루프에 빠지지 않도록 상한을 둔다.
+                for (let batch = 0; batch < 50; batch += 1) {
+                    const query = cursor === null ? "" : `?cursor=${cursor}`;
+                    const resyncRes = await fetch(
+                        `/api/agents/team-calendar/tasks/resync${query}`,
+                        { method: "POST" },
                     );
+                    const resyncJson = (await resyncRes.json()) as {
+                        message?: string;
+                        synced?: number;
+                        failed?: number;
+                        nextCursor?: number | null;
+                    };
+                    if (!resyncRes.ok) {
+                        throw new Error(
+                            resyncJson.message ||
+                                "기존 업무 캘린더 재동기화 실패",
+                        );
+                    }
+                    synced += resyncJson.synced ?? 0;
+                    failed += resyncJson.failed ?? 0;
+                    cursor = resyncJson.nextCursor ?? null;
+                    if (cursor === null) break;
                 }
                 showToast(
-                    `팀 캘린더 설정 저장, 기존 업무 ${resyncJson.synced ?? 0}건 재동기화`,
+                    failed > 0
+                        ? `팀 캘린더 설정 저장, 기존 업무 ${synced}건 재동기화 (실패 ${failed}건)`
+                        : `팀 캘린더 설정 저장, 기존 업무 ${synced}건 재동기화`,
                 );
             } catch (resyncErr) {
                 showToast(
