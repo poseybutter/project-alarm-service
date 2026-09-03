@@ -156,7 +156,14 @@ export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProp
             bg: "#65a30d",
             icon: "🌱",
             title: `${season.label} 시작`,
-            sub: "첫 업무를 완료하고 1위를 차지하세요",
+            sub:
+                myRank === 1
+                    ? "좋은 출발이에요! 선두를 유지하세요"
+                    : myRank !== null && myRank <= 3
+                      ? `현재 ${myRank}위 · 정상이 가까워요`
+                      : myRank !== null
+                        ? `현재 ${myRank}위 · 아직 시작일 뿐이에요`
+                        : "새 시즌이 열렸어요! 퀘스트를 시작해보세요",
         },
     };
 
