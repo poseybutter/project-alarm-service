@@ -115,7 +115,7 @@ export default function ProfilePage() {
     >("week");
     const [historyProjFilter, setHistoryProjFilter] = useState("");
     const [historyStatusFilter, setHistoryStatusFilter] = useState("");
-    const [historyView, setHistoryView] = useState<"list" | "effort">("effort");
+    const [historyView] = useState<"list" | "effort">("effort");
     const [effortCalProj, setEffortCalProj] = useState<string>("");
     const [effortCalMonth, setEffortCalMonth] = useState(() => new Date());
     const [effortCalDay, setEffortCalDay] = useState<string | null>(null);
@@ -409,19 +409,6 @@ export default function ProfilePage() {
     };
 
     const historyTasks = getHistoryTasks();
-    const effortByProject = (() => {
-        const map = new Map<string, { count: number; workload: number }>();
-        for (const t of historyTasks) {
-            const proj = t.proj || "(프로젝트 없음)";
-            const entry = map.get(proj) ?? { count: 0, workload: 0 };
-            entry.count += 1;
-            if (!t.is_plan) entry.workload += t.workload || 0;
-            map.set(proj, entry);
-        }
-        return [...map.entries()]
-            .map(([proj, { count, workload }]) => ({ proj, count, workload }))
-            .sort((a, b) => b.workload - a.workload);
-    })();
 
     return (
         <AuthGuard>
