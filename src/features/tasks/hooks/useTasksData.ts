@@ -73,27 +73,38 @@ export function useTasksData(teamId: string | null) {
         void loadTasks(teamId, () => cancelled);
         void loadProjects(teamId, () => cancelled);
 
+        const refetchTasks = async () => {
+            const seq = ++taskSeqRef.current;
+            const { data } = await supabase
+                .from("tasks")
+                .select("*")
+                .eq("team_id", teamId)
+                .or("status.is.null,status.neq.완료")
+                .order("created_at", { ascending: false });
+            if (!cancelled && seq === taskSeqRef.current) setTasks(data || []);
+        };
+
+        // 다른 팀의 변경까지 받으면 팀 수에 비례해 불필요한 리페치가 생기므로
+        // INSERT/UPDATE 는 팀으로 필터한다. DELETE 페이로드에는 PK 만 있어
+        // 필터를 걸면 이벤트가 아예 오지 않으므로 무필터로 받는다.
+        // (리페치 쿼리가 팀 스코프라 정확성은 유지된다)
+        const teamFilter = `team_id=eq.${teamId}`;
         const channel = supabase
             .channel("tasks-changes-" + Math.random())
             .on(
                 "postgres_changes",
-                {
-                    event: "*",
-                    schema: "public",
-                    table: "tasks",
-                    // 다른 팀의 변경까지 받으면 팀 수에 비례해 불필요한 리페치가 생긴다.
-                    filter: `team_id=eq.${teamId}`,
-                },
-                async () => {
-                    const seq = ++taskSeqRef.current;
-                    const { data } = await supabase
-                        .from("tasks")
-                        .select("*")
-                        .eq("team_id", teamId)
-                        .or("status.is.null,status.neq.완료")
-                        .order("created_at", { ascending: false });
-                    if (!cancelled && seq === taskSeqRef.current) setTasks(data || []);
-                },
+                { event: "INSERT", schema: "public", table: "tasks", filter: teamFilter },
+                refetchTasks,
+            )
+            .on(
+                "postgres_changes",
+                { event: "UPDATE", schema: "public", table: "tasks", filter: teamFilter },
+                refetchTasks,
+            )
+            .on(
+                "postgres_changes",
+                { event: "DELETE", schema: "public", table: "tasks" },
+                refetchTasks,
             )
             .subscribe();
 

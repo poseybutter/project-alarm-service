@@ -717,11 +717,31 @@ export default function ReportPage() {
             .on(
                 "postgres_changes",
                 {
-                    event: "*",
+                    event: "INSERT",
                     schema: "public",
                     table: "assignments",
                     filter: `team_id=eq.${teamId}`,
                 },
+                () => {
+                    void loadAssignments();
+                },
+            )
+            .on(
+                "postgres_changes",
+                {
+                    event: "UPDATE",
+                    schema: "public",
+                    table: "assignments",
+                    filter: `team_id=eq.${teamId}`,
+                },
+                () => {
+                    void loadAssignments();
+                },
+            )
+            // DELETE 페이로드에는 PK 만 있어 필터를 걸면 이벤트가 오지 않는다.
+            .on(
+                "postgres_changes",
+                { event: "DELETE", schema: "public", table: "assignments" },
                 () => {
                     void loadAssignments();
                 },
@@ -780,11 +800,31 @@ export default function ReportPage() {
             .on(
                 "postgres_changes",
                 {
-                    event: "*",
+                    event: "INSERT",
                     schema: "public",
                     table: "tasks",
                     filter: `team_id=eq.${teamId}`,
                 },
+                () => {
+                    void loadTasks();
+                },
+            )
+            .on(
+                "postgres_changes",
+                {
+                    event: "UPDATE",
+                    schema: "public",
+                    table: "tasks",
+                    filter: `team_id=eq.${teamId}`,
+                },
+                () => {
+                    void loadTasks();
+                },
+            )
+            // DELETE 페이로드에는 PK 만 있어 필터를 걸면 이벤트가 오지 않는다.
+            .on(
+                "postgres_changes",
+                { event: "DELETE", schema: "public", table: "tasks" },
                 () => {
                     void loadTasks();
                 },
@@ -848,11 +888,37 @@ export default function ReportPage() {
             .on(
                 "postgres_changes",
                 {
-                    event: "*",
+                    event: "INSERT",
                     schema: "public",
                     table: "briefings",
                     filter: `team_id=eq.${teamId}`,
                 },
+                () => {
+                    if (savingBriefingRef.current || savingNoticeRef.current || savingChecklistRef.current || savingOkrRef.current) {
+                        return;
+                    }
+                    void loadBriefing();
+                },
+            )
+            .on(
+                "postgres_changes",
+                {
+                    event: "UPDATE",
+                    schema: "public",
+                    table: "briefings",
+                    filter: `team_id=eq.${teamId}`,
+                },
+                () => {
+                    if (savingBriefingRef.current || savingNoticeRef.current || savingChecklistRef.current || savingOkrRef.current) {
+                        return;
+                    }
+                    void loadBriefing();
+                },
+            )
+            // DELETE 페이로드에는 PK 만 있어 필터를 걸면 이벤트가 오지 않는다.
+            .on(
+                "postgres_changes",
+                { event: "DELETE", schema: "public", table: "briefings" },
                 () => {
                     if (savingBriefingRef.current || savingNoticeRef.current || savingChecklistRef.current || savingOkrRef.current) {
                         return;
