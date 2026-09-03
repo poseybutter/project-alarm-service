@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { LEVELS } from "@/features/gamification/levels";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
+import {
+    consumeRateLimit,
+    rateLimitResponse,
+    requestRateLimitKey,
+} from "@/shared/server/rateLimit";
 import { DeliveryUnknownError, sendGoogleChatMessage } from "@/infrastructure/google-chat";
 import {
     createServiceSupabaseClient,
@@ -22,6 +27,13 @@ export async function POST(request: NextRequest) {
     if (!user?.email || !role || !teamId) {
         return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
+
+    // 외부 채팅 웹훅 발송이므로 남용을 막는다.
+    const rate = consumeRateLimit(
+        requestRateLimitKey(request, "notify-level-up", user.email),
+        { limit: 20, windowMs: 60 * 1000 },
+    );
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
 
     let body: NotifyBody;
     try {

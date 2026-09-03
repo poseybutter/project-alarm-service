@@ -11,6 +11,11 @@ import {
     type TeamCalendarEventInput,
 } from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
+import {
+    consumeRateLimit,
+    rateLimitResponse,
+    requestRateLimitKey,
+} from "@/shared/server/rateLimit";
 import { listActiveTeamMembers } from "@/features/identity/server/identityRepository";
 
 const VALID_EVENT_TYPES = new Set([
@@ -28,6 +33,13 @@ export async function POST(req: NextRequest) {
     if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
+
+    // 일정 생성마다 Google API 호출 + 전체 재동기화가 돌므로 남용을 막는다.
+    const rate = consumeRateLimit(
+        requestRateLimitKey(req, "team-calendar-events", user.email),
+        { limit: 20, windowMs: 60 * 1000 },
+    );
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
 
     let body: TeamCalendarEventInput;
     try {
