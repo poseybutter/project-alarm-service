@@ -231,7 +231,8 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
                 calendarId,
                 eventId: task.team_calendar_event_id,
             });
-            // 삭제된 일정 식별자를 남겨두면 이후 동기화가 없는 일정을 가리키게 된다
+            // 삭제된 일정 식별자를 남겨두면 이후 동기화가 없는 일정을 가리키게 된다.
+            // 읽어온 event_id 를 조건에 포함해, 그사이 재동기화로 새 일정이 생겼다면 건드리지 않는다.
             const { error } = await supabase
                 .from("tasks")
                 .update({
@@ -240,7 +241,8 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
                     team_calendar_sync_error: null,
                 })
                 .eq("team_id", task.team_id)
-                .eq("id", taskId);
+                .eq("id", taskId)
+                .eq("team_calendar_event_id", task.team_calendar_event_id);
             if (error) throw error;
         }
 
