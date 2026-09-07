@@ -52,22 +52,21 @@ export async function GET(req: NextRequest) {
 
     try {
         const service = createServiceSupabaseClient();
-        let suggestions = await listAgentSuggestions(service, {
+        const shouldShowTeam = role === "admin" && scopeParam === "team";
+
+        let recipientMember: string | undefined;
+        if (!shouldShowTeam && user.email) {
+            const resolvedMember = await resolveTeamMember(service, user.email, teamId);
+            recipientMember = resolvedMember?.name ?? "";
+        }
+
+        const suggestions = await listAgentSuggestions(service, {
             teamId,
             status,
             agentType,
+            recipientMember,
             limit,
         });
-
-        const shouldShowTeam = role === "admin" && scopeParam === "team";
-        if (!shouldShowTeam && user.email) {
-            const resolvedMember = await resolveTeamMember(service, user.email, teamId);
-            const memberName = resolvedMember?.name ?? "";
-            suggestions = suggestions.filter((suggestion) => {
-                const recipient = suggestion.payload?.recipientMember;
-                return recipient === memberName;
-            });
-        }
 
         return NextResponse.json({ suggestions });
     } catch (error) {

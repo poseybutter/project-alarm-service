@@ -14,14 +14,12 @@ const windows =
     (globalRateLimit.__projectRateLimits = new Map<string, RateWindow>());
 
 export function requestRateLimitKey(
-    request: Request,
+    _request: Request,
     namespace: string,
     identity = "anonymous",
 ) {
-    const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0];
-    const address = forwardedFor?.trim() || request.headers.get("x-real-ip") || "local";
     return createHash("sha256")
-        .update(`${namespace}:${address}:${identity.toLowerCase()}`)
+        .update(`${namespace}:${identity.toLowerCase()}`)
         .digest("base64url");
 }
 

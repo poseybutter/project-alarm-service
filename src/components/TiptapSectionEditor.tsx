@@ -77,7 +77,7 @@ export default function TiptapSectionEditor({
 
     if (!editor) {
         return (
-            <div className="notice-editor min-h-[120px] rounded-lg border border-stone-200 bg-stone-50 animate-pulse" />
+            <div className="notice-editor min-h-[120px] rounded-lg border border-stone-200 bg-stone-50 motion-safe:animate-pulse" />
         );
     }
 
