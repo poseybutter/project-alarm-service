@@ -38,6 +38,10 @@ export function consumeRateLimit(
 
     const current = windows.get(key);
     if (!current || current.resetAt <= now) {
+        // 정리 후에도 상한이면 새 키를 거부해 메모리 폭주를 방지한다
+        if (!current && windows.size >= 5_000) {
+            return { allowed: false, retryAfterSeconds: 60 };
+        }
         windows.set(key, { count: 1, resetAt: now + options.windowMs });
         return { allowed: true, retryAfterSeconds: 0 };
     }
