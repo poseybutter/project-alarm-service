@@ -28,6 +28,14 @@ export function consumeRateLimit(
     options: { limit: number; windowMs: number },
 ) {
     const now = Date.now();
+
+    // 상한 도달 전에도 만료 엔트리를 정리해 메모리 누적을 방지한다.
+    if (windows.size > 5_000) {
+        for (const [windowKey, value] of windows) {
+            if (value.resetAt <= now) windows.delete(windowKey);
+        }
+    }
+
     const current = windows.get(key);
     if (!current || current.resetAt <= now) {
         windows.set(key, { count: 1, resetAt: now + options.windowMs });
@@ -45,11 +53,6 @@ export function consumeRateLimit(
     }
 
     current.count += 1;
-    if (windows.size > 5_000) {
-        for (const [windowKey, value] of windows) {
-            if (value.resetAt <= now) windows.delete(windowKey);
-        }
-    }
     return { allowed: true, retryAfterSeconds: 0 };
 }
 

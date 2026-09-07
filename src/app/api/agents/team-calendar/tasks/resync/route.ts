@@ -240,12 +240,11 @@ export async function POST(request: Request) {
         for (const outcome of outcomes) {
             if (outcome.kind === "synced") {
                 synced += 1;
-                continue;
-            }
-            errors.push({ id: outcome.id, message: outcome.message });
-            if (outcome.kind === "skipped") {
+            } else if (outcome.kind === "skipped") {
                 skipped += 1;
                 skippedTaskIds.push(outcome.id);
+            } else {
+                errors.push({ id: outcome.id, message: outcome.message });
             }
         }
 

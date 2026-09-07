@@ -344,7 +344,8 @@ begin
     end if;
 
 exception when others then
-    return json_build_object('success', false, 'message', sqlerrm);
+    raise log 'attendance_check failed: % (%)', sqlerrm, sqlstate;
+    return json_build_object('success', false, 'message', '출석 처리 중 오류가 발생했습니다.');
 end;
 $$;
 
@@ -394,8 +395,22 @@ declare t text;
 begin
     foreach t in array array['tasks', 'quests', 'projects', 'accessibility', 'assignments']
     loop
+        -- 이전 통합 정책 제거
         execute format(
             'drop policy if exists "%s accessible by active team members" on public.%I',
+            t, t);
+        -- 재적용 시 중복 방지를 위해 새 정책도 먼저 제거
+        execute format(
+            'drop policy if exists "%s readable by active team members" on public.%I',
+            t, t);
+        execute format(
+            'drop policy if exists "%s writable by team writers" on public.%I',
+            t, t);
+        execute format(
+            'drop policy if exists "%s updatable by team writers" on public.%I',
+            t, t);
+        execute format(
+            'drop policy if exists "%s deletable by team writers" on public.%I',
             t, t);
         execute format($p$
             create policy "%s readable by active team members"
@@ -425,6 +440,7 @@ end $$;
 -- SECURITY DEFINER 함수는 소유자 권한으로 실행되어 RLS 영향을 받지 않는다.
 
 drop policy if exists "attendance accessible by active team members" on public.attendance;
+drop policy if exists "attendance readable by active team members" on public.attendance;
 create policy "attendance readable by active team members"
 on public.attendance
 for select
