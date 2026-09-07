@@ -315,7 +315,9 @@ export async function POST(request: Request) {
         // 남은 배치가 있으면 응답 후 새 함수 호출로 이어받는다.
         // after() → self-fetch 로 각 배치가 독립된 maxDuration 을 갖는다.
         if (nextCursor) {
-            const continuationUrl = new URL(url.pathname, url.origin);
+            // SSRF 방지: 요청 URL 대신 고정 origin 사용
+            const origin = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+            const continuationUrl = new URL(url.pathname, origin);
             continuationUrl.searchParams.set("teamId", teamId);
             continuationUrl.searchParams.set("cursor", String(nextCursor));
             continuationUrl.searchParams.set("limit", String(limit));
