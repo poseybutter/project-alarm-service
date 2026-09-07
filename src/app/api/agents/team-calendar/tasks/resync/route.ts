@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
@@ -36,6 +36,13 @@ const SYNC_CONCURRENCY = 4;
 const MISSING_MEMBER_CALENDAR_MESSAGE =
     "담당자별 캘린더 ID가 설정되어 있지 않습니다";
 
+/** 내부 이어받기 호출인지 CRON_SECRET 으로 확인한다. */
+function isCronAuthorized(req: { headers: { get(name: string): string | null } }) {
+    const secret = process.env.CRON_SECRET;
+    if (!secret) return process.env.NODE_ENV !== "production";
+    return req.headers.get("authorization") === `Bearer ${secret}`;
+}
+
 /** 업무 하나의 처리 결과. 배치가 끝난 뒤 입력 순서대로 집계한다. */
 type TaskSyncOutcome =
     | { kind: "synced" }
@@ -43,30 +50,69 @@ type TaskSyncOutcome =
     | { kind: "failed"; id: number; message: string };
 
 export async function POST(request: Request) {
-    const { user, role, teamId } = await getServerCurrentTeamRole();
-    if (!user?.email || !teamId) {
-        return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-    }
-    if (role !== "admin") {
-        return NextResponse.json({ message: "Forbidden" }, { status: 403 });
-    }
+    const url = new URL(request.url);
+    const isInternal = isCronAuthorized(request);
+    let teamId: string;
 
-    // 배치 이어받기 루프(최대 50회)가 정상 케이스이므로 그보다 넉넉히 잡는다.
-    const rate = await consumeSharedRateLimit(
-        requestRateLimitKey(request, "team-calendar-resync", user.email),
-        { limit: 60, windowMs: 60 * 1000 },
-    );
-    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
+    if (isInternal && url.searchParams.has("teamId")) {
+        // 내부 이어받기: CRON_SECRET 인증 + teamId 파라미터
+        teamId = url.searchParams.get("teamId")!;
+    } else {
+        // 사용자 호출: 세션 인증
+        const { user, role, teamId: tid } = await getServerCurrentTeamRole();
+        if (!user?.email || !tid) {
+            return NextResponse.json(
+                { message: "Unauthorized" },
+                { status: 401 },
+            );
+        }
+        if (role !== "admin") {
+            return NextResponse.json(
+                { message: "Forbidden" },
+                { status: 403 },
+            );
+        }
+        teamId = tid;
+
+        const rate = await consumeSharedRateLimit(
+            requestRateLimitKey(request, "team-calendar-resync", user.email),
+            { limit: 10, windowMs: 60 * 1000 },
+        );
+        if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
+    }
 
     const supabase = createServiceSupabaseClient();
+    const requestedCursor = Number(url.searchParams.get("cursor"));
+    const isFirstBatch = !Number.isFinite(requestedCursor);
 
     try {
-        const { data: setting, error: settingError } = await supabase
-            .from("agent_team_calendar_settings")
-            .select("calendar_id, connection_email")
-            .eq("team_id", teamId)
-            .maybeSingle();
-        if (settingError) throw settingError;
+        // 팀별 동시 실행 방지: 첫 배치에서만 잠금 획득, 이어받기는 그대로 통과
+        let setting: { calendar_id: string; connection_email: string };
+        if (isFirstBatch) {
+            const lockUntil = new Date(Date.now() + (maxDuration ?? 60) * 1000).toISOString();
+            const { data: lockResult } = await supabase
+                .from("agent_team_calendar_settings")
+                .update({ resync_locked_until: lockUntil })
+                .eq("team_id", teamId)
+                .or(`resync_locked_until.is.null,resync_locked_until.lt.${new Date().toISOString()}`)
+                .select("calendar_id, connection_email")
+                .maybeSingle();
+            if (!lockResult) {
+                return NextResponse.json(
+                    { message: "다른 재동기화가 진행 중입니다. 잠시 후 다시 시도해주세요." },
+                    { status: 409 },
+                );
+            }
+            setting = lockResult;
+        } else {
+            const { data, error: settingError } = await supabase
+                .from("agent_team_calendar_settings")
+                .select("calendar_id, connection_email")
+                .eq("team_id", teamId)
+                .maybeSingle();
+            if (settingError) throw settingError;
+            setting = data!;
+        }
         if (!setting?.calendar_id || !setting.connection_email) {
             return NextResponse.json(
                 { message: "공용 팀 캘린더 ID가 설정되어 있지 않습니다" },
@@ -105,13 +151,11 @@ export async function POST(request: Request) {
             connection as GoogleCalendarConnection,
         );
 
-        const url = new URL(request.url);
         const requestedLimit = Number(url.searchParams.get("limit"));
         const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
             ? Math.min(requestedLimit, MAX_BATCH_SIZE)
             : DEFAULT_BATCH_SIZE;
-        const requestedCursor = Number(url.searchParams.get("cursor"));
-        const cursor = Number.isFinite(requestedCursor) ? requestedCursor : null;
+        const cursor = isFirstBatch ? null : requestedCursor;
 
         // 사용자가 캘린더에서 뺀 업무(show_on_team_calendar=false)까지 올리면
         // 껐던 일정이 되살아난다. 표시 대상만 가져온다.
@@ -260,6 +304,41 @@ export async function POST(request: Request) {
             if (skippedUpdateError) throw skippedUpdateError;
         }
 
+        // 마지막 배치이면 잠금 해제
+        if (!nextCursor) {
+            await supabase
+                .from("agent_team_calendar_settings")
+                .update({ resync_locked_until: null })
+                .eq("team_id", teamId);
+        }
+
+        // 남은 배치가 있으면 응답 후 새 함수 호출로 이어받는다.
+        // after() → self-fetch 로 각 배치가 독립된 maxDuration 을 갖는다.
+        if (nextCursor) {
+            const continuationUrl = new URL(url.pathname, url.origin);
+            continuationUrl.searchParams.set("teamId", teamId);
+            continuationUrl.searchParams.set("cursor", String(nextCursor));
+            continuationUrl.searchParams.set("limit", String(limit));
+
+            after(() => {
+                const headers: HeadersInit = {};
+                const secret = process.env.CRON_SECRET;
+                if (secret) headers["Authorization"] = `Bearer ${secret}`;
+
+                fetch(continuationUrl, { method: "POST", headers })
+                    .then((res) => {
+                        if (!res.ok) {
+                            console.error(
+                                `[team-calendar-resync:continuation] HTTP ${res.status}`,
+                            );
+                        }
+                    })
+                    .catch((err) =>
+                        console.error("[team-calendar-resync:continuation]", err),
+                    );
+            });
+        }
+
         return NextResponse.json({
             synced,
             skipped,
@@ -268,6 +347,13 @@ export async function POST(request: Request) {
             nextCursor,
         });
     } catch (error) {
+        // 예외 발생 시에도 잠금 해제
+        try {
+            await supabase
+                .from("agent_team_calendar_settings")
+                .update({ resync_locked_until: null })
+                .eq("team_id", teamId);
+        } catch { /* 잠금 해제 실패는 TTL 만료로 자연 해소 */ }
         return internalErrorResponse(
             "team-calendar-resync",
             error,

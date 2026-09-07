@@ -795,14 +795,17 @@ export default function ReportPage() {
     // 기간 이동마다 리페치하되, 전체 스피너는 팀이 바뀔 때만 띄운다.
     const loadedTasksTeamRef = useRef<string | null>(null);
     useEffect(() => {
+        let cancelled = false;
         const isTeamChange = loadedTasksTeamRef.current !== teamId;
         if (isTeamChange) setLoading(true);
         void loadTasks().finally(() => {
+            if (cancelled) return;
             if (isTeamChange) {
                 loadedTasksTeamRef.current = teamId;
                 setLoading(false);
             }
         });
+        return () => { cancelled = true; };
     }, [loadTasks, teamId]);
 
     useEffect(() => {
