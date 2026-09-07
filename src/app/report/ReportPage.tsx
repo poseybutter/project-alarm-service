@@ -24,7 +24,7 @@ import dynamic from "next/dynamic";
 // 에디터는 편집 진입 시에만 필요하므로 tiptap 을 초기 번들에서 제외한다.
 // 로딩 상태는 에디터 자체의 초기화 placeholder 와 같은 모양으로 맞춘다.
 const editorLoading = () => (
-    <div className="notice-editor min-h-[120px] rounded-lg border border-stone-200 bg-stone-50 animate-pulse" />
+    <div className="notice-editor min-h-[120px] rounded-lg border border-stone-200 bg-stone-50 motion-safe:animate-pulse" />
 );
 const TiptapSectionEditor = dynamic(
     () => import("@/components/TiptapSectionEditor"),
@@ -132,15 +132,28 @@ function isEditableWindow(now: Date = new Date()): boolean {
     return false;
 }
 
+/** Asia/Seoul 기준 현재 날짜 파츠 반환 */
+function seoulNow() {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Seoul",
+        year: "numeric", month: "numeric", day: "numeric",
+        weekday: "short", hour: "numeric", hour12: false,
+    }).formatToParts(new Date());
+    const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+    const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    return {
+        year: Number(get("year")),
+        month: Number(get("month")) - 1,
+        day: Number(get("day")),
+        dow: dayMap[get("weekday")] ?? 0,
+    };
+}
+
 function getWeekWin(offset: number) {
-    const now = new Date();
+    const { year, month, day, dow } = seoulNow();
     // 목~목 한 주: 주 시작은 목요일, 끝은 다음 목요일(끝 포함).
-    const y = now.getFullYear();
-    const mon = now.getMonth();
-    const dom = now.getDate();
-    const dow = now.getDay();
     const daysFromWeekStart = (dow - 4 + 7) % 7;
-    const thu = new Date(y, mon, dom - daysFromWeekStart + offset * 7);
+    const thu = new Date(year, month, day - daysFromWeekStart + offset * 7);
     thu.setHours(0, 0, 0, 0);
     const nextThu = new Date(
         thu.getFullYear(),
@@ -162,9 +175,8 @@ function getWeekWin(offset: number) {
 }
 
 function getMonthWin(offset: number) {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + offset;
+    const { year, month: mon } = seoulNow();
+    const month = mon + offset;
     const first = new Date(year, month, 1);
     const last = new Date(year, month + 1, 0);
     return {
@@ -1810,14 +1822,21 @@ export default function ReportPage() {
                                                                             {isDoneTagged(p, t) && (
                                                                                 <span className="inline-block rounded bg-stone-100 px-1.5 py-0.5 text-[11px] font-medium text-stone-500">완료</span>
                                                                             )}
-                                                                            <TiptapSectionEditor
-                                                                                key={`btask-${t.id}-${wOff}-${briefingEditorKey}`}
-                                                                                content={cardInitial}
-                                                                                onChange={(html) => { briefTaskDraftRef.current[t.id] = html; }}
-                                                                                editable={canEdit}
-                                                                                showToolbar={canEdit}
-                                                                                placeholder="업무 내용을 입력하세요..."
-                                                                            />
+                                                                            {canEdit ? (
+                                                                                <TiptapSectionEditor
+                                                                                    key={`btask-${t.id}-${wOff}-${briefingEditorKey}`}
+                                                                                    content={cardInitial}
+                                                                                    onChange={(html) => { briefTaskDraftRef.current[t.id] = html; }}
+                                                                                    editable
+                                                                                    showToolbar
+                                                                                    placeholder="업무 내용을 입력하세요..."
+                                                                                />
+                                                                            ) : (
+                                                                                <div
+                                                                                    className={`notice-editor rounded-lg border border-stone-200 bg-stone-50 px-2 py-2 text-sm ${PROSE_CLASSES}`}
+                                                                                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(cardInitial) }}
+                                                                                />
+                                                                            )}
                                                                             {canEdit && (
                                                                                 <button
                                                                                     type="button"

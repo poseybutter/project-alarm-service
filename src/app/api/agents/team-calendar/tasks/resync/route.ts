@@ -217,11 +217,12 @@ export async function POST(request: Request) {
                                   : null,
                           }
                         : {};
-                await supabase
+                const { error: errWriteErr } = await supabase
                     .from("tasks")
                     .update({ ...progress, team_calendar_sync_error: message })
                     .eq("team_id", teamId)
                     .eq("id", task.id);
+                if (errWriteErr) console.error(`[team-calendar-resync-error-write:${task.id}]`, errWriteErr);
                 return { kind: "failed", id: task.id, message };
             }
         };
@@ -250,13 +251,14 @@ export async function POST(request: Request) {
 
         // 스킵 사유는 전부 같은 메시지이므로 업무별 갱신 대신 한 번에 쓴다.
         if (skippedTaskIds.length > 0) {
-            await supabase
+            const { error: skippedUpdateError } = await supabase
                 .from("tasks")
                 .update({
                     team_calendar_sync_error: MISSING_MEMBER_CALENDAR_MESSAGE,
                 })
                 .eq("team_id", teamId)
                 .in("id", skippedTaskIds);
+            if (skippedUpdateError) throw skippedUpdateError;
         }
 
         return NextResponse.json({
