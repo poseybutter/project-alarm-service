@@ -2503,12 +2503,14 @@ export default function HomePage() {
                         </div>
                     )}
 
-                    <LevelUpOverlay
-                        show={levelUpInfo.show}
-                        level={levelUpInfo.level}
-                        levelName={levelUpInfo.levelName}
-                        onClose={closeLevelUp}
-                    />
+                    {levelUpInfo.show && (
+                        <LevelUpOverlay
+                            show
+                            level={levelUpInfo.level}
+                            levelName={levelUpInfo.levelName}
+                            onClose={closeLevelUp}
+                        />
+                    )}
                     {mvpInfo?.show && (
                         <MvpOverlay
                             show={mvpInfo.show}

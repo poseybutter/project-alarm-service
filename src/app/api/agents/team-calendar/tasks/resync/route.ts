@@ -114,11 +114,12 @@ export async function POST(request: Request) {
                 skipped += 1;
                 const message = "담당자별 캘린더 ID가 설정되어 있지 않습니다";
                 errors.push({ id: task.id, message });
-                await supabase
+                const { error: skipErr } = await supabase
                     .from("tasks")
                     .update({ team_calendar_sync_error: message })
                     .eq("team_id", teamId)
                     .eq("id", task.id);
+                if (skipErr) throw skipErr;
                 continue;
             }
 
@@ -192,11 +193,12 @@ export async function POST(request: Request) {
                                   : null,
                           }
                         : {};
-                await supabase
+                const { error: errWriteErr } = await supabase
                     .from("tasks")
                     .update({ ...progress, team_calendar_sync_error: message })
                     .eq("team_id", teamId)
                     .eq("id", task.id);
+                if (errWriteErr) console.error(`[team-calendar-resync-error-write:${task.id}]`, errWriteErr);
             }
         }
 

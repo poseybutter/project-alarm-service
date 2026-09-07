@@ -52,17 +52,20 @@ export async function listAgentSuggestions(
         teamId: string;
         status?: AgentSuggestionStatus;
         agentType?: AgentType;
+        recipientMember?: string;
         limit?: number;
     },
 ): Promise<AgentSuggestion[]> {
     let query = agentSuggestionTable(supabase)
         .select("*")
         .eq("team_id", params.teamId)
-        .order("created_at", { ascending: false })
-        .limit(params.limit ?? 50);
+        .order("created_at", { ascending: false });
 
     if (params.status) query = query.eq("status", params.status);
     if (params.agentType) query = query.eq("agent_type", params.agentType);
+    if (params.recipientMember) query = query.eq("payload->>recipientMember", params.recipientMember);
+
+    query = query.limit(params.limit ?? 50);
 
     const { data, error } = await query;
     throwQueryError(error);
