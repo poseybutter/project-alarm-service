@@ -7,6 +7,11 @@ import {
 import { createAgentSuggestions } from "@/features/agents/server/suggestions";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import {
+    consumeSharedRateLimit,
+    rateLimitResponse,
+    requestRateLimitKey,
+} from "@/shared/server/rateLimit";
+import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
 } from "@/infrastructure/supabase/server";
@@ -34,6 +39,13 @@ export async function POST(req: NextRequest) {
     if (role !== "admin") {
         return NextResponse.json({ message: "Forbidden" }, { status: 403 });
     }
+
+    // 팀 데이터 전반을 읽는 무거운 생성 작업이므로 남용을 막는다.
+    const rate = await consumeSharedRateLimit(
+        requestRateLimitKey(req, "agent-notifications-generate", user.email),
+        { limit: 20, windowMs: 60 * 1000 },
+    );
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
 
     const save = req.nextUrl.searchParams.get("save") !== "false";
     const service = createServiceSupabaseClient();

@@ -93,20 +93,29 @@ export function useNotifications() {
                 () => {
                     void load();
                 },
-            )
-            .on(
+            );
+        // 읽음 변경은 본인 것만 화면에 영향을 준다.
+        // 필터 없이 구독하면 다른 사용자의 읽음 처리마다 리페치가 돈다.
+        if (playerId != null) {
+            channel.on(
                 "postgres_changes",
-                { event: "*", schema: "public", table: "notification_reads" },
+                {
+                    event: "*",
+                    schema: "public",
+                    table: "notification_reads",
+                    filter: `player_id=eq.${playerId}`,
+                },
                 () => {
                     void load();
                 },
-            )
-            .subscribe();
+            );
+        }
+        channel.subscribe();
 
         return () => {
             supabase.removeChannel(channel).catch(console.error);
         };
-    }, [load]);
+    }, [load, playerId]);
 
     // 4. 모든 알림 읽음 처리
     const markAllRead = useCallback(async () => {

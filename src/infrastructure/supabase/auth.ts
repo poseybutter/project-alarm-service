@@ -46,14 +46,6 @@ export async function getCurrentUser() {
     return user;
 }
 
-// 이메일 → 팀원명 매핑 (환경변수 기반)
-export function getMemberName(email: string | undefined) {
-    if (!email) return null;
-    const map = Object.fromEntries(
-        (process.env.NEXT_PUBLIC_MEMBER_EMAILS || "")
-            .split(",")
-            .filter(Boolean)
-            .map((pair) => pair.split(":")),
-    );
-    return map[email] ?? null;
-}
+// 이메일 → 팀원명 매핑은 DB(players/profiles)가 단일 출처다.
+// 과거의 NEXT_PUBLIC_MEMBER_EMAILS 매핑은 팀원 이메일·실명을
+// 공개 JS 번들에 노출시키므로 제거했다. 되살리지 말 것.

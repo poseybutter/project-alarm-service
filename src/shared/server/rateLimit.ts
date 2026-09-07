@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
+import { createServiceSupabaseClient } from "@/infrastructure/supabase/server";
 
 type RateWindow = { count: number; resetAt: number };
 
@@ -27,8 +28,20 @@ export function consumeRateLimit(
     options: { limit: number; windowMs: number },
 ) {
     const now = Date.now();
+
+    // 상한 도달 전에도 만료 엔트리를 정리해 메모리 누적을 방지한다.
+    if (windows.size > 5_000) {
+        for (const [windowKey, value] of windows) {
+            if (value.resetAt <= now) windows.delete(windowKey);
+        }
+    }
+
     const current = windows.get(key);
     if (!current || current.resetAt <= now) {
+        // 정리 후에도 상한이면 새 키를 거부해 메모리 폭주를 방지한다
+        if (!current && windows.size >= 5_000) {
+            return { allowed: false, retryAfterSeconds: 60 };
+        }
         windows.set(key, { count: 1, resetAt: now + options.windowMs });
         return { allowed: true, retryAfterSeconds: 0 };
     }
@@ -44,12 +57,46 @@ export function consumeRateLimit(
     }
 
     current.count += 1;
-    if (windows.size > 5_000) {
-        for (const [windowKey, value] of windows) {
-            if (value.resetAt <= now) windows.delete(windowKey);
-        }
-    }
     return { allowed: true, retryAfterSeconds: 0 };
+}
+
+/**
+ * 배포 전체에서 공유되는 레이트리밋 판정 (V54 consume_rate_limit RPC).
+ *
+ * 인메모리 카운터는 서버리스 인스턴스마다 따로 세서 콜드스타트·수평 확장 시
+ * 한도를 넘길 수 있다. 로컬 카운터를 1차 방어로 먼저 확인해 값싸게 거르고,
+ * 통과하면 DB 의 원자적 카운터로 전역 한도를 확정한다.
+ * RPC 실패(마이그레이션 미적용·일시 장애)에는 가용성 우선으로 통과시킨다.
+ */
+export async function consumeSharedRateLimit(
+    key: string,
+    options: { limit: number; windowMs: number },
+): Promise<{ allowed: boolean; retryAfterSeconds: number }> {
+    const local = consumeRateLimit(key, options);
+    if (!local.allowed) return local;
+
+    try {
+        const service = createServiceSupabaseClient();
+        const { data, error } = await service.rpc("consume_rate_limit", {
+            p_key: key,
+            p_limit: options.limit,
+            p_window_ms: options.windowMs,
+        });
+        if (error) throw error;
+        const row = (Array.isArray(data) ? data[0] : data) as
+            | { allowed: boolean; retry_after_seconds: number }
+            | undefined;
+        if (row && row.allowed === false) {
+            return {
+                allowed: false,
+                retryAfterSeconds: Math.max(1, row.retry_after_seconds || 1),
+            };
+        }
+        return { allowed: true, retryAfterSeconds: 0 };
+    } catch (error) {
+        console.error("[rate-limit] shared counter unavailable", error);
+        return { allowed: true, retryAfterSeconds: 0 };
+    }
 }
 
 export function rateLimitResponse(retryAfterSeconds: number) {

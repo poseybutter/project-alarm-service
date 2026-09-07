@@ -18,7 +18,7 @@ import type { Accessibility, Task } from "@/shared/types";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { decryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
 import {
-    consumeRateLimit,
+    consumeSharedRateLimit,
     rateLimitResponse,
     requestRateLimitKey,
 } from "@/shared/server/rateLimit";
@@ -109,7 +109,7 @@ export async function POST(request: Request) {
     if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
-    const rate = consumeRateLimit(
+    const rate = await consumeSharedRateLimit(
         requestRateLimitKey(request, "briefing-test", user.email),
         { limit: 5, windowMs: 5 * 60 * 1000 },
     );

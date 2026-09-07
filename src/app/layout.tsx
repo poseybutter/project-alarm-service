@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono } from "next/font/google";
 import "@sun-typeface/suit/fonts/variable/woff2/SUIT-Variable.css";
+// CDN 렌더 블로킹·장애 전파를 피하려고 self-host 한다 (기존 jsdelivr remixicon@4.0.0 과 동일 버전)
+import "remixicon/fonts/remixicon.css";
 import "./globals.css";
 import Nav from "@/components/Nav";
 import PageTransition from "@/components/PageTransition";
@@ -80,10 +82,6 @@ export default function RootLayout({
                     content="default"
                 />
                 <meta name="apple-mobile-web-app-title" content="UD2" />
-                <link
-                    href="https://cdn.jsdelivr.net/npm/remixicon@4.0.0/fonts/remixicon.css"
-                    rel="stylesheet"
-                />
             </head>
             <body className="bg-[#f7f6f3] overflow-x-hidden">
                 <AuthProvider>

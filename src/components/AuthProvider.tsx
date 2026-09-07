@@ -11,7 +11,6 @@ import {
 } from "react";
 import { User } from "@supabase/supabase-js";
 import { supabase } from "@/infrastructure/supabase/client";
-import { getMemberName } from "@/infrastructure/supabase/auth";
 import type {
     ModuleKey,
     TeamMemberOption,
@@ -161,8 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
     }, []);
 
-    const legacyMember = getMemberName(user?.email || "");
-    const member = user ? resolvedMember : legacyMember;
+    const member = user ? resolvedMember : null;
 
     const applyTeamContext = useCallback((context: TeamContextResponse) => {
         setResolvedMember(context.member);

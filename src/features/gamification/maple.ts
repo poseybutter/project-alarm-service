@@ -131,8 +131,12 @@ export type AttendanceOutcome = {
  */
 export async function rpcAttendanceCheck(
     member: string,
+    // 다팀 사용자는 현재 팀을 지정해야 그 팀의 기록으로 출석된다 (V55).
+    teamId?: string | null,
 ): Promise<AttendanceOutcome> {
-    const { data, error } = await supabase.rpc("attendance_check");
+    const { data, error } = await supabase.rpc("attendance_check", {
+        p_team_id: teamId ?? null,
+    });
     if (error) {
         return {
             success: false,

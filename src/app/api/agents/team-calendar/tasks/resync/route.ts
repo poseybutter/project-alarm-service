@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
@@ -13,24 +13,78 @@ import {
     TeamCalendarSyncError,
 } from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
+import { mapWithConcurrency } from "@/shared/server/concurrency";
+import {
+    consumeSharedRateLimit,
+    rateLimitResponse,
+    requestRateLimitKey,
+} from "@/shared/server/rateLimit";
 
-// 업무 수만큼 Google API 를 순차 호출하므로 기본 실행 시간으로는 잘릴 수 있다.
+// 업무 수만큼 Google API 를 호출하므로 기본 실행 시간으로는 잘릴 수 있다.
 export const maxDuration = 60;
 
 /** 한 요청에서 처리할 업무 수 상한. 남으면 nextCursor 로 이어받는다. */
 const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 200;
 
+/**
+ * 업무 동기화 동시 처리 한도. 연결 계정 하나로 호출하므로 Google 의
+ * 사용자당 요청률 한도를 넘지 않게 낮춰 잡는다. 넘치면 429 백오프가 감속한다.
+ */
+const SYNC_CONCURRENCY = 4;
+
+const MISSING_MEMBER_CALENDAR_MESSAGE =
+    "담당자별 캘린더 ID가 설정되어 있지 않습니다";
+
+/** 내부 이어받기 호출인지 CRON_SECRET 으로 확인한다. */
+function isCronAuthorized(req: { headers: { get(name: string): string | null } }) {
+    const secret = process.env.CRON_SECRET;
+    if (!secret) return process.env.NODE_ENV !== "production";
+    return req.headers.get("authorization") === `Bearer ${secret}`;
+}
+
+/** 업무 하나의 처리 결과. 배치가 끝난 뒤 입력 순서대로 집계한다. */
+type TaskSyncOutcome =
+    | { kind: "synced" }
+    | { kind: "skipped"; id: number; message: string }
+    | { kind: "failed"; id: number; message: string };
+
 export async function POST(request: Request) {
-    const { user, role, teamId } = await getServerCurrentTeamRole();
-    if (!user?.email || !teamId) {
-        return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-    }
-    if (role !== "admin") {
-        return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+    const url = new URL(request.url);
+    const isInternal = isCronAuthorized(request);
+    let teamId: string;
+
+    if (isInternal && url.searchParams.has("teamId")) {
+        // 내부 이어받기: CRON_SECRET 인증 + teamId 파라미터
+        teamId = url.searchParams.get("teamId")!;
+    } else {
+        // 사용자 호출: 세션 인증
+        const { user, role, teamId: tid } = await getServerCurrentTeamRole();
+        if (!user?.email || !tid) {
+            return NextResponse.json(
+                { message: "Unauthorized" },
+                { status: 401 },
+            );
+        }
+        if (role !== "admin") {
+            return NextResponse.json(
+                { message: "Forbidden" },
+                { status: 403 },
+            );
+        }
+        teamId = tid;
+
+        const rate = await consumeSharedRateLimit(
+            requestRateLimitKey(request, "team-calendar-resync", user.email),
+            { limit: 10, windowMs: 60 * 1000 },
+        );
+        if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
     }
 
     const supabase = createServiceSupabaseClient();
+    const cursorParam = url.searchParams.get("cursor");
+    const requestedCursor = cursorParam !== null ? Number(cursorParam) : NaN;
+    const isFirstBatch = !Number.isFinite(requestedCursor);
 
     try {
         const { data: setting, error: settingError } = await supabase
@@ -44,6 +98,24 @@ export async function POST(request: Request) {
                 { message: "공용 팀 캘린더 ID가 설정되어 있지 않습니다" },
                 { status: 400 },
             );
+        }
+
+        // 팀별 동시 실행 방지: 첫 배치에서만 잠금 획득, 이어받기는 그대로 통과
+        if (isFirstBatch) {
+            const lockUntil = new Date(Date.now() + (maxDuration ?? 60) * 1000).toISOString();
+            const { data: lockResult } = await supabase
+                .from("agent_team_calendar_settings")
+                .update({ resync_locked_until: lockUntil })
+                .eq("team_id", teamId)
+                .or(`resync_locked_until.is.null,resync_locked_until.lt.${new Date().toISOString()}`)
+                .select("team_id")
+                .maybeSingle();
+            if (!lockResult) {
+                return NextResponse.json(
+                    { message: "다른 재동기화가 진행 중입니다. 잠시 후 다시 시도해주세요." },
+                    { status: 409 },
+                );
+            }
         }
 
         const { data: memberCalendars, error: memberCalendarError } =
@@ -77,13 +149,11 @@ export async function POST(request: Request) {
             connection as GoogleCalendarConnection,
         );
 
-        const url = new URL(request.url);
         const requestedLimit = Number(url.searchParams.get("limit"));
         const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
             ? Math.min(requestedLimit, MAX_BATCH_SIZE)
             : DEFAULT_BATCH_SIZE;
-        const requestedCursor = Number(url.searchParams.get("cursor"));
-        const cursor = Number.isFinite(requestedCursor) ? requestedCursor : null;
+        const cursor = isFirstBatch ? null : requestedCursor;
 
         // 사용자가 캘린더에서 뺀 업무(show_on_team_calendar=false)까지 올리면
         // 껐던 일정이 되살아난다. 표시 대상만 가져온다.
@@ -104,23 +174,19 @@ export async function POST(request: Request) {
         const tasks = (page ?? []).slice(0, limit);
         const nextCursor = hasMore ? tasks[tasks.length - 1].id : null;
 
-        let synced = 0;
-        let skipped = 0;
-        const errors: Array<{ id: number; message: string }> = [];
-
-        for (const task of (tasks ?? []) as TeamCalendarTaskInput[]) {
+        // 순차 처리는 안전하지만 느리다. Google 요청률 한도 아래로 동시 처리하고,
+        // 결과는 입력 순서대로 받아 집계·응답 형태는 순차 때와 동일하게 유지한다.
+        const syncOneTask = async (
+            task: TeamCalendarTaskInput,
+        ): Promise<TaskSyncOutcome> => {
             const targetCalendarId = calendarByMember.get(task.member);
             if (!targetCalendarId) {
-                skipped += 1;
-                const message = "담당자별 캘린더 ID가 설정되어 있지 않습니다";
-                errors.push({ id: task.id, message });
-                const { error: skipErr } = await supabase
-                    .from("tasks")
-                    .update({ team_calendar_sync_error: message })
-                    .eq("team_id", teamId)
-                    .eq("id", task.id);
-                if (skipErr) throw skipErr;
-                continue;
+                // 같은 사유의 스킵이므로 DB 기록은 배치가 끝난 뒤 한 번에 모아 쓴다.
+                return {
+                    kind: "skipped",
+                    id: task.id,
+                    message: MISSING_MEMBER_CALENDAR_MESSAGE,
+                };
             }
 
             try {
@@ -173,7 +239,7 @@ export async function POST(request: Request) {
                         });
                     }
                 }
-                synced += 1;
+                return { kind: "synced" };
             } catch (err) {
                 console.error(`[team-calendar-resync-task:${task.id}]`, err);
                 // 사용자가 고칠 수 있는 사유는 업무별로 그대로 남긴다.
@@ -181,8 +247,8 @@ export async function POST(request: Request) {
                     err instanceof TeamCalendarSyncError
                         ? err.message
                         : "팀 캘린더 재동기화 실패";
-                errors.push({ id: task.id, message });
                 // 중간까지 만들어진 이벤트 ID 를 저장해야 고아 일정이 남지 않는다.
+                // 진행분은 업무마다 다르므로 모아 쓰지 않고 즉시 기록한다.
                 const progress =
                     err instanceof TeamCalendarPartialSyncError
                         ? {
@@ -199,7 +265,80 @@ export async function POST(request: Request) {
                     .eq("team_id", teamId)
                     .eq("id", task.id);
                 if (errWriteErr) console.error(`[team-calendar-resync-error-write:${task.id}]`, errWriteErr);
+                return { kind: "failed", id: task.id, message };
             }
+        };
+
+        const outcomes = await mapWithConcurrency(
+            tasks as TeamCalendarTaskInput[],
+            SYNC_CONCURRENCY,
+            syncOneTask,
+        );
+
+        let synced = 0;
+        let skipped = 0;
+        const errors: Array<{ id: number; message: string }> = [];
+        const skippedTaskIds: number[] = [];
+        for (const outcome of outcomes) {
+            if (outcome.kind === "synced") {
+                synced += 1;
+            } else if (outcome.kind === "skipped") {
+                skipped += 1;
+                skippedTaskIds.push(outcome.id);
+            } else {
+                errors.push({ id: outcome.id, message: outcome.message });
+            }
+        }
+
+        // 스킵 사유는 전부 같은 메시지이므로 업무별 갱신 대신 한 번에 쓴다.
+        if (skippedTaskIds.length > 0) {
+            const { error: skippedUpdateError } = await supabase
+                .from("tasks")
+                .update({
+                    team_calendar_sync_error: MISSING_MEMBER_CALENDAR_MESSAGE,
+                })
+                .eq("team_id", teamId)
+                .in("id", skippedTaskIds);
+            if (skippedUpdateError) throw skippedUpdateError;
+        }
+
+        // 마지막 배치이면 잠금 해제
+        if (!nextCursor) {
+            await supabase
+                .from("agent_team_calendar_settings")
+                .update({ resync_locked_until: null })
+                .eq("team_id", teamId);
+        }
+
+        // 남은 배치가 있으면 응답 후 새 함수 호출로 이어받는다.
+        // after() → self-fetch 로 각 배치가 독립된 maxDuration 을 갖는다.
+        if (nextCursor) {
+            // SSRF 방지: 요청 URL 에 의존하지 않고 고정 경로 사용
+            const origin = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+            const continuationUrl = new URL("/api/agents/team-calendar/tasks/resync", origin);
+            continuationUrl.searchParams.set("teamId", teamId);
+            continuationUrl.searchParams.set("cursor", String(nextCursor));
+            continuationUrl.searchParams.set("limit", String(limit));
+
+            after(() => {
+                const headers: HeadersInit = {};
+                const secret = process.env.CRON_SECRET;
+                // HTTPS 가 아닌 환경(로컬 등)에서는 인증 헤더를 보내지 않는다
+                if (secret && continuationUrl.protocol === "https:")
+                    headers["Authorization"] = `Bearer ${secret}`;
+
+                fetch(continuationUrl, { method: "POST", headers, redirect: "error" })
+                    .then((res) => {
+                        if (!res.ok) {
+                            console.error(
+                                `[team-calendar-resync:continuation] HTTP ${res.status}`,
+                            );
+                        }
+                    })
+                    .catch((err) =>
+                        console.error("[team-calendar-resync:continuation]", err),
+                    );
+            });
         }
 
         return NextResponse.json({
@@ -210,6 +349,13 @@ export async function POST(request: Request) {
             nextCursor,
         });
     } catch (error) {
+        // 예외 발생 시에도 잠금 해제
+        try {
+            await supabase
+                .from("agent_team_calendar_settings")
+                .update({ resync_locked_until: null })
+                .eq("team_id", teamId);
+        } catch { /* 잠금 해제 실패는 TTL 만료로 자연 해소 */ }
         return internalErrorResponse(
             "team-calendar-resync",
             error,
