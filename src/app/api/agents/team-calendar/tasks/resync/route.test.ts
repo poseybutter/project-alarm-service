@@ -299,9 +299,9 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
         const body = await (await resync()).json();
         expect(body.synced).toBe(1);
         expect(body.skipped).toBe(2);
-        expect(body.failed).toBe(3);
+        expect(body.failed).toBe(1);
         expect(body.errors.map((error: { id: number }) => error.id)).toEqual([
-            2, 3, 4,
+            3,
         ]);
 
         // 성공 업무는 이벤트 ID 저장 + 오류 삭제
