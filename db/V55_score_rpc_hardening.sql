@@ -170,8 +170,14 @@ begin
                      and v_task.end_date >= (now() at time zone 'Asia/Seoul')::date;
         update public.tasks set was_on_time = v_on_time where id = p_task_id;
     else
-        -- 완료 해제: 완료 시점에 저장한 값으로 되돌려야 카운터가 정확하다
-        v_on_time := coalesce(v_task.was_on_time, false);
+        -- 완료 해제: 완료 시점에 저장한 값으로 되돌려야 카운터가 정확하다.
+        -- V55 이전에 완료된 업무는 was_on_time 이 NULL 이므로 현재 시점으로 재계산한다.
+        if v_task.was_on_time is not null then
+            v_on_time := v_task.was_on_time;
+        else
+            v_on_time := v_task.end_date is not null
+                         and v_task.end_date >= (now() at time zone 'Asia/Seoul')::date;
+        end if;
         update public.tasks set was_on_time = null where id = p_task_id;
     end if;
 

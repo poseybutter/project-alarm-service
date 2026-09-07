@@ -82,12 +82,25 @@ export async function POST(request: Request) {
     }
 
     const supabase = createServiceSupabaseClient();
-    const requestedCursor = Number(url.searchParams.get("cursor"));
+    const cursorParam = url.searchParams.get("cursor");
+    const requestedCursor = cursorParam !== null ? Number(cursorParam) : NaN;
     const isFirstBatch = !Number.isFinite(requestedCursor);
 
     try {
+        const { data: setting, error: settingError } = await supabase
+            .from("agent_team_calendar_settings")
+            .select("calendar_id, connection_email")
+            .eq("team_id", teamId)
+            .maybeSingle();
+        if (settingError) throw settingError;
+        if (!setting?.calendar_id || !setting.connection_email) {
+            return NextResponse.json(
+                { message: "공용 팀 캘린더 ID가 설정되어 있지 않습니다" },
+                { status: 400 },
+            );
+        }
+
         // 팀별 동시 실행 방지: 첫 배치에서만 잠금 획득, 이어받기는 그대로 통과
-        let setting: { calendar_id: string; connection_email: string };
         if (isFirstBatch) {
             const lockUntil = new Date(Date.now() + (maxDuration ?? 60) * 1000).toISOString();
             const { data: lockResult } = await supabase
@@ -95,7 +108,7 @@ export async function POST(request: Request) {
                 .update({ resync_locked_until: lockUntil })
                 .eq("team_id", teamId)
                 .or(`resync_locked_until.is.null,resync_locked_until.lt.${new Date().toISOString()}`)
-                .select("calendar_id, connection_email")
+                .select("team_id")
                 .maybeSingle();
             if (!lockResult) {
                 return NextResponse.json(
@@ -103,21 +116,6 @@ export async function POST(request: Request) {
                     { status: 409 },
                 );
             }
-            setting = lockResult;
-        } else {
-            const { data, error: settingError } = await supabase
-                .from("agent_team_calendar_settings")
-                .select("calendar_id, connection_email")
-                .eq("team_id", teamId)
-                .maybeSingle();
-            if (settingError) throw settingError;
-            setting = data!;
-        }
-        if (!setting?.calendar_id || !setting.connection_email) {
-            return NextResponse.json(
-                { message: "공용 팀 캘린더 ID가 설정되어 있지 않습니다" },
-                { status: 400 },
-            );
         }
 
         const { data: memberCalendars, error: memberCalendarError } =
@@ -325,9 +323,11 @@ export async function POST(request: Request) {
             after(() => {
                 const headers: HeadersInit = {};
                 const secret = process.env.CRON_SECRET;
-                if (secret) headers["Authorization"] = `Bearer ${secret}`;
+                // HTTPS 가 아닌 환경(로컬 등)에서는 인증 헤더를 보내지 않는다
+                if (secret && continuationUrl.protocol === "https:")
+                    headers["Authorization"] = `Bearer ${secret}`;
 
-                fetch(continuationUrl, { method: "POST", headers })
+                fetch(continuationUrl, { method: "POST", headers, redirect: "error" })
                     .then((res) => {
                         if (!res.ok) {
                             console.error(

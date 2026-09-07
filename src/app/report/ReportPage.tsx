@@ -800,10 +800,8 @@ export default function ReportPage() {
         if (isTeamChange) setLoading(true);
         void loadTasks().finally(() => {
             if (cancelled) return;
-            if (isTeamChange) {
-                loadedTasksTeamRef.current = teamId;
-                setLoading(false);
-            }
+            loadedTasksTeamRef.current = teamId;
+            if (isTeamChange) setLoading(false);
         });
         return () => { cancelled = true; };
     }, [loadTasks, teamId]);

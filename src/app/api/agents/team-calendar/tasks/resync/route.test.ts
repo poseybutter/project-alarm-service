@@ -130,8 +130,13 @@ function createFakeDb(config: FakeDbConfig) {
                     rowLimit = count;
                     return builder;
                 },
+                or: () => builder,
                 maybeSingle: async () => {
                     if (table === "agent_team_calendar_settings") {
+                        // 잠금 획득(update+select) 경로: setting 이 있으면 team_id 반환
+                        if (op === "update") {
+                            return { data: config.setting ? { team_id: "test" } : null, error: null };
+                        }
                         return { data: config.setting ?? null, error: null };
                     }
                     if (table === "agent_calendar_connections") {
