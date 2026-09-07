@@ -6,7 +6,7 @@ import type { Task } from "@/shared/types";
 import { formatWorkload } from "@/shared/utils/utils";
 import { useTasksData } from "@/features/tasks/hooks/useTasksData";
 import TaskCard from "@/features/tasks/components/TaskCard";
-import AddTaskModal from "@/features/tasks/components/AddTaskModal";
+import dynamic from "next/dynamic";
 import {
     syncTaskToTeamCalendar,
     deleteTaskFromTeamCalendar,
@@ -18,12 +18,25 @@ import { useAuth } from "@/components/AuthProvider";
 import UserMenu from "@/components/UserMenu";
 import TeamSwitcher from "@/components/TeamSwitcher";
 import Avatar from "@/components/Avatar";
-import LevelUpOverlay from "@/components/LevelUpOverlay";
-import ExpPopup, { type ExpPopupType } from "@/components/ExpPopup";
+import type { ExpPopupType } from "@/components/ExpPopup";
 import NotificationButton from "@/components/NotificationButton";
-import TaskEditModal from "@/components/TaskEditModal";
 import { PageSpinner } from "@/components/Spinner";
 import TaskFilters from "@/features/tasks/components/TaskFilters";
+
+// 열기 전에는 필요 없는 모달·오버레이는 초기 번들에서 제외한다.
+const AddTaskModal = dynamic(
+    () => import("@/features/tasks/components/AddTaskModal"),
+    { ssr: false },
+);
+const TaskEditModal = dynamic(() => import("@/components/TaskEditModal"), {
+    ssr: false,
+});
+const LevelUpOverlay = dynamic(() => import("@/components/LevelUpOverlay"), {
+    ssr: false,
+});
+const ExpPopup = dynamic(() => import("@/components/ExpPopup"), {
+    ssr: false,
+});
 
 
 /** 업무 목록 페이지. 필터링·그룹화·상태 변경·삭제·경험치 팝업·팀 캘린더 동기화를 조정한다. */
