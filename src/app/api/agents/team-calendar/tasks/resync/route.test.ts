@@ -11,11 +11,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  * 여기에 새 보장 두 가지: 동시 호출이 한도를 넘지 않고, 스킵 기록은 한 번에 쓴다.
  */
 
-const { mockGetRole, mockGetToken, mockSync, mockDelete } = vi.hoisted(() => ({
+const { mockGetRole, mockGetToken, mockSync, mockDelete, mockAfter } = vi.hoisted(() => ({
     mockGetRole: vi.fn(),
     mockGetToken: vi.fn(),
     mockSync: vi.fn(),
     mockDelete: vi.fn(),
+    mockAfter: vi.fn(),
 }));
 
 class FakeTeamCalendarSyncError extends Error {
@@ -154,6 +155,11 @@ function createFakeDb(config: FakeDbConfig) {
 
 let fakeDb: ReturnType<typeof createFakeDb>;
 
+vi.mock("next/server", async () => {
+    const actual = await vi.importActual("next/server");
+    return { ...actual, after: mockAfter };
+});
+
 vi.mock("@/infrastructure/supabase/server", () => ({
     createServiceSupabaseClient: () => fakeDb.client,
     getServerCurrentTeamRole: () => mockGetRole(),
@@ -206,6 +212,8 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
     beforeEach(() => {
         vi.restoreAllMocks();
         vi.spyOn(console, "error").mockImplementation(() => {});
+        vi.stubEnv("CRON_SECRET", "test-cron-secret");
+        mockAfter.mockReset();
         mockGetRole.mockReset().mockResolvedValue({
             user: { email: "admin@example.com" },
             role: "admin",
@@ -393,6 +401,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             "update:1",
             "delete:e1",
             "delete:e1i00",
+            "update:batch", // 잠금 해제
         ]);
     });
 
@@ -416,5 +425,54 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
         const body = await (await resync()).json();
         expect(body.synced).toBe(10);
         expect(maxActive).toBe(4);
+    });
+
+    it("nextCursor 가 있으면 after() 로 이어받기를 예약한다", async () => {
+        fakeDb = createFakeDb({
+            setting: SETTING,
+            connection: CONNECTION,
+            memberCalendars: MEMBER_CALENDARS,
+            tasks: [taskRow(1), taskRow(2), taskRow(3)],
+        });
+
+        await resync("?limit=2");
+        expect(mockAfter).toHaveBeenCalledTimes(1);
+        expect(typeof mockAfter.mock.calls[0][0]).toBe("function");
+    });
+
+    it("모든 업무를 한 배치에서 처리하면 after() 를 호출하지 않는다", async () => {
+        fakeDb = createFakeDb({
+            setting: SETTING,
+            connection: CONNECTION,
+            memberCalendars: MEMBER_CALENDARS,
+            tasks: [taskRow(1)],
+        });
+
+        await resync();
+        expect(mockAfter).not.toHaveBeenCalled();
+    });
+
+    it("CRON_SECRET 인증 + teamId 파라미터로 내부 이어받기 가능", async () => {
+        fakeDb = createFakeDb({
+            setting: SETTING,
+            connection: CONNECTION,
+            memberCalendars: MEMBER_CALENDARS,
+            tasks: [taskRow(5)],
+        });
+
+        const res = await POST(
+            new Request(
+                "http://localhost/api/agents/team-calendar/tasks/resync?teamId=team-1&cursor=4",
+                {
+                    method: "POST",
+                    headers: { Authorization: "Bearer test-cron-secret" },
+                },
+            ),
+        );
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.synced).toBe(1);
+        // 내부 호출은 getServerCurrentTeamRole 을 건너뛴다
+        expect(mockGetRole).not.toHaveBeenCalled();
     });
 });

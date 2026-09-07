@@ -10,6 +10,16 @@
 --
 -- 이 파일이 기존 미추적 함수들의 단일 출처(source of truth)가 된다.
 
+-- ═══ 스키마 보강 ══════════════════════════════════════════════════════
+
+-- 재동기화 동시 실행 방지: 같은 팀에 대해 1건만 실행되도록 잠금 시각 기록
+alter table if exists public.agent_team_calendar_settings
+    add column if not exists resync_locked_until timestamptz;
+
+-- 완료 해제 시 정시 여부를 정확히 되돌리기 위해 완료 시점의 값을 보존
+alter table if exists public.tasks
+    add column if not exists was_on_time boolean;
+
 -- ═══ 0. 내부 함수 봉인 (최우선 — anon 직접 호출 차단) ═══════════════
 
 do $$
@@ -152,9 +162,18 @@ begin
 
     -- ★ 서버가 직접 도출 — 클라 입력 신뢰 안 함
     v_urgent  := v_task.priority = '긴급';
-    v_on_time := v_task.end_date is not null
-                 and v_task.end_date >= (now() at time zone 'Asia/Seoul')::date;
     v_amount  := case when v_urgent then 100 else 50 end;
+
+    if v_sign = 1 then
+        -- 완료 진입: 현재 시점 기준 정시 여부를 계산하고 tasks 에 보존
+        v_on_time := v_task.end_date is not null
+                     and v_task.end_date >= (now() at time zone 'Asia/Seoul')::date;
+        update public.tasks set was_on_time = v_on_time where id = p_task_id;
+    else
+        -- 완료 해제: 완료 시점에 저장한 값으로 되돌려야 카운터가 정확하다
+        v_on_time := coalesce(v_task.was_on_time, false);
+        update public.tasks set was_on_time = null where id = p_task_id;
+    end if;
 
     select * into v_player from public.players
         where team_id = v_task.team_id and name = v_task.member for update;
