@@ -227,13 +227,13 @@ export function useProjectFields(teamId: string | null) {
     );
 
     const revealSecret = useCallback(
-        async (projectId: number, fieldDefId: number): Promise<string> => {
+        async (projectId: number, fieldDefId: number, pin?: string): Promise<string> => {
             if (!teamId) throw new Error("No team");
             const res = await api<{ value: string }>(
                 "/api/project-fields/secrets/reveal",
                 {
                     method: "POST",
-                    body: JSON.stringify({ teamId, projectId, fieldDefId }),
+                    body: JSON.stringify({ teamId, projectId, fieldDefId, pin }),
                 },
             );
             return res.value;

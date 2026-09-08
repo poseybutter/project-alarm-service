@@ -234,6 +234,7 @@ function ProjectDetailTabs({
     onHistory,
     hasPin,
     pinVerified,
+    verifiedPin,
     onPinRequired,
 }: {
     project: import("@/shared/types").Project;
@@ -246,6 +247,7 @@ function ProjectDetailTabs({
     onHistory: () => void;
     hasPin: boolean;
     pinVerified: boolean;
+    verifiedPin: string;
     onPinRequired: (callback: () => void) => void;
 }) {
     const [tab, setTab] = useState<"basic" | "setting">("basic");
@@ -375,7 +377,7 @@ function ProjectDetailTabs({
                     <AccessReadCard
                         defs={defs}
                         values={valueMap}
-                        onReveal={(defId) => pf.revealSecret(p.id, defId)}
+                        onReveal={(defId) => pf.revealSecret(p.id, defId, verifiedPin || undefined)}
                     />
                     <DevReadCard defs={defs} values={valueMap} />
                 </div>
@@ -478,6 +480,7 @@ export default function ManagePage() {
     // PIN 관련 state (팀 레벨)
     const [teamHasPin, setTeamHasPin] = useState(false);
     const [pinVerifiedAt, setPinVerifiedAt] = useState<number>(0);
+    const [lastVerifiedPin, setLastVerifiedPin] = useState<string>("");
     const PIN_EXPIRY_MS = 5 * 60 * 1000; // 5분
     const pinVerified = pinVerifiedAt > 0 && Date.now() - pinVerifiedAt < PIN_EXPIRY_MS;
     const [pinModal, setPinModal] = useState<{ callback: () => void } | null>(null);
@@ -1464,6 +1467,7 @@ export default function ManagePage() {
                                                     onHistory={() => setHistoryProjectId(p.id)}
                                                     hasPin={teamHasPin}
                                                     pinVerified={pinVerified}
+                                                    verifiedPin={lastVerifiedPin}
                                                     onPinRequired={(cb) => { setPinModal({ callback: cb }); setPinInput(""); setPinError(false); }}
                                                 />
                                             )}
@@ -2432,7 +2436,7 @@ export default function ManagePage() {
                                     try {
                                         const ok = await pf.verifyPin(pinInput);
                                         if (ok) {
-                                            setPinVerifiedAt(Date.now());
+                                            setPinVerifiedAt(Date.now()); setLastVerifiedPin(pinInput);
                                             const cb = pinModal.callback;
                                             setPinModal(null);
                                             cb();
@@ -2459,7 +2463,7 @@ export default function ManagePage() {
                                         try {
                                             const ok = await pf.verifyPin(pinInput);
                                             if (ok) {
-                                                setPinVerifiedAt(Date.now());
+                                                setPinVerifiedAt(Date.now()); setLastVerifiedPin(pinInput);
                                                 const cb = pinModal.callback;
                                                 setPinModal(null);
                                                 cb();

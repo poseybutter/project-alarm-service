@@ -6,6 +6,11 @@ import {
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { decryptField } from "@/shared/server/fieldEncryption";
 import { verifyPin } from "@/shared/server/pinHash";
+import {
+    requestRateLimitKey,
+    consumeSharedRateLimit,
+    rateLimitResponse,
+} from "@/shared/server/rateLimit";
 
 type RevealBody = {
     teamId?: string;
@@ -52,6 +57,16 @@ export async function POST(req: NextRequest) {
     }
 
     const teamId = body.teamId?.trim();
+    if (teamId) {
+        const rlKey = requestRateLimitKey(req, "secret-reveal", teamId);
+        const rl = await consumeSharedRateLimit(rlKey, {
+            limit: 10,
+            windowMs: 5 * 60 * 1000,
+            failClosed: true,
+        });
+        if (!rl.allowed) return rateLimitResponse(rl.retryAfterSeconds);
+    }
+
     const projectId = body.projectId;
     const fieldDefId = body.fieldDefId;
     if (!teamId || !projectId || !fieldDefId) {
