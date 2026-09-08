@@ -949,7 +949,7 @@ export default function HomePage() {
             try {
                 const { data: players, error: pErr } = await supabase
                     .from("players")
-                    .select("*")
+                    .select("name, week_exp")
                     .eq("team_id", teamId);
                 if (pErr || !players?.length) {
                     sessionStorage.removeItem(lockKey);
@@ -1040,6 +1040,12 @@ export default function HomePage() {
     if (authLoading) return <PageSpinner />;
     if (!member) return null;
 
+    // 홈에서 실제로 사용하는 컬럼만 조회하여 전송량·파싱 비용을 줄인다.
+    const TASK_COLS = "id,content,content_items,status,priority,type,proj,issue,workload,start_date,end_date,is_starred,is_plan,is_excluded_today,member,show_on_team_calendar,progress,created_at";
+    const QUEST_COLS = "id,content,proj,status,end_date,task_id,member,team_id,order_index,created_at";
+    const PLAYER_COLS = "id,name,exp,month_exp,week_exp,level,icons,attend_last,attend_streak,total_done,urgent_done,on_time_done,avatar_url,team_id";
+    const PROJECT_COLS = "id,name,members,member,is_archived";
+
     async function loadData() {
         if (!teamId) return;
         const generation = ++loadGenerationRef.current;
@@ -1052,13 +1058,13 @@ export default function HomePage() {
         ] = await Promise.all([
             supabase
                 .from("players")
-                .select("*")
+                .select(PLAYER_COLS)
                 .eq("team_id", teamId)
                 .eq("name", member)
                 .maybeSingle(),
             supabase
                 .from("quests")
-                .select("*")
+                .select(QUEST_COLS)
                 .eq("team_id", teamId)
                 .eq("member", member)
                 .neq("status", "완료")
@@ -1066,20 +1072,20 @@ export default function HomePage() {
                 .order("created_at", { ascending: true }),
             supabase
                 .from("tasks")
-                .select("*")
+                .select(TASK_COLS)
                 .eq("team_id", teamId)
                 .eq("member", member)
                 .order("end_date", { ascending: true }),
             isGuest
                 ? supabase
                       .from("tasks")
-                      .select("*")
+                      .select(TASK_COLS)
                       .eq("team_id", teamId)
                       .order("end_date", { ascending: true })
                 : Promise.resolve({ data: [] as Task[] }),
             supabase
                 .from("projects")
-                .select("*")
+                .select(PROJECT_COLS)
                 .eq("team_id", teamId)
                 .order("name", { ascending: true }),
         ]);
