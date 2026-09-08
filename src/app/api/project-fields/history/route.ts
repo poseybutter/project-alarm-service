@@ -6,12 +6,15 @@ import {
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 
 const PAGE_SIZE = 30;
+const VALID_ACTIONS = ["create", "update", "delete"] as const;
+const MAX_LABEL_LENGTH = 100;
+const MAX_VALUE_LENGTH = 10_000;
+const MAX_ENTRIES = 50;
 
 type HistoryEntry = {
     field_label: string;
     old_value: string | null;
     new_value: string | null;
-    is_secret?: boolean;
     action: string;
 };
 
@@ -40,6 +43,41 @@ export async function POST(req: NextRequest) {
         );
     }
 
+    if (entries.length > MAX_ENTRIES) {
+        return NextResponse.json(
+            { message: `entries must not exceed ${MAX_ENTRIES} items` },
+            { status: 400 },
+        );
+    }
+
+    // 입력 검증
+    for (const e of entries) {
+        if (!(VALID_ACTIONS as readonly string[]).includes(e.action)) {
+            return NextResponse.json(
+                { message: `Invalid action: ${e.action}` },
+                { status: 400 },
+            );
+        }
+        if (!e.field_label || e.field_label.length > MAX_LABEL_LENGTH) {
+            return NextResponse.json(
+                { message: `field_label must be 1–${MAX_LABEL_LENGTH} characters` },
+                { status: 400 },
+            );
+        }
+        if (e.old_value && e.old_value.length > MAX_VALUE_LENGTH) {
+            return NextResponse.json(
+                { message: `old_value must not exceed ${MAX_VALUE_LENGTH} characters` },
+                { status: 400 },
+            );
+        }
+        if (e.new_value && e.new_value.length > MAX_VALUE_LENGTH) {
+            return NextResponse.json(
+                { message: `new_value must not exceed ${MAX_VALUE_LENGTH} characters` },
+                { status: 400 },
+            );
+        }
+    }
+
     const { user, role } = await getServerUserRole(teamId);
     if (!user?.email || !role) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
@@ -52,10 +90,10 @@ export async function POST(req: NextRequest) {
             team_id: teamId,
             project_id: projectId,
             field_def_id: 0,
-            field_label: e.field_label,
-            old_value: e.old_value,
-            new_value: e.new_value,
-            is_secret: e.is_secret ?? false,
+            field_label: e.field_label.slice(0, MAX_LABEL_LENGTH),
+            old_value: e.old_value?.slice(0, MAX_VALUE_LENGTH) ?? null,
+            new_value: e.new_value?.slice(0, MAX_VALUE_LENGTH) ?? null,
+            is_secret: false,
             action: e.action,
             changed_by: user.email!,
             changed_at: now,
