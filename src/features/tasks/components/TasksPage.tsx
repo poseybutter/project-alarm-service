@@ -325,31 +325,37 @@ export default function TasksPage() {
                     <div className="h-24" />
                 </div>
 
-                <AddTaskModal
-                    open={showModal}
-                    onClose={() => setShowModal(false)}
-                    teamId={teamId}
-                    defaultMember={currentMember || ""}
-                    assignableMembers={assignableMembers}
-                    memberOptions={memberOptions}
-                    projects={projects}
-                    onCreated={loadTasks}
-                    onToast={showToastMsg}
-                />
+                {showModal && (
+                    <AddTaskModal
+                        open={showModal}
+                        onClose={() => setShowModal(false)}
+                        teamId={teamId}
+                        defaultMember={currentMember || ""}
+                        assignableMembers={assignableMembers}
+                        memberOptions={memberOptions}
+                        projects={projects}
+                        onCreated={loadTasks}
+                        onToast={showToastMsg}
+                    />
+                )}
 
-                <TaskEditModal
-                    task={editTask}
-                    onClose={() => setEditTask(null)}
-                    onSaved={loadTasks}
-                    onDelete={deleteTask}
-                />
+                {editTask && (
+                    <TaskEditModal
+                        task={editTask}
+                        onClose={() => setEditTask(null)}
+                        onSaved={loadTasks}
+                        onDelete={deleteTask}
+                    />
+                )}
 
-                <LevelUpOverlay
-                    show={levelUpInfo.show}
-                    level={levelUpInfo.level}
-                    levelName={levelUpInfo.levelName}
-                    onClose={closeLevelUp}
-                />
+                {levelUpInfo.show && (
+                    <LevelUpOverlay
+                        show={levelUpInfo.show}
+                        level={levelUpInfo.level}
+                        levelName={levelUpInfo.levelName}
+                        onClose={closeLevelUp}
+                    />
+                )}
                 {expPopups.map((p) => (
                     <ExpPopup
                         key={p.id}

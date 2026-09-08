@@ -30,7 +30,7 @@ export function consumeRateLimit(
     const now = Date.now();
 
     // 상한 도달 전에도 만료 엔트리를 정리해 메모리 누적을 방지한다.
-    if (windows.size > 5_000) {
+    if (windows.size >= 5_000) {
         for (const [windowKey, value] of windows) {
             if (value.resetAt <= now) windows.delete(windowKey);
         }
@@ -66,11 +66,13 @@ export function consumeRateLimit(
  * 인메모리 카운터는 서버리스 인스턴스마다 따로 세서 콜드스타트·수평 확장 시
  * 한도를 넘길 수 있다. 로컬 카운터를 1차 방어로 먼저 확인해 값싸게 거르고,
  * 통과하면 DB 의 원자적 카운터로 전역 한도를 확정한다.
- * RPC 실패(마이그레이션 미적용·일시 장애)에는 가용성 우선으로 통과시킨다.
+ *
+ * `failClosed` (기본 false): true 이면 DB 장애 시 임시 거부로 안전하게
+ * 닫는다. 남용에 민감한 경로에 사용한다. false 이면 가용성 우선으로 통과.
  */
 export async function consumeSharedRateLimit(
     key: string,
-    options: { limit: number; windowMs: number },
+    options: { limit: number; windowMs: number; failClosed?: boolean },
 ): Promise<{ allowed: boolean; retryAfterSeconds: number }> {
     const local = consumeRateLimit(key, options);
     if (!local.allowed) return local;
@@ -95,6 +97,11 @@ export async function consumeSharedRateLimit(
         return { allowed: true, retryAfterSeconds: 0 };
     } catch (error) {
         console.error("[rate-limit] shared counter unavailable", error);
+        // 인프라 장애와 정상 거부를 구분: failClosed 모드는 DB 가 유효한 판정을
+        // 내릴 수 없을 때 임시 거부로 안전하게 닫는다.
+        if (options.failClosed) {
+            return { allowed: false, retryAfterSeconds: 30 };
+        }
         return { allowed: true, retryAfterSeconds: 0 };
     }
 }

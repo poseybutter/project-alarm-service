@@ -15,6 +15,9 @@
 -- 재동기화 동시 실행 방지: 같은 팀에 대해 1건만 실행되도록 잠금 시각 기록
 alter table if exists public.agent_team_calendar_settings
     add column if not exists resync_locked_until timestamptz;
+-- 잠금 소유권 식별: 실행 ID 로 이어받기가 같은 실행인지 확인한다
+alter table if exists public.agent_team_calendar_settings
+    add column if not exists resync_execution_id text;
 
 -- 완료 해제 시 정시 여부를 정확히 되돌리기 위해 완료 시점의 값을 보존
 alter table if exists public.tasks
@@ -368,9 +371,12 @@ begin
         );
     end if;
 
-exception when others then
-    raise log 'attendance_check failed: % (%)', sqlerrm, sqlstate;
-    return json_build_object('success', false, 'message', '출석 처리 중 오류가 발생했습니다.');
+exception
+    when undefined_function or insufficient_privilege then
+        raise;  -- 구조적 오류는 숨기지 않고 호출자에게 전파한다.
+    when others then
+        raise log 'attendance_check failed: % (%)', sqlerrm, sqlstate;
+        return json_build_object('success', false, 'message', '출석 처리 중 오류가 발생했습니다.');
 end;
 $$;
 
@@ -480,6 +486,7 @@ create or replace function public.app_briefing_edit_window_open()
 returns boolean
 language sql
 stable
+set search_path = pg_catalog
 as $$
     select extract(isodow from (now() at time zone 'Asia/Seoul')) = 4
        and extract(hour   from (now() at time zone 'Asia/Seoul')) < 18

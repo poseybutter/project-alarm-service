@@ -225,6 +225,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (currentUserId === prevUserIdRef.current) return;
         prevUserIdRef.current = currentUserId;
 
+        // 사용자가 바뀌면 이전 사용자의 팀 컨텍스트를 즉시 초기화한다.
+        // loadTeamContext 가 완료되기 전까지 이전 사용자 데이터가 노출되지 않도록 한다.
+        setResolvedMember(null);
+        setAvatarUrl(null);
+        setTeamId(null);
+        setPlayerId(null);
+        setTeams([]);
+        setMembers([]);
+        setMemberOptions([]);
+        setModules(new Set(ALL_MODULES));
+
         const timer = window.setTimeout(() => {
             if (user) void loadTeamContext();
             else {

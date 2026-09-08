@@ -36,8 +36,9 @@ export async function GET(req: NextRequest) {
     const scopeParam = req.nextUrl.searchParams.get("scope");
     const limitParam = Number(req.nextUrl.searchParams.get("limit") ?? 50);
     // 클라이언트가 준 값이므로 상한 없이 넘기면 테이블 크기만큼 읽게 된다.
+    // 양의 정수만 허용하고, 그 외에는 기본값 50 으로 안전하게 되돌린다.
     const limit =
-        Number.isFinite(limitParam) && limitParam > 0
+        Number.isInteger(limitParam) && limitParam > 0
             ? Math.min(limitParam, 200)
             : 50;
 
@@ -57,7 +58,13 @@ export async function GET(req: NextRequest) {
         let recipientMember: string | undefined;
         if (!shouldShowTeam && user.email) {
             const resolvedMember = await resolveTeamMember(service, user.email, teamId);
-            recipientMember = resolvedMember?.name ?? "";
+            const name = resolvedMember?.name ?? "";
+            // 빈 문자열은 DB 필터를 비활성화하여 팀 전체 제안이 노출된다.
+            // 이름을 확인할 수 없으면 빈 결과를 반환하는 것이 안전하다.
+            if (!name) {
+                return NextResponse.json({ suggestions: [] });
+            }
+            recipientMember = name;
         }
 
         const suggestions = await listAgentSuggestions(service, {

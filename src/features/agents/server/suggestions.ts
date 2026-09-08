@@ -63,7 +63,9 @@ export async function listAgentSuggestions(
 
     if (params.status) query = query.eq("status", params.status);
     if (params.agentType) query = query.eq("agent_type", params.agentType);
-    if (params.recipientMember) query = query.eq("payload->>recipientMember", params.recipientMember);
+    // 빈 문자열은 필터를 비활성화하므로, 실제 값이 있을 때만 적용한다.
+    if (params.recipientMember !== undefined && params.recipientMember !== "")
+        query = query.eq("payload->>recipientMember", params.recipientMember);
 
     query = query.limit(params.limit ?? 50);
 
