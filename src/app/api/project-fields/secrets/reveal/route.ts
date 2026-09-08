@@ -14,6 +14,34 @@ type RevealBody = {
     pin?: string;
 };
 
+/**
+ * 팀 PIN 검증 — PIN이 설정되어 있으면 반드시 검증을 통과해야 한다.
+ * 반환: null이면 통과, Response면 거부 응답.
+ */
+async function enforceTeamPin(
+    svc: ReturnType<typeof createServiceSupabaseClient>,
+    teamId: string,
+    pin: string | undefined,
+): Promise<NextResponse | null> {
+    const { data: team, error } = await svc
+        .from("teams")
+        .select("settings_pin_hash")
+        .eq("id", teamId)
+        .maybeSingle();
+    if (error) throw error;
+
+    const hash = team?.settings_pin_hash;
+    if (!hash) return null; // PIN 미설정 — 보호 비활성
+
+    if (!pin) {
+        return NextResponse.json({ message: "PIN is required" }, { status: 403 });
+    }
+    if (!verifyPin(pin, hash)) {
+        return NextResponse.json({ message: "Invalid PIN" }, { status: 403 });
+    }
+    return null; // 검증 통과
+}
+
 /** POST — 암호화된 secret 필드 값을 복호화하여 반환 + 감사 로그 기록 */
 export async function POST(req: NextRequest) {
     let body: RevealBody;
@@ -41,29 +69,9 @@ export async function POST(req: NextRequest) {
     try {
         const svc = createServiceSupabaseClient();
 
-        // PIN 검증: 팀에 PIN이 설정되어 있으면 요청에 PIN 필수
-        const { data: team, error: teamError } = await svc
-            .from("teams")
-            .select("settings_pin_hash")
-            .eq("id", teamId)
-            .maybeSingle();
-        if (teamError) throw teamError;
-
-        if (team?.settings_pin_hash) {
-            const pin = body.pin?.trim();
-            if (!pin) {
-                return NextResponse.json(
-                    { message: "PIN is required" },
-                    { status: 403 },
-                );
-            }
-            if (!verifyPin(pin, team.settings_pin_hash)) {
-                return NextResponse.json(
-                    { message: "Invalid PIN" },
-                    { status: 403 },
-                );
-            }
-        }
+        // PIN 검증
+        const pinDenied = await enforceTeamPin(svc, teamId, body.pin?.trim());
+        if (pinDenied) return pinDenied;
 
         // 값 조회
         const { data: row, error } = await svc
