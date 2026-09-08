@@ -6,14 +6,14 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
+import {
+    consumeSharedRateLimit,
+    rateLimitResponse,
+    requestRateLimitKey,
+} from "@/shared/server/rateLimit";
+import { isCronAuthorized } from "@/shared/server/cronAuth";
 import { createServiceSupabaseClient } from "@/infrastructure/supabase/server";
 
-function isAuthorized(req: NextRequest) {
-    const secret = process.env.CRON_SECRET;
-    if (!secret && process.env.NODE_ENV !== "production") return true;
-    if (secret && req.headers.get("authorization") === `Bearer ${secret}`) return true;
-    return false;
-}
 
 /** KST 기준 현재 날짜 (YYYY-MM-DD) */
 function kstDateStr() {
@@ -26,9 +26,16 @@ function kstDateStr() {
 }
 
 export async function GET(req: NextRequest) {
-    if (!isAuthorized(req)) {
+    if (!isCronAuthorized(req)) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // 시크릿 유출 시에도 파괴적 작업의 반복 실행을 막는 2차 방어선
+    const rate = await consumeSharedRateLimit(
+        requestRateLimitKey(req, "cron-reset-exp"),
+        { limit: 5, windowMs: 5 * 60 * 1000 },
+    );
+    if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
 
     const type = req.nextUrl.searchParams.get("type");
     if (type !== "monthly" && type !== "weekly") {
