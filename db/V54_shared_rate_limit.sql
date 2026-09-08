@@ -64,14 +64,22 @@ grant execute on function public.consume_rate_limit(text, integer, integer) to s
 -- 만료 키 정리 (매일 KST 03:30). 같은 이름의 잡은 갱신되므로 재실행 안전.
 do $$
 begin
-    if exists (select 1 from pg_available_extensions where name = 'pg_cron') then
-        create extension if not exists pg_cron;
-        perform cron.schedule(
-            'purge-rate-limit-counters',
-            '30 18 * * *',
-            'delete from public.rate_limit_counters where reset_at < now() - interval ''1 day'''
-        );
-    else
+    if not exists (select 1 from pg_available_extensions where name = 'pg_cron') then
         raise notice 'pg_cron 을 사용할 수 없습니다. rate_limit_counters 만료 행을 외부에서 정리하세요.';
+        return;
     end if;
+    -- 대상 테이블이 존재하는지 확인
+    if not exists (
+        select 1 from information_schema.tables
+        where table_schema = 'public' and table_name = 'rate_limit_counters'
+    ) then
+        raise notice 'rate_limit_counters 테이블이 아직 없습니다. 스케줄 등록을 건너뜁니다.';
+        return;
+    end if;
+    create extension if not exists pg_cron;
+    perform cron.schedule(
+        'purge-rate-limit-counters',
+        '30 18 * * *',
+        'delete from public.rate_limit_counters where reset_at < now() - interval ''1 day'''
+    );
 end $$;

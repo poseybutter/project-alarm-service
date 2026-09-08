@@ -10,7 +10,7 @@
 -- ── 1. 핫 쿼리 인덱스 ──────────────────────────────────────────────
 
 -- 업무 목록: .eq(team_id).order(created_at desc) — 목록·리포트 페이지의 기본 조회
-create index if not exists tasks_team_created_at_idx
+create index concurrently if not exists tasks_team_created_at_idx
     on public.tasks (team_id, created_at desc);
 
 -- team_id + member(텍스트) 필터: 홈·프로필·알림 라우트 전반에서 가장 반복되는 형태
@@ -117,15 +117,24 @@ $$;
 -- cron.schedule 은 같은 이름의 잡을 갱신하므로 재실행해도 중복되지 않는다.
 do $$
 begin
-    if exists (select 1 from pg_available_extensions where name = 'pg_cron') then
-        create extension if not exists pg_cron;
-        perform cron.schedule(
-            'purge-expired-agent-security-data',
-            '0 18 * * *',
-            'select public.purge_expired_agent_security_data()'
-        );
-    else
+    if not exists (select 1 from pg_available_extensions where name = 'pg_cron') then
         raise notice
             'pg_cron 을 사용할 수 없습니다. purge_expired_agent_security_data() 를 외부 스케줄러로 호출하세요.';
+        return;
     end if;
+    -- 대상 함수가 존재하지 않으면 스케줄만 등록되고 매번 실패한다.
+    if not exists (
+        select 1 from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'purge_expired_agent_security_data'
+    ) then
+        raise notice 'purge_expired_agent_security_data() 함수가 아직 없습니다. 스케줄 등록을 건너뜁니다.';
+        return;
+    end if;
+    create extension if not exists pg_cron;
+    perform cron.schedule(
+        'purge-expired-agent-security-data',
+        '0 18 * * *',
+        'select public.purge_expired_agent_security_data()'
+    );
 end $$;

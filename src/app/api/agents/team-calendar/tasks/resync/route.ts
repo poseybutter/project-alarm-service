@@ -1,4 +1,5 @@
 import { after, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
@@ -86,6 +87,33 @@ export async function POST(request: Request) {
     const requestedCursor = cursorParam !== null ? Number(cursorParam) : NaN;
     const isFirstBatch = !Number.isFinite(requestedCursor);
 
+    // 실행 소유권 식별자: 첫 배치에서 생성, 이어받기에서는 파라미터로 전달받는다.
+    const executionId = isFirstBatch
+        ? randomUUID()
+        : url.searchParams.get("executionId") ?? randomUUID();
+
+    /** 잠금 해제 헬퍼 — 소유자만 해제할 수 있다. */
+    const releaseLock = async () => {
+        await supabase
+            .from("agent_team_calendar_settings")
+            .update({ resync_locked_until: null, resync_execution_id: null })
+            .eq("team_id", teamId)
+            .eq("resync_execution_id", executionId);
+    };
+
+    /** 잠금 갱신 헬퍼 — 소유자 확인 후 TTL 을 연장한다. 실패하면 false. */
+    const refreshLock = async (): Promise<boolean> => {
+        const lockUntil = new Date(Date.now() + (maxDuration ?? 60) * 1000).toISOString();
+        const { data } = await supabase
+            .from("agent_team_calendar_settings")
+            .update({ resync_locked_until: lockUntil })
+            .eq("team_id", teamId)
+            .eq("resync_execution_id", executionId)
+            .select("team_id")
+            .maybeSingle();
+        return !!data;
+    };
+
     try {
         const { data: setting, error: settingError } = await supabase
             .from("agent_team_calendar_settings")
@@ -100,12 +128,12 @@ export async function POST(request: Request) {
             );
         }
 
-        // 팀별 동시 실행 방지: 첫 배치에서만 잠금 획득, 이어받기는 그대로 통과
+        // 팀별 동시 실행 방지: 실행 ID 로 소유권을 추적한다.
         if (isFirstBatch) {
             const lockUntil = new Date(Date.now() + (maxDuration ?? 60) * 1000).toISOString();
             const { data: lockResult } = await supabase
                 .from("agent_team_calendar_settings")
-                .update({ resync_locked_until: lockUntil })
+                .update({ resync_locked_until: lockUntil, resync_execution_id: executionId })
                 .eq("team_id", teamId)
                 .or(`resync_locked_until.is.null,resync_locked_until.lt.${new Date().toISOString()}`)
                 .select("team_id")
@@ -113,6 +141,15 @@ export async function POST(request: Request) {
             if (!lockResult) {
                 return NextResponse.json(
                     { message: "다른 재동기화가 진행 중입니다. 잠시 후 다시 시도해주세요." },
+                    { status: 409 },
+                );
+            }
+        } else {
+            // 이어받기: 소유권 확인 + TTL 갱신
+            const ownerOk = await refreshLock();
+            if (!ownerOk) {
+                return NextResponse.json(
+                    { message: "잠금 소유권이 유효하지 않습니다." },
                     { status: 409 },
                 );
             }
@@ -137,6 +174,8 @@ export async function POST(request: Request) {
             .maybeSingle();
         if (connectionError) throw connectionError;
         if (!connection) {
+            // 잠금을 해제해야 사용자가 연결 설정 후 재시도할 수 있다.
+            await releaseLock();
             return NextResponse.json(
                 { message: "팀 캘린더 연결 계정을 찾을 수 없습니다" },
                 { status: 400 },
@@ -302,12 +341,9 @@ export async function POST(request: Request) {
             if (skippedUpdateError) throw skippedUpdateError;
         }
 
-        // 마지막 배치이면 잠금 해제
+        // 마지막 배치이면 잠금 해제 (소유자만)
         if (!nextCursor) {
-            await supabase
-                .from("agent_team_calendar_settings")
-                .update({ resync_locked_until: null })
-                .eq("team_id", teamId);
+            await releaseLock();
         }
 
         // 남은 배치가 있으면 응답 후 새 함수 호출로 이어받는다.
@@ -319,25 +355,24 @@ export async function POST(request: Request) {
             continuationUrl.searchParams.set("teamId", teamId);
             continuationUrl.searchParams.set("cursor", String(nextCursor));
             continuationUrl.searchParams.set("limit", String(limit));
+            continuationUrl.searchParams.set("executionId", executionId);
 
-            after(() => {
+            after(async () => {
                 const headers: HeadersInit = {};
                 const secret = process.env.CRON_SECRET;
-                // HTTPS 가 아닌 환경(로컬 등)에서는 인증 헤더를 보내지 않는다
-                if (secret && continuationUrl.protocol === "https:")
-                    headers["Authorization"] = `Bearer ${secret}`;
+                // 프로토콜과 무관하게 CRON_SECRET 이 있으면 항상 인증 헤더를 보낸다.
+                if (secret) headers["Authorization"] = `Bearer ${secret}`;
 
-                fetch(continuationUrl, { method: "POST", headers, redirect: "error" })
-                    .then((res) => {
-                        if (!res.ok) {
-                            console.error(
-                                `[team-calendar-resync:continuation] HTTP ${res.status}`,
-                            );
-                        }
-                    })
-                    .catch((err) =>
-                        console.error("[team-calendar-resync:continuation]", err),
-                    );
+                try {
+                    const res = await fetch(continuationUrl, { method: "POST", headers, redirect: "error" });
+                    if (!res.ok) {
+                        console.error(
+                            `[team-calendar-resync:continuation] HTTP ${res.status}`,
+                        );
+                    }
+                } catch (err) {
+                    console.error("[team-calendar-resync:continuation]", err);
+                }
             });
         }
 
@@ -349,12 +384,9 @@ export async function POST(request: Request) {
             nextCursor,
         });
     } catch (error) {
-        // 예외 발생 시에도 잠금 해제
+        // 예외 발생 시에도 잠금 해제 (소유자만)
         try {
-            await supabase
-                .from("agent_team_calendar_settings")
-                .update({ resync_locked_until: null })
-                .eq("team_id", teamId);
+            await releaseLock();
         } catch { /* 잠금 해제 실패는 TTL 만료로 자연 해소 */ }
         return internalErrorResponse(
             "team-calendar-resync",

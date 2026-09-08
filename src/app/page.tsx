@@ -1109,6 +1109,7 @@ export default function HomePage() {
         }
         setIsAttending(true);
         try {
+            if (!teamId) { showToastMsg("팀 정보를 불러오지 못했습니다."); setIsAttending(false); return; }
             const result = await rpcAttendanceCheck(member, teamId);
             if (!result.success) {
                 showToastMsg(result.message || "오류");

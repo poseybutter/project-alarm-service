@@ -124,11 +124,17 @@ function htmlToMarkdown(html: string): string {
         .trim();
 }
 
-/** 브리핑 편집 허용 윈도우: 목요일 00:00 ~ 18:00 (KST 가정). */
-function isEditableWindow(now: Date = new Date()): boolean {
-    const day = now.getDay();
-    const hour = now.getHours();
-    if (day === 4 && hour < 18) return true; // 목 00:00~17:59
+/** 브리핑 편집 허용 윈도우: 목요일 00:00 ~ 18:00 (KST). */
+function isEditableWindow(): boolean {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Seoul",
+        weekday: "short",
+        hour: "numeric",
+        hour12: false,
+    }).formatToParts(new Date());
+    const weekday = parts.find((p) => p.type === "weekday")?.value; // "Thu"
+    const hour = Number(parts.find((p) => p.type === "hour")?.value ?? -1);
+    if (weekday === "Thu" && hour >= 0 && hour < 18) return true; // 목 00:00~17:59
     return false;
 }
 
@@ -798,6 +804,13 @@ export default function ReportPage() {
         let cancelled = false;
         const isTeamChange = loadedTasksTeamRef.current !== teamId;
         if (isTeamChange) setLoading(true);
+        // teamId 가 null 이면 loadTasks 가 즉시 반환하므로 로딩을 해제해야 한다.
+        if (!teamId) {
+            setTasks([]);
+            loadedTasksTeamRef.current = teamId;
+            setLoading(false);
+            return;
+        }
         void loadTasks().finally(() => {
             if (cancelled) return;
             loadedTasksTeamRef.current = teamId;
