@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 
 export type FieldDef = {
     id: number;
@@ -120,7 +120,7 @@ export function useProjectFields(teamId: string | null) {
         async (projectId: number): Promise<FieldDef[]> => {
             if (!teamId) return [];
             return api<FieldDef[]>(
-                `/api/project-fields/definitions?teamId=${teamId}&projectId=${projectId}`,
+                `/api/project-fields/definitions?teamId=${encodeURIComponent(teamId)}&projectId=${projectId}`,
             );
         },
         [teamId],
@@ -130,7 +130,7 @@ export function useProjectFields(teamId: string | null) {
         async (projectId: number): Promise<FieldValue[]> => {
             if (!teamId) return [];
             return api<FieldValue[]>(
-                `/api/project-fields/values?teamId=${teamId}&projectId=${projectId}`,
+                `/api/project-fields/values?teamId=${encodeURIComponent(teamId)}&projectId=${projectId}`,
             );
         },
         [teamId],
@@ -247,7 +247,7 @@ export function useProjectFields(teamId: string | null) {
             cursor?: number | null,
         ): Promise<{ items: HistoryItem[]; nextCursor: number | null }> => {
             if (!teamId) return { items: [], nextCursor: null };
-            let url = `/api/project-fields/history?teamId=${teamId}&projectId=${projectId}`;
+            let url = `/api/project-fields/history?teamId=${encodeURIComponent(teamId)}&projectId=${projectId}`;
             if (cursor) url += `&cursor=${cursor}`;
             return api(url);
         },
@@ -284,14 +284,14 @@ export function useProjectFields(teamId: string | null) {
         async (): Promise<boolean> => {
             if (!teamId) return false;
             const res = await api<{ hasPin: boolean }>(
-                `/api/project-fields/pin?teamId=${teamId}`,
+                `/api/project-fields/pin?teamId=${encodeURIComponent(teamId)}`,
             );
             return res.hasPin;
         },
         [teamId],
     );
 
-    return {
+    return useMemo(() => ({
         loadDefs,
         loadValues,
         ensureDefaultFields,
@@ -305,5 +305,19 @@ export function useProjectFields(teamId: string | null) {
         setPin,
         verifyPin,
         checkHasPin,
-    };
+    }), [
+        loadDefs,
+        loadValues,
+        ensureDefaultFields,
+        addDef,
+        updateDef,
+        deleteDef,
+        reorderDefs,
+        saveValues,
+        revealSecret,
+        loadHistory,
+        setPin,
+        verifyPin,
+        checkHasPin,
+    ]);
 }

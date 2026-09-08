@@ -48,6 +48,10 @@ create index if not exists project_field_values_team_project_idx
 -- ──────────────────────────────────────────────
 -- 3. 변경 이력 (diff 추적)
 -- ──────────────────────────────────────────────
+-- NOTE(CodeRabbit #51-5): history/audit_logs 테이블의 team_id, project_id, field_def_id 에
+-- FK 를 의도적으로 생략한다. field_def_id=0 은 고정 필드(PM, 개발자 등 project 컬럼)의
+-- 변경 이력을 기록할 때 사용하며, 실제 project_field_definitions 행이 존재하지 않는다.
+-- 또한 정의가 삭제된 뒤에도 이력·감사 로그는 보존되어야 하므로 CASCADE 삭제가 적절치 않다.
 create table if not exists public.project_field_history (
     id          bigint generated always as identity primary key,
     team_id     text not null,

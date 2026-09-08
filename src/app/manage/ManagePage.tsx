@@ -472,6 +472,7 @@ export default function ManagePage() {
     const [modalValues, setModalValues] = useState<Record<string, string>>({});
     const [extraFields, setExtraFields] = useState<{ key: string; label: string; fieldType: string; isFixed: boolean; defId?: number }[]>([]);
     const [cfSaving, setCfSaving] = useState(false);
+    const [projSaving, setProjSaving] = useState(false);
     const [modalTab, setModalTab] = useState<"basic" | "setting">("basic");
     const [savedSecrets, setSavedSecrets] = useState<Set<string>>(new Set());
     // PIN 관련 state (팀 레벨)
@@ -480,6 +481,18 @@ export default function ManagePage() {
     const PIN_EXPIRY_MS = 5 * 60 * 1000; // 5분
     const pinVerified = pinVerifiedAt > 0 && Date.now() - pinVerifiedAt < PIN_EXPIRY_MS;
     const [pinModal, setPinModal] = useState<{ callback: () => void } | null>(null);
+
+    // PIN 인증 만료 시 자동으로 re-render 를 트리거하여 잠금 상태를 반영한다
+    useEffect(() => {
+        if (!pinVerifiedAt) return;
+        const remaining = PIN_EXPIRY_MS - (Date.now() - pinVerifiedAt);
+        if (remaining <= 0) return;
+        const timer = setTimeout(() => {
+            // pinVerifiedAt 을 0 으로 되돌리면 pinVerified 가 false 가 된다
+            setPinVerifiedAt(0);
+        }, remaining);
+        return () => clearTimeout(timer);
+    }, [pinVerifiedAt]);
     const [pinInput, setPinInput] = useState("");
     const [pinError, setPinError] = useState(false);
     const [pinVerifying, setPinVerifying] = useState(false);
@@ -752,10 +765,11 @@ export default function ManagePage() {
     }
 
     async function saveProject() {
-        if (isGuest) return;
+        if (isGuest || projSaving) return;
         if (!projForm.name.trim()) return alert("프로젝트명은 필수예요");
         if (!projForm.members.length)
             return alert("담당자를 1명 이상 선택해 주세요");
+        setProjSaving(true);
 
         const langStr =
             ["PHP", "JSP", "기타"]
@@ -842,10 +856,18 @@ export default function ManagePage() {
                     return true;
                 });
             if (fields.length > 0) {
-                await pf.saveValues(projectId, fields).catch(() => {});
+                try {
+                    await pf.saveValues(projectId, fields);
+                } catch (err) {
+                    showToastMsg(
+                        "커스텀 필드 저장 실패: " +
+                            (err instanceof Error ? err.message : "알 수 없는 오류"),
+                    );
+                }
             }
         }
         closeProjModal();
+        setProjSaving(false);
         await loadData();
     }
 
@@ -1879,9 +1901,10 @@ export default function ManagePage() {
                                 <button
                                     type="button"
                                     onClick={() => void saveProject()}
-                                    className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm mt-4"
+                                    disabled={projSaving}
+                                    className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm mt-4 disabled:opacity-50"
                                 >
-                                    {editProj ? "저장하기" : "추가하기"}
+                                    {projSaving ? "저장 중..." : editProj ? "저장하기" : "추가하기"}
                                 </button>
                             </div>
                         </div>

@@ -75,12 +75,17 @@ function TeamPinSection({ teamId }: { teamId: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/project-fields/pin?teamId=${teamId}`)
-      .then((r) => r.json())
+    fetch(`/api/project-fields/pin?teamId=${encodeURIComponent(teamId)}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((d: { hasPin: boolean; updatedAt: string | null }) => {
         if (!cancelled) { setHasPin(d.hasPin); setUpdatedAt(d.updatedAt); setLoaded(true); }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setLoaded(true); // 실패해도 로딩 완료 처리 — 섹션이 숨겨진 채 멈추지 않도록
+      });
     return () => { cancelled = true; };
   }, [teamId]);
 

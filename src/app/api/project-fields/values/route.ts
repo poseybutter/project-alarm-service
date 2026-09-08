@@ -41,7 +41,14 @@ export async function GET(req: NextRequest) {
             .eq("team_id", teamId);
 
         if (projectId) {
-            query = query.eq("project_id", Number(projectId));
+            const pid = Number(projectId);
+            if (Number.isNaN(pid)) {
+                return NextResponse.json(
+                    { message: "projectId must be a number" },
+                    { status: 400 },
+                );
+            }
+            query = query.eq("project_id", pid);
         }
 
         const { data, error } = await query;
@@ -121,6 +128,10 @@ export async function PUT(req: NextRequest) {
         );
 
         // 3. 각 필드별 upsert + history 기록
+        // NOTE: 필드를 순차적으로 처리하는 이유 — secret 필드는 이전 값 존재 여부에 따라
+        // 분기(skip/encrypt/null)가 다르고, 동일 project_id+field_def_id 에 대한
+        // upsert 를 병렬로 보내면 race condition 이 발생한다. 필드 수가 팀당 수십 개
+        // 수준이므로 직렬 처리의 latency 영향은 미미하다.
         const historyRows: {
             team_id: string;
             project_id: number;
@@ -164,6 +175,10 @@ export async function PUT(req: NextRequest) {
             if (isSecret && newVal) {
                 row.value = null;
                 row.encrypted_value = encryptField(newVal);
+            } else if (isSecret && !newVal && prev) {
+                // secret 필드에 빈 값이 들어오면 기존 암호화 값을 유지한다.
+                // (클라이언트는 "빈칸이면 기존 값 유지"로 안내)
+                continue;
             } else {
                 row.value = newVal;
                 row.encrypted_value = null;
