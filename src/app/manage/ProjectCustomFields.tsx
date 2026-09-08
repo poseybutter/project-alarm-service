@@ -191,9 +191,9 @@ export default function ProjectCustomFields({
                                                     </>
                                                 )}
                                             </div>
-                                        ) : def.field_type === "url" ? (
+                                        ) : def.field_type === "url" && val.value ? (
                                             <a
-                                                href={val.value!}
+                                                href={val.value}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className="text-xs text-blue-500 underline truncate block"

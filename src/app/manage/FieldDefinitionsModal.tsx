@@ -1,14 +1,15 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FieldDef } from "./useProjectFields";
 
+// NOTE: 'select' 타입은 옵션 목록 편집 UI 가 아직 없으므로 생성 화면에서 제외.
+// 기존에 만들어진 select 필드는 렌더링·저장에 문제 없음.
 const FIELD_TYPES = [
     { value: "text", label: "텍스트" },
     { value: "url", label: "URL" },
     { value: "secret", label: "비밀번호" },
     { value: "textarea", label: "메모" },
-    { value: "select", label: "선택" },
 ] as const;
 
 function fieldTypeLabel(type: string) {
@@ -79,7 +80,11 @@ export default function FieldDefinitionsModal({
         const reorder = sorted.map((d, i) => ({ id: d.id, sort_order: i }));
         dragItem.current = null;
         dragOverItem.current = null;
-        await onReorder(reorder);
+        try {
+            await onReorder(reorder);
+        } catch {
+            // 순서 변경 실패 시 조용히 무시 — 다음 로드에서 복원됨
+        }
     }, [defs, onReorder]);
 
     const handleAdd = useCallback(async () => {
@@ -129,11 +134,23 @@ export default function FieldDefinitionsModal({
 
     const sorted = [...defs].sort((a, b) => a.sort_order - b.sort_order);
 
+    // Escape 키로 모달 닫기
+    useEffect(() => {
+        function handleKeyDown(e: KeyboardEvent) {
+            if (e.key === "Escape") onClose();
+        }
+        document.addEventListener("keydown", handleKeyDown);
+        return () => document.removeEventListener("keydown", handleKeyDown);
+    }, [onClose]);
+
     return (
         <div
             className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
             style={{ marginBottom: "var(--nav-height)" }}
             onClick={onClose}
+            role="dialog"
+            aria-modal="true"
+            aria-label="커스텀 필드 관리"
         >
             <div
                 className="max-h-[calc(100dvh-var(--nav-height,0px)-1rem)] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-5"

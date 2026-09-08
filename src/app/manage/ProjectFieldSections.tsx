@@ -105,6 +105,7 @@ export function AccessSection({ defs, values, onChange, onAddField, onDeleteFiel
     const [newLabel, setNewLabel] = useState("");
     const [newType, setNewType] = useState("text");
     const [adding, setAdding] = useState(false);
+    const accDragRef = useRef<number | undefined>(undefined);
 
     const envLabel = env === "prod" ? "운영" : "로컬";
     const prefix = `access_${env}_`;
@@ -170,10 +171,10 @@ export function AccessSection({ defs, values, onChange, onAddField, onDeleteFiel
                         <div
                             key={def.id}
                             draggable={Boolean(onReorderFields)}
-                            onDragStart={() => { (window as unknown as Record<string, number>).__accDrag = idx; }}
+                            onDragStart={() => { accDragRef.current = idx; }}
                             onDragOver={(e) => e.preventDefault()}
                             onDrop={() => {
-                                const from = (window as unknown as Record<string, number>).__accDrag;
+                                const from = accDragRef.current;
                                 if (from === undefined || from === idx || !onReorderFields) return;
                                 const next = [...customDefs];
                                 const [moved] = next.splice(from, 1);
@@ -191,7 +192,7 @@ export function AccessSection({ defs, values, onChange, onAddField, onDeleteFiel
                                     )}
                                 </div>
                                 {onDeleteField && (
-                                    <button type="button" onClick={() => void onDeleteField(def.id)} className="text-stone-300 hover:text-red-400 transition-colors"><i className="ri-close-line text-base" aria-hidden /></button>
+                                    <button type="button" onClick={() => void onDeleteField(def.id)} className="text-stone-300 hover:text-red-400 transition-colors" aria-label="삭제"><i className="ri-close-line text-base" aria-hidden /></button>
                                 )}
                             </div>
                             {def.field_type === "secret" ? (
@@ -275,6 +276,7 @@ export function DevSection({ defs, values, onChange, onAddField, onDeleteField, 
     const [newLabel, setNewLabel] = useState("");
     const [newType, setNewType] = useState("text");
     const [adding, setAdding] = useState(false);
+    const devDragRef = useRef<number | undefined>(undefined);
 
     const knownDevNames = new Set(["dev_ide", "dev_vcs", "dev_project_path", ...DEV_TEXT_FIELDS.map((f) => f.name)]);
 
@@ -350,10 +352,10 @@ export function DevSection({ defs, values, onChange, onAddField, onDeleteField, 
                         <div
                             key={def.id}
                             draggable={Boolean(onReorderFields)}
-                            onDragStart={() => { (window as unknown as Record<string, number>).__devDrag = idx; }}
+                            onDragStart={() => { devDragRef.current = idx; }}
                             onDragOver={(e) => e.preventDefault()}
                             onDrop={() => {
-                                const from = (window as unknown as Record<string, number>).__devDrag;
+                                const from = devDragRef.current;
                                 if (from === undefined || from === idx || !onReorderFields) return;
                                 const next = [...customDefs];
                                 const [moved] = next.splice(from, 1);
@@ -371,7 +373,7 @@ export function DevSection({ defs, values, onChange, onAddField, onDeleteField, 
                                     )}
                                 </div>
                                 {onDeleteField && (
-                                    <button type="button" onClick={() => void onDeleteField(def.id)} className="text-stone-300 hover:text-red-400 transition-colors"><i className="ri-close-line text-base" aria-hidden /></button>
+                                    <button type="button" onClick={() => void onDeleteField(def.id)} className="text-stone-300 hover:text-red-400 transition-colors" aria-label="삭제"><i className="ri-close-line text-base" aria-hidden /></button>
                                 )}
                             </div>
                             <input className="w-full rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-100" value={values[def.name] ?? ""} onChange={(e) => onChange(def.name, e.target.value)} />
@@ -426,6 +428,7 @@ export function ExtraSection({
 }: ExtraSectionProps) {
     const [newLabel, setNewLabel] = useState("");
     const [newType, setNewType] = useState("text");
+    const extraDragRef = useRef<number | undefined>(undefined);
 
     return (
         <div className="rounded-xl border border-stone-200 bg-white overflow-hidden">
@@ -438,11 +441,11 @@ export function ExtraSection({
                         key={field.key}
                         draggable
                         onDragStart={() => {
-                            (window as unknown as Record<string, number>).__extraDrag = idx;
+                            extraDragRef.current = idx;
                         }}
                         onDragOver={(e) => e.preventDefault()}
                         onDrop={() => {
-                            const from = (window as unknown as Record<string, number>).__extraDrag;
+                            const from = extraDragRef.current;
                             if (from === undefined || from === idx) return;
                             const next = [...fields];
                             const [moved] = next.splice(from, 1);
@@ -536,9 +539,12 @@ export function AccessReadCard({ defs, values, onReveal }: AccessReadProps) {
     const [revealing, setRevealing] = useState<number | null>(null);
 
     const prefix = `access_${env}_`;
-    const hasAny = defs.some((d) => d.name.startsWith("access_") && values.get(d.id)?.value);
+    // 현재 선택된 env(운영/로컬) 탭의 prefix 에 맞는 필드만 확인하여
+    // "접속 정보" 카드 표시 여부를 결정한다. 양쪽 env 를 모두 체크하면
+    // 한쪽에만 값이 있을 때 빈 카드가 보인다.
+    const hasAny = defs.some((d) => d.name.startsWith(prefix) && values.get(d.id)?.value);
 
-    if (!hasAny && !defs.some((d) => d.name.startsWith("access_") && values.get(d.id)?.has_secret)) {
+    if (!hasAny && !defs.some((d) => d.name.startsWith(prefix) && values.get(d.id)?.has_secret)) {
         return null;
     }
 

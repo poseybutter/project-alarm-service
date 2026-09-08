@@ -41,17 +41,21 @@ function groupHistory(items: HistoryItem[]) {
 }
 
 function formatDate(dateStr: string) {
+    const TZ = "Asia/Seoul";
     const date = new Date(dateStr);
     const now = new Date();
-    const isToday = date.toDateString() === now.toDateString();
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const isYesterday = date.toDateString() === yesterday.toDateString();
 
-    if (isToday) return "오늘";
-    if (isYesterday) return "어제";
+    // KST 기준 날짜 문자열로 비교 (브라우저 로컬 시간대에 의존하지 않음)
+    const dateKST = date.toLocaleDateString("sv-SE", { timeZone: TZ }); // "YYYY-MM-DD"
+    const todayKST = now.toLocaleDateString("sv-SE", { timeZone: TZ });
+    const yesterday = new Date(now.getTime() - 86_400_000);
+    const yesterdayKST = yesterday.toLocaleDateString("sv-SE", { timeZone: TZ });
+
+    if (dateKST === todayKST) return "오늘";
+    if (dateKST === yesterdayKST) return "어제";
 
     return new Intl.DateTimeFormat("ko-KR", {
+        timeZone: TZ,
         month: "long",
         day: "numeric",
     }).format(date);
@@ -59,6 +63,7 @@ function formatDate(dateStr: string) {
 
 function formatTime(dateStr: string) {
     return new Intl.DateTimeFormat("ko-KR", {
+        timeZone: "Asia/Seoul",
         hour: "2-digit",
         minute: "2-digit",
         hour12: false,
