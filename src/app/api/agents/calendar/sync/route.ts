@@ -16,7 +16,7 @@ import { createAgentSuggestions } from "@/features/agents/server/suggestions";
 import type { Accessibility, Task } from "@/shared/types";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import {
-    consumeRateLimit,
+    consumeSharedRateLimit,
     rateLimitResponse,
     requestRateLimitKey,
 } from "@/shared/server/rateLimit";
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
-    const rate = consumeRateLimit(
+    const rate = await consumeSharedRateLimit(
         requestRateLimitKey(request, "calendar-sync", user.email),
         { limit: 10, windowMs: 5 * 60 * 1000 },
     );

@@ -6,6 +6,7 @@ import {
     encryptIntegrationToken,
 } from "@/infrastructure/security/tokenEncryption";
 import { listActiveTeamMembers } from "@/features/identity/server/identityRepository";
+import { mapWithConcurrency } from "@/shared/server/concurrency";
 import type { ContentItem } from "@/shared/types";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -20,6 +21,12 @@ const FETCH_TIMEOUT_MS = 15_000;
 const RATE_LIMIT_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 500;
 const MAX_RETRY_DELAY_MS = 8_000;
+
+/**
+ * 멤버 캘린더 조회 동시 처리 한도. 연결 계정 하나로 호출하므로
+ * 멤버 수가 늘어도 Google 의 사용자당 요청률 한도를 넘지 않게 잡는다.
+ */
+const MEMBER_CALENDAR_FETCH_CONCURRENCY = 4;
 
 function sleep(ms: number) {
     return new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -646,8 +653,10 @@ export async function syncTodayTeamCalendarEvents(
     const memberCalendarRows = (
         (memberCalendarSettings ?? []) as MemberCalendarSetting[]
     ).filter((row) => row.member && row.calendar_id);
-    const memberRowsNested = await Promise.all(
-        memberCalendarRows.map(async (calendar) => {
+    const memberRowsNested = await mapWithConcurrency(
+        memberCalendarRows,
+        MEMBER_CALENDAR_FETCH_CONCURRENCY,
+        async (calendar) => {
             const player = teamPlayers.find(
                 (item) => item.name === calendar.member,
             );
@@ -676,7 +685,7 @@ export async function syncTodayTeamCalendarEvents(
                         synced_at: new Date().toISOString(),
                     };
                 });
-        }),
+        },
     );
     const rows = [...sharedRows, ...memberRowsNested.flat()];
     const calendarIds = [

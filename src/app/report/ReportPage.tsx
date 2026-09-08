@@ -8,10 +8,6 @@ import {
     useRef,
     useState,
 } from "react";
-import { useEditor, EditorContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Placeholder from "@tiptap/extension-placeholder";
-import Typography from "@tiptap/extension-typography";
 import UserMenu from "@/components/UserMenu";
 import TeamSwitcher from "@/components/TeamSwitcher";
 import Avatar from "@/components/Avatar";
@@ -23,7 +19,21 @@ import { PageSpinner } from "@/components/Spinner";
 import type { Task } from "@/shared/types";
 import { normalizeStatus } from "@/shared/constants";
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
-import TiptapSectionEditor from "@/components/TiptapSectionEditor";
+import dynamic from "next/dynamic";
+
+// 에디터는 편집 진입 시에만 필요하므로 tiptap 을 초기 번들에서 제외한다.
+// 로딩 상태는 에디터 자체의 초기화 placeholder 와 같은 모양으로 맞춘다.
+const editorLoading = () => (
+    <div className="notice-editor min-h-[120px] rounded-lg border border-stone-200 bg-stone-50 motion-safe:animate-pulse" />
+);
+const TiptapSectionEditor = dynamic(
+    () => import("@/components/TiptapSectionEditor"),
+    { ssr: false, loading: editorLoading },
+);
+const TiptapNoticeEditor = dynamic(
+    () => import("@/components/TiptapNoticeEditor"),
+    { ssr: false, loading: editorLoading },
+);
 import Select from "react-select";
 import { modalFormSelectStyles } from "@/shared/styles/reactSelectStyles";
 import { sanitizeHtml } from "@/shared/utils/sanitizeHtml";
@@ -114,190 +124,42 @@ function htmlToMarkdown(html: string): string {
         .trim();
 }
 
-type TiptapNoticeEditorProps = {
-    content: string;
-    onChange: (html: string) => void;
-    editable: boolean;
-    showToolbar: boolean;
-};
-
-/** 주간 전달사항 Tiptap (HTML 저장) */
-function TiptapNoticeEditor({
-    content,
-    onChange,
-    editable,
-    showToolbar,
-}: TiptapNoticeEditorProps) {
-    const [, setUiTick] = useState(0);
-
-    const editor = useEditor({
-        immediatelyRender: false,
-        extensions: [
-            StarterKit.configure({
-                heading: { levels: [1, 2] },
-            }),
-            Placeholder.configure({
-                placeholder: "전달사항을 입력하세요...",
-            }),
-            Typography,
-        ],
-        content: content || "",
-        editable,
-        editorProps: {
-            attributes: {
-                class: "tiptap notice-editor-prose min-h-[120px] px-2 py-2 focus:outline-none",
-            },
-        },
-        onUpdate: ({ editor: ed }) => {
-            onChange(ed.getHTML());
-        },
-    });
-
-    useEffect(() => {
-        if (!editor || editor.isDestroyed) return;
-        editor.setEditable(editable);
-    }, [editable, editor]);
-
-    /** 읽기 모드: 부모 briefing 갱신(loadBriefing 등) 시 에디터 본문 즉시 반영 */
-    useEffect(() => {
-        if (!editor || editor.isDestroyed) return;
-        if (editable) return;
-        const next = content || "";
-        const cur = editor.getHTML();
-        if (cur === next) return;
-        editor.commands.setContent(next, { emitUpdate: false });
-    }, [content, editor, editable]);
-
-    useEffect(() => {
-        if (!editor || editor.isDestroyed) return;
-        const bump = () => setUiTick((t) => t + 1);
-        editor.on("selectionUpdate", bump);
-        editor.on("transaction", bump);
-        return () => {
-            editor.off("selectionUpdate", bump);
-            editor.off("transaction", bump);
-        };
-    }, [editor]);
-
-    /** 저장 버튼 포커스 이동 직전에 마지막 HTML이 부모 state에 반영되도록 */
-    useEffect(() => {
-        if (!editor || editor.isDestroyed) return;
-        const flush = () => {
-            onChange(editor.getHTML());
-        };
-        editor.on("blur", flush);
-        return () => {
-            editor.off("blur", flush);
-        };
-    }, [editor, onChange]);
-
-    const btn = (active: boolean) =>
-        `rounded px-2 py-1 text-xs font-medium border transition-colors ${
-            active
-                ? "bg-amber-100 border-amber-200 text-amber-900"
-                : "bg-white border-stone-200 text-stone-600 hover:bg-stone-50"
-        }`;
-
-    if (!editor) {
-        return (
-            <div className="notice-editor min-h-[120px] rounded-lg border border-stone-200 bg-stone-50 animate-pulse" />
-        );
-    }
-
-    return (
-        <div className="notice-editor rounded-lg border border-stone-200 bg-stone-50 overflow-hidden">
-            {showToolbar && (
-                <div className="flex flex-wrap gap-1 border-b border-stone-200 bg-white px-2 py-1.5">
-                    <button
-                        type="button"
-                        className={btn(editor.isActive("bold"))}
-                        onClick={() =>
-                            editor.chain().focus().toggleBold().run()
-                        }
-                    >
-                        B
-                    </button>
-                    <button
-                        type="button"
-                        className={btn(editor.isActive("italic"))}
-                        onClick={() =>
-                            editor.chain().focus().toggleItalic().run()
-                        }
-                    >
-                        I
-                    </button>
-                    <button
-                        type="button"
-                        className={btn(
-                            editor.isActive("heading", { level: 1 }),
-                        )}
-                        onClick={() =>
-                            editor
-                                .chain()
-                                .focus()
-                                .toggleHeading({ level: 1 })
-                                .run()
-                        }
-                    >
-                        H1
-                    </button>
-                    <button
-                        type="button"
-                        className={btn(
-                            editor.isActive("heading", { level: 2 }),
-                        )}
-                        onClick={() =>
-                            editor
-                                .chain()
-                                .focus()
-                                .toggleHeading({ level: 2 })
-                                .run()
-                        }
-                    >
-                        H2
-                    </button>
-                    <button
-                        type="button"
-                        className={btn(editor.isActive("bulletList"))}
-                        onClick={() =>
-                            editor.chain().focus().toggleBulletList().run()
-                        }
-                    >
-                        • 목록
-                    </button>
-                    <button
-                        type="button"
-                        className={btn(editor.isActive("orderedList"))}
-                        onClick={() =>
-                            editor.chain().focus().toggleOrderedList().run()
-                        }
-                    >
-                        1. 순서목록
-                    </button>
-                </div>
-            )}
-            <EditorContent editor={editor} />
-        </div>
-    );
-}
-
-/** 브리핑 편집 허용 윈도우: 목요일 00:00 ~ 18:00 (KST 가정). */
-function isEditableWindow(now: Date = new Date()): boolean {
-    const day = now.getDay();
-    const hour = now.getHours();
-    if (day === 4 && hour < 18) return true; // 목 00:00~17:59
+/** 브리핑 편집 허용 윈도우: 목요일 00:00 ~ 18:00 (KST). */
+function isEditableWindow(): boolean {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Seoul",
+        weekday: "short",
+        hour: "numeric",
+        hour12: false,
+    }).formatToParts(new Date());
+    const weekday = parts.find((p) => p.type === "weekday")?.value; // "Thu"
+    const hour = Number(parts.find((p) => p.type === "hour")?.value ?? -1);
+    if (weekday === "Thu" && hour >= 0 && hour < 18) return true; // 목 00:00~17:59
     return false;
 }
 
+/** Asia/Seoul 기준 현재 날짜 파츠 반환 */
+function seoulNow() {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Seoul",
+        year: "numeric", month: "numeric", day: "numeric",
+        weekday: "short", hour: "numeric", hour12: false,
+    }).formatToParts(new Date());
+    const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+    const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    return {
+        year: Number(get("year")),
+        month: Number(get("month")) - 1,
+        day: Number(get("day")),
+        dow: dayMap[get("weekday")] ?? 0,
+    };
+}
+
 function getWeekWin(offset: number) {
-    const now = new Date();
+    const { year, month, day, dow } = seoulNow();
     // 목~목 한 주: 주 시작은 목요일, 끝은 다음 목요일(끝 포함).
-    const y = now.getFullYear();
-    const mon = now.getMonth();
-    const dom = now.getDate();
-    const dow = now.getDay();
     const daysFromWeekStart = (dow - 4 + 7) % 7;
-    const thu = new Date(y, mon, dom - daysFromWeekStart + offset * 7);
+    const thu = new Date(year, month, day - daysFromWeekStart + offset * 7);
     thu.setHours(0, 0, 0, 0);
     const nextThu = new Date(
         thu.getFullYear(),
@@ -319,9 +181,8 @@ function getWeekWin(offset: number) {
 }
 
 function getMonthWin(offset: number) {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + offset;
+    const { year, month: mon } = seoulNow();
+    const month = mon + offset;
     const first = new Date(year, month, 1);
     const last = new Date(year, month + 1, 0);
     return {
@@ -867,11 +728,38 @@ export default function ReportPage() {
     }, [loadAssignments]);
 
     useEffect(() => {
+        // 팀 필터 없이 구독하면 다른 팀의 변경에도 리페치가 돈다.
+        if (!teamId) return;
         const channel = supabase
             .channel(`assignments-rt-${channelId}`)
             .on(
                 "postgres_changes",
-                { event: "*", schema: "public", table: "assignments" },
+                {
+                    event: "INSERT",
+                    schema: "public",
+                    table: "assignments",
+                    filter: `team_id=eq.${teamId}`,
+                },
+                () => {
+                    void loadAssignments();
+                },
+            )
+            .on(
+                "postgres_changes",
+                {
+                    event: "UPDATE",
+                    schema: "public",
+                    table: "assignments",
+                    filter: `team_id=eq.${teamId}`,
+                },
+                () => {
+                    void loadAssignments();
+                },
+            )
+            // DELETE 페이로드에는 PK 만 있어 필터를 걸면 이벤트가 오지 않는다.
+            .on(
+                "postgres_changes",
+                { event: "DELETE", schema: "public", table: "assignments" },
                 () => {
                     void loadAssignments();
                 },
@@ -880,29 +768,89 @@ export default function ReportPage() {
         return () => {
             supabase.removeChannel(channel).catch(console.error);
         };
-    }, [loadAssignments, channelId]);
+    }, [loadAssignments, channelId, teamId]);
 
+    const taskSeqRef = useRef(0);
     const loadTasks = useCallback(async () => {
         if (!teamId) return;
+        const seq = ++taskSeqRef.current;
+        // 전 기간 전체를 받으면 완료 업무가 쌓일수록 로드가 선형으로 느려진다.
+        // 보이는 기간과 겹치는 업무 + 미완료 계획 업무만 서버에서 가져온다.
+        // 아래 wTasks/mTasks memo 와 같은 규칙의 상위집합이라 표시 결과는 같다.
+        const from = mode === "weekly" ? wk.from : mn.first;
+        const to = mode === "weekly" ? wk.to : mn.last;
         const { data } = await supabase
             .from("tasks")
             .select("*")
             .eq("team_id", teamId)
+            .or(
+                [
+                    // 겹침: coalesce(start,end) <= to AND coalesce(end,start) >= from
+                    `and(start_date.lte.${to},end_date.gte.${from})`,
+                    `and(start_date.is.null,end_date.lte.${to},end_date.gte.${from})`,
+                    `and(end_date.is.null,start_date.lte.${to},start_date.gte.${from})`,
+                    // 미완료 계획 업무는 기간과 무관하게 항상 보인다 (wTasks 규칙)
+                    "and(is_plan.eq.true,or(status.is.null,status.neq.완료))",
+                ].join(","),
+            )
             .order("created_at", { ascending: false });
-        setTasks(data || []);
-    }, [teamId]);
+        // 주차를 빠르게 넘길 때 늦게 도착한 이전 응답이 최신 상태를 덮지 않게 한다.
+        if (seq === taskSeqRef.current) setTasks(data || []);
+    }, [teamId, mode, wk.from, wk.to, mn.first, mn.last]);
+
+    // 기간 이동마다 리페치하되, 전체 스피너는 팀이 바뀔 때만 띄운다.
+    const loadedTasksTeamRef = useRef<string | null>(null);
+    useEffect(() => {
+        let cancelled = false;
+        const isTeamChange = loadedTasksTeamRef.current !== teamId;
+        if (isTeamChange) setLoading(true);
+        // teamId 가 null 이면 loadTasks 가 즉시 반환하므로 로딩을 해제해야 한다.
+        if (!teamId) {
+            setTasks([]);
+            loadedTasksTeamRef.current = teamId;
+            setLoading(false);
+            return;
+        }
+        void loadTasks().finally(() => {
+            if (cancelled) return;
+            loadedTasksTeamRef.current = teamId;
+            if (isTeamChange) setLoading(false);
+        });
+        return () => { cancelled = true; };
+    }, [loadTasks, teamId]);
 
     useEffect(() => {
-        setLoading(true);
-        void loadTasks().finally(() => setLoading(false));
-    }, [loadTasks]);
-
-    useEffect(() => {
+        if (!teamId) return;
         const channel = supabase
             .channel(`tasks-rt-report-${channelId}`)
             .on(
                 "postgres_changes",
-                { event: "*", schema: "public", table: "tasks" },
+                {
+                    event: "INSERT",
+                    schema: "public",
+                    table: "tasks",
+                    filter: `team_id=eq.${teamId}`,
+                },
+                () => {
+                    void loadTasks();
+                },
+            )
+            .on(
+                "postgres_changes",
+                {
+                    event: "UPDATE",
+                    schema: "public",
+                    table: "tasks",
+                    filter: `team_id=eq.${teamId}`,
+                },
+                () => {
+                    void loadTasks();
+                },
+            )
+            // DELETE 페이로드에는 PK 만 있어 필터를 걸면 이벤트가 오지 않는다.
+            .on(
+                "postgres_changes",
+                { event: "DELETE", schema: "public", table: "tasks" },
                 () => {
                     void loadTasks();
                 },
@@ -911,7 +859,7 @@ export default function ReportPage() {
         return () => {
             supabase.removeChannel(channel).catch(console.error);
         };
-    }, [loadTasks, channelId]);
+    }, [loadTasks, channelId, teamId]);
 
     useEffect(() => {
         setEditing(false);
@@ -960,11 +908,43 @@ export default function ReportPage() {
     }, [mode, wOff, loadBriefingTasks]);
 
     useEffect(() => {
+        if (!teamId) return;
         const channel = supabase
             .channel(`briefings-rt-${channelId}`)
             .on(
                 "postgres_changes",
-                { event: "*", schema: "public", table: "briefings" },
+                {
+                    event: "INSERT",
+                    schema: "public",
+                    table: "briefings",
+                    filter: `team_id=eq.${teamId}`,
+                },
+                () => {
+                    if (savingBriefingRef.current || savingNoticeRef.current || savingChecklistRef.current || savingOkrRef.current) {
+                        return;
+                    }
+                    void loadBriefing();
+                },
+            )
+            .on(
+                "postgres_changes",
+                {
+                    event: "UPDATE",
+                    schema: "public",
+                    table: "briefings",
+                    filter: `team_id=eq.${teamId}`,
+                },
+                () => {
+                    if (savingBriefingRef.current || savingNoticeRef.current || savingChecklistRef.current || savingOkrRef.current) {
+                        return;
+                    }
+                    void loadBriefing();
+                },
+            )
+            // DELETE 페이로드에는 PK 만 있어 필터를 걸면 이벤트가 오지 않는다.
+            .on(
+                "postgres_changes",
+                { event: "DELETE", schema: "public", table: "briefings" },
                 () => {
                     if (savingBriefingRef.current || savingNoticeRef.current || savingChecklistRef.current || savingOkrRef.current) {
                         return;
@@ -976,7 +956,7 @@ export default function ReportPage() {
         return () => {
             supabase.removeChannel(channel).catch(console.error);
         };
-    }, [loadBriefing, channelId]);
+    }, [loadBriefing, channelId, teamId]);
 
     const wTasks = useMemo(
         () =>
@@ -1856,14 +1836,21 @@ export default function ReportPage() {
                                                                             {isDoneTagged(p, t) && (
                                                                                 <span className="inline-block rounded bg-stone-100 px-1.5 py-0.5 text-[11px] font-medium text-stone-500">완료</span>
                                                                             )}
-                                                                            <TiptapSectionEditor
-                                                                                key={`btask-${t.id}-${wOff}-${briefingEditorKey}`}
-                                                                                content={cardInitial}
-                                                                                onChange={(html) => { briefTaskDraftRef.current[t.id] = html; }}
-                                                                                editable={canEdit}
-                                                                                showToolbar={canEdit}
-                                                                                placeholder="업무 내용을 입력하세요..."
-                                                                            />
+                                                                            {canEdit ? (
+                                                                                <TiptapSectionEditor
+                                                                                    key={`btask-${t.id}-${wOff}-${briefingEditorKey}`}
+                                                                                    content={cardInitial}
+                                                                                    onChange={(html) => { briefTaskDraftRef.current[t.id] = html; }}
+                                                                                    editable
+                                                                                    showToolbar
+                                                                                    placeholder="업무 내용을 입력하세요..."
+                                                                                />
+                                                                            ) : (
+                                                                                <div
+                                                                                    className={`notice-editor rounded-lg border border-stone-200 bg-stone-50 px-2 py-2 text-sm ${PROSE_CLASSES}`}
+                                                                                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(cardInitial) }}
+                                                                                />
+                                                                            )}
                                                                             {canEdit && (
                                                                                 <button
                                                                                     type="button"
