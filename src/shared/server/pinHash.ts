@@ -12,10 +12,15 @@ export function hashPin(pin: string): string {
 }
 
 export function verifyPin(pin: string, stored: string): boolean {
-    const [salt, hash] = stored.split(":");
-    if (!salt || !hash) return false;
-    const derived = scryptSync(pin, salt, KEY_LEN, SCRYPT_OPTIONS);
-    const expected = Buffer.from(hash, "hex");
-    if (derived.length !== expected.length) return false;
-    return timingSafeEqual(derived, expected);
+    try {
+        const [salt, hash] = stored.split(":");
+        if (!salt || !hash) return false;
+        const derived = scryptSync(pin, salt, KEY_LEN, SCRYPT_OPTIONS);
+        const expected = Buffer.from(hash, "hex");
+        if (derived.length !== expected.length) return false;
+        return timingSafeEqual(derived, expected);
+    } catch {
+        // 해시 형식 불일치(이전 SHA-256 해시 등) 시 검증 실패로 처리
+        return false;
+    }
 }
