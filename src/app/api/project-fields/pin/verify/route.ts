@@ -5,6 +5,11 @@ import {
 } from "@/infrastructure/supabase/server";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { verifyPin } from "@/shared/server/pinHash";
+import {
+    requestRateLimitKey,
+    consumeSharedRateLimit,
+    rateLimitResponse,
+} from "@/shared/server/rateLimit";
 
 type VerifyBody = {
     teamId?: string;
@@ -27,6 +32,17 @@ export async function POST(req: NextRequest) {
             { message: "teamId and pin are required" },
             { status: 400 },
         );
+    }
+
+    // Rate limit: 5 attempts per 5 minutes per team
+    const rlKey = requestRateLimitKey(req, "pin-verify", teamId);
+    const rl = await consumeSharedRateLimit(rlKey, {
+        limit: 5,
+        windowMs: 5 * 60 * 1000,
+        failClosed: true,
+    });
+    if (!rl.allowed) {
+        return rateLimitResponse(rl.retryAfterSeconds);
     }
 
     const { user, role } = await getServerUserRole(teamId);

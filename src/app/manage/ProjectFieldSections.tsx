@@ -8,6 +8,8 @@ import {
     type FieldDef,
 } from "./useProjectFields";
 
+const isSafeUrl = (url: string) => /^https?:\/\//i.test(url);
+
 const FIELD_TYPE_OPTIONS = [
     { value: "text", label: "텍스트" },
     { value: "url", label: "URL" },
@@ -600,7 +602,11 @@ export function AccessReadCard({ defs, values, onReveal }: AccessReadProps) {
                                     )}
                                 </div>
                             ) : isUrl && val.value ? (
-                                <a href={val.value} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 underline break-all">{val.value}</a>
+                                isSafeUrl(val.value) ? (
+                                    <a href={val.value} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 underline break-all">{val.value}</a>
+                                ) : (
+                                    <span className="text-sm text-stone-700 break-all">{val.value}</span>
+                                )
                             ) : (
                                 <span className="text-sm text-stone-700 break-all">{val.value}</span>
                             )}
@@ -632,7 +638,11 @@ export function AccessReadCard({ defs, values, onReveal }: AccessReadProps) {
                                         )}
                                     </div>
                                 ) : def.field_type === "url" && val.value ? (
-                                    <a href={val.value} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 underline break-all">{val.value}</a>
+                                    isSafeUrl(val.value) ? (
+                                        <a href={val.value} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 underline break-all">{val.value}</a>
+                                    ) : (
+                                        <span className="text-sm text-stone-700 break-all">{val.value}</span>
+                                    )
                                 ) : (
                                     <span className="text-sm text-stone-700 break-all whitespace-pre-wrap">{val.value}</span>
                                 )}

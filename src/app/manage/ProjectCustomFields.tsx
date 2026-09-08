@@ -3,6 +3,8 @@
 import { useCallback, useState } from "react";
 import type { FieldDef, FieldValue } from "./useProjectFields";
 
+const isSafeUrl = (url: string) => /^https?:\/\//i.test(url);
+
 type Props = {
     projectId: number;
     defs: FieldDef[];
@@ -192,14 +194,20 @@ export default function ProjectCustomFields({
                                                 )}
                                             </div>
                                         ) : def.field_type === "url" && val.value ? (
-                                            <a
-                                                href={val.value}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-xs text-blue-500 underline truncate block"
-                                            >
-                                                {val.value}
-                                            </a>
+                                            isSafeUrl(val.value) ? (
+                                                <a
+                                                    href={val.value}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-xs text-blue-500 underline truncate block"
+                                                >
+                                                    {val.value}
+                                                </a>
+                                            ) : (
+                                                <span className="text-xs text-stone-600 truncate block">
+                                                    {val.value}
+                                                </span>
+                                            )
                                         ) : (
                                             <span className="text-xs text-stone-600 leading-relaxed whitespace-pre-wrap">
                                                 {val.value}

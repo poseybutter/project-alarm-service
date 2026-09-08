@@ -5,6 +5,7 @@ import {
 } from "@/infrastructure/supabase/server";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { encryptField } from "@/shared/server/fieldEncryption";
+import { verifyPin } from "@/shared/server/pinHash";
 
 type FieldEntry = {
     field_def_id: number;
@@ -35,6 +36,31 @@ export async function GET(req: NextRequest) {
 
     try {
         const svc = createServiceSupabaseClient();
+
+        // PIN 검증: 팀에 PIN이 설정되어 있으면 pin 쿼리 파라미터 필수
+        const { data: team, error: teamError } = await svc
+            .from("teams")
+            .select("settings_pin_hash")
+            .eq("id", teamId)
+            .maybeSingle();
+        if (teamError) throw teamError;
+
+        if (team?.settings_pin_hash) {
+            const pin = req.nextUrl.searchParams.get("pin")?.trim();
+            if (!pin) {
+                return NextResponse.json(
+                    { message: "PIN is required" },
+                    { status: 403 },
+                );
+            }
+            if (!verifyPin(pin, team.settings_pin_hash)) {
+                return NextResponse.json(
+                    { message: "Invalid PIN" },
+                    { status: 403 },
+                );
+            }
+        }
+
         let query = svc
             .from("project_field_values")
             .select("id, project_id, field_def_id, value, encrypted_value, updated_at")
@@ -101,12 +127,13 @@ export async function PUT(req: NextRequest) {
         const svc = createServiceSupabaseClient();
         const now = new Date().toISOString();
 
-        // 1. 필드 정의 조회 (secret 여부 판별용)
+        // 1. 필드 정의 조회 (secret 여부 판별용 + 프로젝트 소유권 검증)
         const defIds = fields.map((f) => f.field_def_id);
         const { data: defs, error: defError } = await svc
             .from("project_field_definitions")
             .select("id, field_type, label")
             .eq("team_id", teamId)
+            .eq("project_id", projectId)
             .in("id", defIds);
         if (defError) throw defError;
 

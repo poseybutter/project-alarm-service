@@ -1,13 +1,14 @@
-import { createHash } from "crypto";
-
-const SALT = process.env.FIELD_ENCRYPTION_KEY?.slice(0, 16) ?? "default_pin_salt";
+import { scryptSync, randomBytes, timingSafeEqual } from "crypto";
 
 export function hashPin(pin: string): string {
-    return createHash("sha256")
-        .update(`${SALT}:${pin}`)
-        .digest("hex");
+    const salt = randomBytes(16).toString("hex");
+    const hash = scryptSync(pin, salt, 64).toString("hex");
+    return `${salt}:${hash}`;
 }
 
-export function verifyPin(pin: string, hash: string): boolean {
-    return hashPin(pin) === hash;
+export function verifyPin(pin: string, stored: string): boolean {
+    const [salt, hash] = stored.split(":");
+    if (!salt || !hash) return false;
+    const derived = scryptSync(pin, salt, 64);
+    return timingSafeEqual(derived, Buffer.from(hash, "hex"));
 }
