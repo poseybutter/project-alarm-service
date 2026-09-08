@@ -31,6 +31,16 @@ import {
     badgeSelectStyles,
 } from "@/shared/styles/reactSelectStyles";
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
+import { useProjectFields, isSystemField, type FieldDef } from "./useProjectFields";
+import {
+    AccessSection,
+    DevSection,
+    ExtraSection,
+    AccessReadCard,
+    DevReadCard,
+    filterExtraFields,
+} from "./ProjectFieldSections";
+import FieldHistoryPanel from "./FieldHistoryPanel";
 
 const MAINTENANCE_STATUS_URL =
     process.env.NEXT_PUBLIC_MAINTENANCE_STATUS_URL?.trim() ?? "";
@@ -146,6 +156,312 @@ function AccInspectionBadgeSelect({
     );
 }
 
+/** 고정 필드 정의 — 커스텀 필드와 통합하여 순서 변경 가능 */
+const FIXED_FIELDS = [
+    { key: "pm", label: "PM", fieldType: "text" as const },
+    { key: "developer", label: "개발자", fieldType: "text" as const },
+    { key: "designer", label: "디자이너", fieldType: "text" as const },
+    { key: "frequency", label: "빈도", fieldType: "text" as const },
+    { key: "prev_member", label: "이전 담당자", fieldType: "text" as const },
+    { key: "note", label: "비고", fieldType: "textarea" as const },
+] as const;
+
+
+/** 칩 필터 — 클릭 시 드롭다운 옵션 표시 (29cm 스타일) */
+function FilterChip({
+    label,
+    active,
+    options,
+    onSelect,
+}: {
+    label: string;
+    active: boolean;
+    options: { value: string; label: string }[];
+    onSelect: (value: string) => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!open) return;
+        function handle(e: MouseEvent) {
+            if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+        }
+        document.addEventListener("mousedown", handle);
+        return () => document.removeEventListener("mousedown", handle);
+    }, [open]);
+
+    return (
+        <div className="relative" ref={ref}>
+            <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    active ? "bg-stone-800 text-white" : "bg-stone-100 text-stone-500 hover:bg-stone-200"
+                }`}
+            >
+                {label} <i className={`ri-arrow-${open ? "up" : "down"}-s-line text-[10px] ml-0.5`} aria-hidden />
+            </button>
+            {open && (
+                <div className="absolute left-0 top-full z-30 mt-1 min-w-[7rem] overflow-hidden rounded-lg border border-stone-200 bg-white py-1 shadow-lg">
+                    {options.map((opt) => (
+                        <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => { onSelect(opt.value); setOpen(false); }}
+                            className={`block w-full px-3 py-1.5 text-left text-xs transition-colors ${
+                                label === opt.label ? "bg-amber-50 font-bold text-amber-700" : "text-stone-600 hover:bg-stone-50"
+                            }`}
+                        >
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+/** PIN 설정 섹션 — 수정 모달 세팅 정보 탭 하단 */
+function PinSettingSection({
+    hasPin,
+    onSetPin,
+    onRemovePin,
+}: {
+    hasPin: boolean;
+    onSetPin: (pin: string) => Promise<void>;
+    onRemovePin: () => Promise<void>;
+}) {
+    const [mode, setMode] = useState<"idle" | "set" | "remove">("idle");
+    const [pin, setPin] = useState("");
+    const [saving, setSaving] = useState(false);
+
+    return (
+        <div className="mb-3 rounded-lg border border-stone-200 bg-white px-3 py-2.5">
+            {mode === "idle" && (
+                <div className="flex items-center justify-between">
+                    <p className="text-xs text-stone-500 flex items-center gap-1">
+                        {hasPin ? (
+                            <><i className="ri-lock-line text-amber-500" aria-hidden />세팅 PIN 설정됨</>
+                        ) : (
+                            <><i className="ri-lock-unlock-line text-stone-400" aria-hidden />세팅 PIN 미설정</>
+                        )}
+                    </p>
+                    <div className="flex gap-2">
+                        <button type="button" onClick={() => { setMode("set"); setPin(""); }} className="text-xs font-medium text-amber-600 hover:text-amber-700">
+                            {hasPin ? "변경" : "설정"}
+                        </button>
+                        {hasPin && (
+                            <button type="button" onClick={() => setMode("remove")} className="text-xs font-medium text-red-400 hover:text-red-500">해제</button>
+                        )}
+                    </div>
+                </div>
+            )}
+            {mode === "set" && (
+                <div className="space-y-2">
+                    <input
+                        type="password"
+                        inputMode="numeric"
+                        maxLength={6}
+                        autoFocus
+                        placeholder="4~6자리 숫자 입력"
+                        value={pin}
+                        onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+                        className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm text-center tracking-[0.3em] font-mono outline-none focus:border-amber-400"
+                    />
+                    <div className="flex gap-2">
+                        <button type="button" disabled={saving || pin.length < 4} onClick={async () => { setSaving(true); try { await onSetPin(pin); setMode("idle"); } finally { setSaving(false); } }} className="flex-1 bg-amber-500 text-white text-xs font-medium py-1.5 rounded-lg disabled:opacity-50">{saving ? "저장 중..." : "저장"}</button>
+                        <button type="button" onClick={() => setMode("idle")} className="flex-1 border border-stone-200 text-xs text-stone-500 py-1.5 rounded-lg">취소</button>
+                    </div>
+                </div>
+            )}
+            {mode === "remove" && (
+                <div className="space-y-2">
+                    <p className="text-xs text-red-500">PIN을 해제하면 누구나 세팅 정보를 볼 수 있습니다.</p>
+                    <div className="flex gap-2">
+                            <button type="button" disabled={saving} onClick={async () => { setSaving(true); try { await onRemovePin(); setMode("idle"); } finally { setSaving(false); } }} className="flex-1 bg-red-500 text-white text-xs font-medium py-2 rounded-lg disabled:opacity-50">{saving ? "해제 중..." : "해제"}</button>
+                            <button type="button" onClick={() => setMode("idle")} className="flex-1 border border-stone-200 text-xs text-stone-500 py-2 rounded-lg">취소</button>
+                        </div>
+                    </div>
+                )}
+        </div>
+    );
+}
+
+/** 프로젝트 상세 — 기본 정보 / 세팅 정보 탭 (PIN 보호) */
+function ProjectDetailTabs({
+    project: p,
+    projMembers,
+    pf,
+    isGuest,
+    onEdit,
+    onDelete,
+    onArchive,
+    onHistory,
+    hasPin,
+    pinVerified,
+    onPinRequired,
+}: {
+    project: import("@/shared/types").Project;
+    projMembers: string[];
+    pf: ReturnType<typeof useProjectFields>;
+    isGuest: boolean;
+    onEdit: () => void;
+    onDelete: () => void;
+    onArchive: () => void;
+    onHistory: () => void;
+    hasPin: boolean;
+    pinVerified: boolean;
+    onPinRequired: (callback: () => void) => void;
+}) {
+    const [tab, setTab] = useState<"basic" | "setting">("basic");
+    const [defs, setDefs] = useState<FieldDef[]>([]);
+    const [values, setValues] = useState<import("./useProjectFields").FieldValue[]>([]);
+    const [loaded, setLoaded] = useState(false);
+
+    const needsPin = hasPin && !pinVerified;
+
+    function handleSettingTab() {
+        if (needsPin) {
+            onPinRequired(() => setTab("setting"));
+        } else {
+            setTab("setting");
+        }
+    }
+
+    function handleHistory() {
+        if (needsPin) {
+            onPinRequired(onHistory);
+        } else {
+            onHistory();
+        }
+    }
+
+    useEffect(() => {
+        let cancelled = false;
+        void (async () => {
+            const [d, v] = await Promise.all([pf.loadDefs(p.id), pf.loadValues(p.id)]);
+            if (!cancelled) { setDefs(d); setValues(v); setLoaded(true); }
+        })();
+        return () => { cancelled = true; };
+    }, [p.id, pf]);
+
+    const valueMap = new Map(values.map((v) => [v.field_def_id, { value: v.value, has_secret: v.has_secret }]));
+
+    const fixedLabelMap: Record<string, string> = {
+        pm: "PM", developer: "개발자", designer: "디자이너",
+        frequency: "빈도", prev_member: "이전담당", note: "비고",
+    };
+    const fixedValues: Record<string, string | null> = {
+        pm: p.pm, developer: p.developer, designer: p.designer,
+        frequency: p.frequency, prev_member: p.prev_member, note: p.note,
+    };
+    const order = p.field_order ?? Object.keys(fixedLabelMap);
+    const extraDefs = filterExtraFields(defs);
+
+    return (
+        <div className="px-4 pb-4 pt-1">
+            {/* 탭 + 이력 */}
+            <div className="flex items-center gap-2 mb-3">
+                <div className="flex flex-1 rounded-lg bg-stone-100 p-0.5">
+                    <button
+                        type="button"
+                        onClick={() => setTab("basic")}
+                        className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${
+                            tab === "basic" ? "bg-white text-stone-800 shadow-sm" : "text-stone-400 hover:text-stone-600"
+                        }`}
+                    >
+                        기본 정보
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleSettingTab}
+                        className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${
+                            tab === "setting" ? "bg-white text-stone-800 shadow-sm" : "text-stone-400 hover:text-stone-600"
+                        }`}
+                    >
+                        세팅 정보{hasPin && <i className="ri-lock-line text-[10px] ml-1" aria-hidden />}
+                    </button>
+                </div>
+                <button
+                    type="button"
+                    onClick={handleHistory}
+                    className="shrink-0 text-stone-300 hover:text-amber-500 transition-colors"
+                    aria-label="업데이트 이력"
+                    title="업데이트 이력"
+                >
+                    <i className="ri-time-line text-lg" aria-hidden />
+                </button>
+            </div>
+
+            {/* 기본 정보 탭 */}
+            {tab === "basic" && (
+                <div className="space-y-2">
+                    {projMembers.length > 0 && (
+                        <div className="flex items-center gap-3">
+                            <span className="text-sm text-stone-500 w-20 shrink-0 font-medium">담당자</span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                                {projMembers.map((m) => (
+                                    <div key={m} className="flex items-center gap-1">
+                                        <Avatar name={m} size={18} />
+                                        <span className="text-sm text-stone-700">{m}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    {order.map((key) => {
+                        if (fixedLabelMap[key]) {
+                            const val = fixedValues[key];
+                            if (!val) return null;
+                            return (
+                                <div key={key} className="flex items-start gap-3">
+                                    <span className="text-sm text-stone-500 w-20 shrink-0 font-medium">{fixedLabelMap[key]}</span>
+                                    <span className="text-sm text-stone-700 leading-relaxed whitespace-pre-wrap">{val}</span>
+                                </div>
+                            );
+                        }
+                        const def = extraDefs.find((d) => d.name === key);
+                        if (!def) return null;
+                        const val = valueMap.get(def.id);
+                        if (!val?.value && !val?.has_secret) return null;
+                        return (
+                            <div key={key} className="flex items-start gap-3">
+                                <span className="text-sm text-stone-500 w-20 shrink-0 font-medium">{def.label}</span>
+                                <span className="text-sm text-stone-700 leading-relaxed whitespace-pre-wrap">{val.value}</span>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* 세팅 정보 탭 */}
+            {tab === "setting" && loaded && (
+                <div className="space-y-3">
+                    <AccessReadCard
+                        defs={defs}
+                        values={valueMap}
+                        onReveal={(defId) => pf.revealSecret(p.id, defId)}
+                    />
+                    <DevReadCard defs={defs} values={valueMap} />
+                </div>
+            )}
+            {tab === "setting" && !loaded && (
+                <p className="text-sm text-stone-400 text-center py-4">불러오는 중...</p>
+            )}
+
+            {/* 하단 버튼 */}
+            {!isGuest && (
+                <div className="flex items-center gap-2 mt-3 pt-2 border-t border-stone-100">
+                    <button type="button" onClick={onEdit} className="flex-1 rounded-lg bg-amber-500 py-2 text-xs font-medium text-white hover:bg-amber-600 transition-colors">수정</button>
+                    <button type="button" onClick={onDelete} className="flex-1 rounded-lg border border-red-300 py-2 text-xs font-medium text-red-500 hover:bg-red-50 transition-colors">삭제</button>
+                    <button type="button" onClick={onArchive} className="flex-1 rounded-lg bg-stone-700 py-2 text-xs font-medium text-white hover:bg-stone-800 transition-colors">{p.is_archived ? "복원" : "보관"}</button>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function ManagePage() {
     const { member, members, memberOptions, role, teamId } = useAuth();
     const isGuest = member === "GUEST" || role === "guest";
@@ -184,6 +500,8 @@ export default function ManagePage() {
     const [filterProjLang, setFilterProjLang] = useState("");
     const [sortProj, setSortProj] = useState<"가나다" | "담당자">("가나다");
     const [showArchived, setShowArchived] = useState(false);
+    const [showFilters, setShowFilters] = useState(false);
+    const [showMoreMenu, setShowMoreMenu] = useState(false);
     const [searchAcc, setSearchAcc] = useState("");
     const [filterAccMember, setFilterAccMember] = useState("");
     const [filterAccStatus, setFilterAccStatus] = useState("");
@@ -192,6 +510,7 @@ export default function ManagePage() {
     >("날짜순");
     const [showAccStartPicker, setShowAccStartPicker] = useState(false);
     const [showAccEndPicker, setShowAccEndPicker] = useState(false);
+    const [historyProjectId, setHistoryProjectId] = useState<number | null>(null);
     const [projForm, setProjForm] = useState({ ...EMPTY_PROJ_FORM });
     const [accForm, setAccForm] = useState({
         proj: "",
@@ -212,6 +531,28 @@ export default function ManagePage() {
         accMember: "",
         is_new: false,
     } as const;
+
+    // 커스텀 필드 훅
+    const pf = useProjectFields(teamId);
+    // 수정 모달용 커스텀 필드 state
+    const [modalDefs, setModalDefs] = useState<FieldDef[]>([]);
+    const [modalValues, setModalValues] = useState<Record<string, string>>({});
+    const [extraFields, setExtraFields] = useState<{ key: string; label: string; fieldType: string; isFixed: boolean; defId?: number }[]>([]);
+    const [cfSaving, setCfSaving] = useState(false);
+    const [modalTab, setModalTab] = useState<"basic" | "setting">("basic");
+    const [savedSecrets, setSavedSecrets] = useState<Set<string>>(new Set());
+    // PIN 관련 state (팀 레벨)
+    const [teamHasPin, setTeamHasPin] = useState(false);
+    const [pinVerifiedAt, setPinVerifiedAt] = useState<number>(0);
+    const PIN_EXPIRY_MS = 5 * 60 * 1000; // 5분
+    const pinVerified = pinVerifiedAt > 0 && Date.now() - pinVerifiedAt < PIN_EXPIRY_MS;
+    const [pinModal, setPinModal] = useState<{ callback: () => void } | null>(null);
+    const [pinInput, setPinInput] = useState("");
+    const [pinError, setPinError] = useState(false);
+    const [pinVerifying, setPinVerifying] = useState(false);
+    const historyProject = historyProjectId
+        ? projects.find((p) => p.id === historyProjectId)
+        : null;
 
     // loadData를 useEffect보다 먼저 선언 (react-hooks/immutability)
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 데이터 로딩 effect
@@ -289,7 +630,10 @@ export default function ManagePage() {
     }, [teamId]);
 
     useEffect(() => {
-        if (member && teamId) void loadData();
+        if (member && teamId) {
+            void loadData();
+            void pf.checkHasPin().then(setTeamHasPin);
+        }
     }, [member, teamId, loadData]);
 
     useEffect(() => {
@@ -380,10 +724,15 @@ export default function ManagePage() {
     function openProjModalForAdd() {
         setEditProj(null);
         setProjForm({ ...EMPTY_PROJ_FORM });
+        setModalDefs([]);
+        setModalValues({});
+        setSavedSecrets(new Set());
+        setExtraFields(FIXED_FIELDS.map((f) => ({ key: f.key, label: f.label, fieldType: f.fieldType, isFixed: true })));
+        setModalTab("basic");
         setShowProjModal(true);
     }
 
-    function openProjModalForEdit(p: Project) {
+    async function openProjModalForEdit(p: Project) {
         setEditProj(p);
         setProjForm({
             name: p.name,
@@ -402,6 +751,52 @@ export default function ManagePage() {
             frequency: p.frequency ?? "",
             note: p.note ?? "",
         });
+        // 기본 필드 ensure + 로드
+        const [defs, vals] = await Promise.all([
+            pf.ensureDefaultFields(p.id),
+            pf.loadValues(p.id),
+        ]);
+        setModalDefs(defs);
+        const valMap = new Map(vals.map((v) => [v.field_def_id, v]));
+
+        // 시스템 필드 값 (접속 정보 + 개발 환경) → def name 기반
+        // 기타 필드 값 → 고정(project 컬럼) + 커스텀
+        const mv: Record<string, string> = {
+            pm: p.pm ?? "",
+            developer: p.developer ?? "",
+            designer: p.designer ?? "",
+            frequency: p.frequency ?? "",
+            prev_member: p.prev_member ?? "",
+            note: p.note ?? "",
+        };
+        const secrets = new Set<string>();
+        for (const def of defs) {
+            const fv = valMap.get(def.id);
+            mv[def.name] = def.field_type === "secret" ? "" : (fv?.value ?? "");
+            if (def.field_type === "secret" && fv?.has_secret) secrets.add(def.name);
+        }
+        setModalValues(mv);
+        setSavedSecrets(secrets);
+
+        // 기타 섹션: 고정 필드 + 비시스템 커스텀 필드
+        const fixedItems = FIXED_FIELDS.map((f) => ({
+            key: f.key, label: f.label, fieldType: f.fieldType, isFixed: true,
+        }));
+        const customExtras = filterExtraFields(defs).map((d) => ({
+            key: d.name, label: d.label, fieldType: d.field_type, isFixed: false, defId: d.id,
+        }));
+        // field_order 반영
+        const savedOrder = p.field_order ?? FIXED_FIELDS.map((f) => f.key);
+        const allExtras = [...fixedItems, ...customExtras];
+        const extraMap = new Map(allExtras.map((f) => [f.key, f]));
+        const ordered: typeof allExtras = [];
+        for (const key of savedOrder) {
+            const item = extraMap.get(key);
+            if (item) { ordered.push(item); extraMap.delete(key); }
+        }
+        for (const item of extraMap.values()) ordered.push(item);
+        setExtraFields(ordered);
+        setModalTab("basic");
         setShowProjModal(true);
     }
 
@@ -440,14 +835,16 @@ export default function ManagePage() {
             members: projForm.members,
             member: projForm.members[0] || null,
             language: langStr,
-            pm: projForm.pm || null,
-            developer: projForm.developer || null,
-            designer: projForm.designer || null,
-            frequency: projForm.frequency || null,
-            prev_member: projForm.prev_member || null,
-            note: projForm.note || null,
+            pm: modalValues.pm || null,
+            developer: modalValues.developer || null,
+            designer: modalValues.designer || null,
+            frequency: modalValues.frequency || null,
+            prev_member: modalValues.prev_member || null,
+            note: modalValues.note || null,
+            field_order: extraFields.map((f) => f.key),
         };
 
+        let projectId: number | null = null;
         if (editProj) {
             const { error } = await supabase
                 .from("projects")
@@ -457,12 +854,62 @@ export default function ManagePage() {
                 alert("저장 실패: " + error.message);
                 return;
             }
+            projectId = editProj.id;
         } else {
             if (!teamId) return;
-            const { error } = await supabase.from("projects").insert([{ ...payload, team_id: teamId }]);
+            const { data: inserted, error } = await supabase.from("projects").insert([{ ...payload, team_id: teamId }]).select("id").single();
             if (error) {
                 alert("추가 실패: " + error.message);
                 return;
+            }
+            projectId = inserted?.id ?? null;
+        }
+        // 고정 필드 변경 이력 기록
+        if (editProj && teamId) {
+            const fixedFieldLabels: Record<string, string> = {
+                name: "프로젝트명", client: "고객사", pm: "PM",
+                developer: "개발자", designer: "디자이너",
+                frequency: "빈도", prev_member: "이전 담당자", note: "비고",
+            };
+            const oldVals: Record<string, string | null> = {
+                name: editProj.name, client: editProj.client,
+                pm: editProj.pm, developer: editProj.developer,
+                designer: editProj.designer, frequency: editProj.frequency,
+                prev_member: editProj.prev_member, note: editProj.note,
+            };
+            const newVals: Record<string, string | null> = {
+                name: payload.name, client: payload.client,
+                pm: payload.pm, developer: payload.developer,
+                designer: payload.designer, frequency: payload.frequency,
+                prev_member: payload.prev_member, note: payload.note,
+            };
+            const entries = Object.keys(fixedFieldLabels)
+                .filter((k) => (oldVals[k] ?? "") !== (newVals[k] ?? ""))
+                .map((k) => ({
+                    field_label: fixedFieldLabels[k],
+                    old_value: oldVals[k] || null,
+                    new_value: newVals[k] || null,
+                    action: oldVals[k] ? "update" : "create",
+                }));
+            if (entries.length > 0) {
+                fetch("/api/project-fields/history", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ teamId, projectId, entries }),
+                }).catch(() => {});
+            }
+        }
+        // 커스텀 필드 값 저장 (시스템 필드 + 기타 커스텀, 변경 이력은 values API에서 자동 기록)
+        if (projectId && modalDefs.length > 0) {
+            const fields = modalDefs
+                .map((def) => ({ field_def_id: def.id, value: modalValues[def.name]?.trim() || null }))
+                .filter((f) => {
+                    const def = modalDefs.find((d) => d.id === f.field_def_id);
+                    if (def?.field_type === "secret" && !f.value) return false;
+                    return true;
+                });
+            if (fields.length > 0) {
+                await pf.saveValues(projectId, fields).catch(() => {});
             }
         }
         closeProjModal();
@@ -863,18 +1310,6 @@ export default function ManagePage() {
                         </button>
                     </div>
 
-                    {teamId === "ud2" && (
-                        <a
-                            href="https://docs.google.com/spreadsheets/d/1ACScLXCcap3Vvz9eH7sXX0yOcZKcV8blH53h6C63ObE/edit?gid=1191028141#gid=1191028141"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="mb-4 flex items-center justify-between rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-xs font-medium text-stone-500 transition-colors hover:bg-stone-50 hover:border-amber-300"
-                        >
-                            퍼블팀 웹접근성 및 유지보수 현황 엑셀 바로가기
-                            <i className="ri-external-link-line text-amber-500" aria-hidden />
-                        </a>
-                    )}
-
                     {loading ? (
                         <PageSpinner />
                     ) : loadError ? (
@@ -890,162 +1325,87 @@ export default function ManagePage() {
                         </div>
                     ) : manageTab === "project" ? (
                         <div>
-                            <div className="flex flex-wrap gap-2 mb-2">
-                                <div className="relative min-w-0 flex-1 text-xs">
-                                    <Select
-                                        aria-label="프로젝트명 검색"
-                                        options={projNameOptions}
-                                        value={
-                                            searchProj
-                                                ? {
-                                                      value: searchProj,
-                                                      label: searchProj,
-                                                  }
-                                                : null
-                                        }
-                                        onChange={(opt) =>
-                                            setSearchProj(opt?.value ?? "")
-                                        }
-                                        placeholder="프로젝트 선택"
-                                        isClearable
-                                        isSearchable
-                                        styles={taskFilterProjectSelectStyles}
-                                        menuPortalTarget={
-                                            typeof document !== "undefined"
-                                                ? document.body
-                                                : null
-                                        }
-                                        noOptionsMessage={() =>
-                                            "검색 결과가 없어요"
-                                        }
-                                    />
-                                </div>
-                                <div className="min-w-0 shrink max-w-[38%] sm:max-w-none">
-                                    <Select
-                                        aria-label="담당자 필터"
-                                        options={members.map((m) => ({
-                                            value: m,
-                                            label: m,
-                                        }))}
-                                        value={
-                                            filterProjMember
-                                                ? {
-                                                      value: filterProjMember,
-                                                      label: filterProjMember,
-                                                  }
-                                                : null
-                                        }
-                                        onChange={(opt) =>
-                                            setFilterProjMember(
-                                                opt?.value ?? "",
-                                            )
-                                        }
-                                        placeholder="전체 담당자"
-                                        isClearable
-                                        isSearchable={false}
-                                        styles={taskFilterProjectSelectStyles}
-                                        menuPortalTarget={
-                                            typeof document !== "undefined"
-                                                ? document.body
-                                                : null
-                                        }
-                                    />
-                                </div>
-                                <div className="min-w-0 shrink max-w-[38%] sm:max-w-none">
-                                    <Select
-                                        aria-label="언어 필터"
-                                        options={[
-                                            { value: "JSP", label: "JSP" },
-                                            { value: "PHP", label: "PHP" },
-                                            { value: "기타", label: "기타" },
-                                        ]}
-                                        value={
-                                            filterProjLang
-                                                ? {
-                                                      value: filterProjLang,
-                                                      label: filterProjLang,
-                                                  }
-                                                : null
-                                        }
-                                        onChange={(opt) =>
-                                            setFilterProjLang(opt?.value ?? "")
-                                        }
-                                        placeholder="전체 언어"
-                                        isClearable
-                                        isSearchable={false}
-                                        styles={taskFilterProjectSelectStyles}
-                                        menuPortalTarget={
-                                            typeof document !== "undefined"
-                                                ? document.body
-                                                : null
-                                        }
-                                    />
-                                </div>
+                            {/* 검색 */}
+                            <div className="relative text-xs mb-2">
+                                <Select
+                                    aria-label="프로젝트명 검색"
+                                    options={projNameOptions}
+                                    value={searchProj ? { value: searchProj, label: searchProj } : null}
+                                    onChange={(opt) => setSearchProj(opt?.value ?? "")}
+                                    placeholder="프로젝트 검색"
+                                    isClearable
+                                    isSearchable
+                                    styles={taskFilterProjectSelectStyles}
+                                    menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+                                    noOptionsMessage={() => "검색 결과가 없어요"}
+                                />
                             </div>
-                            <div className="flex items-center justify-between gap-2 mb-3">
-                                <span className="text-xs text-stone-400 shrink-0">
-                                    총 {filteredProjects.length}개
-                                </span>
-                                <div className="flex items-center gap-2 shrink-0">
-                                    {MAINTENANCE_STATUS_URL && (
-                                        <a
-                                            href={MAINTENANCE_STATUS_URL}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="inline-flex items-center gap-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs font-medium text-stone-600 transition-colors hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
-                                        >
-                                            <span className="hidden sm:inline">
-                                                통합 유지보수 현황
-                                            </span>
-                                            <span className="sm:hidden">유지보수 현황</span>
-                                            <span aria-hidden="true">↗</span>
-                                        </a>
-                                    )}
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            setShowArchived((v) => !v)
-                                        }
-                                        className={`text-xs px-2.5 py-1.5 rounded-lg border font-medium transition-all
-    ${showArchived ? "bg-stone-800 text-white border-stone-800" : "bg-white text-stone-500 border-stone-200"}`}
-                                    >
-                                        {showArchived
-                                            ? "보관함 숨기기"
-                                            : `보관함 (${projects.filter((p) => p.is_archived).length})`}
-                                    </button>
-                                    <div className="min-w-[7rem]">
-                                        <Select
-                                            aria-label="정렬"
-                                            options={[
-                                                { value: "가나다", label: "가나다순" },
-                                                { value: "담당자", label: "담당자순" },
-                                            ]}
-                                            value={{
-                                                value: sortProj,
-                                                label:
-                                                    sortProj === "가나다"
-                                                        ? "가나다순"
-                                                        : "담당자순",
-                                            }}
-                                            onChange={(opt) => {
-                                                if (!opt) return;
-                                                setSortProj(
-                                                    opt.value as
-                                                        | "가나다"
-                                                        | "담당자",
-                                                );
-                                            }}
-                                            isSearchable={false}
-                                            isClearable={false}
-                                            styles={taskFilterProjectSelectStyles}
-                                            menuPortalTarget={
-                                                typeof document !== "undefined"
-                                                    ? document.body
-                                                    : null
-                                            }
-                                        />
+                            {/* 칩 필터 */}
+                            <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+                                <FilterChip
+                                    label={sortProj === "가나다" ? "가나다순" : "담당자순"}
+                                    active
+                                    options={[
+                                        { value: "가나다", label: "가나다순" },
+                                        { value: "담당자", label: "담당자순" },
+                                    ]}
+                                    onSelect={(v) => setSortProj(v as "가나다" | "담당자")}
+                                />
+                                <FilterChip
+                                    label={filterProjLang || "언어"}
+                                    active={Boolean(filterProjLang)}
+                                    options={[
+                                        { value: "", label: "전체" },
+                                        { value: "JSP", label: "JSP" },
+                                        { value: "PHP", label: "PHP" },
+                                        { value: "기타", label: "기타" },
+                                    ]}
+                                    onSelect={(v) => setFilterProjLang(v)}
+                                />
+                                <FilterChip
+                                    label={filterProjMember || "담당자"}
+                                    active={Boolean(filterProjMember)}
+                                    options={[
+                                        { value: "", label: "전체" },
+                                        ...members.map((m) => ({ value: m, label: m })),
+                                    ]}
+                                    onSelect={(v) => setFilterProjMember(v)}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowArchived((v) => !v)}
+                                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                                        showArchived ? "bg-stone-800 text-white" : "bg-stone-100 text-stone-500 hover:bg-stone-200"
+                                    }`}
+                                >
+                                    보관함{!showArchived && ` ${projects.filter((p) => p.is_archived).length}`}
+                                </button>
+                                <span className="text-xs text-stone-400 ml-auto">{filteredProjects.length}개</span>
+                                {/* 더보기 */}
+                                {(MAINTENANCE_STATUS_URL || teamId === "ud2") && (
+                                    <div className="relative">
+                                        <button type="button" onClick={() => setShowMoreMenu((v) => !v)} className="rounded-full bg-stone-100 p-1.5 text-stone-400 hover:bg-stone-200 transition-colors" aria-label="더보기">
+                                            <i className="ri-more-2-fill text-xs" aria-hidden />
+                                        </button>
+                                        {showMoreMenu && (
+                                            <>
+                                                <div className="fixed inset-0 z-10" onClick={() => setShowMoreMenu(false)} />
+                                                <div className="absolute right-0 top-full mt-1 z-20 w-48 rounded-lg border border-stone-200 bg-white shadow-lg py-1">
+                                                    {MAINTENANCE_STATUS_URL && (
+                                                        <a href={MAINTENANCE_STATUS_URL} target="_blank" rel="noopener noreferrer" onClick={() => setShowMoreMenu(false)} className="flex items-center gap-2 px-3 py-2 text-xs text-stone-600 hover:bg-stone-50">
+                                                            <i className="ri-bar-chart-line" aria-hidden />유지보수 현황 <i className="ri-external-link-line text-stone-400 ml-auto" aria-hidden />
+                                                        </a>
+                                                    )}
+                                                    {teamId === "ud2" && (
+                                                        <a href="https://docs.google.com/spreadsheets/d/1ACScLXCcap3Vvz9eH7sXX0yOcZKcV8blH53h6C63ObE/edit?gid=1191028141#gid=1191028141" target="_blank" rel="noopener noreferrer" onClick={() => setShowMoreMenu(false)} className="flex items-center gap-2 px-3 py-2 text-xs text-stone-600 hover:bg-stone-50">
+                                                            <i className="ri-file-excel-line" aria-hidden />퍼블팀 통합 유지보수 엑셀 <i className="ri-external-link-line text-stone-400 ml-auto" aria-hidden />
+                                                        </a>
+                                                    )}
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
-                                </div>
+                                )}
                             </div>
                             {projects.length === 0 ? (
                                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
@@ -1138,108 +1498,19 @@ export default function ManagePage() {
                                                 </div>
                                             </div>
                                             {isOpen && (
-                                                <div className="space-y-1.5 px-4 pb-4 pt-1">
-                                                    {projMembers.length > 0 && (
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-xs text-stone-400 w-16 shrink-0">
-                                                                담당자
-                                                            </span>
-                                                            <div className="flex items-center gap-1.5 flex-wrap">
-                                                                {projMembers.map(
-                                                                    (m) => (
-                                                                        <div
-                                                                            key={
-                                                                                m
-                                                                            }
-                                                                            className="flex items-center gap-1"
-                                                                        >
-                                                                            <Avatar
-                                                                                name={
-                                                                                    m
-                                                                                }
-                                                                                size={
-                                                                                    16
-                                                                                }
-                                                                            />
-                                                                            <span className="text-xs text-stone-600">
-                                                                                {
-                                                                                    m
-                                                                                }
-                                                                            </span>
-                                                                        </div>
-                                                                    ),
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    {p.pm && (
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-xs text-stone-400 w-16 shrink-0">
-                                                                PM
-                                                            </span>
-                                                            <span className="text-xs text-stone-600">
-                                                                {p.pm}
-                                                            </span>
-                                                        </div>
-                                                    )}
-                                                    {p.developer && (
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-xs text-stone-400 w-16 shrink-0">
-                                                                개발자
-                                                            </span>
-                                                            <span className="text-xs text-stone-600">
-                                                                {p.developer}
-                                                            </span>
-                                                        </div>
-                                                    )}
-                                                    {p.designer && (
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-xs text-stone-400 w-16 shrink-0">
-                                                                디자이너
-                                                            </span>
-                                                            <span className="text-xs text-stone-600">
-                                                                {p.designer}
-                                                            </span>
-                                                        </div>
-                                                    )}
-                                                    {p.frequency && (
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-xs text-stone-400 w-16 shrink-0">
-                                                                빈도
-                                                            </span>
-                                                            <span className="text-xs text-stone-600">
-                                                                {p.frequency}
-                                                            </span>
-                                                        </div>
-                                                    )}
-                                                    {p.prev_member && (
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-xs text-stone-400 w-16 shrink-0">
-                                                                이전담당
-                                                            </span>
-                                                            <span className="text-xs text-stone-600">
-                                                                {p.prev_member}
-                                                            </span>
-                                                        </div>
-                                                    )}
-                                                    {p.note && (
-                                                        <div className="flex items-start gap-2">
-                                                            <span className="text-xs text-stone-400 w-16 shrink-0">
-                                                                비고
-                                                            </span>
-                                                            <span className="text-xs text-stone-600 leading-relaxed">
-                                                                {p.note}
-                                                            </span>
-                                                        </div>
-                                                    )}
-                                                    {!isGuest && (
-                                                        <div className="flex gap-2 mt-3 pt-2 border-t border-stone-100">
-                                                            <button type="button" onClick={() => openProjModalForEdit(p)} className="flex-1 rounded-lg bg-amber-500 py-2 text-xs font-medium text-white hover:bg-amber-600 transition-colors">수정</button>
-                                                            <button type="button" onClick={() => void deleteProject(p.id)} className="flex-1 rounded-lg border border-red-300 py-2 text-xs font-medium text-red-500 hover:bg-red-50 transition-colors">삭제</button>
-                                                            <button type="button" onClick={() => void toggleArchive(p.id, p.is_archived ?? false)} className="flex-1 rounded-lg bg-stone-700 py-2 text-xs font-medium text-white hover:bg-stone-800 transition-colors">{p.is_archived ? "복원" : "보관"}</button>
-                                                        </div>
-                                                    )}
-                                                </div>
+                                                <ProjectDetailTabs
+                                                    project={p}
+                                                    projMembers={projMembers}
+                                                    pf={pf}
+                                                    isGuest={isGuest}
+                                                    onEdit={() => openProjModalForEdit(p)}
+                                                    onDelete={() => void deleteProject(p.id)}
+                                                    onArchive={() => void toggleArchive(p.id, p.is_archived ?? false)}
+                                                    onHistory={() => setHistoryProjectId(p.id)}
+                                                    hasPin={teamHasPin}
+                                                    pinVerified={pinVerified}
+                                                    onPinRequired={(cb) => { setPinModal({ callback: cb }); setPinInput(""); setPinError(false); }}
+                                                />
                                             )}
                                         </div>
                                     );
@@ -1528,192 +1799,154 @@ export default function ManagePage() {
                                     ×
                                 </button>
                             </div>
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        담당자 (복수 선택)
-                                    </label>
-                                    <div className="grid grid-cols-4 gap-2">
-                                        {members.map((name) => {
-                                            const on =
-                                                projForm.members.includes(name);
-                                            return (
-                                                <button
-                                                    key={name}
-                                                    type="button"
-                                                    onClick={() =>
-                                                        toggleProjMember(name)
+                            <div>
+                                {/* 모달 탭 */}
+                                <div className="flex rounded-lg bg-stone-100 p-0.5 mb-4">
+                                    <button type="button" onClick={() => setModalTab("basic")} className={`flex-1 py-2 text-xs font-medium rounded-md transition-all ${modalTab === "basic" ? "bg-white text-stone-800 shadow-sm" : "text-stone-400 hover:text-stone-600"}`}>기본 정보</button>
+                                    <button type="button" onClick={() => {
+                                        if (teamHasPin && !pinVerified) {
+                                            setPinModal({ callback: () => setModalTab("setting") });
+                                            setPinInput("");
+                                            setPinError(false);
+                                        } else {
+                                            setModalTab("setting");
+                                        }
+                                    }} className={`flex-1 py-2 text-xs font-medium rounded-md transition-all ${modalTab === "setting" ? "bg-white text-stone-800 shadow-sm" : "text-stone-400 hover:text-stone-600"}`}>
+                                        세팅 정보{teamHasPin && <i className="ri-lock-line text-[10px] ml-1" aria-hidden />}
+                                    </button>
+                                </div>
+
+                                {/* 기본 정보 탭 */}
+                                {modalTab === "basic" && (
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="text-xs font-medium text-stone-500 block mb-1.5">담당자 (복수 선택)</label>
+                                            <div className="grid grid-cols-4 gap-2">
+                                                {members.map((name) => {
+                                                    const on = projForm.members.includes(name);
+                                                    return (
+                                                        <button key={name} type="button" onClick={() => toggleProjMember(name)} className={`flex flex-col items-center gap-1 rounded-xl border-2 p-2 transition-colors ${on ? "border-amber-500 bg-amber-50" : "border-stone-200 bg-stone-50"}`}>
+                                                            <Avatar name={name} size={32} />
+                                                            <span className="text-[10px] text-stone-600">{name.slice(1)}</span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-medium text-stone-500 block mb-1.5">프로젝트명 <span className="text-red-500">*</span></label>
+                                            <input className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm" placeholder="예) 사이버견본주택" value={projForm.name} onChange={(e) => setProjForm({ ...projForm, name: e.target.value })} />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-medium text-stone-500 block mb-1.5">고객사</label>
+                                            <input className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm" placeholder="예) GS건설" value={projForm.client} onChange={(e) => setProjForm({ ...projForm, client: e.target.value })} />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-medium text-stone-500 block mb-1.5">언어</label>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                {PROJ_LANG_OPTIONS.map((lang) => {
+                                                    const on = projForm.languages.includes(lang);
+                                                    return (
+                                                        <button key={lang} type="button" onClick={() => toggleProjLang(lang)} className={`rounded-xl border-2 py-2.5 text-sm font-medium transition-colors ${on ? "border-amber-500 bg-amber-50 text-stone-800" : "border-stone-200 bg-stone-50 text-stone-600 hover:border-stone-300"}`}>{lang}</button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                        <ExtraSection
+                                            fields={extraFields}
+                                            values={modalValues}
+                                            onChange={(k, v) => setModalValues((prev) => ({ ...prev, [k]: v }))}
+                                            savedSecrets={savedSecrets}
+                                            onReorder={setExtraFields}
+                                            onDelete={async (field) => {
+                                                if (field.defId) await pf.deleteDef(field.defId);
+                                                setExtraFields((prev) => prev.filter((f) => f.key !== field.key));
+                                                setModalValues((prev) => { const next = { ...prev }; delete next[field.key]; return next; });
+                                            }}
+                                            onAdd={async (label, fieldType) => {
+                                                if (!editProj) return;
+                                                setCfSaving(true);
+                                                try {
+                                                    await pf.addDef(editProj.id, label, fieldType);
+                                                    const fresh = await pf.loadDefs(editProj.id);
+                                                    setModalDefs(fresh);
+                                                    const added = filterExtraFields(fresh).find((d) => !extraFields.some((ef) => ef.defId === d.id));
+                                                    if (added) {
+                                                        setExtraFields((prev) => [...prev, { key: added.name, label: added.label, fieldType: added.field_type, isFixed: false, defId: added.id }]);
+                                                        setModalValues((prev) => ({ ...prev, [added.name]: "" }));
                                                     }
-                                                    className={`flex flex-col items-center gap-1 rounded-xl border-2 p-2 transition-colors
-                          ${on ? "border-amber-500 bg-amber-50" : "border-stone-200 bg-stone-50"}`}
-                                                >
-                                                    <Avatar
-                                                        name={name}
-                                                        size={32}
-                                                    />
-                                                    <span className="text-[10px] text-stone-600">
-                                                        {name.slice(1)}
-                                                    </span>
-                                                </button>
-                                            );
-                                        })}
+                                                } finally { setCfSaving(false); }
+                                            }}
+                                            adding={cfSaving}
+                                        />
                                     </div>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        프로젝트명{" "}
-                                        <span className="text-red-500">*</span>
-                                    </label>
-                                    <input
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                                        placeholder="예) 사이버견본주택"
-                                        value={projForm.name}
-                                        onChange={(e) =>
-                                            setProjForm({
-                                                ...projForm,
-                                                name: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        고객사
-                                    </label>
-                                    <input
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                                        placeholder="예) GS건설"
-                                        value={projForm.client}
-                                        onChange={(e) =>
-                                            setProjForm({
-                                                ...projForm,
-                                                client: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        언어
-                                    </label>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {PROJ_LANG_OPTIONS.map((lang) => {
-                                            const on =
-                                                projForm.languages.includes(
-                                                    lang,
-                                                );
-                                            return (
-                                                <button
-                                                    key={lang}
-                                                    type="button"
-                                                    onClick={() =>
-                                                        toggleProjLang(lang)
-                                                    }
-                                                    className={`rounded-xl border-2 py-2.5 text-sm font-medium transition-colors
-                          ${on ? "border-amber-500 bg-amber-50 text-stone-800" : "border-stone-200 bg-stone-50 text-stone-600 hover:border-stone-300"}`}
-                                                >
-                                                    {lang}
-                                                </button>
-                                            );
-                                        })}
+                                )}
+
+                                {/* 세팅 정보 탭 */}
+                                {modalTab === "setting" && (
+                                    <div className="space-y-4">
+                                        <AccessSection
+                                            defs={modalDefs}
+                                            values={modalValues}
+                                            onChange={(k, v) => setModalValues((prev) => ({ ...prev, [k]: v }))}
+                                            savedSecrets={savedSecrets}
+                                            onAddField={async (label, fieldType, namePrefix) => {
+                                                if (!editProj) return;
+                                                const slug = label.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_가-힣]/g, "");
+                                                const name = `${namePrefix}${slug || `custom_${Date.now()}`}`;
+                                                await pf.addDef(editProj.id, label, fieldType, name);
+                                                const fresh = await pf.loadDefs(editProj.id);
+                                                setModalDefs(fresh);
+                                                const added = fresh.find((d) => d.name === name);
+                                                if (added) setModalValues((prev) => ({ ...prev, [added.name]: "" }));
+                                            }}
+                                            onDeleteField={async (defId) => {
+                                                await pf.deleteDef(defId);
+                                                setModalDefs((prev) => prev.filter((d) => d.id !== defId));
+                                            }}
+                                            onRenameField={async (defId, newLabel) => {
+                                                await pf.updateDef(defId, { label: newLabel } as import("./useProjectFields").FieldDef);
+                                                setModalDefs((prev) => prev.map((d) => d.id === defId ? { ...d, label: newLabel } : d));
+                                            }}
+                                            onReorderFields={async (reorder) => {
+                                                await pf.reorderDefs(reorder);
+                                                setModalDefs((prev) => prev.map((d) => { const r = reorder.find((x) => x.id === d.id); return r ? { ...d, sort_order: r.sort_order } : d; }));
+                                            }}
+                                        />
+                                        <DevSection
+                                            defs={modalDefs}
+                                            values={modalValues}
+                                            onChange={(k, v) => setModalValues((prev) => ({ ...prev, [k]: v }))}
+                                            onAddField={async (label, fieldType, namePrefix) => {
+                                                if (!editProj) return;
+                                                const slug = label.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_가-힣]/g, "");
+                                                const name = `${namePrefix}${slug || `custom_${Date.now()}`}`;
+                                                await pf.addDef(editProj.id, label, fieldType, name);
+                                                const fresh = await pf.loadDefs(editProj.id);
+                                                setModalDefs(fresh);
+                                                const added = fresh.find((d) => d.name === name);
+                                                if (added) setModalValues((prev) => ({ ...prev, [added.name]: "" }));
+                                            }}
+                                            onDeleteField={async (defId) => {
+                                                await pf.deleteDef(defId);
+                                                setModalDefs((prev) => prev.filter((d) => d.id !== defId));
+                                            }}
+                                            onRenameField={async (defId, newLabel) => {
+                                                await pf.updateDef(defId, { label: newLabel } as import("./useProjectFields").FieldDef);
+                                                setModalDefs((prev) => prev.map((d) => d.id === defId ? { ...d, label: newLabel } : d));
+                                            }}
+                                            onReorderFields={async (reorder) => {
+                                                await pf.reorderDefs(reorder);
+                                                setModalDefs((prev) => prev.map((d) => { const r = reorder.find((x) => x.id === d.id); return r ? { ...d, sort_order: r.sort_order } : d; }));
+                                            }}
+                                        />
                                     </div>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        PM
-                                    </label>
-                                    <input
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                                        value={projForm.pm}
-                                        onChange={(e) =>
-                                            setProjForm({
-                                                ...projForm,
-                                                pm: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        개발자
-                                    </label>
-                                    <input
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                                        value={projForm.developer}
-                                        onChange={(e) =>
-                                            setProjForm({
-                                                ...projForm,
-                                                developer: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        디자이너
-                                    </label>
-                                    <input
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                                        value={projForm.designer}
-                                        onChange={(e) =>
-                                            setProjForm({
-                                                ...projForm,
-                                                designer: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        빈도
-                                    </label>
-                                    <input
-                                        className="w-full rounded-lg border border-stone-200 px-3 py-2.5 text-sm"
-                                        placeholder="예) 월 1-2건, 분기 1-2건, 상시"
-                                        value={projForm.frequency}
-                                        onChange={(e) =>
-                                            setProjForm((f) => ({
-                                                ...f,
-                                                frequency: e.target.value,
-                                            }))
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        이전 담당자
-                                    </label>
-                                    <input
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm"
-                                        value={projForm.prev_member}
-                                        onChange={(e) =>
-                                            setProjForm({
-                                                ...projForm,
-                                                prev_member: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-medium text-stone-500 block mb-1.5">
-                                        비고
-                                    </label>
-                                    <textarea
-                                        className="w-full border border-stone-200 rounded-lg px-3 py-2.5 text-sm min-h-[4.5rem] resize-y"
-                                        placeholder="예) 분기별 유지보수 포함"
-                                        value={projForm.note}
-                                        onChange={(e) =>
-                                            setProjForm({
-                                                ...projForm,
-                                                note: e.target.value,
-                                            })
-                                        }
-                                    />
-                                </div>
+                                )}
+
                                 <button
                                     type="button"
                                     onClick={() => void saveProject()}
-                                    className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm"
+                                    className="w-full bg-amber-500 text-white font-bold py-3.5 rounded-xl text-sm mt-4"
                                 >
                                     {editProj ? "저장하기" : "추가하기"}
                                 </button>
@@ -2202,6 +2435,100 @@ export default function ManagePage() {
                         </div>,
                         document.body,
                     )}
+                {/* 변경 이력 패널 */}
+                {historyProject && (
+                    <FieldHistoryPanel
+                        projectId={historyProject.id}
+                        projectName={historyProject.name}
+                        loadHistory={pf.loadHistory}
+                        onClose={() => setHistoryProjectId(null)}
+                    />
+                )}
+
+                {/* PIN 입력 모달 */}
+                {pinModal && (
+                    <div
+                        className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center"
+                        onClick={() => setPinModal(null)}
+                    >
+                        <div
+                            className="w-full max-w-xs rounded-2xl bg-white p-6 shadow-2xl mx-4"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="text-center mb-5">
+                                <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-amber-50 mb-3">
+                                    <i className="ri-lock-line text-xl text-amber-500" aria-hidden />
+                                </div>
+                                <h3 className="text-base font-bold text-stone-800">PIN 입력</h3>
+                                <p className="text-xs text-stone-400 mt-1">세팅 정보를 보려면 PIN을 입력하세요</p>
+                            </div>
+                            <input
+                                type="password"
+                                inputMode="numeric"
+                                maxLength={6}
+                                autoFocus
+                                placeholder="4~6자리 숫자"
+                                value={pinInput}
+                                onChange={(e) => { setPinInput(e.target.value.replace(/\D/g, "")); setPinError(false); }}
+                                onKeyDown={async (e) => {
+                                    if (e.key !== "Enter" || !pinInput || pinVerifying) return;
+                                    setPinVerifying(true);
+                                    try {
+                                        const ok = await pf.verifyPin(pinInput);
+                                        if (ok) {
+                                            setPinVerifiedAt(Date.now());
+                                            const cb = pinModal.callback;
+                                            setPinModal(null);
+                                            cb();
+                                        } else {
+                                            setPinError(true);
+                                            setPinInput("");
+                                        }
+                                    } finally { setPinVerifying(false); }
+                                }}
+                                className={`w-full text-center text-2xl tracking-[0.5em] font-mono rounded-xl border-2 py-3 outline-none transition-colors ${
+                                    pinError ? "border-red-400 bg-red-50 animate-shake" : "border-stone-200 focus:border-amber-400"
+                                }`}
+                            />
+                            {pinError && (
+                                <p className="text-xs text-red-500 text-center mt-2">PIN이 틀렸습니다</p>
+                            )}
+                            <div className="flex gap-2 mt-4">
+                                <button
+                                    type="button"
+                                    disabled={pinVerifying || pinInput.length < 4}
+                                    onClick={async () => {
+                                        if (!pinInput || pinVerifying) return;
+                                        setPinVerifying(true);
+                                        try {
+                                            const ok = await pf.verifyPin(pinInput);
+                                            if (ok) {
+                                                setPinVerifiedAt(Date.now());
+                                                const cb = pinModal.callback;
+                                                setPinModal(null);
+                                                cb();
+                                            } else {
+                                                setPinError(true);
+                                                setPinInput("");
+                                            }
+                                        } finally { setPinVerifying(false); }
+                                    }}
+                                    className="flex-1 bg-amber-500 text-white font-bold py-2.5 rounded-xl text-sm disabled:opacity-50"
+                                >
+                                    {pinVerifying ? "확인 중..." : "확인"}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setPinModal(null)}
+                                    className="flex-1 border border-stone-200 text-stone-500 font-medium py-2.5 rounded-xl text-sm"
+                                >
+                                    취소
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {toast && (
                     <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-stone-800 text-white text-sm px-5 py-2.5 rounded-full shadow-lg z-50 whitespace-nowrap">
                         {toast}
