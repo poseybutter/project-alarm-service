@@ -69,6 +69,7 @@ export type Project = {
     note: string | null;
     created_at: string;
     is_archived?: boolean | null;
+    field_order?: string[] | null;
 };
 
 export type Accessibility = {

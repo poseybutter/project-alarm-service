@@ -30,6 +30,7 @@ import {
   Search,
   ShieldCheck,
   ShieldAlert,
+  KeyRound,
   ShieldMinus,
   Trash2,
   Users,
@@ -63,6 +64,110 @@ import { TEAM_ID } from "@/shared/constants";
 type TeamsResponse = { teams: AdminTeam[] };
 type MembersResponse = { members: AdminMember[] };
 type TeamFilter = "all" | "active" | "archived";
+
+function TeamPinSection({ teamId }: { teamId: string }) {
+  const [hasPin, setHasPin] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [mode, setMode] = useState<"idle" | "set" | "remove">("idle");
+  const [pin, setPin] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/project-fields/pin?teamId=${teamId}`)
+      .then((r) => r.json())
+      .then((d: { hasPin: boolean; updatedAt: string | null }) => {
+        if (!cancelled) { setHasPin(d.hasPin); setUpdatedAt(d.updatedAt); setLoaded(true); }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [teamId]);
+
+  if (!loaded) return null;
+
+  const formattedDate = updatedAt
+    ? new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(updatedAt))
+    : null;
+
+  return (
+    <section className="border-t border-stone-200 pt-5">
+      <div className="flex items-center gap-2">
+        <KeyRound className="text-amber-600" size={17} />
+        <h3 className="text-sm font-extrabold">세팅 PIN</h3>
+        {hasPin ? (
+          <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-700">설정됨</span>
+        ) : (
+          <span className="rounded border border-stone-200 bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-stone-500">미설정</span>
+        )}
+      </div>
+      <p className="mt-1 text-xs leading-5 text-stone-500">
+        프로젝트 세팅 정보(접속 정보, 비밀번호 등) 열람 시 PIN 입력을 요구합니다.
+        {formattedDate && <span className="block text-stone-400 mt-0.5">마지막 변경: {formattedDate}</span>}
+      </p>
+
+      {mode === "idle" && (
+        <div className="mt-3 flex gap-2">
+          <AdminButton variant="primary" onClick={() => { setMode("set"); setPin(""); }}>
+            <KeyRound size={14} /> {hasPin ? "PIN 변경" : "PIN 설정"}
+          </AdminButton>
+          {hasPin && (
+            <AdminButton variant="ghost" onClick={() => setMode("remove")}>
+              PIN 해제
+            </AdminButton>
+          )}
+        </div>
+      )}
+      {mode === "set" && (
+        <div className="mt-3 space-y-2">
+          <input
+            type="password"
+            inputMode="numeric"
+            maxLength={6}
+            autoFocus
+            placeholder="4~6자리 숫자"
+            value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
+            className="w-full max-w-[12rem] rounded-md border border-stone-300 px-3 py-2 text-sm text-center tracking-[0.3em] font-mono outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+          />
+          <div className="flex gap-2">
+            <AdminButton variant="primary" disabled={saving || pin.length < 4} onClick={async () => {
+              setSaving(true);
+              try {
+                await fetch("/api/project-fields/pin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ teamId, pin }) });
+                setHasPin(true);
+                setUpdatedAt(new Date().toISOString());
+                setMode("idle");
+              } finally { setSaving(false); }
+            }}>
+              {saving ? <SavingLabel /> : <><Save size={14} /> 저장</>}
+            </AdminButton>
+            <AdminButton variant="ghost" onClick={() => setMode("idle")}>취소</AdminButton>
+          </div>
+        </div>
+      )}
+      {mode === "remove" && (
+        <div className="mt-3 space-y-2">
+          <p className="text-xs text-red-600">PIN을 해제하면 누구나 세팅 정보를 볼 수 있습니다.</p>
+          <div className="flex gap-2">
+            <AdminButton variant="danger" disabled={saving} onClick={async () => {
+              setSaving(true);
+              try {
+                await fetch("/api/project-fields/pin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ teamId, pin: null }) });
+                setHasPin(false);
+                setUpdatedAt(new Date().toISOString());
+                setMode("idle");
+              } finally { setSaving(false); }
+            }}>
+              {saving ? <SavingLabel /> : <><Trash2 size={14} /> 해제</>}
+            </AdminButton>
+            <AdminButton variant="ghost" onClick={() => setMode("idle")}>취소</AdminButton>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
 
 export function TeamsPage() {
   const router = useRouter();
@@ -950,6 +1055,8 @@ export function TeamsPage() {
                     )}
                   </AdminButton>
                 </div>
+
+                <TeamPinSection teamId={selected.id} />
 
                 {selected.id !== TEAM_ID && (
                   <section className="border-t border-red-200 pt-5">
