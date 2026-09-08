@@ -1,9 +1,10 @@
 import { scryptSync, randomBytes, timingSafeEqual } from "crypto";
 
-// PIN은 4~6자리 숫자 — 키 길이 32바이트, cost N=8192로 충분.
-// rate limit(5회/5분)이 브루트포스를 차단하므로 과도한 cost 불필요.
+// PIN은 4~6자리 숫자 — 키 길이 32바이트, cost N=16384.
+// rate limit은 온라인 브루트포스만 차단. DB 유출 시 오프라인 공격 방어를 위해
+// scrypt cost는 기본값(16384) 유지.
 const KEY_LEN = 32;
-const SCRYPT_OPTIONS = { N: 8192, r: 8, p: 1 };
+const SCRYPT_OPTIONS = { N: 16384, r: 8, p: 1 };
 
 export function hashPin(pin: string): string {
     const salt = randomBytes(16).toString("hex");
