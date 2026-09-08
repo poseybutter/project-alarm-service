@@ -5,7 +5,6 @@ import {
 } from "@/infrastructure/supabase/server";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { encryptField } from "@/shared/server/fieldEncryption";
-import { verifyPin } from "@/shared/server/pinHash";
 
 type FieldEntry = {
     field_def_id: number;
@@ -37,29 +36,9 @@ export async function GET(req: NextRequest) {
     try {
         const svc = createServiceSupabaseClient();
 
-        // PIN 검증: 팀에 PIN이 설정되어 있으면 pin 쿼리 파라미터 필수
-        const { data: team, error: teamError } = await svc
-            .from("teams")
-            .select("settings_pin_hash")
-            .eq("id", teamId)
-            .maybeSingle();
-        if (teamError) throw teamError;
-
-        if (team?.settings_pin_hash) {
-            const pin = req.nextUrl.searchParams.get("pin")?.trim();
-            if (!pin) {
-                return NextResponse.json(
-                    { message: "PIN is required" },
-                    { status: 403 },
-                );
-            }
-            if (!verifyPin(pin, team.settings_pin_hash)) {
-                return NextResponse.json(
-                    { message: "Invalid PIN" },
-                    { status: 403 },
-                );
-            }
-        }
+        // NOTE: PIN 검증은 secrets/reveal 엔드포인트에서 수행.
+        // values GET은 secret 값을 마스킹(has_secret:true, value:null)해서 반환하므로
+        // PIN 없이 호출해도 민감 정보가 노출되지 않음.
 
         let query = svc
             .from("project_field_values")
