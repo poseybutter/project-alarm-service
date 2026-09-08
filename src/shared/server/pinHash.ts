@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "crypto";
+import { createHash } from "crypto";
 
 const SALT = process.env.FIELD_ENCRYPTION_KEY?.slice(0, 16) ?? "default_pin_salt";
 
