@@ -2,7 +2,6 @@ import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
-const TAG_LENGTH = 16;
 
 type EncryptedPayload = { iv: string; tag: string; ct: string };
 

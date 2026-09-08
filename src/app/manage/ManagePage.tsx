@@ -31,7 +31,7 @@ import {
     badgeSelectStyles,
 } from "@/shared/styles/reactSelectStyles";
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
-import { useProjectFields, isSystemField, type FieldDef } from "./useProjectFields";
+import { useProjectFields, type FieldDef } from "./useProjectFields";
 import {
     AccessSection,
     DevSection,
@@ -218,72 +218,6 @@ function FilterChip({
                     ))}
                 </div>
             )}
-        </div>
-    );
-}
-
-/** PIN 설정 섹션 — 수정 모달 세팅 정보 탭 하단 */
-function PinSettingSection({
-    hasPin,
-    onSetPin,
-    onRemovePin,
-}: {
-    hasPin: boolean;
-    onSetPin: (pin: string) => Promise<void>;
-    onRemovePin: () => Promise<void>;
-}) {
-    const [mode, setMode] = useState<"idle" | "set" | "remove">("idle");
-    const [pin, setPin] = useState("");
-    const [saving, setSaving] = useState(false);
-
-    return (
-        <div className="mb-3 rounded-lg border border-stone-200 bg-white px-3 py-2.5">
-            {mode === "idle" && (
-                <div className="flex items-center justify-between">
-                    <p className="text-xs text-stone-500 flex items-center gap-1">
-                        {hasPin ? (
-                            <><i className="ri-lock-line text-amber-500" aria-hidden />세팅 PIN 설정됨</>
-                        ) : (
-                            <><i className="ri-lock-unlock-line text-stone-400" aria-hidden />세팅 PIN 미설정</>
-                        )}
-                    </p>
-                    <div className="flex gap-2">
-                        <button type="button" onClick={() => { setMode("set"); setPin(""); }} className="text-xs font-medium text-amber-600 hover:text-amber-700">
-                            {hasPin ? "변경" : "설정"}
-                        </button>
-                        {hasPin && (
-                            <button type="button" onClick={() => setMode("remove")} className="text-xs font-medium text-red-400 hover:text-red-500">해제</button>
-                        )}
-                    </div>
-                </div>
-            )}
-            {mode === "set" && (
-                <div className="space-y-2">
-                    <input
-                        type="password"
-                        inputMode="numeric"
-                        maxLength={6}
-                        autoFocus
-                        placeholder="4~6자리 숫자 입력"
-                        value={pin}
-                        onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-                        className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm text-center tracking-[0.3em] font-mono outline-none focus:border-amber-400"
-                    />
-                    <div className="flex gap-2">
-                        <button type="button" disabled={saving || pin.length < 4} onClick={async () => { setSaving(true); try { await onSetPin(pin); setMode("idle"); } finally { setSaving(false); } }} className="flex-1 bg-amber-500 text-white text-xs font-medium py-1.5 rounded-lg disabled:opacity-50">{saving ? "저장 중..." : "저장"}</button>
-                        <button type="button" onClick={() => setMode("idle")} className="flex-1 border border-stone-200 text-xs text-stone-500 py-1.5 rounded-lg">취소</button>
-                    </div>
-                </div>
-            )}
-            {mode === "remove" && (
-                <div className="space-y-2">
-                    <p className="text-xs text-red-500">PIN을 해제하면 누구나 세팅 정보를 볼 수 있습니다.</p>
-                    <div className="flex gap-2">
-                            <button type="button" disabled={saving} onClick={async () => { setSaving(true); try { await onRemovePin(); setMode("idle"); } finally { setSaving(false); } }} className="flex-1 bg-red-500 text-white text-xs font-medium py-2 rounded-lg disabled:opacity-50">{saving ? "해제 중..." : "해제"}</button>
-                            <button type="button" onClick={() => setMode("idle")} className="flex-1 border border-stone-200 text-xs text-stone-500 py-2 rounded-lg">취소</button>
-                        </div>
-                    </div>
-                )}
         </div>
     );
 }
@@ -500,7 +434,6 @@ export default function ManagePage() {
     const [filterProjLang, setFilterProjLang] = useState("");
     const [sortProj, setSortProj] = useState<"가나다" | "담당자">("가나다");
     const [showArchived, setShowArchived] = useState(false);
-    const [showFilters, setShowFilters] = useState(false);
     const [showMoreMenu, setShowMoreMenu] = useState(false);
     const [searchAcc, setSearchAcc] = useState("");
     const [filterAccMember, setFilterAccMember] = useState("");

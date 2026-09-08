@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback } from "react";
 
 export type FieldDef = {
     id: number;
@@ -115,7 +115,6 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
 
 /** 프로젝트별 커스텀 필드 API 호출 유틸 */
 export function useProjectFields(teamId: string | null) {
-    const mountedRef = useRef(true);
 
     const loadDefs = useCallback(
         async (projectId: number): Promise<FieldDef[]> => {
