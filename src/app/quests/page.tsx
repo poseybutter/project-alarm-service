@@ -25,6 +25,7 @@ type Quest = {
 
 export default function QuestsPage() {
   const { member, members, memberOptions, teamId } = useAuth()
+  const memberOptionNames = memberOptions.map(o => o.name)
   const [quests, setQuests]     = useState<Quest[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [filter, setFilter]     = useState('')
@@ -40,7 +41,9 @@ export default function QuestsPage() {
     const nextMember = member ?? members[0] ?? ''
     if (nextMember) {
       setFilter(nextMember)
-      setForm(current => ({ ...current, member: nextMember }))
+      // 퀘스트 추가 폼의 기본 담당자는 memberOptions에 있는 경우만 설정
+      const assignable = memberOptions.some(o => o.name === nextMember)
+      setForm(current => ({ ...current, member: assignable ? nextMember : '' }))
     }
     void loadQuests()
     void loadProjects()
@@ -277,7 +280,7 @@ export default function QuestsPage() {
               <div>
                 <label className="text-xs font-medium text-stone-500 block mb-1.5">담당자</label>
                 <Select
-                  options={members.map(m => ({ value: m, label: m }))}
+                  options={memberOptionNames.map(m => ({ value: m, label: m }))}
                   value={form.member ? { value: form.member, label: form.member } : null}
                   onChange={opt => setForm({ ...form, member: opt?.value ?? '' })}
                   placeholder="담당자 선택"
