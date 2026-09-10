@@ -16,6 +16,8 @@ type RevealBody = {
     teamId?: string;
     projectId?: number;
     fieldDefId?: number;
+    /** 배치 모드 — 여러 필드를 한 번에 복호화 (PIN 검증 1회) */
+    fieldDefIds?: number[];
     pin?: string;
 };
 
@@ -69,9 +71,12 @@ export async function POST(req: NextRequest) {
 
     const projectId = body.projectId;
     const fieldDefId = body.fieldDefId;
-    if (!teamId || !projectId || !fieldDefId) {
+    const fieldDefIds = body.fieldDefIds;
+    const isBatch = Array.isArray(fieldDefIds) && fieldDefIds.length > 0;
+
+    if (!teamId || !projectId || (!fieldDefId && !isBatch)) {
         return NextResponse.json(
-            { message: "teamId, projectId, fieldDefId are required" },
+            { message: "teamId, projectId, fieldDefId(s) are required" },
             { status: 400 },
         );
     }
@@ -84,17 +89,53 @@ export async function POST(req: NextRequest) {
     try {
         const svc = createServiceSupabaseClient();
 
-        // PIN 검증
+        // PIN 검증 (1회)
         const pinDenied = await enforceTeamPin(svc, teamId, body.pin?.trim());
         if (pinDenied) return pinDenied;
 
-        // 값 조회
+        // ── 배치 모드 ──
+        if (isBatch) {
+            const ids = [...new Set(fieldDefIds)];
+            const { data: rows, error } = await svc
+                .from("project_field_values")
+                .select("field_def_id, encrypted_value")
+                .eq("team_id", teamId)
+                .eq("project_id", projectId)
+                .in("field_def_id", ids);
+            if (error) throw error;
+
+            const result: Record<number, string> = {};
+            const auditRows: {
+                team_id: string;
+                project_id: number;
+                field_def_id: number;
+                action: string;
+                actor_email: string;
+            }[] = [];
+            for (const row of rows ?? []) {
+                if (!row.encrypted_value) continue;
+                result[row.field_def_id] = decryptField(row.encrypted_value);
+                auditRows.push({
+                    team_id: teamId,
+                    project_id: projectId,
+                    field_def_id: row.field_def_id,
+                    action: "view",
+                    actor_email: user.email,
+                });
+            }
+            if (auditRows.length > 0) {
+                await svc.from("project_field_audit_logs").insert(auditRows);
+            }
+            return NextResponse.json({ values: result });
+        }
+
+        // ── 단건 모드 (기존 호환) ──
         const { data: row, error } = await svc
             .from("project_field_values")
             .select("encrypted_value")
             .eq("team_id", teamId)
             .eq("project_id", projectId)
-            .eq("field_def_id", fieldDefId)
+            .eq("field_def_id", fieldDefId!)
             .maybeSingle();
         if (error) throw error;
 
@@ -112,7 +153,7 @@ export async function POST(req: NextRequest) {
         await svc.from("project_field_audit_logs").insert({
             team_id: teamId,
             project_id: projectId,
-            field_def_id: fieldDefId,
+            field_def_id: fieldDefId!,
             action: "view",
             actor_email: user.email,
         });

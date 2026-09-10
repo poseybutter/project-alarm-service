@@ -533,18 +533,35 @@ type AccessReadProps = {
     defs: FieldDef[];
     values: Map<number, { value: string | null; has_secret: boolean }>;
     onReveal: (defId: number) => Promise<string>;
+    onRevealAll?: (defIds: number[]) => Promise<Record<number, string>>;
 };
 
-export function AccessReadCard({ defs, values, onReveal }: AccessReadProps) {
+export function AccessReadCard({ defs, values, onReveal, onRevealAll }: AccessReadProps) {
     const [env, setEnv] = useState<"prod" | "local">("prod");
     const [revealed, setRevealed] = useState<Record<number, string>>({});
     const [revealing, setRevealing] = useState<number | null>(null);
+    const [revealingAll, setRevealingAll] = useState(false);
 
     const prefix = `access_${env}_`;
     // 현재 선택된 env(운영/로컬) 탭의 prefix 에 맞는 필드만 확인하여
     // "접속 정보" 카드 표시 여부를 결정한다. 양쪽 env 를 모두 체크하면
     // 한쪽에만 값이 있을 때 빈 카드가 보인다.
     const hasAny = defs.some((d) => d.name.startsWith(prefix) && values.get(d.id)?.value);
+
+    // 현재 env의 secret 필드 중 아직 노출되지 않은 defId 목록
+    const unrevealedSecretIds = defs
+        .filter((d) => d.name.startsWith(prefix) && d.field_type === "secret" && values.get(d.id)?.has_secret && !revealed[d.id])
+        .map((d) => d.id);
+
+    const handleRevealAll = async () => {
+        if (!onRevealAll || unrevealedSecretIds.length === 0) return;
+        setRevealingAll(true);
+        try {
+            const map = await onRevealAll(unrevealedSecretIds);
+            setRevealed((p) => ({ ...p, ...map }));
+        } catch {}
+        setRevealingAll(false);
+    };
 
     if (!hasAny && !defs.some((d) => d.name.startsWith(prefix) && values.get(d.id)?.has_secret)) {
         return null;
@@ -553,7 +570,17 @@ export function AccessReadCard({ defs, values, onReveal }: AccessReadProps) {
     return (
         <div className="rounded-xl border border-stone-200 bg-white p-4">
             <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-bold text-stone-700">접속 정보</span>
+                <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-stone-700">접속 정보</span>
+                    {onRevealAll && unrevealedSecretIds.length > 0 && (
+                        <button
+                            type="button"
+                            disabled={revealingAll}
+                            onClick={handleRevealAll}
+                            className="text-xs text-amber-500 font-medium disabled:opacity-50"
+                        >{revealingAll ? "불러오는 중..." : "전체 보기"}</button>
+                    )}
+                </div>
                 <div className="flex rounded-lg bg-stone-100 p-0.5">
                     {(["prod", "local"] as const).map((e) => (
                         <button

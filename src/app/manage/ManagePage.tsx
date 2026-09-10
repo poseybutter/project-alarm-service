@@ -378,6 +378,7 @@ function ProjectDetailTabs({
                         defs={defs}
                         values={valueMap}
                         onReveal={(defId) => pf.revealSecret(p.id, defId, verifiedPin || undefined)}
+                        onRevealAll={(defIds) => pf.revealSecrets(p.id, defIds, verifiedPin || undefined)}
                     />
                     <DevReadCard defs={defs} values={valueMap} />
                 </div>
@@ -1140,8 +1141,10 @@ export default function ManagePage() {
             }
             setDeleteTarget(null);
             await loadData();
-        } catch {
-            showToastMsg("삭제에 실패했습니다.");
+        } catch (err: unknown) {
+            const e = err as { message?: string; details?: string; hint?: string; code?: string };
+            const parts = [e.code, e.message, e.details, e.hint].filter(Boolean);
+            showToastMsg(`삭제에 실패했습니다: ${parts.join(" | ")}`);
         } finally {
             setDeleting(false);
         }
