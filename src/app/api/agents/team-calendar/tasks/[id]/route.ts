@@ -147,12 +147,23 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             return NextResponse.json({ message: "Forbidden" }, { status: 403 });
         }
 
-        const { calendarId, sharedCalendarId, accessToken } = await loadTeamCalendarContext(
-            supabase,
-            task.team_id,
-            task.member,
-            task.team_calendar_id,
-        );
+        const [{ calendarId, sharedCalendarId, accessToken }, memberSortOrder] =
+            await Promise.all([
+                loadTeamCalendarContext(
+                    supabase,
+                    task.team_id,
+                    task.member,
+                    task.team_calendar_id,
+                ),
+                supabase
+                    .from("team_memberships")
+                    .select("sort_order")
+                    .eq("team_id", task.team_id)
+                    .eq("name", task.member)
+                    .maybeSingle()
+                    .then(({ data }) => data?.sort_order as number | null ?? null),
+            ]);
+        const taskWithOrder = { ...task, member_sort_order: memberSortOrder };
         // 항목 일정만 있는 업무는 base ID가 null 이므로, 항목 ID까지 함께 봐야
         // 캘린더가 바뀔 때 이전 캘린더의 일정이 남지 않는다.
         const previousEventIds = [
@@ -170,11 +181,11 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             // 캘린더가 바뀌었으면 이전 이벤트 ID는 새 캘린더에서 쓸 수 없다.
             task: previousCalendarId
                 ? {
-                      ...task,
+                      ...taskWithOrder,
                       team_calendar_event_id: null,
                       team_calendar_item_event_ids: null,
                   }
-                : task,
+                : taskWithOrder,
         });
 
         const { error } = await supabase
