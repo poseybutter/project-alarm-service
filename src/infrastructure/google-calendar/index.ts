@@ -154,10 +154,10 @@ type MemberCalendarSetting = {
 };
 
 // 멤버 순서(sort_order)에 따라 순환하는 Google Calendar 색상.
-// Banana(노랑), Tangerine(호박), Blueberry(파랑), Sage(녹색),
+// Sage(녹색), Blueberry(파랑), Tangerine(호박), Banana(노랑),
 // Grape(보라), Tomato(빨강), Peacock(청록), Lavender(남보라),
 // Flamingo(핑크), Basil(진녹), Graphite(회색)
-const MEMBER_EVENT_COLOR_IDS = ["5", "6", "9", "2", "3", "11", "7", "1", "4", "10", "8"] as const;
+const MEMBER_EVENT_COLOR_IDS = ["2", "9", "6", "5", "3", "11", "7", "1", "4", "10", "8"] as const;
 
 function memberEventColorId(sortOrder: number | null | undefined, member: string) {
     if (sortOrder != null && sortOrder >= 0) {
