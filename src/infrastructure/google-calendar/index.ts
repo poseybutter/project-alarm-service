@@ -145,6 +145,7 @@ export type TeamCalendarTaskInput = {
     team_calendar_event_id?: string | null;
     team_calendar_item_event_ids?: string[] | null;
     team_calendar_id?: string | null;
+    member_sort_order?: number | null;
 };
 
 type MemberCalendarSetting = {
@@ -152,9 +153,17 @@ type MemberCalendarSetting = {
     calendar_id: string;
 };
 
-const MEMBER_EVENT_COLOR_IDS = ["2", "5", "6", "9", "10", "11"] as const;
+// 멤버 순서(sort_order)에 따라 순환하는 Google Calendar 색상.
+// Banana(노랑), Tangerine(호박), Blueberry(파랑), Sage(녹색),
+// Grape(보라), Tomato(빨강), Peacock(청록), Lavender(남보라),
+// Flamingo(핑크), Basil(진녹), Graphite(회색)
+const MEMBER_EVENT_COLOR_IDS = ["5", "6", "9", "2", "3", "11", "7", "1", "4", "10", "8"] as const;
 
-function memberEventColorId(member: string) {
+function memberEventColorId(sortOrder: number | null | undefined, member: string) {
+    if (sortOrder != null && sortOrder >= 0) {
+        return MEMBER_EVENT_COLOR_IDS[sortOrder % MEMBER_EVENT_COLOR_IDS.length];
+    }
+    // sort_order 가 없는 레거시 업무는 이름 해시로 폴백
     let hash = 0;
     for (const char of member.normalize("NFKC")) {
         hash = (hash * 31 + (char.codePointAt(0) ?? 0)) >>> 0;
@@ -787,7 +796,7 @@ function buildTeamCalendarEvent(
                 taskId: String(task.id),
             },
         },
-        colorId: memberEventColorId(task.member),
+        colorId: memberEventColorId(task.member_sort_order, task.member),
     };
 }
 
