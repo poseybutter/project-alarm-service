@@ -156,7 +156,7 @@ export async function POST(_req: NextRequest, context: RouteContext) {
                     task.team_calendar_id,
                 ),
                 supabase
-                    .from("team_memberships")
+                    .from("players")
                     .select("sort_order")
                     .eq("team_id", task.team_id)
                     .eq("name", task.member)
