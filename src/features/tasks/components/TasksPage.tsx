@@ -178,8 +178,20 @@ export default function TasksPage() {
         loadTasks();
     }
 
-    /** 업무를 삭제한다. Supabase 삭제 성공 후 팀 캘린더 일정 삭제를 fire-and-forget으로 실행한다. */
+    /** 업무를 삭제한다. 캘린더 일정을 먼저 삭제한 뒤 DB에서 업무를 삭제한다. */
     async function deleteTask(id: number) {
+        // 캘린더 일정을 먼저 삭제 (task 조회에 필요하므로 DB 삭제보다 선행)
+        try {
+            await deleteTaskFromTeamCalendar(id);
+        } catch (err) {
+            if (
+                !confirm(
+                    `${err instanceof Error ? err.message : "팀 캘린더 일정 삭제 실패"}\n그래도 업무를 삭제할까요?`,
+                )
+            ) {
+                return;
+            }
+        }
         const { data, error } = await supabase
             .from("tasks")
             .delete()
@@ -189,12 +201,6 @@ export default function TasksPage() {
             showToastMsg("권한이 없어 삭제할 수 없어요");
             return;
         }
-        // 업무 삭제 성공 후 캘린더 동기화 (실패해도 업무는 이미 삭제됨)
-        deleteTaskFromTeamCalendar(id).catch((err) => {
-            const msg = err instanceof Error ? err.message : "팀 캘린더 일정 삭제 실패";
-            console.warn("[team-calendar] delete failed:", msg);
-            showToastMsg(msg);
-        });
         loadTasks();
     }
 
