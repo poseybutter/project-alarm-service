@@ -79,6 +79,9 @@ function createFakeDb(config: FakeDbConfig) {
                 if (table === "team_memberships") {
                     return { data: config.memberships ?? [], error: null };
                 }
+                if (table === "players") {
+                    return { data: config.memberships ?? [], error: null };
+                }
                 if (table === "tasks") {
                     let rows = config.tasks ?? [];
                     for (const filter of filters) {

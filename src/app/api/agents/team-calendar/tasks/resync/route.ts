@@ -214,12 +214,13 @@ export async function POST(request: Request) {
         const nextCursor = hasMore ? tasks[tasks.length - 1].id : null;
 
         // 멤버 순서 → 캘린더 색상 매핑에 필요한 sort_order 를 한 번에 가져온다.
-        const { data: memberships } = await supabase
-            .from("team_memberships")
+        // team_memberships에는 name 컬럼이 없으므로 players 테이블에서 조회한다.
+        const { data: playerRows } = await supabase
+            .from("players")
             .select("name, sort_order")
             .eq("team_id", teamId);
         const sortOrderByMember = new Map(
-            (memberships ?? []).map((m) => [m.name, m.sort_order as number]),
+            (playerRows ?? []).map((m) => [m.name, m.sort_order as number]),
         );
 
         // 순차 처리는 안전하지만 느리다. Google 요청률 한도 아래로 동시 처리하고,
