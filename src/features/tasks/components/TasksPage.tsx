@@ -198,6 +198,10 @@ export default function TasksPage() {
             .eq("id", id)
             .select();
         if (error || !data || data.length === 0) {
+            // DB 삭제 실패 시 캘린더 일정을 복구한다
+            void syncTaskToTeamCalendar(id).catch(() => {
+                showToastMsg("캘린더 일정 복구에도 실패했어요. 재동기화를 시도해주세요.");
+            });
             showToastMsg("권한이 없어 삭제할 수 없어요");
             return;
         }
