@@ -56,6 +56,7 @@ type UpdateLog = {
 type FakeDbConfig = {
     setting?: { calendar_id: string; connection_email: string } | null;
     memberCalendars?: Array<{ member: string; calendar_id: string }>;
+    memberships?: Array<{ name: string; sort_order: number }>;
     connection?: Record<string, unknown> | null;
     tasks?: TaskRow[];
 };
@@ -74,6 +75,9 @@ function createFakeDb(config: FakeDbConfig) {
             const runSelect = () => {
                 if (table === "agent_member_calendar_settings") {
                     return { data: config.memberCalendars ?? [], error: null };
+                }
+                if (table === "team_memberships") {
+                    return { data: config.memberships ?? [], error: null };
                 }
                 if (table === "tasks") {
                     let rows = config.tasks ?? [];
@@ -189,6 +193,7 @@ const CONNECTION = {
     expires_at: null,
 };
 const MEMBER_CALENDARS = [{ member: "포지", calendar_id: "cal-posey" }];
+const MEMBERSHIPS = [{ name: "포지", sort_order: 0 }];
 
 function taskRow(id: number, overrides: Partial<TaskRow> = {}): TaskRow {
     return {
@@ -237,6 +242,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks: [],
         });
     });
@@ -264,6 +270,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks,
         });
 
@@ -280,6 +287,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks: [taskRow(1), taskRow(2, { show_on_team_calendar: false })],
         });
 
@@ -293,6 +301,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks: [
                 taskRow(1),
                 taskRow(2, { member: "캘린더없는사람" }),
@@ -352,6 +361,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks: [taskRow(1)],
         });
         mockSync.mockRejectedValueOnce(
@@ -375,6 +385,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks: [
                 taskRow(1, {
                     team_calendar_id: "cal-old",
@@ -415,6 +426,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks: Array.from({ length: 10 }, (_, index) => taskRow(index + 1)),
         });
         let active = 0;
@@ -437,6 +449,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks: [taskRow(1), taskRow(2), taskRow(3)],
         });
 
@@ -450,6 +463,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks: [taskRow(1)],
         });
 
@@ -462,6 +476,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks: [taskRow(5)],
         });
 

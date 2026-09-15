@@ -63,8 +63,11 @@ export default function TasksPage() {
     const isGuest = role === "guest";
     const canEditOrDelete = (taskMember: string) =>
         role !== "guest" && (role === "admin" || taskMember === currentMember);
+    const memberOptionNames = memberOptions.map((o) => o.name);
     const assignableMembers =
-        role === "admin" ? members : [currentMember || ""];
+        role === "admin"
+            ? memberOptionNames
+            : memberOptionNames.filter((n) => n === currentMember);
 
     const { tasks, projects, loading, loadTasks } = useTasksData(teamId);
     const [toast, setToast] = useState("");
@@ -330,7 +333,7 @@ export default function TasksPage() {
                         open={showModal}
                         onClose={() => setShowModal(false)}
                         teamId={teamId}
-                        defaultMember={currentMember || ""}
+                        defaultMember={assignableMembers.includes(currentMember || "") ? currentMember || "" : assignableMembers[0] || ""}
                         assignableMembers={assignableMembers}
                         memberOptions={memberOptions}
                         projects={projects}

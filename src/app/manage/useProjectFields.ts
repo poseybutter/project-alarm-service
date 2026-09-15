@@ -241,6 +241,23 @@ export function useProjectFields(teamId: string | null) {
         [teamId],
     );
 
+    /** 배치 reveal — PIN 검증 1회로 여러 secret 필드를 한꺼번에 복호화 */
+    const revealSecrets = useCallback(
+        async (projectId: number, fieldDefIds: number[], pin?: string): Promise<Record<number, string>> => {
+            if (!teamId) throw new Error("No team");
+            if (fieldDefIds.length === 0) return {};
+            const res = await api<{ values: Record<number, string> }>(
+                "/api/project-fields/secrets/reveal",
+                {
+                    method: "POST",
+                    body: JSON.stringify({ teamId, projectId, fieldDefIds, pin }),
+                },
+            );
+            return res.values;
+        },
+        [teamId],
+    );
+
     const loadHistory = useCallback(
         async (
             projectId: number,
@@ -301,6 +318,7 @@ export function useProjectFields(teamId: string | null) {
         reorderDefs,
         saveValues,
         revealSecret,
+        revealSecrets,
         loadHistory,
         setPin,
         verifyPin,
@@ -315,6 +333,7 @@ export function useProjectFields(teamId: string | null) {
         reorderDefs,
         saveValues,
         revealSecret,
+        revealSecrets,
         loadHistory,
         setPin,
         verifyPin,

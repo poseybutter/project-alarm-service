@@ -213,6 +213,15 @@ export async function POST(request: Request) {
         const tasks = (page ?? []).slice(0, limit);
         const nextCursor = hasMore ? tasks[tasks.length - 1].id : null;
 
+        // 멤버 순서 → 캘린더 색상 매핑에 필요한 sort_order 를 한 번에 가져온다.
+        const { data: memberships } = await supabase
+            .from("team_memberships")
+            .select("name, sort_order")
+            .eq("team_id", teamId);
+        const sortOrderByMember = new Map(
+            (memberships ?? []).map((m) => [m.name, m.sort_order as number]),
+        );
+
         // 순차 처리는 안전하지만 느리다. Google 요청률 한도 아래로 동시 처리하고,
         // 결과는 입력 순서대로 받아 집계·응답 형태는 순차 때와 동일하게 유지한다.
         const syncOneTask = async (
@@ -227,6 +236,11 @@ export async function POST(request: Request) {
                     message: MISSING_MEMBER_CALENDAR_MESSAGE,
                 };
             }
+
+            const taskWithOrder: TeamCalendarTaskInput = {
+                ...task,
+                member_sort_order: sortOrderByMember.get(task.member) ?? null,
+            };
 
             try {
                 // 항목 일정만 있는 업무는 base ID가 null 이므로, 항목 ID까지 함께 봐야
@@ -246,11 +260,11 @@ export async function POST(request: Request) {
                     calendarId: targetCalendarId,
                     task: previousCalendarId
                         ? {
-                              ...task,
+                              ...taskWithOrder,
                               team_calendar_event_id: null,
                               team_calendar_item_event_ids: null,
                           }
-                        : task,
+                        : taskWithOrder,
                 });
 
                 const { error: updateError } = await supabase
