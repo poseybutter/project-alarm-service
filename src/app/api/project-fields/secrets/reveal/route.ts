@@ -9,7 +9,7 @@ import { verifyPin } from "@/shared/server/pinHash";
 import { validatePinToken } from "@/shared/server/pinToken";
 import {
     requestRateLimitKey,
-    consumeSharedRateLimit,
+    consumeRateLimit,
     rateLimitResponse,
 } from "@/shared/server/rateLimit";
 
@@ -24,41 +24,6 @@ type RevealBody = {
     pinToken?: string;
 };
 
-/**
- * 팀 PIN 검증 — PIN이 설정되어 있으면 반드시 검증을 통과해야 한다.
- * pinToken이 유효하면 scrypt 없이 즉시 통과한다.
- * 반환: null이면 통과, Response면 거부 응답.
- */
-async function enforceTeamPin(
-    svc: ReturnType<typeof createServiceSupabaseClient>,
-    teamId: string,
-    pin: string | undefined,
-    pinToken: string | undefined,
-): Promise<NextResponse | null> {
-    const { data: team, error } = await svc
-        .from("teams")
-        .select("settings_pin_hash")
-        .eq("id", teamId)
-        .maybeSingle();
-    if (error) throw error;
-
-    const hash = team?.settings_pin_hash;
-    if (!hash) return null; // PIN 미설정 — 보호 비활성
-
-    // HMAC 토큰이 유효하면 scrypt 재실행 없이 즉시 통과 (PIN 해시 prefix 검증 포함)
-    if (pinToken && validatePinToken(teamId, pinToken, hash)) {
-        return null;
-    }
-
-    if (!pin) {
-        return NextResponse.json({ message: "PIN is required" }, { status: 403 });
-    }
-    if (!(await verifyPin(pin, hash))) {
-        return NextResponse.json({ message: "Invalid PIN" }, { status: 403 });
-    }
-    return null; // 검증 통과
-}
-
 /** POST — 암호화된 secret 필드 값을 복호화하여 반환 + 감사 로그 기록 */
 export async function POST(req: NextRequest) {
     let body: RevealBody;
@@ -69,16 +34,6 @@ export async function POST(req: NextRequest) {
     }
 
     const teamId = body.teamId?.trim();
-    if (teamId) {
-        const rlKey = requestRateLimitKey(req, "secret-reveal", teamId);
-        const rl = await consumeSharedRateLimit(rlKey, {
-            limit: 10,
-            windowMs: 5 * 60 * 1000,
-            failClosed: true,
-        });
-        if (!rl.allowed) return rateLimitResponse(rl.retryAfterSeconds);
-    }
-
     const projectId = body.projectId;
     const fieldDefId = body.fieldDefId;
     const fieldDefIds = body.fieldDefIds;
@@ -91,18 +46,44 @@ export async function POST(req: NextRequest) {
         );
     }
 
-    const { user, role } = await getServerUserRole(teamId);
+    // Rate limit — 인메모리 전용 (PIN 토큰이 이미 5분 TTL + 팀 단위 제한이므로 DB RPC 불필요)
+    const rlKey = requestRateLimitKey(req, "secret-reveal", teamId);
+    const rl = consumeRateLimit(rlKey, { limit: 10, windowMs: 5 * 60 * 1000 });
+    if (!rl.allowed) return rateLimitResponse(rl.retryAfterSeconds);
+
+    const svc = createServiceSupabaseClient();
+
+    // auth + PIN 검증을 병렬 실행 (각각 독립적인 DB 쿼리)
+    const [authResult, teamResult] = await Promise.all([
+        getServerUserRole(teamId),
+        svc.from("teams").select("settings_pin_hash").eq("id", teamId).maybeSingle(),
+    ]);
+
+    const { user, role } = authResult;
     if (!user?.email || !role) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
+    if (teamResult.error) throw teamResult.error;
+    const pinHash = teamResult.data?.settings_pin_hash;
+
+    // PIN 검증 — pinToken이 있으면 HMAC만 확인 (CPU만, DB 호출 없음)
+    if (pinHash) {
+        const pinToken = body.pinToken?.trim();
+        if (pinToken && validatePinToken(teamId, pinToken, pinHash)) {
+            // 토큰 유효 — 통과
+        } else {
+            const pin = body.pin?.trim();
+            if (!pin) {
+                return NextResponse.json({ message: "PIN is required" }, { status: 403 });
+            }
+            if (!(await verifyPin(pin, pinHash))) {
+                return NextResponse.json({ message: "Invalid PIN" }, { status: 403 });
+            }
+        }
+    }
+
     try {
-        const svc = createServiceSupabaseClient();
-
-        // PIN 검증 (1회) — pinToken이 있으면 scrypt 없이 빠르게 통과
-        const pinDenied = await enforceTeamPin(svc, teamId, body.pin?.trim(), body.pinToken?.trim());
-        if (pinDenied) return pinDenied;
-
         // ── 배치 모드 ──
         if (isBatch) {
             const ids = [...new Set(fieldDefIds)];
@@ -133,8 +114,9 @@ export async function POST(req: NextRequest) {
                     actor_email: user.email,
                 });
             }
+            // 감사 로그는 응답을 차단하지 않도록 비동기 fire-and-forget
             if (auditRows.length > 0) {
-                await svc.from("project_field_audit_logs").insert(auditRows);
+                void svc.from("project_field_audit_logs").insert(auditRows);
             }
             return NextResponse.json({ values: result });
         }
@@ -156,11 +138,10 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // 복호화
         const plaintext = decryptField(row.encrypted_value);
 
-        // 감사 로그 기록
-        await svc.from("project_field_audit_logs").insert({
+        // 감사 로그 — fire-and-forget
+        void svc.from("project_field_audit_logs").insert({
             team_id: teamId,
             project_id: projectId,
             field_def_id: fieldDefId!,
