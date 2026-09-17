@@ -35,39 +35,39 @@ export async function POST(req: NextRequest) {
         );
     }
 
-    // Rate limit: 5 attempts per 5 minutes per team
-    const rlKey = requestRateLimitKey(req, "pin-verify", teamId);
-    const rl = await consumeSharedRateLimit(rlKey, {
-        limit: 5,
-        windowMs: 5 * 60 * 1000,
-        failClosed: true,
-    });
-    if (!rl.allowed) {
-        return rateLimitResponse(rl.retryAfterSeconds);
-    }
+    const svc = createServiceSupabaseClient();
 
-    const { user, role } = await getServerUserRole(teamId);
+    // rate limit + auth + PIN hash 조회를 병렬 실행
+    const rlKey = requestRateLimitKey(req, "pin-verify", teamId);
+    const [rl, authResult, teamResult] = await Promise.all([
+        consumeSharedRateLimit(rlKey, {
+            limit: 5,
+            windowMs: 5 * 60 * 1000,
+            failClosed: true,
+        }),
+        getServerUserRole(teamId),
+        svc.from("teams").select("settings_pin_hash").eq("id", teamId).maybeSingle(),
+    ]);
+
+    if (!rl.allowed) return rateLimitResponse(rl.retryAfterSeconds);
+
+    const { user, role } = authResult;
     if (!user?.email || !role) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
     try {
-        const svc = createServiceSupabaseClient();
-        const { data, error } = await svc
-            .from("teams")
-            .select("settings_pin_hash")
-            .eq("id", teamId)
-            .maybeSingle();
-        if (error) throw error;
+        if (teamResult.error) throw teamResult.error;
 
-        if (!data?.settings_pin_hash) {
+        if (!teamResult.data?.settings_pin_hash) {
             return NextResponse.json({ ok: true });
         }
 
-        const ok = await verifyPin(pin, data.settings_pin_hash);
+        const hash = teamResult.data.settings_pin_hash;
+        const ok = await verifyPin(pin, hash);
         // 검증 성공 시 단기 HMAC 토큰을 함께 반환 — reveal API에서 scrypt 재실행 불필요
         // 토큰에 PIN 해시 prefix를 포함하여 PIN 변경 시 자동 무효화
-        const token = ok ? issuePinToken(teamId, data.settings_pin_hash) : undefined;
+        const token = ok ? issuePinToken(teamId, hash) : undefined;
         return NextResponse.json({ ok, token });
     } catch (error) {
         return internalErrorResponse("pf-pin-verify", error);
