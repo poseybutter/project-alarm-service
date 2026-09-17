@@ -45,8 +45,8 @@ async function enforceTeamPin(
     const hash = team?.settings_pin_hash;
     if (!hash) return null; // PIN 미설정 — 보호 비활성
 
-    // HMAC 토큰이 유효하면 scrypt 재실행 없이 즉시 통과
-    if (pinToken && validatePinToken(teamId, pinToken)) {
+    // HMAC 토큰이 유효하면 scrypt 재실행 없이 즉시 통과 (PIN 해시 prefix 검증 포함)
+    if (pinToken && validatePinToken(teamId, pinToken, hash)) {
         return null;
     }
 

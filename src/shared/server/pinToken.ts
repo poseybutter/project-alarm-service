@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createHmac, randomBytes } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 
 /**
  * PIN 검증 성공 후 발급되는 단기 HMAC 토큰.
@@ -8,13 +8,14 @@ import { createHmac, randomBytes } from "crypto";
  *
  * 토큰 구조: `${timestamp}.${hmac}`
  * - timestamp: 발급 시각 (ms)
- * - hmac: HMAC-SHA256(secret, `${teamId}:${timestamp}`)
+ * - hmac: HMAC-SHA256(secret, `${teamId}:${pinHashPrefix}:${timestamp}`)
+ *
+ * pinHashPrefix를 포함하므로 PIN 변경 시 기존 토큰이 자동 무효화된다.
  */
 
 const TOKEN_TTL_MS = 5 * 60 * 1000; // 5분
 
 function getSecret(): string {
-    // 환경변수 우선, 없으면 SUPABASE_SERVICE_ROLE_KEY에서 파생
     return (
         process.env.PIN_TOKEN_SECRET ||
         process.env.SUPABASE_SERVICE_ROLE_KEY ||
@@ -22,10 +23,15 @@ function getSecret(): string {
     );
 }
 
-export function issuePinToken(teamId: string): string {
+/** PIN 해시에서 앞 16자를 식별자로 추출 */
+function pinHashPrefix(pinHash: string): string {
+    return pinHash.slice(0, 16);
+}
+
+export function issuePinToken(teamId: string, currentPinHash: string): string {
     const ts = Date.now().toString();
     const hmac = createHmac("sha256", getSecret())
-        .update(`${teamId}:${ts}`)
+        .update(`${teamId}:${pinHashPrefix(currentPinHash)}:${ts}`)
         .digest("base64url");
     return `${ts}.${hmac}`;
 }
@@ -33,6 +39,7 @@ export function issuePinToken(teamId: string): string {
 export function validatePinToken(
     teamId: string,
     token: string,
+    currentPinHash: string,
 ): boolean {
     const dot = token.indexOf(".");
     if (dot < 1) return false;
@@ -43,14 +50,11 @@ export function validatePinToken(
     if (!issued || Date.now() - issued > TOKEN_TTL_MS) return false;
 
     const expected = createHmac("sha256", getSecret())
-        .update(`${teamId}:${ts}`)
+        .update(`${teamId}:${pinHashPrefix(currentPinHash)}:${ts}`)
         .digest("base64url");
 
-    // timing-safe comparison
-    if (hmac.length !== expected.length) return false;
-    let diff = 0;
-    for (let i = 0; i < hmac.length; i++) {
-        diff |= hmac.charCodeAt(i) ^ expected.charCodeAt(i);
-    }
-    return diff === 0;
+    const actualBuf = Buffer.from(hmac, "utf8");
+    const expectedBuf = Buffer.from(expected, "utf8");
+    if (actualBuf.length !== expectedBuf.length) return false;
+    return timingSafeEqual(actualBuf, expectedBuf);
 }
