@@ -1,4 +1,4 @@
-import { scryptSync, randomBytes, timingSafeEqual } from "crypto";
+import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 
 // PIN은 4~6자리 숫자 — 키 길이 32바이트, cost N=16384.
 // rate limit은 온라인 브루트포스만 차단. DB 유출 시 오프라인 공격 방어를 위해
@@ -6,17 +6,31 @@ import { scryptSync, randomBytes, timingSafeEqual } from "crypto";
 const KEY_LEN = 32;
 const SCRYPT_OPTIONS = { N: 16384, r: 8, p: 1 };
 
-export function hashPin(pin: string): string {
-    const salt = randomBytes(16).toString("hex");
-    const hash = scryptSync(pin, salt, KEY_LEN, SCRYPT_OPTIONS).toString("hex");
-    return `${salt}:${hash}`;
+function scryptAsync(
+    password: string,
+    salt: string,
+    keylen: number,
+    options: { N: number; r: number; p: number },
+): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+        scrypt(password, salt, keylen, options, (err, derived) => {
+            if (err) reject(err);
+            else resolve(derived);
+        });
+    });
 }
 
-export function verifyPin(pin: string, stored: string): boolean {
+export async function hashPin(pin: string): Promise<string> {
+    const salt = randomBytes(16).toString("hex");
+    const derived = await scryptAsync(pin, salt, KEY_LEN, SCRYPT_OPTIONS);
+    return `${salt}:${derived.toString("hex")}`;
+}
+
+export async function verifyPin(pin: string, stored: string): Promise<boolean> {
     try {
         const [salt, hash] = stored.split(":");
         if (!salt || !hash) return false;
-        const derived = scryptSync(pin, salt, KEY_LEN, SCRYPT_OPTIONS);
+        const derived = await scryptAsync(pin, salt, KEY_LEN, SCRYPT_OPTIONS);
         const expected = Buffer.from(hash, "hex");
         if (derived.length !== expected.length) return false;
         return timingSafeEqual(derived, expected);
