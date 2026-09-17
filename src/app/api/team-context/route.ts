@@ -121,13 +121,10 @@ async function loadTeamContext(requestedTeamId?: string, strictTeamSelection = f
                   .map((row) => row.module as ModuleKey);
 
     const memberNames: string[] = teamMembers.map((m) => m.name);
-    // legacyPlayerId가 null인 멤버는 downstream에서 numeric id를 전제하므로 제외
-    const memberOptions: TeamMemberOption[] = teamMembers
-        .filter((m) => m.legacyPlayerId !== null)
-        .map((m) => ({
-            id: m.legacyPlayerId,
-            name: m.name,
-        }));
+    const memberOptions: TeamMemberOption[] = teamMembers.map((m) => ({
+        id: m.legacyPlayerId,
+        name: m.name,
+    }));
 
     // avatar: players.avatar_url이 쓰기 대상이므로 직접 조회하여 우선 적용
     let avatarUrl = identity.profile.avatarUrl;

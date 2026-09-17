@@ -1088,8 +1088,9 @@ export async function updateAdminMember(input: {
 
 /**
  * 이미 다른 팀 소속인 프로필을 두 번째 팀에 추가한다.
- * players는 팀 1개만 표현 가능하므로 이 멤버십은 legacy_player_id 없이
- * team_memberships에만 생성한다 (is_default=false, 기존 기본 팀 유지).
+ * players row도 함께 생성하여 legacy_player_id를 확보한다.
+ * V31 트리거(sync_legacy_player_identity)가 players INSERT를 감지해
+ * team_memberships row를 legacy_player_id와 함께 자동 생성한다.
  */
 export async function addTeamMembership(input: {
   email: string;
@@ -1102,7 +1103,7 @@ export async function addTeamMembership(input: {
 
   const { data: profile, error: profileError } = await service
     .from("profiles")
-    .select("id, display_name, email, account_status")
+    .select("id, display_name, email, account_status, avatar_url, bio, job_role")
     .eq("email", email)
     .maybeSingle();
   if (profileError && isIdentitySchemaUnavailable(profileError)) {
@@ -1147,24 +1148,41 @@ export async function addTeamMembership(input: {
     .maybeSingle();
   if (roleError && !isIdentitySchemaUnavailable(roleError)) throw roleError;
 
-
-  const { data: membership, error: insertError } = await service
-    .from("team_memberships")
+  // Step 1: players row 생성 — V31 트리거가 team_memberships를 자동 생성한다.
+  // profile 데이터를 그대로 넣어야 트리거의 profiles upsert가 기존 값을 보존한다.
+  const playerRole = input.role === "admin" ? "admin" : "member";
+  const { data: playerRow, error: playerError } = await service
+    .from("players")
     .insert({
-      profile_id: profile.id,
       team_id: input.teamId,
-      role: input.role,
-      ...(roleRow?.id ? { role_id: roleRow.id } : {}),
+      name: profile.display_name || profile.email.split("@")[0],
+      email: profile.email,
+      role: playerRole,
       status: "active",
-      is_default: false,
-      legacy_player_id: null,
+      avatar_url: profile.avatar_url ?? null,
+      bio: profile.bio ?? null,
+      job_role: profile.job_role ?? null,
     })
-    .select("id, team_id, role, status, is_default")
+    .select("id")
     .single();
-  if (insertError?.code === "23505") {
+  if (playerError?.code === "23505") {
     throw new AdminApiError("이미 해당 팀 소속입니다.", 409);
   }
-  if (insertError) throw insertError;
+  if (playerError) throw playerError;
+
+  // Step 2: 트리거가 생성한 membership의 role/role_id 보정
+  // (트리거는 viewer를 member로 매핑하므로 보정 필요)
+  const { data: membership, error: updateError } = await service
+    .from("team_memberships")
+    .update({
+      role: input.role,
+      ...(roleRow?.id ? { role_id: roleRow.id } : {}),
+      is_default: false,
+    })
+    .eq("legacy_player_id", playerRow.id)
+    .select("id, team_id, role, status, is_default")
+    .single();
+  if (updateError) throw updateError;
 
   await writeAdminAudit({
     actorEmail: bootstrap.identity.email,
@@ -1193,7 +1211,7 @@ export async function removeTeamMembership(input: {
 
   const { data: membership, error: membershipError } = await service
     .from("team_memberships")
-    .select("id, team_id, role, is_default, profiles!inner(email, display_name)")
+    .select("id, team_id, role, is_default, legacy_player_id, profiles!inner(email, display_name)")
     .eq("id", input.membershipId)
     .maybeSingle();
   if (membershipError) throw membershipError;
@@ -1239,6 +1257,23 @@ export async function removeTeamMembership(input: {
   if (deleteError) throw deleteError;
   if (!deletedCount) {
     throw new AdminApiError("멤버십을 찾을 수 없습니다.", 404);
+  }
+
+  // addTeamMembership이 생성한 players row도 함께 제거한다.
+  // 남겨두면 app_member_team_ids()가 이 팀을 여전히 반환해 RLS 접근이 유지된다.
+  // FK는 ON DELETE SET NULL이므로 tasks·quests 등 기존 데이터는 보존된다.
+  if (membership.legacy_player_id != null) {
+    const { error: playerDeleteError } = await service
+      .from("players")
+      .delete()
+      .eq("id", membership.legacy_player_id)
+      .eq("team_id", input.teamId);
+    if (playerDeleteError) {
+      console.error(
+        "[removeTeamMembership] players 정리 실패:",
+        playerDeleteError.message,
+      );
+    }
   }
 
   await writeAdminAudit({
