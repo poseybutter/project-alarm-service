@@ -235,6 +235,7 @@ function ProjectDetailTabs({
     hasPin,
     pinVerified,
     verifiedPin,
+    pinToken,
     onPinRequired,
 }: {
     project: import("@/shared/types").Project;
@@ -248,6 +249,7 @@ function ProjectDetailTabs({
     hasPin: boolean;
     pinVerified: boolean;
     verifiedPin: string;
+    pinToken: string;
     onPinRequired: (callback: () => void) => void;
 }) {
     const [tab, setTab] = useState<"basic" | "setting">("basic");
@@ -377,8 +379,8 @@ function ProjectDetailTabs({
                     <AccessReadCard
                         defs={defs}
                         values={valueMap}
-                        onReveal={(defId) => pf.revealSecret(p.id, defId, verifiedPin || undefined)}
-                        onRevealAll={(defIds) => pf.revealSecrets(p.id, defIds, verifiedPin || undefined)}
+                        onReveal={(defId) => pf.revealSecret(p.id, defId, verifiedPin || undefined, pinToken || undefined)}
+                        onRevealAll={(defIds) => pf.revealSecrets(p.id, defIds, verifiedPin || undefined, pinToken || undefined)}
                     />
                     <DevReadCard defs={defs} values={valueMap} />
                 </div>
@@ -482,6 +484,7 @@ export default function ManagePage() {
     const [teamHasPin, setTeamHasPin] = useState(false);
     const [pinVerifiedAt, setPinVerifiedAt] = useState<number>(0);
     const [lastVerifiedPin, setLastVerifiedPin] = useState<string>("");
+    const [pinToken, setPinToken] = useState<string>("");
     const PIN_EXPIRY_MS = 5 * 60 * 1000; // 5분
     const pinVerified = pinVerifiedAt > 0 && Date.now() - pinVerifiedAt < PIN_EXPIRY_MS;
     const [pinModal, setPinModal] = useState<{ callback: () => void } | null>(null);
@@ -1471,6 +1474,7 @@ export default function ManagePage() {
                                                     hasPin={teamHasPin}
                                                     pinVerified={pinVerified}
                                                     verifiedPin={lastVerifiedPin}
+                                                    pinToken={pinToken}
                                                     onPinRequired={(cb) => { setPinModal({ callback: cb }); setPinInput(""); setPinError(false); }}
                                                 />
                                             )}
@@ -2437,9 +2441,10 @@ export default function ManagePage() {
                                     if (e.key !== "Enter" || !pinInput || pinVerifying) return;
                                     setPinVerifying(true);
                                     try {
-                                        const ok = await pf.verifyPin(pinInput);
-                                        if (ok) {
+                                        const result = await pf.verifyPin(pinInput);
+                                        if (result.ok) {
                                             setPinVerifiedAt(Date.now()); setLastVerifiedPin(pinInput);
+                                            if (result.token) setPinToken(result.token);
                                             const cb = pinModal.callback;
                                             setPinModal(null);
                                             cb();
@@ -2464,9 +2469,10 @@ export default function ManagePage() {
                                         if (!pinInput || pinVerifying) return;
                                         setPinVerifying(true);
                                         try {
-                                            const ok = await pf.verifyPin(pinInput);
-                                            if (ok) {
+                                            const result = await pf.verifyPin(pinInput);
+                                            if (result.ok) {
                                                 setPinVerifiedAt(Date.now()); setLastVerifiedPin(pinInput);
+                                                if (result.token) setPinToken(result.token);
                                                 const cb = pinModal.callback;
                                                 setPinModal(null);
                                                 cb();
