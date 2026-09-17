@@ -1088,9 +1088,8 @@ export async function updateAdminMember(input: {
 
 /**
  * 이미 다른 팀 소속인 프로필을 두 번째 팀에 추가한다.
- * players row도 함께 생성하여 legacy_player_id를 확보한다.
- * V31 트리거(sync_legacy_player_identity)가 players INSERT를 감지해
- * team_memberships row를 legacy_player_id와 함께 자동 생성한다.
+ * V61 RPC(admin_add_team_membership)로 players INSERT + membership role 보정을
+ * 단일 트랜잭션으로 원자적 처리한다.
  */
 export async function addTeamMembership(input: {
   email: string;
@@ -1103,7 +1102,7 @@ export async function addTeamMembership(input: {
 
   const { data: profile, error: profileError } = await service
     .from("profiles")
-    .select("id, display_name, email, account_status, avatar_url, bio, job_role")
+    .select("id, display_name, email, account_status")
     .eq("email", email)
     .maybeSingle();
   if (profileError && isIdentitySchemaUnavailable(profileError)) {
@@ -1131,76 +1130,42 @@ export async function addTeamMembership(input: {
     throw new AdminApiError("이미 해당 팀 소속입니다.", 409);
   }
 
-  // role_id: 넣지 않으면 컬럼 기본값(team_member)이 항상 들어가 admin·viewer로
-  // 추가해도 실제 권한은 구성원으로만 부여됨 — 시스템 역할을 직접 찾아 명시.
-  const roleKey =
-    input.role === "admin"
-      ? "team_admin"
-      : input.role === "viewer"
-        ? "team_viewer"
-        : "team_member";
-  const { data: roleRow, error: roleError } = await service
-    .from("roles")
-    .select("id")
-    .is("team_id", null)
-    .eq("role_key", roleKey)
-    .eq("status", "active")
-    .maybeSingle();
-  if (roleError && !isIdentitySchemaUnavailable(roleError)) throw roleError;
-
-  // Step 1: players row 생성 — V31 트리거가 team_memberships를 자동 생성한다.
-  // profile 데이터를 그대로 넣어야 트리거의 profiles upsert가 기존 값을 보존한다.
-  const playerRole = input.role === "admin" ? "admin" : "member";
-  const { data: playerRow, error: playerError } = await service
-    .from("players")
-    .insert({
-      team_id: input.teamId,
-      name: profile.display_name || profile.email.split("@")[0],
-      email: profile.email,
-      role: playerRole,
-      status: "active",
-      avatar_url: profile.avatar_url ?? null,
-      bio: profile.bio ?? null,
-      job_role: profile.job_role ?? null,
-    })
-    .select("id")
-    .single();
-  if (playerError?.code === "23505") {
-    throw new AdminApiError("이미 해당 팀 소속입니다.", 409);
-  }
-  if (playerError) throw playerError;
-
-  // Step 2: 트리거가 생성한 membership의 role/role_id 보정
-  // (트리거는 viewer를 member로 매핑하므로 보정 필요)
-  const { data: membership, error: updateError } = await service
-    .from("team_memberships")
-    .update({
-      role: input.role,
-      ...(roleRow?.id ? { role_id: roleRow.id } : {}),
-      is_default: false,
-    })
-    .eq("legacy_player_id", playerRow.id)
-    .select("id, team_id, role, status, is_default")
-    .single();
-  if (updateError) throw updateError;
-
-  await writeAdminAudit({
-    actorEmail: bootstrap.identity.email,
-    action: "membership.added",
-    teamId: input.teamId,
-    targetType: "team_membership",
-    targetId: membership.id,
-    targetLabel: profile.display_name || profile.email,
-    afterState: membership,
+  // V61 RPC: players INSERT + membership role 보정 + 감사 로그를 단일 트랜잭션으로
+  const displayName = profile.display_name || profile.email.split("@")[0];
+  const { data, error: rpcError } = await service.rpc("admin_add_team_membership", {
+    p_team_id: input.teamId,
+    p_email: profile.email,
+    p_display_name: displayName,
+    p_role: input.role,
+    p_avatar_url: null,
+    p_bio: null,
+    p_job_role: null,
+    p_actor_email: bootstrap.identity.email,
   });
 
-  return membership;
+  if (rpcError) {
+    if (rpcError.code === "23505") {
+      throw new AdminApiError("이미 해당 팀 소속입니다.", 409);
+    }
+    if (rpcError.code === "22023") {
+      throw new AdminApiError(rpcError.message, 400);
+    }
+    if (rpcError.code === "42883" || rpcError.code === "PGRST202") {
+      throw new AdminApiError(
+        "멤버십 추가 기능을 사용하려면 V61 마이그레이션이 필요합니다.",
+        503,
+      );
+    }
+    throw rpcError;
+  }
+
+  return data as { id: string; team_id: string; role: string; status: string; is_default: boolean };
 }
 
 /**
  * 두 번째 이상 팀 소속(멤버십) 제거.
- * 기본 소속(is_default=true)은 players와 연결된 레거시 경로라 대상 아님 —
- * 그 경우는 updateAdminMember의 상태 변경(suspended)을 사용.
+ * V61 RPC(admin_remove_team_membership)로 team_memberships + players 삭제를
+ * 단일 트랜잭션으로 원자적 처리한다.
  */
 export async function removeTeamMembership(input: {
   membershipId: string;
@@ -1209,82 +1174,43 @@ export async function removeTeamMembership(input: {
   const bootstrap = await requireAdminSession(input.teamId, "members.manage");
   const service = createServiceSupabaseClient();
 
+  // 자기 자신 제거 방지를 위해 멤버십 조회
   const { data: membership, error: membershipError } = await service
     .from("team_memberships")
-    .select("id, team_id, role, is_default, legacy_player_id, profiles!inner(email, display_name)")
+    .select("id, team_id, profiles!inner(email)")
     .eq("id", input.membershipId)
     .maybeSingle();
   if (membershipError) throw membershipError;
   if (!membership || membership.team_id !== input.teamId) {
     throw new AdminApiError("멤버십을 찾을 수 없습니다.", 404);
   }
-  if (membership.is_default) {
-    throw new AdminApiError(
-      "기본 소속은 이 기능으로 제거할 수 없습니다. 구성원 상태 변경을 이용해 주세요.",
-      409,
-    );
-  }
-
-  const profile = membership.profiles as unknown as {
-    email: string;
-    display_name: string;
-  };
+  const profile = membership.profiles as unknown as { email: string };
   if (profile.email.toLowerCase() === bootstrap.identity.email.toLowerCase()) {
     throw new AdminApiError("자신의 멤버십은 직접 제거할 수 없습니다.", 409);
   }
 
-  // 팀의 마지막 활성 관리자는 제거 불가 (updateAdminMember와 동일한 보호)
-  if (membership.role === "admin") {
-    const { count, error: countError } = await service
-      .from("team_memberships")
-      .select("id", { count: "exact", head: true })
-      .eq("team_id", input.teamId)
-      .eq("role", "admin")
-      .eq("status", "active");
-    if (countError) throw countError;
-    if ((count ?? 0) <= 1) {
-      throw new AdminApiError("팀의 마지막 관리자는 제거할 수 없습니다.", 409);
+  // V61 RPC: membership + players 삭제 + 감사 로그를 단일 트랜잭션으로
+  const { error: rpcError } = await service.rpc("admin_remove_team_membership", {
+    p_membership_id: input.membershipId,
+    p_team_id: input.teamId,
+    p_actor_email: bootstrap.identity.email,
+  });
+
+  if (rpcError) {
+    if (rpcError.code === "P0002") {
+      throw new AdminApiError("멤버십을 찾을 수 없습니다.", 404);
     }
-  }
-
-  // 조회와 삭제 사이 팀이 바뀌는 경우 방지 위해 team_id 재확인
-  const { error: deleteError, count: deletedCount } = await service
-    .from("team_memberships")
-    .delete({ count: "exact" })
-    .eq("id", input.membershipId)
-    .eq("team_id", input.teamId)
-    .eq("is_default", false);
-  if (deleteError) throw deleteError;
-  if (!deletedCount) {
-    throw new AdminApiError("멤버십을 찾을 수 없습니다.", 404);
-  }
-
-  // addTeamMembership이 생성한 players row도 함께 제거한다.
-  // 남겨두면 app_member_team_ids()가 이 팀을 여전히 반환해 RLS 접근이 유지된다.
-  // FK는 ON DELETE SET NULL이므로 tasks·quests 등 기존 데이터는 보존된다.
-  if (membership.legacy_player_id != null) {
-    const { error: playerDeleteError } = await service
-      .from("players")
-      .delete()
-      .eq("id", membership.legacy_player_id)
-      .eq("team_id", input.teamId);
-    if (playerDeleteError) {
-      console.error(
-        "[removeTeamMembership] players 정리 실패:",
-        playerDeleteError.message,
+    if (rpcError.code === "22023") {
+      throw new AdminApiError(rpcError.message, 409);
+    }
+    if (rpcError.code === "42883" || rpcError.code === "PGRST202") {
+      throw new AdminApiError(
+        "멤버십 제거 기능을 사용하려면 V61 마이그레이션이 필요합니다.",
+        503,
       );
     }
+    throw rpcError;
   }
-
-  await writeAdminAudit({
-    actorEmail: bootstrap.identity.email,
-    action: "membership.removed",
-    teamId: input.teamId,
-    targetType: "team_membership",
-    targetId: membership.id,
-    targetLabel: profile.display_name || profile.email,
-    beforeState: membership,
-  });
 }
 
 export async function reorderTeamMembers(input: {

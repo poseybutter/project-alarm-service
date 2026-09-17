@@ -66,7 +66,8 @@ export async function POST(req: NextRequest) {
 
         const ok = await verifyPin(pin, data.settings_pin_hash);
         // 검증 성공 시 단기 HMAC 토큰을 함께 반환 — reveal API에서 scrypt 재실행 불필요
-        const token = ok ? issuePinToken(teamId) : undefined;
+        // 토큰에 PIN 해시 prefix를 포함하여 PIN 변경 시 자동 무효화
+        const token = ok ? issuePinToken(teamId, data.settings_pin_hash) : undefined;
         return NextResponse.json({ ok, token });
     } catch (error) {
         return internalErrorResponse("pf-pin-verify", error);
