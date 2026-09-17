@@ -6,6 +6,7 @@ import {
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { decryptField } from "@/shared/server/fieldEncryption";
 import { verifyPin } from "@/shared/server/pinHash";
+import { validatePinToken } from "@/shared/server/pinToken";
 import {
     requestRateLimitKey,
     consumeSharedRateLimit,
@@ -19,16 +20,20 @@ type RevealBody = {
     /** 배치 모드 — 여러 필드를 한 번에 복호화 (PIN 검증 1회) */
     fieldDefIds?: number[];
     pin?: string;
+    /** PIN verify에서 발급받은 HMAC 토큰 — scrypt 재실행 없이 빠르게 인가 */
+    pinToken?: string;
 };
 
 /**
  * 팀 PIN 검증 — PIN이 설정되어 있으면 반드시 검증을 통과해야 한다.
+ * pinToken이 유효하면 scrypt 없이 즉시 통과한다.
  * 반환: null이면 통과, Response면 거부 응답.
  */
 async function enforceTeamPin(
     svc: ReturnType<typeof createServiceSupabaseClient>,
     teamId: string,
     pin: string | undefined,
+    pinToken: string | undefined,
 ): Promise<NextResponse | null> {
     const { data: team, error } = await svc
         .from("teams")
@@ -40,10 +45,15 @@ async function enforceTeamPin(
     const hash = team?.settings_pin_hash;
     if (!hash) return null; // PIN 미설정 — 보호 비활성
 
+    // HMAC 토큰이 유효하면 scrypt 재실행 없이 즉시 통과
+    if (pinToken && validatePinToken(teamId, pinToken)) {
+        return null;
+    }
+
     if (!pin) {
         return NextResponse.json({ message: "PIN is required" }, { status: 403 });
     }
-    if (!verifyPin(pin, hash)) {
+    if (!(await verifyPin(pin, hash))) {
         return NextResponse.json({ message: "Invalid PIN" }, { status: 403 });
     }
     return null; // 검증 통과
@@ -89,8 +99,8 @@ export async function POST(req: NextRequest) {
     try {
         const svc = createServiceSupabaseClient();
 
-        // PIN 검증 (1회)
-        const pinDenied = await enforceTeamPin(svc, teamId, body.pin?.trim());
+        // PIN 검증 (1회) — pinToken이 있으면 scrypt 없이 빠르게 통과
+        const pinDenied = await enforceTeamPin(svc, teamId, body.pin?.trim(), body.pinToken?.trim());
         if (pinDenied) return pinDenied;
 
         // ── 배치 모드 ──
