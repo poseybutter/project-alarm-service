@@ -537,16 +537,20 @@ type AccessReadProps = {
 };
 
 export function AccessReadCard({ defs, values, onReveal, onRevealAll }: AccessReadProps) {
-    const [env, setEnv] = useState<"prod" | "local">("prod");
+    // 양쪽 env 모두 데이터 유무를 먼저 확인해 초기 탭을 결정한다.
+    const hasEnvData = (e: "prod" | "local") => {
+        const p = `access_${e}_`;
+        return defs.some((d) => d.name.startsWith(p) && (values.get(d.id)?.value || values.get(d.id)?.has_secret));
+    };
+    const hasProd = hasEnvData("prod");
+    const hasLocal = hasEnvData("local");
+
+    const [env, setEnv] = useState<"prod" | "local">(hasProd ? "prod" : "local");
     const [revealed, setRevealed] = useState<Record<number, string>>({});
     const [revealing, setRevealing] = useState<number | null>(null);
     const [revealingAll, setRevealingAll] = useState(false);
 
     const prefix = `access_${env}_`;
-    // 현재 선택된 env(운영/로컬) 탭의 prefix 에 맞는 필드만 확인하여
-    // "접속 정보" 카드 표시 여부를 결정한다. 양쪽 env 를 모두 체크하면
-    // 한쪽에만 값이 있을 때 빈 카드가 보인다.
-    const hasAny = defs.some((d) => d.name.startsWith(prefix) && values.get(d.id)?.value);
 
     // 현재 env의 secret 필드 중 아직 노출되지 않은 defId 목록
     const unrevealedSecretIds = defs
@@ -563,7 +567,8 @@ export function AccessReadCard({ defs, values, onReveal, onRevealAll }: AccessRe
         setRevealingAll(false);
     };
 
-    if (!hasAny && !defs.some((d) => d.name.startsWith(prefix) && values.get(d.id)?.has_secret)) {
+    // 양쪽 env 모두 데이터가 없으면 카드 자체를 숨긴다.
+    if (!hasProd && !hasLocal) {
         return null;
     }
 

@@ -46,10 +46,11 @@ export async function POST(req: NextRequest) {
 
     try {
         const svc = createServiceSupabaseClient();
+        const pinHash = pin ? await hashPin(pin) : null;
         const { error } = await svc
             .from("teams")
             .update({
-                settings_pin_hash: pin ? hashPin(pin) : null,
+                settings_pin_hash: pinHash,
                 settings_pin_updated_at: new Date().toISOString(),
             })
             .eq("id", teamId);
