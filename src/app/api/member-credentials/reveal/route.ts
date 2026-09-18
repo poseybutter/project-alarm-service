@@ -19,7 +19,7 @@ type RevealBody = {
     totpToken?: string;
 };
 
-/** POST — 팀원 자격증명 비밀번호 복호화 (TOTP 토큰 필요) */
+/** POST — 팀원 자격증명 비밀번호 복호화 (TOTP 토큰 필수) */
 export async function POST(req: NextRequest) {
     let body: RevealBody;
     try {
@@ -31,33 +31,30 @@ export async function POST(req: NextRequest) {
     const teamId = body.teamId?.trim();
     const credentialId = body.credentialId;
     const totpToken = body.totpToken?.trim();
-    if (!teamId || !credentialId) {
+
+    // 입력 검증 — totpToken도 필수 파라미터로 취급
+    if (!teamId || !credentialId || !totpToken) {
         return NextResponse.json(
-            { message: "teamId and credentialId are required" },
+            { message: "teamId, credentialId, totpToken are required" },
             { status: 400 },
         );
     }
 
-    const rlKey = requestRateLimitKey(req, "mc-reveal", teamId);
-    const rl = consumeRateLimit(rlKey, { limit: 10, windowMs: 5 * 60 * 1000 });
-    if (!rl.allowed) return rateLimitResponse(rl.retryAfterSeconds);
-
+    // 인증
     const { user, role } = await getServerUserRole(teamId);
     if (!user?.email || !role) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
+    // rate limit — 인증 후, 유저별 키
+    const rlKey = requestRateLimitKey(req, "mc-reveal", `${teamId}:${user.email}`);
+    const rl = consumeRateLimit(rlKey, { limit: 10, windowMs: 5 * 60 * 1000 });
+    if (!rl.allowed) return rateLimitResponse(rl.retryAfterSeconds);
+
     try {
         const svc = createServiceSupabaseClient();
 
-        // TOTP 토큰 검증 — 자격증명은 항상 TOTP 필수
-        if (!totpToken) {
-            return NextResponse.json(
-                { message: "TOTP verification required" },
-                { status: 403 },
-            );
-        }
-
+        // TOTP 토큰 서버 검증
         const identity = await loadNormalizedIdentity(svc, user.email);
         const profileId = identity?.profile?.id;
         if (!profileId || !validateVerifyToken(teamId, totpToken, profileId)) {
@@ -85,8 +82,8 @@ export async function POST(req: NextRequest) {
 
         const password = decryptField(row.encrypted_pw);
 
-        // 감사 로그 — fire-and-forget
-        void svc.from("member_credential_audit_logs").insert({
+        // 감사 로그
+        await svc.from("member_credential_audit_logs").insert({
             team_id: teamId,
             credential_id: credentialId,
             action: "view",

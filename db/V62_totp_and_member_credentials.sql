@@ -59,6 +59,11 @@ comment on table public.member_credential_audit_logs is '팀원 자격증명 접
 alter table public.teams
     add column if not exists totp_required boolean not null default false;
 
+-- 기존 PIN 보호 팀은 TOTP도 활성화하여 인증 단계가 제거되지 않도록 백필
+update public.teams
+    set totp_required = true
+    where settings_pin_hash is not null;
+
 -- ─── 5. RLS: 모든 새 테이블은 service_role 전용 (V36 패턴) ──────────
 
 -- totp_secrets
