@@ -31,8 +31,7 @@ export default function MemberCredentials({
     // 추가 모달
     const [addOpen, setAddOpen] = useState(false);
     const [addProfileId, setAddProfileId] = useState("");
-    const [addLabel, setAddLabel] = useState("Windows 계정");
-    const [addLoginId, setAddLoginId] = useState("");
+    const [addLabel, setAddLabel] = useState("Windows");
     const [addPassword, setAddPassword] = useState("");
     const [addNotes, setAddNotes] = useState("");
     const [addSaving, setAddSaving] = useState(false);
@@ -40,7 +39,6 @@ export default function MemberCredentials({
     // 수정 모달
     const [editId, setEditId] = useState<number | null>(null);
     const [editLabel, setEditLabel] = useState("");
-    const [editLoginId, setEditLoginId] = useState("");
     const [editPassword, setEditPassword] = useState("");
     const [editNotes, setEditNotes] = useState("");
     const [editSaving, setEditSaving] = useState(false);
@@ -88,10 +86,9 @@ export default function MemberCredentials({
         if (!addProfileId || !addLabel.trim() || addSaving) return;
         setAddSaving(true);
         try {
-            await mc.create(addProfileId, addLabel.trim(), addLoginId.trim() || undefined, addPassword.trim() || undefined, addNotes.trim() || undefined);
+            await mc.create(addProfileId, addLabel.trim(), addPassword.trim() || undefined, addNotes.trim() || undefined);
             setAddOpen(false);
-            setAddLabel("Windows 계정");
-            setAddLoginId("");
+            setAddLabel("Windows");
             setAddPassword("");
             setAddNotes("");
             setAddProfileId("");
@@ -107,7 +104,6 @@ export default function MemberCredentials({
         try {
             await mc.update(editId, {
                 label: editLabel.trim() || undefined,
-                loginId: editLoginId,
                 password: editPassword || undefined,
                 notes: editNotes,
             });
@@ -129,92 +125,94 @@ export default function MemberCredentials({
     if (!hasAnyCredentials && !isAdmin) return null;
 
     return (
-        <div className="rounded-xl border border-stone-200 bg-white overflow-hidden">
-            <div className="flex items-center justify-between px-4 pt-3 pb-2">
-                <span className="text-sm font-bold text-stone-700">팀원 계정 정보</span>
+        <>
+            <div className="space-y-3">
                 {isAdmin && (
-                    <button
-                        type="button"
-                        onClick={() => setAddOpen(true)}
-                        className="text-xs font-medium text-amber-500 hover:text-amber-600"
-                    >
-                        + 추가
-                    </button>
+                    <div className="flex justify-end">
+                        <button
+                            type="button"
+                            onClick={() => setAddOpen(true)}
+                            className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-600 transition-colors"
+                        >
+                            + 계정 추가
+                        </button>
+                    </div>
                 )}
-            </div>
-            <div className="px-4 pb-4 space-y-3">
                 {members.filter((m) => m.credentials.length > 0 || isAdmin).map((member) => (
-                    <div key={member.profileId} className="rounded-lg border border-stone-100 bg-stone-50/50 p-3">
-                        <div className="flex items-center gap-2 mb-2">
-                            <Avatar name={member.displayName} size={24} />
-                            <span className="text-sm font-medium text-stone-700">{member.displayName}</span>
-                            <span className="text-[10px] text-stone-400">{member.email}</span>
+                    <div key={member.profileId} className="rounded-xl border border-stone-200 bg-white p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                            <Avatar name={member.displayName} size={28} />
+                            <div>
+                                <span className="text-sm font-bold text-stone-700 block">{member.displayName}</span>
+                                <span className="text-[10px] text-stone-400">{member.email}</span>
+                            </div>
                         </div>
                         {member.credentials.length === 0 && (
-                            <p className="text-xs text-stone-400 pl-8">등록된 계정 없음</p>
+                            <p className="text-xs text-stone-400">등록된 계정 없음</p>
                         )}
-                        {member.credentials.map((cred) => (
-                            <div key={cred.id} className="flex items-center gap-3 pl-8 py-1">
-                                <span className="text-xs font-medium text-stone-500 w-24 shrink-0">{cred.label}</span>
-                                {cred.loginId && (
-                                    <span className="text-xs text-stone-700 font-mono">{cred.loginId}</span>
-                                )}
-                                {cred.hasPassword && (
-                                    <div className="flex items-center gap-1.5">
-                                        {revealed[cred.id] ? (
-                                            <>
-                                                <span className="text-xs text-stone-700 font-mono break-all">{revealed[cred.id]}</span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setRevealed((p) => { const n = { ...p }; delete n[cred.id]; return n; })}
-                                                    className="text-[10px] text-stone-400 shrink-0"
-                                                >
-                                                    숨기기
-                                                </button>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <span className="text-xs text-stone-400 tracking-widest">●●●●●●</span>
-                                                <button
-                                                    type="button"
-                                                    disabled={revealing === cred.id}
-                                                    onClick={() => void handleReveal(cred.id)}
-                                                    className="text-[10px] text-amber-500 font-medium disabled:opacity-50 shrink-0"
-                                                >
-                                                    {revealing === cred.id ? "..." : "보기"}
-                                                </button>
-                                            </>
-                                        )}
-                                    </div>
-                                )}
-                                {isAdmin && (
-                                    <div className="ml-auto flex items-center gap-1 shrink-0">
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setEditId(cred.id);
-                                                setEditLabel(cred.label);
-                                                setEditLoginId(cred.loginId ?? "");
-                                                setEditPassword("");
-                                                setEditNotes(cred.notes ?? "");
-                                            }}
-                                            className="text-stone-300 hover:text-amber-500 transition-colors"
-                                            aria-label="수정"
-                                        >
-                                            <i className="ri-pencil-line text-sm" aria-hidden />
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => void handleDelete(cred.id)}
-                                            className="text-stone-300 hover:text-red-400 transition-colors"
-                                            aria-label="삭제"
-                                        >
-                                            <i className="ri-close-line text-sm" aria-hidden />
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        ))}
+                        <div className="space-y-2">
+                            {member.credentials.map((cred) => (
+                                <div key={cred.id} className="flex items-center gap-3 rounded-lg bg-stone-50 px-3 py-2">
+                                    <span className="text-xs font-bold text-stone-600 w-20 shrink-0">{cred.label}</span>
+                                    {cred.hasPassword && (
+                                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                            {revealed[cred.id] ? (
+                                                <>
+                                                    <span className="text-xs text-stone-700 font-mono break-all">{revealed[cred.id]}</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setRevealed((p) => { const n = { ...p }; delete n[cred.id]; return n; })}
+                                                        className="text-[10px] text-stone-400 shrink-0"
+                                                    >
+                                                        숨기기
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="text-xs text-stone-400 tracking-widest">●●●●●●</span>
+                                                    <button
+                                                        type="button"
+                                                        disabled={revealing === cred.id}
+                                                        onClick={() => void handleReveal(cred.id)}
+                                                        className="text-[10px] text-amber-500 font-medium disabled:opacity-50 shrink-0"
+                                                    >
+                                                        {revealing === cred.id ? "..." : "보기"}
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
+                                    {cred.notes && (
+                                        <span className="text-[10px] text-stone-400 truncate max-w-[100px]" title={cred.notes}>{cred.notes}</span>
+                                    )}
+                                    {isAdmin && (
+                                        <div className="ml-auto flex items-center gap-1 shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setEditId(cred.id);
+                                                    setEditLabel(cred.label);
+                                                    setEditPassword("");
+                                                    setEditNotes(cred.notes ?? "");
+                                                }}
+                                                className="text-stone-300 hover:text-amber-500 transition-colors"
+                                                aria-label="수정"
+                                            >
+                                                <i className="ri-pencil-line text-sm" aria-hidden />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => void handleDelete(cred.id)}
+                                                className="text-stone-300 hover:text-red-400 transition-colors"
+                                                aria-label="삭제"
+                                            >
+                                                <i className="ri-close-line text-sm" aria-hidden />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 ))}
             </div>
@@ -245,16 +243,7 @@ export default function MemberCredentials({
                                     className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-amber-300"
                                     value={addLabel}
                                     onChange={(e) => setAddLabel(e.target.value)}
-                                    placeholder="예: Windows 계정"
-                                />
-                            </div>
-                            <div>
-                                <label className="text-xs font-medium text-stone-500 block mb-1">로그인 ID</label>
-                                <input
-                                    className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-amber-300"
-                                    value={addLoginId}
-                                    onChange={(e) => setAddLoginId(e.target.value)}
-                                    placeholder="예: DOMAIN\username"
+                                    placeholder="예: Windows, VPN"
                                 />
                             </div>
                             <div>
@@ -308,14 +297,6 @@ export default function MemberCredentials({
                                 />
                             </div>
                             <div>
-                                <label className="text-xs font-medium text-stone-500 block mb-1">로그인 ID</label>
-                                <input
-                                    className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-amber-300"
-                                    value={editLoginId}
-                                    onChange={(e) => setEditLoginId(e.target.value)}
-                                />
-                            </div>
-                            <div>
                                 <label className="text-xs font-medium text-stone-500 block mb-1">비밀번호</label>
                                 <input
                                     type="password"
@@ -350,6 +331,6 @@ export default function MemberCredentials({
                     </div>
                 </div>
             )}
-        </div>
+        </>
     );
 }

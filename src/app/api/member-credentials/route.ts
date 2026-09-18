@@ -5,13 +5,11 @@ import {
 } from "@/infrastructure/supabase/server";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { encryptField } from "@/shared/server/fieldEncryption";
-import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
 
 type CredentialRow = {
     id: number;
     profile_id: string;
     label: string;
-    login_id: string | null;
     encrypted_pw: string | null;
     notes: string | null;
     sort_order: number;
@@ -67,7 +65,7 @@ export async function GET(req: NextRequest) {
         // 자격증명 조회
         const { data: creds, error: cErr } = await svc
             .from("member_credentials")
-            .select("id, profile_id, label, login_id, encrypted_pw, notes, sort_order")
+            .select("id, profile_id, label, encrypted_pw, notes, sort_order")
             .eq("team_id", teamId)
             .order("sort_order");
 
@@ -80,7 +78,6 @@ export async function GET(req: NextRequest) {
                 .map((c) => ({
                     id: c.id,
                     label: c.label,
-                    loginId: c.login_id,
                     hasPassword: Boolean(c.encrypted_pw),
                     notes: c.notes,
                     sortOrder: c.sort_order,
@@ -97,7 +94,6 @@ type CreateBody = {
     teamId?: string;
     profileId?: string;
     label?: string;
-    loginId?: string;
     password?: string;
     notes?: string;
 };
@@ -139,7 +135,6 @@ export async function POST(req: NextRequest) {
                 team_id: teamId,
                 profile_id: profileId,
                 label,
-                login_id: body.loginId?.trim() || null,
                 encrypted_pw: encryptedPw,
                 notes: body.notes?.trim() || null,
             })
@@ -166,7 +161,6 @@ type UpdateBody = {
     teamId?: string;
     id?: number;
     label?: string;
-    loginId?: string;
     password?: string;
     notes?: string;
 };
@@ -201,7 +195,6 @@ export async function PATCH(req: NextRequest) {
             updated_at: new Date().toISOString(),
         };
         if (body.label !== undefined) update.label = body.label.trim();
-        if (body.loginId !== undefined) update.login_id = body.loginId.trim() || null;
         if (body.notes !== undefined) update.notes = body.notes.trim() || null;
         if (body.password !== undefined) {
             update.encrypted_pw = body.password.trim()

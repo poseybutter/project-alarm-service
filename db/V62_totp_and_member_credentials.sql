@@ -25,7 +25,6 @@ create table if not exists public.member_credentials (
     team_id         text not null references public.teams(id) on delete cascade,
     profile_id      uuid not null references public.profiles(id) on delete cascade,
     label           text not null,
-    login_id        text,
     encrypted_pw    text,
     notes           text,
     sort_order      int not null default 0,
@@ -34,7 +33,6 @@ create table if not exists public.member_credentials (
 );
 
 comment on table  public.member_credentials is '팀원별 자격증명 (Windows 계정, VPN 등)';
-comment on column public.member_credentials.login_id is '로그인 ID (평문)';
 comment on column public.member_credentials.encrypted_pw is 'fieldEncryption으로 암호화된 비밀번호';
 
 create index if not exists member_credentials_team_profile_idx
