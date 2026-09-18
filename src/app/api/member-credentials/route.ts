@@ -13,6 +13,7 @@ type CredentialRow = {
     encrypted_pw: string | null;
     notes: string | null;
     sort_order: number;
+    updated_at: string;
 };
 
 type MemberInfo = {
@@ -65,7 +66,7 @@ export async function GET(req: NextRequest) {
         // 자격증명 조회
         const { data: creds, error: cErr } = await svc
             .from("member_credentials")
-            .select("id, profile_id, label, encrypted_pw, notes, sort_order")
+            .select("id, profile_id, label, encrypted_pw, notes, sort_order, updated_at")
             .eq("team_id", teamId)
             .order("sort_order");
 
@@ -81,6 +82,7 @@ export async function GET(req: NextRequest) {
                     hasPassword: Boolean(c.encrypted_pw),
                     notes: c.notes,
                     sortOrder: c.sort_order,
+                    updatedAt: c.updated_at,
                 })),
         }));
 
