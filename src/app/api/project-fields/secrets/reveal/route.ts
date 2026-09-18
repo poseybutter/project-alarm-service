@@ -45,11 +45,7 @@ export async function POST(req: NextRequest) {
         );
     }
 
-    // Rate limit — 인메모리 전용
-    const rlKey = requestRateLimitKey(req, "secret-reveal", teamId);
-    const rl = consumeRateLimit(rlKey, { limit: 10, windowMs: 5 * 60 * 1000 });
-    if (!rl.allowed) return rateLimitResponse(rl.retryAfterSeconds);
-
+    // 인증
     const svc = createServiceSupabaseClient();
 
     const [authResult, teamResult] = await Promise.all([
@@ -61,6 +57,11 @@ export async function POST(req: NextRequest) {
     if (!user?.email || !role) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
+
+    // rate limit — 인증 후, 유저별 키
+    const rlKey = requestRateLimitKey(req, "secret-reveal", `${teamId}:${user.email}`);
+    const rl = consumeRateLimit(rlKey, { limit: 10, windowMs: 5 * 60 * 1000 });
+    if (!rl.allowed) return rateLimitResponse(rl.retryAfterSeconds);
 
     if (teamResult.error) throw teamResult.error;
     const totpRequired = teamResult.data?.totp_required ?? false;
@@ -117,7 +118,7 @@ export async function POST(req: NextRequest) {
                 });
             }
             if (auditRows.length > 0) {
-                void svc.from("project_field_audit_logs").insert(auditRows);
+                await svc.from("project_field_audit_logs").insert(auditRows);
             }
             return NextResponse.json({ values: result });
         }
@@ -141,7 +142,7 @@ export async function POST(req: NextRequest) {
 
         const plaintext = decryptField(row.encrypted_value);
 
-        void svc.from("project_field_audit_logs").insert({
+        await svc.from("project_field_audit_logs").insert({
             team_id: teamId,
             project_id: projectId,
             field_def_id: fieldDefId!,
