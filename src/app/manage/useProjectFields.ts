@@ -227,13 +227,13 @@ export function useProjectFields(teamId: string | null) {
     );
 
     const revealSecret = useCallback(
-        async (projectId: number, fieldDefId: number, pin?: string, pinToken?: string): Promise<string> => {
+        async (projectId: number, fieldDefId: number, totpToken?: string): Promise<string> => {
             if (!teamId) throw new Error("No team");
             const res = await api<{ value: string }>(
                 "/api/project-fields/secrets/reveal",
                 {
                     method: "POST",
-                    body: JSON.stringify({ teamId, projectId, fieldDefId, pin, pinToken }),
+                    body: JSON.stringify({ teamId, projectId, fieldDefId, totpToken }),
                 },
             );
             return res.value;
@@ -241,16 +241,16 @@ export function useProjectFields(teamId: string | null) {
         [teamId],
     );
 
-    /** 배치 reveal — PIN 검증 1회로 여러 secret 필드를 한꺼번에 복호화 */
+    /** 배치 reveal — TOTP 검증 1회로 여러 secret 필드를 한꺼번에 복호화 */
     const revealSecrets = useCallback(
-        async (projectId: number, fieldDefIds: number[], pin?: string, pinToken?: string): Promise<Record<number, string>> => {
+        async (projectId: number, fieldDefIds: number[], totpToken?: string): Promise<Record<number, string>> => {
             if (!teamId) throw new Error("No team");
             if (fieldDefIds.length === 0) return {};
             const res = await api<{ values: Record<number, string> }>(
                 "/api/project-fields/secrets/reveal",
                 {
                     method: "POST",
-                    body: JSON.stringify({ teamId, projectId, fieldDefIds, pin, pinToken }),
+                    body: JSON.stringify({ teamId, projectId, fieldDefIds, totpToken }),
                 },
             );
             return res.values;
@@ -271,43 +271,6 @@ export function useProjectFields(teamId: string | null) {
         [teamId],
     );
 
-    const setPin = useCallback(
-        async (pin: string | null) => {
-            if (!teamId) return;
-            await api("/api/project-fields/pin", {
-                method: "POST",
-                body: JSON.stringify({ teamId, pin }),
-            });
-        },
-        [teamId],
-    );
-
-    const verifyPin = useCallback(
-        async (pin: string): Promise<{ ok: boolean; token?: string }> => {
-            if (!teamId) return { ok: false };
-            const res = await api<{ ok: boolean; token?: string }>(
-                "/api/project-fields/pin/verify",
-                {
-                    method: "POST",
-                    body: JSON.stringify({ teamId, pin }),
-                },
-            );
-            return { ok: res.ok, token: res.token };
-        },
-        [teamId],
-    );
-
-    const checkHasPin = useCallback(
-        async (): Promise<boolean> => {
-            if (!teamId) return false;
-            const res = await api<{ hasPin: boolean }>(
-                `/api/project-fields/pin?teamId=${encodeURIComponent(teamId)}`,
-            );
-            return res.hasPin;
-        },
-        [teamId],
-    );
-
     return useMemo(() => ({
         loadDefs,
         loadValues,
@@ -320,9 +283,6 @@ export function useProjectFields(teamId: string | null) {
         revealSecret,
         revealSecrets,
         loadHistory,
-        setPin,
-        verifyPin,
-        checkHasPin,
     }), [
         loadDefs,
         loadValues,
@@ -335,8 +295,5 @@ export function useProjectFields(teamId: string | null) {
         revealSecret,
         revealSecrets,
         loadHistory,
-        setPin,
-        verifyPin,
-        checkHasPin,
     ]);
 }

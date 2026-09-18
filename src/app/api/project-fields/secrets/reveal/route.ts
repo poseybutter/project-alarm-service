@@ -5,8 +5,8 @@ import {
 } from "@/infrastructure/supabase/server";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { decryptField } from "@/shared/server/fieldEncryption";
-import { verifyPin } from "@/shared/server/pinHash";
-import { validatePinToken } from "@/shared/server/pinToken";
+import { validateVerifyToken } from "@/shared/server/pinToken";
+import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
 import {
     requestRateLimitKey,
     consumeRateLimit,
@@ -17,11 +17,10 @@ type RevealBody = {
     teamId?: string;
     projectId?: number;
     fieldDefId?: number;
-    /** 배치 모드 — 여러 필드를 한 번에 복호화 (PIN 검증 1회) */
+    /** 배치 모드 — 여러 필드를 한 번에 복호화 */
     fieldDefIds?: number[];
-    pin?: string;
-    /** PIN verify에서 발급받은 HMAC 토큰 — scrypt 재실행 없이 빠르게 인가 */
-    pinToken?: string;
+    /** TOTP verify에서 발급받은 HMAC 토큰 */
+    totpToken?: string;
 };
 
 /** POST — 암호화된 secret 필드 값을 복호화하여 반환 + 감사 로그 기록 */
@@ -46,17 +45,16 @@ export async function POST(req: NextRequest) {
         );
     }
 
-    // Rate limit — 인메모리 전용 (PIN 토큰이 이미 5분 TTL + 팀 단위 제한이므로 DB RPC 불필요)
+    // Rate limit — 인메모리 전용
     const rlKey = requestRateLimitKey(req, "secret-reveal", teamId);
     const rl = consumeRateLimit(rlKey, { limit: 10, windowMs: 5 * 60 * 1000 });
     if (!rl.allowed) return rateLimitResponse(rl.retryAfterSeconds);
 
     const svc = createServiceSupabaseClient();
 
-    // auth + PIN 검증을 병렬 실행 (각각 독립적인 DB 쿼리)
     const [authResult, teamResult] = await Promise.all([
         getServerUserRole(teamId),
-        svc.from("teams").select("settings_pin_hash").eq("id", teamId).maybeSingle(),
+        svc.from("teams").select("totp_required").eq("id", teamId).maybeSingle(),
     ]);
 
     const { user, role } = authResult;
@@ -65,21 +63,25 @@ export async function POST(req: NextRequest) {
     }
 
     if (teamResult.error) throw teamResult.error;
-    const pinHash = teamResult.data?.settings_pin_hash;
+    const totpRequired = teamResult.data?.totp_required ?? false;
 
-    // PIN 검증 — pinToken이 있으면 HMAC만 확인 (CPU만, DB 호출 없음)
-    if (pinHash) {
-        const pinToken = body.pinToken?.trim();
-        if (pinToken && validatePinToken(teamId, pinToken, pinHash)) {
-            // 토큰 유효 — 통과
-        } else {
-            const pin = body.pin?.trim();
-            if (!pin) {
-                return NextResponse.json({ message: "PIN is required" }, { status: 403 });
-            }
-            if (!(await verifyPin(pin, pinHash))) {
-                return NextResponse.json({ message: "Invalid PIN" }, { status: 403 });
-            }
+    // TOTP 토큰 검증
+    if (totpRequired) {
+        const totpToken = body.totpToken?.trim();
+        if (!totpToken) {
+            return NextResponse.json(
+                { message: "TOTP verification required" },
+                { status: 403 },
+            );
+        }
+
+        const identity = await loadNormalizedIdentity(svc, user.email);
+        const profileId = identity?.profile?.id;
+        if (!profileId || !validateVerifyToken(teamId, totpToken, profileId)) {
+            return NextResponse.json(
+                { message: "TOTP token invalid or expired" },
+                { status: 403 },
+            );
         }
     }
 
@@ -114,14 +116,13 @@ export async function POST(req: NextRequest) {
                     actor_email: user.email,
                 });
             }
-            // 감사 로그는 응답을 차단하지 않도록 비동기 fire-and-forget
             if (auditRows.length > 0) {
                 void svc.from("project_field_audit_logs").insert(auditRows);
             }
             return NextResponse.json({ values: result });
         }
 
-        // ── 단건 모드 (기존 호환) ──
+        // ── 단건 모드 ──
         const { data: row, error } = await svc
             .from("project_field_values")
             .select("encrypted_value")
@@ -140,7 +141,6 @@ export async function POST(req: NextRequest) {
 
         const plaintext = decryptField(row.encrypted_value);
 
-        // 감사 로그 — fire-and-forget
         void svc.from("project_field_audit_logs").insert({
             team_id: teamId,
             project_id: projectId,

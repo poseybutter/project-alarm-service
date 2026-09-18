@@ -41,6 +41,9 @@ import {
     filterExtraFields,
 } from "./ProjectFieldSections";
 import FieldHistoryPanel from "./FieldHistoryPanel";
+import { useTotp } from "./useTotp";
+import TotpSetupModal from "./TotpSetupModal";
+import MemberCredentials from "./MemberCredentials";
 
 const MAINTENANCE_STATUS_URL =
     process.env.NEXT_PUBLIC_MAINTENANCE_STATUS_URL?.trim() ?? "";
@@ -222,7 +225,7 @@ function FilterChip({
     );
 }
 
-/** 프로젝트 상세 — 기본 정보 / 세팅 정보 탭 (PIN 보호) */
+/** 프로젝트 상세 — 기본 정보 / 세팅 정보 탭 (TOTP 보호) */
 function ProjectDetailTabs({
     project: p,
     projMembers,
@@ -232,11 +235,10 @@ function ProjectDetailTabs({
     onDelete,
     onArchive,
     onHistory,
-    hasPin,
-    pinVerified,
-    verifiedPin,
-    pinToken,
-    onPinRequired,
+    requiresTotp,
+    totpVerified,
+    totpToken,
+    onTotpRequired,
 }: {
     project: import("@/shared/types").Project;
     projMembers: string[];
@@ -246,30 +248,29 @@ function ProjectDetailTabs({
     onDelete: () => void;
     onArchive: () => void;
     onHistory: () => void;
-    hasPin: boolean;
-    pinVerified: boolean;
-    verifiedPin: string;
-    pinToken: string;
-    onPinRequired: (callback: () => void) => void;
+    requiresTotp: boolean;
+    totpVerified: boolean;
+    totpToken: string;
+    onTotpRequired: (callback: () => void) => void;
 }) {
     const [tab, setTab] = useState<"basic" | "setting">("basic");
     const [defs, setDefs] = useState<FieldDef[]>([]);
     const [values, setValues] = useState<import("./useProjectFields").FieldValue[]>([]);
     const [loaded, setLoaded] = useState(false);
 
-    const needsPin = hasPin && !pinVerified;
+    const needsAuth = requiresTotp && !totpVerified;
 
     function handleSettingTab() {
-        if (needsPin) {
-            onPinRequired(() => setTab("setting"));
+        if (needsAuth) {
+            onTotpRequired(() => setTab("setting"));
         } else {
             setTab("setting");
         }
     }
 
     function handleHistory() {
-        if (needsPin) {
-            onPinRequired(onHistory);
+        if (needsAuth) {
+            onTotpRequired(onHistory);
         } else {
             onHistory();
         }
@@ -318,7 +319,7 @@ function ProjectDetailTabs({
                             tab === "setting" ? "bg-white text-stone-800 shadow-sm" : "text-stone-400 hover:text-stone-600"
                         }`}
                     >
-                        세팅 정보{hasPin && <i className="ri-lock-line text-[10px] ml-1" aria-hidden />}
+                        세팅 정보{requiresTotp && <i className="ri-lock-line text-[10px] ml-1" aria-hidden />}
                     </button>
                 </div>
                 <button
@@ -379,8 +380,8 @@ function ProjectDetailTabs({
                     <AccessReadCard
                         defs={defs}
                         values={valueMap}
-                        onReveal={(defId) => pf.revealSecret(p.id, defId, verifiedPin || undefined, pinToken || undefined)}
-                        onRevealAll={(defIds) => pf.revealSecrets(p.id, defIds, verifiedPin || undefined, pinToken || undefined)}
+                        onReveal={(defId) => pf.revealSecret(p.id, defId, totpToken || undefined)}
+                        onRevealAll={(defIds) => pf.revealSecrets(p.id, defIds, totpToken || undefined)}
                     />
                     <DevReadCard defs={defs} values={valueMap} />
                 </div>
@@ -480,29 +481,30 @@ export default function ManagePage() {
     const [projSaving, setProjSaving] = useState(false);
     const [modalTab, setModalTab] = useState<"basic" | "setting">("basic");
     const [savedSecrets, setSavedSecrets] = useState<Set<string>>(new Set());
-    // PIN 관련 state (팀 레벨)
-    const [teamHasPin, setTeamHasPin] = useState(false);
-    const [pinVerifiedAt, setPinVerifiedAt] = useState<number>(0);
-    const [lastVerifiedPin, setLastVerifiedPin] = useState<string>("");
-    const [pinToken, setPinToken] = useState<string>("");
-    const PIN_EXPIRY_MS = 5 * 60 * 1000; // 5분
-    const pinVerified = pinVerifiedAt > 0 && Date.now() - pinVerifiedAt < PIN_EXPIRY_MS;
-    const [pinModal, setPinModal] = useState<{ callback: () => void } | null>(null);
+    // TOTP 관련 state (팀 레벨)
+    const totp = useTotp(teamId);
+    const [teamRequiresTotp, setTeamRequiresTotp] = useState(false);
+    const [userHasTotp, setUserHasTotp] = useState(false);
+    const [totpVerifiedAt, setTotpVerifiedAt] = useState<number>(0);
+    const [totpToken, setTotpToken] = useState<string>("");
+    const TOTP_EXPIRY_MS = 5 * 60 * 1000; // 5분
+    const totpVerified = totpVerifiedAt > 0 && Date.now() - totpVerifiedAt < TOTP_EXPIRY_MS;
+    const [totpModal, setTotpModal] = useState<{ callback: () => void } | null>(null);
+    const [totpSetupOpen, setTotpSetupOpen] = useState(false);
 
-    // PIN 인증 만료 시 자동으로 re-render 를 트리거하여 잠금 상태를 반영한다
+    // TOTP 인증 만료 시 자동으로 re-render 를 트리거하여 잠금 상태를 반영한다
     useEffect(() => {
-        if (!pinVerifiedAt) return;
-        const remaining = PIN_EXPIRY_MS - (Date.now() - pinVerifiedAt);
+        if (!totpVerifiedAt) return;
+        const remaining = TOTP_EXPIRY_MS - (Date.now() - totpVerifiedAt);
         if (remaining <= 0) return;
         const timer = setTimeout(() => {
-            // pinVerifiedAt 을 0 으로 되돌리면 pinVerified 가 false 가 된다
-            setPinVerifiedAt(0);
+            setTotpVerifiedAt(0);
         }, remaining);
         return () => clearTimeout(timer);
-    }, [pinVerifiedAt]);
-    const [pinInput, setPinInput] = useState("");
-    const [pinError, setPinError] = useState(false);
-    const [pinVerifying, setPinVerifying] = useState(false);
+    }, [totpVerifiedAt]);
+    const [totpInput, setTotpInput] = useState("");
+    const [totpError, setTotpError] = useState("");
+    const [totpVerifying, setTotpVerifying] = useState(false);
     const historyProject = historyProjectId
         ? projects.find((p) => p.id === historyProjectId)
         : null;
@@ -585,9 +587,12 @@ export default function ManagePage() {
     useEffect(() => {
         if (member && teamId) {
             void loadData();
-            void pf.checkHasPin().then(setTeamHasPin);
+            void totp.checkStatus().then((status) => {
+                setTeamRequiresTotp(status.teamRequiresTotp);
+                setUserHasTotp(status.setupComplete);
+            });
         }
-    }, [member, teamId, loadData]);
+    }, [member, teamId, loadData, totp]);
 
     useEffect(() => {
         function handleAccessibilityChanged() {
@@ -1471,11 +1476,10 @@ export default function ManagePage() {
                                                     onDelete={() => void deleteProject(p.id)}
                                                     onArchive={() => void toggleArchive(p.id, p.is_archived ?? false)}
                                                     onHistory={() => setHistoryProjectId(p.id)}
-                                                    hasPin={teamHasPin}
-                                                    pinVerified={pinVerified}
-                                                    verifiedPin={lastVerifiedPin}
-                                                    pinToken={pinToken}
-                                                    onPinRequired={(cb) => { setPinModal({ callback: cb }); setPinInput(""); setPinError(false); }}
+                                                    requiresTotp={teamRequiresTotp}
+                                                    totpVerified={totpVerified}
+                                                    totpToken={totpToken}
+                                                    onTotpRequired={(cb) => { setTotpModal({ callback: cb }); setTotpInput(""); setTotpError(""); }}
                                                 />
                                             )}
                                         </div>
@@ -1770,15 +1774,15 @@ export default function ManagePage() {
                                 <div className="flex rounded-lg bg-stone-100 p-0.5 mb-4">
                                     <button type="button" onClick={() => setModalTab("basic")} className={`flex-1 py-2 text-xs font-medium rounded-md transition-all ${modalTab === "basic" ? "bg-white text-stone-800 shadow-sm" : "text-stone-400 hover:text-stone-600"}`}>기본 정보</button>
                                     <button type="button" onClick={() => {
-                                        if (teamHasPin && !pinVerified) {
-                                            setPinModal({ callback: () => setModalTab("setting") });
-                                            setPinInput("");
-                                            setPinError(false);
+                                        if (teamRequiresTotp && !totpVerified) {
+                                            setTotpModal({ callback: () => setModalTab("setting") });
+                                            setTotpInput("");
+                                            setTotpError("");
                                         } else {
                                             setModalTab("setting");
                                         }
                                     }} className={`flex-1 py-2 text-xs font-medium rounded-md transition-all ${modalTab === "setting" ? "bg-white text-stone-800 shadow-sm" : "text-stone-400 hover:text-stone-600"}`}>
-                                        세팅 정보{teamHasPin && <i className="ri-lock-line text-[10px] ml-1" aria-hidden />}
+                                        세팅 정보{teamRequiresTotp && <i className="ri-lock-line text-[10px] ml-1" aria-hidden />}
                                     </button>
                                 </div>
 
@@ -2402,6 +2406,15 @@ export default function ManagePage() {
                         </div>,
                         document.body,
                     )}
+                {/* 팀원 계정 정보 */}
+                <MemberCredentials
+                    teamId={teamId}
+                    isAdmin={isAdmin}
+                    totpVerified={totpVerified}
+                    totpToken={totpToken}
+                    onTotpRequired={(cb) => { setTotpModal({ callback: cb }); setTotpInput(""); setTotpError(""); }}
+                />
+
                 {/* 변경 이력 패널 */}
                 {historyProject && (
                     <FieldHistoryPanel
@@ -2412,11 +2425,11 @@ export default function ManagePage() {
                     />
                 )}
 
-                {/* PIN 입력 모달 */}
-                {pinModal && (
+                {/* TOTP 입력 모달 */}
+                {totpModal && (
                     <div
                         className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center"
-                        onClick={() => setPinModal(null)}
+                        onClick={() => setTotpModal(null)}
                     >
                         <div
                             className="w-full max-w-xs rounded-2xl bg-white p-6 shadow-2xl mx-4"
@@ -2424,79 +2437,110 @@ export default function ManagePage() {
                         >
                             <div className="text-center mb-5">
                                 <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-amber-50 mb-3">
-                                    <i className="ri-lock-line text-xl text-amber-500" aria-hidden />
+                                    <i className="ri-shield-keyhole-line text-xl text-amber-500" aria-hidden />
                                 </div>
-                                <h3 className="text-base font-bold text-stone-800">PIN 입력</h3>
-                                <p className="text-xs text-stone-400 mt-1">세팅 정보를 보려면 PIN을 입력하세요</p>
+                                <h3 className="text-base font-bold text-stone-800">OTP 인증</h3>
+                                <p className="text-xs text-stone-400 mt-1">Google Authenticator 코드를 입력하세요</p>
                             </div>
-                            <input
-                                type="password"
-                                inputMode="numeric"
-                                maxLength={6}
-                                autoFocus
-                                placeholder="4~6자리 숫자"
-                                value={pinInput}
-                                onChange={(e) => { setPinInput(e.target.value.replace(/\D/g, "")); setPinError(false); }}
-                                onKeyDown={async (e) => {
-                                    if (e.key !== "Enter" || !pinInput || pinVerifying) return;
-                                    setPinVerifying(true);
-                                    try {
-                                        const result = await pf.verifyPin(pinInput);
-                                        if (result.ok) {
-                                            setPinVerifiedAt(Date.now()); setLastVerifiedPin(pinInput);
-                                            if (result.token) setPinToken(result.token);
-                                            const cb = pinModal.callback;
-                                            setPinModal(null);
-                                            cb();
-                                        } else {
-                                            setPinError(true);
-                                            setPinInput("");
-                                        }
-                                    } finally { setPinVerifying(false); }
-                                }}
-                                className={`w-full text-center text-2xl tracking-[0.5em] font-mono rounded-xl border-2 py-3 outline-none transition-colors ${
-                                    pinError ? "border-red-400 bg-red-50 animate-shake" : "border-stone-200 focus:border-amber-400"
-                                }`}
-                            />
-                            {pinError && (
-                                <p className="text-xs text-red-500 text-center mt-2">PIN이 틀렸습니다</p>
+                            {!userHasTotp ? (
+                                <div className="text-center">
+                                    <p className="text-xs text-stone-500 mb-4">Google Authenticator를 먼저 설정해야 합니다.</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setTotpModal(null); setTotpSetupOpen(true); }}
+                                        className="w-full bg-amber-500 text-white font-bold py-2.5 rounded-xl text-sm hover:bg-amber-600"
+                                    >
+                                        Authenticator 설정
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setTotpModal(null)}
+                                        className="w-full mt-2 border border-stone-200 text-stone-500 font-medium py-2.5 rounded-xl text-sm"
+                                    >
+                                        취소
+                                    </button>
+                                </div>
+                            ) : (
+                                <>
+                                    <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        maxLength={6}
+                                        autoFocus
+                                        placeholder="000000"
+                                        value={totpInput}
+                                        onChange={(e) => { setTotpInput(e.target.value.replace(/\D/g, "")); setTotpError(""); }}
+                                        onKeyDown={async (e) => {
+                                            if (e.key !== "Enter" || totpInput.length !== 6 || totpVerifying) return;
+                                            setTotpVerifying(true);
+                                            try {
+                                                const result = await totp.verify(totpInput);
+                                                if (result.ok && result.token) {
+                                                    setTotpVerifiedAt(Date.now());
+                                                    setTotpToken(result.token);
+                                                    const cb = totpModal.callback;
+                                                    setTotpModal(null);
+                                                    cb();
+                                                } else {
+                                                    setTotpError(result.message || "코드가 올바르지 않습니다.");
+                                                    setTotpInput("");
+                                                }
+                                            } finally { setTotpVerifying(false); }
+                                        }}
+                                        className={`w-full text-center text-2xl tracking-[0.4em] font-mono rounded-xl border-2 py-3 outline-none transition-colors ${
+                                            totpError ? "border-red-400 bg-red-50 animate-shake" : "border-stone-200 focus:border-amber-400"
+                                        }`}
+                                    />
+                                    {totpError && (
+                                        <p className="text-xs text-red-500 text-center mt-2">{totpError}</p>
+                                    )}
+                                    <div className="flex gap-2 mt-4">
+                                        <button
+                                            type="button"
+                                            disabled={totpVerifying || totpInput.length !== 6}
+                                            onClick={async () => {
+                                                if (totpInput.length !== 6 || totpVerifying) return;
+                                                setTotpVerifying(true);
+                                                try {
+                                                    const result = await totp.verify(totpInput);
+                                                    if (result.ok && result.token) {
+                                                        setTotpVerifiedAt(Date.now());
+                                                        setTotpToken(result.token);
+                                                        const cb = totpModal.callback;
+                                                        setTotpModal(null);
+                                                        cb();
+                                                    } else {
+                                                        setTotpError(result.message || "코드가 올바르지 않습니다.");
+                                                        setTotpInput("");
+                                                    }
+                                                } finally { setTotpVerifying(false); }
+                                            }}
+                                            className="flex-1 bg-amber-500 text-white font-bold py-2.5 rounded-xl text-sm disabled:opacity-50"
+                                        >
+                                            {totpVerifying ? "확인 중..." : "확인"}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setTotpModal(null)}
+                                            className="flex-1 border border-stone-200 text-stone-500 font-medium py-2.5 rounded-xl text-sm"
+                                        >
+                                            취소
+                                        </button>
+                                    </div>
+                                </>
                             )}
-                            <div className="flex gap-2 mt-4">
-                                <button
-                                    type="button"
-                                    disabled={pinVerifying || pinInput.length < 4}
-                                    onClick={async () => {
-                                        if (!pinInput || pinVerifying) return;
-                                        setPinVerifying(true);
-                                        try {
-                                            const result = await pf.verifyPin(pinInput);
-                                            if (result.ok) {
-                                                setPinVerifiedAt(Date.now()); setLastVerifiedPin(pinInput);
-                                                if (result.token) setPinToken(result.token);
-                                                const cb = pinModal.callback;
-                                                setPinModal(null);
-                                                cb();
-                                            } else {
-                                                setPinError(true);
-                                                setPinInput("");
-                                            }
-                                        } finally { setPinVerifying(false); }
-                                    }}
-                                    className="flex-1 bg-amber-500 text-white font-bold py-2.5 rounded-xl text-sm disabled:opacity-50"
-                                >
-                                    {pinVerifying ? "확인 중..." : "확인"}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setPinModal(null)}
-                                    className="flex-1 border border-stone-200 text-stone-500 font-medium py-2.5 rounded-xl text-sm"
-                                >
-                                    취소
-                                </button>
-                            </div>
                         </div>
                     </div>
                 )}
+
+                {/* TOTP 셋업 모달 */}
+                <TotpSetupModal
+                    open={totpSetupOpen}
+                    onClose={() => setTotpSetupOpen(false)}
+                    onSetupComplete={() => setUserHasTotp(true)}
+                    setup={totp.setup}
+                    verifySetup={totp.verifySetup}
+                />
 
                 {toast && (
                     <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-stone-800 text-white text-sm px-5 py-2.5 rounded-full shadow-lg z-50 whitespace-nowrap">
