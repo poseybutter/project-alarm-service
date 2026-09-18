@@ -7,6 +7,20 @@ import {
     type MemberWithCredentials,
 } from "./useMemberCredentials";
 
+function formatRelative(iso: string): string {
+    const d = new Date(iso);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMin = Math.floor(diffMs / 60_000);
+    if (diffMin < 1) return "방금";
+    if (diffMin < 60) return `${diffMin}분 전`;
+    const diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}시간 전`;
+    const diffDay = Math.floor(diffHr / 24);
+    if (diffDay < 30) return `${diffDay}일 전`;
+    return d.toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" });
+}
+
 type Props = {
     teamId: string | null;
     isAdmin: boolean;
@@ -182,9 +196,9 @@ export default function MemberCredentials({
                                             )}
                                         </div>
                                     )}
-                                    {cred.notes && (
-                                        <span className="text-[10px] text-stone-400 truncate max-w-[100px]" title={cred.notes}>{cred.notes}</span>
-                                    )}
+                                    <span className="text-[10px] text-stone-400 shrink-0" title={cred.updatedAt ? new Date(cred.updatedAt).toLocaleString("ko-KR") : ""}>
+                                        {cred.updatedAt ? formatRelative(cred.updatedAt) : ""}
+                                    </span>
                                     {isAdmin && (
                                         <div className="ml-auto flex items-center gap-1 shrink-0">
                                             <button

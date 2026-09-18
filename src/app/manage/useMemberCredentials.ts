@@ -8,6 +8,7 @@ export type CredentialItem = {
     hasPassword: boolean;
     notes: string | null;
     sortOrder: number;
+    updatedAt: string;
 };
 
 export type MemberWithCredentials = {
