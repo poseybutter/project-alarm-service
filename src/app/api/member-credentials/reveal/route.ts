@@ -50,22 +50,21 @@ export async function POST(req: NextRequest) {
     try {
         const svc = createServiceSupabaseClient();
 
-        // TOTP 토큰 검증
-        const [teamResult, identity] = await Promise.all([
-            svc.from("teams").select("totp_required").eq("id", teamId).single(),
-            loadNormalizedIdentity(svc, user.email),
-        ]);
+        // TOTP 토큰 검증 — 자격증명은 항상 TOTP 필수
+        if (!totpToken) {
+            return NextResponse.json(
+                { message: "TOTP verification required" },
+                { status: 403 },
+            );
+        }
 
-        const totpRequired = teamResult.data?.totp_required ?? false;
+        const identity = await loadNormalizedIdentity(svc, user.email);
         const profileId = identity?.profile?.id;
-
-        if (totpRequired) {
-            if (!totpToken || !profileId || !validateVerifyToken(teamId, totpToken, profileId)) {
-                return NextResponse.json(
-                    { message: "TOTP verification required" },
-                    { status: 403 },
-                );
-            }
+        if (!profileId || !validateVerifyToken(teamId, totpToken, profileId)) {
+            return NextResponse.json(
+                { message: "TOTP token invalid or expired" },
+                { status: 403 },
+            );
         }
 
         // 자격증명 조회 + 복호화

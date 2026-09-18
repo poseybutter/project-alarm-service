@@ -407,13 +407,14 @@ export default function ManagePage() {
     const isGuest = member === "GUEST" || role === "guest";
     const isAdmin = role === "admin";
 
-    const [manageTab, setManageTab] = useState<"project" | "accessibility">(
-        () =>
-            typeof window !== "undefined" &&
-            new URLSearchParams(window.location.search).get("tab") ===
-                "accessibility"
-                ? "accessibility"
-                : "project",
+    const [manageTab, setManageTab] = useState<"project" | "accessibility" | "credentials">(
+        () => {
+            if (typeof window === "undefined") return "project";
+            const tab = new URLSearchParams(window.location.search).get("tab");
+            if (tab === "accessibility") return "accessibility";
+            if (tab === "credentials") return "credentials";
+            return "project";
+        },
     );
     const [projects, setProjects] = useState<Project[]>([]);
     const [accessibility, setAccessibility] = useState<Accessibility[]>([]);
@@ -1277,6 +1278,14 @@ export default function ManagePage() {
                         >
                             접근성
                         </button>
+                        <button
+                            type="button"
+                            onClick={() => setManageTab("credentials")}
+                            className={`flex-1 py-2 text-xs font-medium rounded-md transition-all
+                ${manageTab === "credentials" ? "bg-amber-500 text-white shadow-sm" : "text-stone-400 hover:text-stone-600"}`}
+                        >
+                            계정 정보
+                        </button>
                     </div>
 
                     {loading ? (
@@ -1292,6 +1301,14 @@ export default function ManagePage() {
                                 다시 시도
                             </button>
                         </div>
+                    ) : manageTab === "credentials" ? (
+                        <MemberCredentials
+                            teamId={teamId}
+                            isAdmin={isAdmin}
+                            totpVerified={totpVerified}
+                            totpToken={totpToken}
+                            onTotpRequired={(cb) => { setTotpModal({ callback: cb }); setTotpInput(""); setTotpError(""); }}
+                        />
                     ) : manageTab === "project" ? (
                         <div>
                             {/* 검색 */}
@@ -2406,15 +2423,6 @@ export default function ManagePage() {
                         </div>,
                         document.body,
                     )}
-                {/* 팀원 계정 정보 */}
-                <MemberCredentials
-                    teamId={teamId}
-                    isAdmin={isAdmin}
-                    totpVerified={totpVerified}
-                    totpToken={totpToken}
-                    onTotpRequired={(cb) => { setTotpModal({ callback: cb }); setTotpInput(""); setTotpError(""); }}
-                />
-
                 {/* 변경 이력 패널 */}
                 {historyProject && (
                     <FieldHistoryPanel

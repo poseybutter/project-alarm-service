@@ -5,7 +5,6 @@ import { useCallback, useMemo } from "react";
 export type CredentialItem = {
     id: number;
     label: string;
-    loginId: string | null;
     hasPassword: boolean;
     notes: string | null;
     sortOrder: number;
@@ -44,18 +43,18 @@ export function useMemberCredentials(teamId: string | null) {
     }, [teamId]);
 
     const create = useCallback(
-        async (profileId: string, label: string, loginId?: string, password?: string, notes?: string) => {
+        async (profileId: string, label: string, password?: string, notes?: string) => {
             if (!teamId) return;
             await api("/api/member-credentials", {
                 method: "POST",
-                body: JSON.stringify({ teamId, profileId, label, loginId, password, notes }),
+                body: JSON.stringify({ teamId, profileId, label, password, notes }),
             });
         },
         [teamId],
     );
 
     const update = useCallback(
-        async (id: number, patch: { label?: string; loginId?: string; password?: string; notes?: string }) => {
+        async (id: number, patch: { label?: string; password?: string; notes?: string }) => {
             if (!teamId) return;
             await api("/api/member-credentials", {
                 method: "PATCH",
