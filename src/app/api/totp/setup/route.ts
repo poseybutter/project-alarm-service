@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ message: "Invalid JSON" }, { status: 400 });
     }
 
-    const teamId = body.teamId?.trim();
+    const teamId = typeof body.teamId === "string" ? body.teamId.trim() : "";
     if (!teamId) {
         return NextResponse.json(
             { message: "teamId is required" },
@@ -33,16 +33,16 @@ export async function POST(req: NextRequest) {
         );
     }
 
-    const rl = consumeRateLimit(
-        requestRateLimitKey(req, "totp-setup", teamId),
-        { limit: 5, windowMs: 5 * 60 * 1000 },
-    );
-    if (!rl.allowed) return rateLimitResponse(rl.retryAfterSeconds);
-
     const { user, role } = await getServerUserRole(teamId);
     if (!user?.email || !role) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
+
+    const rl = consumeRateLimit(
+        requestRateLimitKey(req, "totp-setup", `${teamId}:${user.email}`),
+        { limit: 5, windowMs: 5 * 60 * 1000 },
+    );
+    if (!rl.allowed) return rateLimitResponse(rl.retryAfterSeconds);
 
     try {
         const svc = createServiceSupabaseClient();
@@ -58,12 +58,13 @@ export async function POST(req: NextRequest) {
         }
 
         // 이미 검증 완료된 TOTP가 있으면 거부
-        const { data: existing } = await svc
+        const { data: existing, error: existErr } = await svc
             .from("totp_secrets")
             .select("id, verified_at")
             .eq("profile_id", profileId)
             .eq("team_id", teamId)
             .maybeSingle();
+        if (existErr) throw existErr;
 
         if (existing?.verified_at) {
             return NextResponse.json(
@@ -84,7 +85,7 @@ export async function POST(req: NextRequest) {
         const qrDataUrl = await QRCode.toDataURL(uri, { width: 256, margin: 2 });
 
         // upsert (미검증 상태로 재생성 허용)
-        await svc.from("totp_secrets").upsert(
+        const { error: upsertErr } = await svc.from("totp_secrets").upsert(
             {
                 profile_id: profileId,
                 team_id: teamId,
@@ -94,6 +95,7 @@ export async function POST(req: NextRequest) {
             },
             { onConflict: "profile_id,team_id" },
         );
+        if (upsertErr) throw upsertErr;
 
         return NextResponse.json({ qrDataUrl, secret });
     } catch (error) {

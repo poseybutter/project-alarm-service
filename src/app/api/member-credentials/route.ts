@@ -146,12 +146,13 @@ export async function POST(req: NextRequest) {
         if (error) throw error;
 
         // 감사 로그
-        void svc.from("member_credential_audit_logs").insert({
+        const { error: auditErr } = await svc.from("member_credential_audit_logs").insert({
             team_id: teamId,
             credential_id: data.id,
             action: "create",
             actor_email: user.email,
         });
+        if (auditErr) throw auditErr;
 
         return NextResponse.json({ ok: true, id: data.id });
     } catch (error) {
@@ -212,12 +213,13 @@ export async function PATCH(req: NextRequest) {
 
         if (error) throw error;
 
-        void svc.from("member_credential_audit_logs").insert({
+        const { error: auditErr } = await svc.from("member_credential_audit_logs").insert({
             team_id: teamId,
             credential_id: id,
             action: "update",
             actor_email: user.email,
         });
+        if (auditErr) throw auditErr;
 
         return NextResponse.json({ ok: true });
     } catch (error) {
@@ -253,12 +255,13 @@ export async function DELETE(req: NextRequest) {
     try {
         const svc = createServiceSupabaseClient();
 
-        void svc.from("member_credential_audit_logs").insert({
+        const { error: auditErr } = await svc.from("member_credential_audit_logs").insert({
             team_id: teamId,
             credential_id: id,
             action: "delete",
             actor_email: user.email,
         });
+        if (auditErr) throw auditErr;
 
         const { error } = await svc
             .from("member_credentials")

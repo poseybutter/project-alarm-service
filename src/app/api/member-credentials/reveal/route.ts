@@ -64,10 +64,10 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // 자격증명 조회 + 복호화
+        // 자격증명 조회 + 소유권 확인 + 복호화
         const { data: row, error } = await svc
             .from("member_credentials")
-            .select("encrypted_pw")
+            .select("profile_id, encrypted_pw")
             .eq("id", credentialId)
             .eq("team_id", teamId)
             .maybeSingle();
@@ -80,15 +80,24 @@ export async function POST(req: NextRequest) {
             );
         }
 
+        // IDOR 방지: 본인 자격증명이거나 관리자만 열람 가능
+        if (String(row.profile_id) !== profileId && role !== "admin") {
+            return NextResponse.json(
+                { message: "Forbidden" },
+                { status: 403 },
+            );
+        }
+
         const password = decryptField(row.encrypted_pw);
 
         // 감사 로그
-        await svc.from("member_credential_audit_logs").insert({
+        const { error: auditErr } = await svc.from("member_credential_audit_logs").insert({
             team_id: teamId,
             credential_id: credentialId,
             action: "view",
             actor_email: user.email,
         });
+        if (auditErr) throw auditErr;
 
         return NextResponse.json({ password });
     } catch (error) {

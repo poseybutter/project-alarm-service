@@ -30,20 +30,24 @@ export default function TotpSetupModal({
 
     useEffect(() => {
         if (!open) return;
+        let active = true;
         setStep("loading");
         setCode("");
         setError("");
         setCopied(false);
         setup()
             .then(({ qrDataUrl: qr, secret: s }) => {
+                if (!active) return;
                 setQrDataUrl(qr);
                 setSecret(s);
                 setStep("scan");
             })
             .catch(() => {
+                if (!active) return;
                 setError("TOTP 셋업에 실패했습니다.");
                 setStep("scan");
             });
+        return () => { active = false; };
     }, [open, setup]);
 
     useEffect(() => {

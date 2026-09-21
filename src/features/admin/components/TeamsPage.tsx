@@ -65,24 +65,30 @@ type MembersResponse = { members: AdminMember[] };
 type TeamFilter = "all" | "active" | "archived";
 
 type TotpMemberStatus = {
-  profileId: string;
   displayName: string;
   email: string;
-  setupComplete: boolean;
 };
 
 function TeamTotpSection({ teamId }: { teamId: string }) {
   const [enabled, setEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [memberStatuses, setMemberStatuses] = useState<TotpMemberStatus[]>([]);
   const [resetting, setResetting] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      fetch(`/api/totp/status?teamId=${encodeURIComponent(teamId)}`).then((r) => r.json()),
-      fetch(`/api/admin/members?team=${encodeURIComponent(teamId)}`).then((r) => r.json()),
+      fetch(`/api/totp/status?teamId=${encodeURIComponent(teamId)}`).then((r) => {
+        if (!r.ok) throw new Error("TOTP 상태 조회 실패");
+        return r.json();
+      }),
+      fetch(`/api/admin/members?team=${encodeURIComponent(teamId)}`).then((r) => {
+        if (!r.ok) throw new Error("멤버 조회 실패");
+        return r.json();
+      }),
     ])
       .then(([status, membersData]: [
         { teamRequiresTotp: boolean },
@@ -90,34 +96,38 @@ function TeamTotpSection({ teamId }: { teamId: string }) {
       ]) => {
         if (cancelled) return;
         setEnabled(status.teamRequiresTotp);
-        // 멤버별 TOTP 상태는 별도 조회 필요 — 일단 목록만 표시
         setMemberStatuses(
           (membersData.members ?? [])
             .filter((m) => m.status === "active")
             .map((m) => ({
-              profileId: "", // admin API에 profileId 미포함 — email로 reset 호출
               displayName: m.name ?? "",
               email: m.email ?? "",
-              setupComplete: false,
             })),
         );
         setLoaded(true);
       })
       .catch(() => {
-        if (!cancelled) setLoaded(true);
+        if (!cancelled) {
+          setLoadError(true);
+          setLoaded(true);
+        }
       });
     return () => { cancelled = true; };
   }, [teamId]);
 
   const handleToggle = async () => {
     setSaving(true);
+    setActionError(null);
     try {
-      await fetch("/api/totp/admin", {
+      const res = await fetch("/api/totp/admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ teamId, enabled: !enabled }),
       });
+      if (!res.ok) throw new Error("TOTP 설정 변경 실패");
       setEnabled(!enabled);
+    } catch {
+      setActionError("TOTP 설정 변경에 실패했습니다.");
     } finally {
       setSaving(false);
     }
@@ -125,18 +135,34 @@ function TeamTotpSection({ teamId }: { teamId: string }) {
 
   const handleReset = async (email: string) => {
     setResetting(email);
+    setActionError(null);
     try {
-      await fetch("/api/totp/reset", {
+      const res = await fetch("/api/totp/reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ teamId, targetEmail: email }),
       });
+      if (!res.ok) throw new Error("TOTP 초기화 실패");
+    } catch {
+      setActionError("TOTP 초기화에 실패했습니다.");
     } finally {
       setResetting(null);
     }
   };
 
   if (!loaded) return null;
+
+  if (loadError) {
+    return (
+      <section className="border-t border-stone-200 pt-5">
+        <div className="flex items-center gap-2">
+          <ShieldAlert className="text-red-600" size={17} />
+          <h3 className="text-sm font-extrabold">TOTP 인증 (Google OTP)</h3>
+        </div>
+        <p className="mt-2 text-xs text-red-600">TOTP 상태를 불러오지 못했습니다.</p>
+      </section>
+    );
+  }
 
   return (
     <section className="border-t border-stone-200 pt-5">
@@ -169,9 +195,13 @@ function TeamTotpSection({ teamId }: { teamId: string }) {
         </AdminButton>
       </div>
 
+      {actionError && (
+        <p className="mt-2 text-xs text-red-600">{actionError}</p>
+      )}
+
       {enabled && memberStatuses.length > 0 && (
         <div className="mt-4">
-          <p className="text-xs font-bold text-stone-500 mb-2">팀원 TOTP 설정 현황</p>
+          <p className="text-xs font-bold text-stone-500 mb-2">팀원 TOTP 초기화</p>
           <div className="space-y-1">
             {memberStatuses.map((m) => (
               <div key={m.email} className="flex items-center gap-2 rounded-md border border-stone-100 px-3 py-2">
