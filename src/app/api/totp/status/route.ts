@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
             loadNormalizedIdentity(svc, user.email),
         ]);
 
+        if (teamResult.error) throw teamResult.error;
         const profileId = identityResult?.profile?.id;
         const teamRequiresTotp = teamResult.data?.totp_required ?? false;
 
@@ -40,12 +41,13 @@ export async function GET(req: NextRequest) {
             });
         }
 
-        const { data: row } = await svc
+        const { data: row, error: totpErr } = await svc
             .from("totp_secrets")
             .select("verified_at")
             .eq("profile_id", profileId)
             .eq("team_id", teamId)
             .maybeSingle();
+        if (totpErr) throw totpErr;
 
         return NextResponse.json({
             teamRequiresTotp,

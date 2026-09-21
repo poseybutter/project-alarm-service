@@ -4,6 +4,7 @@ import {
     getServerUserRole,
 } from "@/infrastructure/supabase/server";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
+import { revokeVerifyTokens } from "@/shared/server/pinToken";
 import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
 
 type ResetBody = {
@@ -56,6 +57,9 @@ export async function POST(req: NextRequest) {
             .eq("team_id", teamId);
 
         if (error) throw error;
+
+        // 기존 verify token 즉시 폐기 — TTL(5분) 동안 유효한 토큰이 남용되지 않도록
+        revokeVerifyTokens(teamId, profileId!);
 
         return NextResponse.json({ ok: true });
     } catch (error) {

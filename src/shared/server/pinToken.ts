@@ -61,6 +61,25 @@ export function validatePinToken(
 
 // ─── TOTP 검증 토큰 ────────────────────────────────────────────────
 
+/**
+ * 인메모리 revocation map: TOTP 초기화 시 기존 토큰 즉시 무효화.
+ * key = `${teamId}:${profileId}`, value = 폐기 시각(ms).
+ * TTL이 지난 항목은 자동 정리된다.
+ */
+const revokedAt = new Map<string, number>();
+
+/** 관리자 TOTP 초기화 시 호출 — 해당 사용자의 기존 verify token을 즉시 폐기 */
+export function revokeVerifyTokens(teamId: string, profileId: string): void {
+    const key = `${teamId}:${profileId}`;
+    revokedAt.set(key, Date.now());
+
+    // TTL이 지난 항목 정리
+    const cutoff = Date.now() - TOKEN_TTL_MS;
+    for (const [k, v] of revokedAt) {
+        if (v < cutoff) revokedAt.delete(k);
+    }
+}
+
 /** TOTP 검증 성공 후 발급 — profileId를 바인딩하여 사용자별 토큰 */
 export function issueVerifyToken(teamId: string, profileId: string): string {
     const ts = Date.now().toString();
@@ -82,6 +101,11 @@ export function validateVerifyToken(
     const hmac = token.slice(dot + 1);
     const issued = Number(ts);
     if (!issued || Date.now() - issued > TOKEN_TTL_MS) return false;
+
+    // 폐기된 토큰인지 확인: 발급 시각이 revocation 시각보다 이전이면 무효
+    const revokeKey = `${teamId}:${profileId}`;
+    const revoked = revokedAt.get(revokeKey);
+    if (revoked && issued <= revoked) return false;
 
     const expected = createHmac("sha256", getSecret())
         .update(`${teamId}:${profileId}:${ts}`)

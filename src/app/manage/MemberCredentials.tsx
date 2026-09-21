@@ -26,7 +26,7 @@ type Props = {
     isAdmin: boolean;
     totpVerified: boolean;
     totpToken: string;
-    onTotpRequired: (callback: () => void) => void;
+    onTotpRequired: (callback: (token?: string) => void) => void;
 };
 
 export default function MemberCredentials({
@@ -41,6 +41,7 @@ export default function MemberCredentials({
     const [loaded, setLoaded] = useState(false);
     const [revealed, setRevealed] = useState<Record<number, string>>({});
     const [revealing, setRevealing] = useState<number | null>(null);
+    const [revealError, setRevealError] = useState<Record<number, string>>({});
 
     // 추가 모달
     const [addOpen, setAddOpen] = useState(false);
@@ -80,17 +81,20 @@ export default function MemberCredentials({
             return;
         }
 
-        const doReveal = async () => {
+        const doReveal = async (freshToken?: string) => {
             setRevealing(credentialId);
+            setRevealError((p) => { const n = { ...p }; delete n[credentialId]; return n; });
             try {
-                const pw = await mc.reveal(credentialId, totpToken || undefined);
+                const pw = await mc.reveal(credentialId, freshToken || totpToken || undefined);
                 setRevealed((p) => ({ ...p, [credentialId]: pw }));
-            } catch { /* handled */ }
+            } catch (err) {
+                setRevealError((p) => ({ ...p, [credentialId]: err instanceof Error ? err.message : "열람에 실패했습니다." }));
+            }
             setRevealing(null);
         };
 
         if (!totpVerified) {
-            onTotpRequired(() => void doReveal());
+            onTotpRequired((token) => void doReveal(token));
         } else {
             await doReveal();
         }
@@ -196,6 +200,9 @@ export default function MemberCredentials({
                                             )}
                                         </div>
                                     )}
+                                    {revealError[cred.id] && (
+                                        <span className="text-[10px] text-red-500 shrink-0">{revealError[cred.id]}</span>
+                                    )}
                                     <span className="text-[10px] text-stone-400 shrink-0" title={cred.updatedAt ? new Date(cred.updatedAt).toLocaleString("ko-KR") : ""}>
                                         {cred.updatedAt ? formatRelative(cred.updatedAt) : ""}
                                     </span>
@@ -238,8 +245,9 @@ export default function MemberCredentials({
                         <h3 className="text-sm font-bold text-stone-800 mb-3">계정 정보 추가</h3>
                         <div className="space-y-3">
                             <div>
-                                <label className="text-xs font-medium text-stone-500 block mb-1">팀원</label>
+                                <label htmlFor="mc-add-member" className="text-xs font-medium text-stone-500 block mb-1">팀원</label>
                                 <select
+                                    id="mc-add-member"
                                     value={addProfileId}
                                     onChange={(e) => setAddProfileId(e.target.value)}
                                     className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-amber-300"
@@ -252,8 +260,9 @@ export default function MemberCredentials({
                                 </select>
                             </div>
                             <div>
-                                <label className="text-xs font-medium text-stone-500 block mb-1">항목</label>
+                                <label htmlFor="mc-add-label" className="text-xs font-medium text-stone-500 block mb-1">항목</label>
                                 <input
+                                    id="mc-add-label"
                                     className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-amber-300"
                                     value={addLabel}
                                     onChange={(e) => setAddLabel(e.target.value)}
@@ -261,8 +270,9 @@ export default function MemberCredentials({
                                 />
                             </div>
                             <div>
-                                <label className="text-xs font-medium text-stone-500 block mb-1">비밀번호</label>
+                                <label htmlFor="mc-add-pw" className="text-xs font-medium text-stone-500 block mb-1">비밀번호</label>
                                 <input
+                                    id="mc-add-pw"
                                     type="password"
                                     className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-amber-300"
                                     value={addPassword}
@@ -270,8 +280,9 @@ export default function MemberCredentials({
                                 />
                             </div>
                             <div>
-                                <label className="text-xs font-medium text-stone-500 block mb-1">메모</label>
+                                <label htmlFor="mc-add-notes" className="text-xs font-medium text-stone-500 block mb-1">메모</label>
                                 <input
+                                    id="mc-add-notes"
                                     className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-amber-300"
                                     value={addNotes}
                                     onChange={(e) => setAddNotes(e.target.value)}
@@ -303,16 +314,18 @@ export default function MemberCredentials({
                         <h3 className="text-sm font-bold text-stone-800 mb-3">계정 정보 수정</h3>
                         <div className="space-y-3">
                             <div>
-                                <label className="text-xs font-medium text-stone-500 block mb-1">항목</label>
+                                <label htmlFor="mc-edit-label" className="text-xs font-medium text-stone-500 block mb-1">항목</label>
                                 <input
+                                    id="mc-edit-label"
                                     className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-amber-300"
                                     value={editLabel}
                                     onChange={(e) => setEditLabel(e.target.value)}
                                 />
                             </div>
                             <div>
-                                <label className="text-xs font-medium text-stone-500 block mb-1">비밀번호</label>
+                                <label htmlFor="mc-edit-pw" className="text-xs font-medium text-stone-500 block mb-1">비밀번호</label>
                                 <input
+                                    id="mc-edit-pw"
                                     type="password"
                                     className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-amber-300"
                                     value={editPassword}
@@ -321,8 +334,9 @@ export default function MemberCredentials({
                                 />
                             </div>
                             <div>
-                                <label className="text-xs font-medium text-stone-500 block mb-1">메모</label>
+                                <label htmlFor="mc-edit-notes" className="text-xs font-medium text-stone-500 block mb-1">메모</label>
                                 <input
+                                    id="mc-edit-notes"
                                     className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-amber-300"
                                     value={editNotes}
                                     onChange={(e) => setEditNotes(e.target.value)}

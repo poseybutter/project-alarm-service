@@ -46,14 +46,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 인증
-    const svc = createServiceSupabaseClient();
-
-    const [authResult, teamResult] = await Promise.all([
-        getServerUserRole(teamId),
-        svc.from("teams").select("totp_required").eq("id", teamId).maybeSingle(),
-    ]);
-
-    const { user, role } = authResult;
+    const { user, role } = await getServerUserRole(teamId);
     if (!user?.email || !role) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
@@ -63,30 +56,36 @@ export async function POST(req: NextRequest) {
     const rl = consumeRateLimit(rlKey, { limit: 10, windowMs: 5 * 60 * 1000 });
     if (!rl.allowed) return rateLimitResponse(rl.retryAfterSeconds);
 
-    if (teamResult.error) throw teamResult.error;
-    const totpRequired = teamResult.data?.totp_required ?? false;
-
-    // TOTP 토큰 검증
-    if (totpRequired) {
-        const totpToken = body.totpToken?.trim();
-        if (!totpToken) {
-            return NextResponse.json(
-                { message: "TOTP verification required" },
-                { status: 403 },
-            );
-        }
-
-        const identity = await loadNormalizedIdentity(svc, user.email);
-        const profileId = identity?.profile?.id;
-        if (!profileId || !validateVerifyToken(teamId, totpToken, profileId)) {
-            return NextResponse.json(
-                { message: "TOTP token invalid or expired" },
-                { status: 403 },
-            );
-        }
-    }
-
     try {
+        const svc = createServiceSupabaseClient();
+
+        const { data: teamData, error: teamErr } = await svc
+            .from("teams")
+            .select("totp_required")
+            .eq("id", teamId)
+            .maybeSingle();
+        if (teamErr) throw teamErr;
+        const totpRequired = teamData?.totp_required ?? false;
+
+        // TOTP 토큰 검증
+        if (totpRequired) {
+            const totpToken = body.totpToken?.trim();
+            if (!totpToken) {
+                return NextResponse.json(
+                    { message: "TOTP verification required" },
+                    { status: 403 },
+                );
+            }
+
+            const identity = await loadNormalizedIdentity(svc, user.email);
+            const profileId = identity?.profile?.id;
+            if (!profileId || !validateVerifyToken(teamId, totpToken, profileId)) {
+                return NextResponse.json(
+                    { message: "TOTP token invalid or expired" },
+                    { status: 403 },
+                );
+            }
+        }
         // ── 배치 모드 ──
         if (isBatch) {
             const ids = [...new Set(fieldDefIds)];
@@ -118,7 +117,8 @@ export async function POST(req: NextRequest) {
                 });
             }
             if (auditRows.length > 0) {
-                await svc.from("project_field_audit_logs").insert(auditRows);
+                const { error: auditErr } = await svc.from("project_field_audit_logs").insert(auditRows);
+                if (auditErr) throw auditErr;
             }
             return NextResponse.json({ values: result });
         }
@@ -142,13 +142,14 @@ export async function POST(req: NextRequest) {
 
         const plaintext = decryptField(row.encrypted_value);
 
-        await svc.from("project_field_audit_logs").insert({
+        const { error: auditErr } = await svc.from("project_field_audit_logs").insert({
             team_id: teamId,
             project_id: projectId,
             field_def_id: fieldDefId!,
             action: "view",
             actor_email: user.email,
         });
+        if (auditErr) throw auditErr;
 
         return NextResponse.json({ value: plaintext });
     } catch (error) {

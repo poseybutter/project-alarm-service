@@ -251,7 +251,7 @@ function ProjectDetailTabs({
     requiresTotp: boolean;
     totpVerified: boolean;
     totpToken: string;
-    onTotpRequired: (callback: () => void) => void;
+    onTotpRequired: (callback: (token?: string) => void) => void;
 }) {
     const [tab, setTab] = useState<"basic" | "setting">("basic");
     const [defs, setDefs] = useState<FieldDef[]>([]);
@@ -490,7 +490,7 @@ export default function ManagePage() {
     const [totpToken, setTotpToken] = useState<string>("");
     const TOTP_EXPIRY_MS = 5 * 60 * 1000; // 5분
     const totpVerified = totpVerifiedAt > 0 && Date.now() - totpVerifiedAt < TOTP_EXPIRY_MS;
-    const [totpModal, setTotpModal] = useState<{ callback: () => void } | null>(null);
+    const [totpModal, setTotpModal] = useState<{ callback: (token?: string) => void } | null>(null);
     const [totpSetupOpen, setTotpSetupOpen] = useState(false);
 
     // TOTP 인증 만료 시 자동으로 re-render 를 트리거하여 잠금 상태를 반영한다
@@ -587,12 +587,16 @@ export default function ManagePage() {
 
     useEffect(() => {
         if (member && teamId) {
+            // 팀 변경 시 이전 TOTP 인증 상태 초기화
+            setTotpVerifiedAt(0);
+            setTotpToken("");
             void loadData();
             void totp.checkStatus().then((status) => {
                 setTeamRequiresTotp(status.teamRequiresTotp);
                 setUserHasTotp(status.setupComplete);
             });
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [member, teamId, loadData, totp]);
 
     useEffect(() => {
@@ -2488,7 +2492,7 @@ export default function ManagePage() {
                                                     setTotpToken(result.token);
                                                     const cb = totpModal.callback;
                                                     setTotpModal(null);
-                                                    cb();
+                                                    cb(result.token);
                                                 } else {
                                                     setTotpError(result.message || "코드가 올바르지 않습니다.");
                                                     setTotpInput("");
@@ -2516,7 +2520,7 @@ export default function ManagePage() {
                                                         setTotpToken(result.token);
                                                         const cb = totpModal.callback;
                                                         setTotpModal(null);
-                                                        cb();
+                                                        cb(result.token);
                                                     } else {
                                                         setTotpError(result.message || "코드가 올바르지 않습니다.");
                                                         setTotpInput("");
