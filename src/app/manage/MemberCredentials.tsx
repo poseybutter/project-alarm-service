@@ -42,6 +42,7 @@ export default function MemberCredentials({
     const [revealed, setRevealed] = useState<Record<number, string>>({});
     const [revealing, setRevealing] = useState<number | null>(null);
     const [revealError, setRevealError] = useState<Record<number, string>>({});
+    const [actionError, setActionError] = useState<string | null>(null);
 
     // 추가 모달
     const [addOpen, setAddOpen] = useState(false);
@@ -60,10 +61,18 @@ export default function MemberCredentials({
 
     useEffect(() => {
         if (!teamId) return;
+        // 팀 변경 시 이전 상태 초기화
+        setMembers([]);
+        setRevealed({});
+        setRevealError({});
+        setLoaded(false);
+        let active = true;
         void mc.load().then((m) => {
+            if (!active) return;
             setMembers(m);
             setLoaded(true);
         });
+        return () => { active = false; };
     }, [teamId, mc]);
 
     const reload = async () => {
@@ -103,6 +112,7 @@ export default function MemberCredentials({
     const handleAdd = async () => {
         if (!addProfileId || !addLabel.trim() || addSaving) return;
         setAddSaving(true);
+        setActionError(null);
         try {
             await mc.create(addProfileId, addLabel.trim(), addPassword.trim() || undefined, addNotes.trim() || undefined);
             setAddOpen(false);
@@ -111,6 +121,8 @@ export default function MemberCredentials({
             setAddNotes("");
             setAddProfileId("");
             await reload();
+        } catch {
+            setActionError("계정 추가에 실패했습니다.");
         } finally {
             setAddSaving(false);
         }
@@ -119,6 +131,7 @@ export default function MemberCredentials({
     const handleEdit = async () => {
         if (!editId || editSaving) return;
         setEditSaving(true);
+        setActionError(null);
         try {
             await mc.update(editId, {
                 label: editLabel.trim() || undefined,
@@ -127,14 +140,21 @@ export default function MemberCredentials({
             });
             setEditId(null);
             await reload();
+        } catch {
+            setActionError("계정 수정에 실패했습니다.");
         } finally {
             setEditSaving(false);
         }
     };
 
     const handleDelete = async (id: number) => {
-        await mc.remove(id);
-        await reload();
+        setActionError(null);
+        try {
+            await mc.remove(id);
+            await reload();
+        } catch {
+            setActionError("계정 삭제에 실패했습니다.");
+        }
     };
 
     if (!loaded) return null;
@@ -144,6 +164,9 @@ export default function MemberCredentials({
 
     return (
         <>
+            {actionError && (
+                <p className="text-xs text-red-500 mb-2">{actionError}</p>
+            )}
             <div className="space-y-3">
                 {isAdmin && (
                     <div className="flex justify-end">

@@ -79,6 +79,12 @@ function TeamTotpSection({ teamId }: { teamId: string }) {
   const [resetting, setResetting] = useState<string | null>(null);
 
   useEffect(() => {
+    // 팀 변경 시 이전 상태 초기화
+    setEnabled(false);
+    setMemberStatuses([]);
+    setLoadError(false);
+    setLoaded(false);
+    setActionError(null);
     let cancelled = false;
     Promise.all([
       fetch(`/api/totp/status?teamId=${encodeURIComponent(teamId)}`).then((r) => {
@@ -182,7 +188,7 @@ function TeamTotpSection({ teamId }: { teamId: string }) {
       <div className="mt-3 flex gap-2">
         <AdminButton
           variant={enabled ? "danger" : "primary"}
-          disabled={saving}
+          disabled={saving || !loaded}
           onClick={handleToggle}
         >
           {saving ? (
@@ -211,7 +217,7 @@ function TeamTotpSection({ teamId }: { teamId: string }) {
                 </span>
                 <AdminButton
                   variant="ghost"
-                  disabled={resetting === m.email}
+                  disabled={resetting === m.email || !loaded}
                   onClick={() => void handleReset(m.email)}
                 >
                   <RotateCcw size={12} /> {resetting === m.email ? "..." : "초기화"}

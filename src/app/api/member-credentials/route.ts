@@ -145,14 +145,14 @@ export async function POST(req: NextRequest) {
 
         if (error) throw error;
 
-        // 감사 로그
+        // 감사 로그 — 데이터 변경과 별도 커밋이므로 실패해도 성공 응답 유지
         const { error: auditErr } = await svc.from("member_credential_audit_logs").insert({
             team_id: teamId,
             credential_id: data.id,
             action: "create",
             actor_email: user.email,
         });
-        if (auditErr) throw auditErr;
+        if (auditErr) console.error("[mc-create] audit log failed:", auditErr);
 
         return NextResponse.json({ ok: true, id: data.id });
     } catch (error) {
@@ -213,13 +213,14 @@ export async function PATCH(req: NextRequest) {
 
         if (error) throw error;
 
+        // 감사 로그 — 실패해도 데이터 변경은 이미 완료
         const { error: auditErr } = await svc.from("member_credential_audit_logs").insert({
             team_id: teamId,
             credential_id: id,
             action: "update",
             actor_email: user.email,
         });
-        if (auditErr) throw auditErr;
+        if (auditErr) console.error("[mc-update] audit log failed:", auditErr);
 
         return NextResponse.json({ ok: true });
     } catch (error) {
@@ -255,14 +256,6 @@ export async function DELETE(req: NextRequest) {
     try {
         const svc = createServiceSupabaseClient();
 
-        const { error: auditErr } = await svc.from("member_credential_audit_logs").insert({
-            team_id: teamId,
-            credential_id: id,
-            action: "delete",
-            actor_email: user.email,
-        });
-        if (auditErr) throw auditErr;
-
         const { error } = await svc
             .from("member_credentials")
             .delete()
@@ -270,6 +263,15 @@ export async function DELETE(req: NextRequest) {
             .eq("team_id", teamId);
 
         if (error) throw error;
+
+        // 감사 로그 — 삭제 성공 후 기록하여 미삭제 delete 로그 방지
+        const { error: auditErr } = await svc.from("member_credential_audit_logs").insert({
+            team_id: teamId,
+            credential_id: id,
+            action: "delete",
+            actor_email: user.email,
+        });
+        if (auditErr) console.error("[mc-delete] audit log failed:", auditErr);
 
         return NextResponse.json({ ok: true });
     } catch (error) {

@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ message: "Invalid JSON" }, { status: 400 });
     }
 
-    const teamId = body.teamId?.trim();
+    const teamId = typeof body.teamId === "string" ? body.teamId.trim() : "";
     if (!teamId || typeof body.enabled !== "boolean") {
         return NextResponse.json(
             { message: "teamId and enabled (boolean) are required" },
