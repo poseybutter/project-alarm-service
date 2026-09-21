@@ -1,0 +1,106 @@
+import { NextResponse, type NextRequest } from "next/server";
+import {
+    createServiceSupabaseClient,
+    getServerUserRole,
+} from "@/infrastructure/supabase/server";
+import { internalErrorResponse } from "@/shared/server/apiResponse";
+import { decryptField } from "@/shared/server/fieldEncryption";
+import { validateVerifyToken } from "@/shared/server/pinToken";
+import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
+import {
+    requestRateLimitKey,
+    consumeRateLimit,
+    rateLimitResponse,
+} from "@/shared/server/rateLimit";
+
+type RevealBody = {
+    teamId?: string;
+    credentialId?: number;
+    totpToken?: string;
+};
+
+/** POST — 팀원 자격증명 비밀번호 복호화 (TOTP 토큰 필수) */
+export async function POST(req: NextRequest) {
+    let body: RevealBody;
+    try {
+        body = (await req.json()) as RevealBody;
+    } catch {
+        return NextResponse.json({ message: "Invalid JSON" }, { status: 400 });
+    }
+
+    const teamId = body.teamId?.trim();
+    const credentialId = body.credentialId;
+    const totpToken = body.totpToken?.trim();
+
+    // 입력 검증 — totpToken도 필수 파라미터로 취급
+    if (!teamId || !credentialId || !totpToken) {
+        return NextResponse.json(
+            { message: "teamId, credentialId, totpToken are required" },
+            { status: 400 },
+        );
+    }
+
+    // 인증
+    const { user, role } = await getServerUserRole(teamId);
+    if (!user?.email || !role) {
+        return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+
+    // rate limit — 인증 후, 유저별 키
+    const rlKey = requestRateLimitKey(req, "mc-reveal", `${teamId}:${user.email}`);
+    const rl = consumeRateLimit(rlKey, { limit: 10, windowMs: 5 * 60 * 1000 });
+    if (!rl.allowed) return rateLimitResponse(rl.retryAfterSeconds);
+
+    try {
+        const svc = createServiceSupabaseClient();
+
+        // TOTP 토큰 서버 검증
+        const identity = await loadNormalizedIdentity(svc, user.email);
+        const profileId = identity?.profile?.id;
+        if (!profileId || !validateVerifyToken(teamId, totpToken, profileId)) {
+            return NextResponse.json(
+                { message: "TOTP token invalid or expired" },
+                { status: 403 },
+            );
+        }
+
+        // 자격증명 조회 + 소유권 확인 + 복호화
+        const { data: row, error } = await svc
+            .from("member_credentials")
+            .select("profile_id, encrypted_pw")
+            .eq("id", credentialId)
+            .eq("team_id", teamId)
+            .maybeSingle();
+
+        if (error) throw error;
+        if (!row?.encrypted_pw) {
+            return NextResponse.json(
+                { message: "Password not found" },
+                { status: 404 },
+            );
+        }
+
+        // IDOR 방지: 본인 자격증명이거나 관리자만 열람 가능
+        if (String(row.profile_id) !== profileId && role !== "admin") {
+            return NextResponse.json(
+                { message: "Forbidden" },
+                { status: 403 },
+            );
+        }
+
+        const password = decryptField(row.encrypted_pw);
+
+        // 감사 로그
+        const { error: auditErr } = await svc.from("member_credential_audit_logs").insert({
+            team_id: teamId,
+            credential_id: credentialId,
+            action: "view",
+            actor_email: user.email,
+        });
+        if (auditErr) throw auditErr;
+
+        return NextResponse.json({ password });
+    } catch (error) {
+        return internalErrorResponse("mc-reveal", error);
+    }
+}
