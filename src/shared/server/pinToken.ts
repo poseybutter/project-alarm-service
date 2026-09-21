@@ -65,6 +65,10 @@ export function validatePinToken(
  * 인메모리 revocation map: TOTP 초기화 시 기존 토큰 즉시 무효화.
  * key = `${teamId}:${profileId}`, value = 폐기 시각(ms).
  * TTL이 지난 항목은 자동 정리된다.
+ *
+ * 단일 프로세스 전제 — 다중 인스턴스 배포 시 Redis 또는 DB 기반
+ * revocation store로 교체 필요. 현재 단일 인스턴스이며 TTL이 5분이므로
+ * 최악 시나리오에서도 리스크 윈도우가 제한된다.
  */
 const revokedAt = new Map<string, number>();
 

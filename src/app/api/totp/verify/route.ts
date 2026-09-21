@@ -25,8 +25,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ message: "Invalid JSON" }, { status: 400 });
     }
 
-    const teamId = body.teamId?.trim();
-    const code = body.code?.trim();
+    const teamId = typeof body.teamId === "string" ? body.teamId.trim() : "";
+    const code = typeof body.code === "string" ? body.code.trim() : "";
     if (!teamId || !code) {
         return NextResponse.json(
             { message: "teamId and code are required" },

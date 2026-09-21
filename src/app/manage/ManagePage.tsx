@@ -402,6 +402,8 @@ function ProjectDetailTabs({
     );
 }
 
+const TOTP_EXPIRY_MS = 5 * 60 * 1000; // 5분
+
 export default function ManagePage() {
     const { member, members, memberOptions, role, teamId } = useAuth();
     const isGuest = member === "GUEST" || role === "guest";
@@ -488,7 +490,6 @@ export default function ManagePage() {
     const [userHasTotp, setUserHasTotp] = useState(false);
     const [totpVerifiedAt, setTotpVerifiedAt] = useState<number>(0);
     const [totpToken, setTotpToken] = useState<string>("");
-    const TOTP_EXPIRY_MS = 5 * 60 * 1000; // 5분
     const totpVerified = totpVerifiedAt > 0 && Date.now() - totpVerifiedAt < TOTP_EXPIRY_MS;
     const [totpModal, setTotpModal] = useState<{ callback: (token?: string) => void } | null>(null);
     const [totpSetupOpen, setTotpSetupOpen] = useState(false);
@@ -506,6 +507,27 @@ export default function ManagePage() {
     const [totpInput, setTotpInput] = useState("");
     const [totpError, setTotpError] = useState("");
     const [totpVerifying, setTotpVerifying] = useState(false);
+
+    const submitTotpCode = async () => {
+        if (totpInput.length !== 6 || totpVerifying || !totpModal) return;
+        setTotpVerifying(true);
+        try {
+            const result = await totp.verify(totpInput);
+            if (result.ok && result.token) {
+                setTotpVerifiedAt(Date.now());
+                setTotpToken(result.token);
+                const cb = totpModal.callback;
+                setTotpModal(null);
+                cb(result.token);
+            } else {
+                setTotpError(result.message || "코드가 올바르지 않습니다.");
+                setTotpInput("");
+            }
+        } catch {
+            setTotpError("인증 요청에 실패했습니다. 다시 시도해 주세요.");
+            setTotpInput("");
+        } finally { setTotpVerifying(false); }
+    };
     const historyProject = historyProjectId
         ? projects.find((p) => p.id === historyProjectId)
         : null;
@@ -594,6 +616,10 @@ export default function ManagePage() {
             void totp.checkStatus().then((status) => {
                 setTeamRequiresTotp(status.teamRequiresTotp);
                 setUserHasTotp(status.setupComplete);
+            }).catch(() => {
+                // 상태 조회 실패 시 보호 모드 유지 — reveal API가 별도로 토큰을 요구하므로 권한 우회 없음
+                setTeamRequiresTotp(false);
+                setUserHasTotp(false);
             });
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2482,22 +2508,9 @@ export default function ManagePage() {
                                         placeholder="000000"
                                         value={totpInput}
                                         onChange={(e) => { setTotpInput(e.target.value.replace(/\D/g, "")); setTotpError(""); }}
-                                        onKeyDown={async (e) => {
+                                        onKeyDown={(e) => {
                                             if (e.key !== "Enter" || totpInput.length !== 6 || totpVerifying) return;
-                                            setTotpVerifying(true);
-                                            try {
-                                                const result = await totp.verify(totpInput);
-                                                if (result.ok && result.token) {
-                                                    setTotpVerifiedAt(Date.now());
-                                                    setTotpToken(result.token);
-                                                    const cb = totpModal.callback;
-                                                    setTotpModal(null);
-                                                    cb(result.token);
-                                                } else {
-                                                    setTotpError(result.message || "코드가 올바르지 않습니다.");
-                                                    setTotpInput("");
-                                                }
-                                            } finally { setTotpVerifying(false); }
+                                            void submitTotpCode();
                                         }}
                                         className={`w-full text-center text-2xl tracking-[0.4em] font-mono rounded-xl border-2 py-3 outline-none transition-colors ${
                                             totpError ? "border-red-400 bg-red-50 animate-shake" : "border-stone-200 focus:border-amber-400"
@@ -2510,23 +2523,7 @@ export default function ManagePage() {
                                         <button
                                             type="button"
                                             disabled={totpVerifying || totpInput.length !== 6}
-                                            onClick={async () => {
-                                                if (totpInput.length !== 6 || totpVerifying) return;
-                                                setTotpVerifying(true);
-                                                try {
-                                                    const result = await totp.verify(totpInput);
-                                                    if (result.ok && result.token) {
-                                                        setTotpVerifiedAt(Date.now());
-                                                        setTotpToken(result.token);
-                                                        const cb = totpModal.callback;
-                                                        setTotpModal(null);
-                                                        cb(result.token);
-                                                    } else {
-                                                        setTotpError(result.message || "코드가 올바르지 않습니다.");
-                                                        setTotpInput("");
-                                                    }
-                                                } finally { setTotpVerifying(false); }
-                                            }}
+                                            onClick={() => void submitTotpCode()}
                                             className="flex-1 bg-amber-500 text-white font-bold py-2.5 rounded-xl text-sm disabled:opacity-50"
                                         >
                                             {totpVerifying ? "확인 중..." : "확인"}
