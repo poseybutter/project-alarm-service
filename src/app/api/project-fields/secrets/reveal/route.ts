@@ -67,21 +67,14 @@ export async function POST(req: NextRequest) {
         if (teamErr) throw teamErr;
         const totpRequired = teamData?.totp_required ?? false;
 
-        // TOTP 토큰 검증
+        // TOTP 토큰 검증 — 토큰 유무와 무관하게 항상 서버 검증 실행
         if (totpRequired) {
-            const totpToken = body.totpToken?.trim();
-            if (!totpToken) {
-                return NextResponse.json(
-                    { message: "TOTP verification required" },
-                    { status: 403 },
-                );
-            }
-
             const identity = await loadNormalizedIdentity(svc, user.email);
             const profileId = identity?.profile?.id;
+            const totpToken = body.totpToken?.trim() || "";
             if (!profileId || !validateVerifyToken(teamId, totpToken, profileId)) {
                 return NextResponse.json(
-                    { message: "TOTP token invalid or expired" },
+                    { message: "TOTP verification required" },
                     { status: 403 },
                 );
             }
