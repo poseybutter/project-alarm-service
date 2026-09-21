@@ -30,7 +30,6 @@ import {
   Search,
   ShieldCheck,
   ShieldAlert,
-  KeyRound,
   ShieldMinus,
   Trash2,
   Users,
@@ -65,108 +64,166 @@ type TeamsResponse = { teams: AdminTeam[] };
 type MembersResponse = { members: AdminMember[] };
 type TeamFilter = "all" | "active" | "archived";
 
-function TeamPinSection({ teamId }: { teamId: string }) {
-  const [hasPin, setHasPin] = useState(false);
-  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
-  const [mode, setMode] = useState<"idle" | "set" | "remove">("idle");
-  const [pin, setPin] = useState("");
+type TotpMemberStatus = {
+  displayName: string;
+  email: string;
+};
+
+function TeamTotpSection({ teamId }: { teamId: string }) {
+  const [enabled, setEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [memberStatuses, setMemberStatuses] = useState<TotpMemberStatus[]>([]);
+  const [resetting, setResetting] = useState<string | null>(null);
 
   useEffect(() => {
+    // 팀 변경 시 이전 상태 초기화
+    setEnabled(false);
+    setMemberStatuses([]);
+    setLoadError(false);
+    setLoaded(false);
+    setActionError(null);
     let cancelled = false;
-    fetch(`/api/project-fields/pin?teamId=${encodeURIComponent(teamId)}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    Promise.all([
+      fetch(`/api/totp/status?teamId=${encodeURIComponent(teamId)}`).then((r) => {
+        if (!r.ok) throw new Error("TOTP 상태 조회 실패");
         return r.json();
-      })
-      .then((d: { hasPin: boolean; updatedAt: string | null }) => {
-        if (!cancelled) { setHasPin(d.hasPin); setUpdatedAt(d.updatedAt); setLoaded(true); }
+      }),
+      fetch(`/api/admin/members?team=${encodeURIComponent(teamId)}`).then((r) => {
+        if (!r.ok) throw new Error("멤버 조회 실패");
+        return r.json();
+      }),
+    ])
+      .then(([status, membersData]: [
+        { teamRequiresTotp: boolean },
+        { members: AdminMember[] },
+      ]) => {
+        if (cancelled) return;
+        setEnabled(status.teamRequiresTotp);
+        setMemberStatuses(
+          (membersData.members ?? [])
+            .filter((m) => m.status === "active")
+            .map((m) => ({
+              displayName: m.name ?? "",
+              email: m.email ?? "",
+            })),
+        );
+        setLoaded(true);
       })
       .catch(() => {
-        if (!cancelled) setLoaded(true); // 실패해도 로딩 완료 처리 — 섹션이 숨겨진 채 멈추지 않도록
+        if (!cancelled) {
+          setLoadError(true);
+          setLoaded(true);
+        }
       });
     return () => { cancelled = true; };
   }, [teamId]);
 
+  const handleToggle = async () => {
+    setSaving(true);
+    setActionError(null);
+    try {
+      const res = await fetch("/api/totp/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamId, enabled: !enabled }),
+      });
+      if (!res.ok) throw new Error("TOTP 설정 변경 실패");
+      setEnabled(!enabled);
+    } catch {
+      setActionError("TOTP 설정 변경에 실패했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = async (email: string) => {
+    setResetting(email);
+    setActionError(null);
+    try {
+      const res = await fetch("/api/totp/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamId, targetEmail: email }),
+      });
+      if (!res.ok) throw new Error("TOTP 초기화 실패");
+    } catch {
+      setActionError("TOTP 초기화에 실패했습니다.");
+    } finally {
+      setResetting(null);
+    }
+  };
+
   if (!loaded) return null;
 
-  const formattedDate = updatedAt
-    ? new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(updatedAt))
-    : null;
+  if (loadError) {
+    return (
+      <section className="border-t border-stone-200 pt-5">
+        <div className="flex items-center gap-2">
+          <ShieldAlert className="text-red-600" size={17} />
+          <h3 className="text-sm font-extrabold">TOTP 인증 (Google OTP)</h3>
+        </div>
+        <p className="mt-2 text-xs text-red-600">TOTP 상태를 불러오지 못했습니다.</p>
+      </section>
+    );
+  }
 
   return (
     <section className="border-t border-stone-200 pt-5">
       <div className="flex items-center gap-2">
-        <KeyRound className="text-amber-600" size={17} />
-        <h3 className="text-sm font-extrabold">세팅 PIN</h3>
-        {hasPin ? (
-          <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-700">설정됨</span>
+        <ShieldCheck className="text-amber-600" size={17} />
+        <h3 className="text-sm font-extrabold">TOTP 인증 (Google OTP)</h3>
+        {enabled ? (
+          <span className="rounded border border-green-200 bg-green-50 px-1.5 py-0.5 font-mono text-[10px] font-bold text-green-700">활성</span>
         ) : (
-          <span className="rounded border border-stone-200 bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-stone-500">미설정</span>
+          <span className="rounded border border-stone-200 bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-stone-500">비활성</span>
         )}
       </div>
       <p className="mt-1 text-xs leading-5 text-stone-500">
-        프로젝트 세팅 정보(접속 정보, 비밀번호 등) 열람 시 PIN 입력을 요구합니다.
-        {formattedDate && <span className="block text-stone-400 mt-0.5">마지막 변경: {formattedDate}</span>}
+        세팅 정보(접속 정보, 비밀번호 등) 열람 시 Google Authenticator 코드를 요구합니다.
       </p>
 
-      {mode === "idle" && (
-        <div className="mt-3 flex gap-2">
-          <AdminButton variant="primary" onClick={() => { setMode("set"); setPin(""); }}>
-            <KeyRound size={14} /> {hasPin ? "PIN 변경" : "PIN 설정"}
-          </AdminButton>
-          {hasPin && (
-            <AdminButton variant="ghost" onClick={() => setMode("remove")}>
-              PIN 해제
-            </AdminButton>
+      <div className="mt-3 flex gap-2">
+        <AdminButton
+          variant={enabled ? "danger" : "primary"}
+          disabled={saving || !loaded}
+          onClick={handleToggle}
+        >
+          {saving ? (
+            <SavingLabel />
+          ) : enabled ? (
+            <><ShieldMinus size={14} /> TOTP 비활성화</>
+          ) : (
+            <><ShieldCheck size={14} /> TOTP 활성화</>
           )}
-        </div>
+        </AdminButton>
+      </div>
+
+      {actionError && (
+        <p className="mt-2 text-xs text-red-600">{actionError}</p>
       )}
-      {mode === "set" && (
-        <div className="mt-3 space-y-2">
-          <input
-            type="password"
-            inputMode="numeric"
-            maxLength={6}
-            autoFocus
-            placeholder="4~6자리 숫자"
-            value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-            className="w-full max-w-[12rem] rounded-md border border-stone-300 px-3 py-2 text-sm text-center tracking-[0.3em] font-mono outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
-          />
-          <div className="flex gap-2">
-            <AdminButton variant="primary" disabled={saving || pin.length < 4} onClick={async () => {
-              setSaving(true);
-              try {
-                await fetch("/api/project-fields/pin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ teamId, pin }) });
-                setHasPin(true);
-                setUpdatedAt(new Date().toISOString());
-                setMode("idle");
-              } finally { setSaving(false); }
-            }}>
-              {saving ? <SavingLabel /> : <><Save size={14} /> 저장</>}
-            </AdminButton>
-            <AdminButton variant="ghost" onClick={() => setMode("idle")}>취소</AdminButton>
-          </div>
-        </div>
-      )}
-      {mode === "remove" && (
-        <div className="mt-3 space-y-2">
-          <p className="text-xs text-red-600">PIN을 해제하면 누구나 세팅 정보를 볼 수 있습니다.</p>
-          <div className="flex gap-2">
-            <AdminButton variant="danger" disabled={saving} onClick={async () => {
-              setSaving(true);
-              try {
-                await fetch("/api/project-fields/pin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ teamId, pin: null }) });
-                setHasPin(false);
-                setUpdatedAt(new Date().toISOString());
-                setMode("idle");
-              } finally { setSaving(false); }
-            }}>
-              {saving ? <SavingLabel /> : <><Trash2 size={14} /> 해제</>}
-            </AdminButton>
-            <AdminButton variant="ghost" onClick={() => setMode("idle")}>취소</AdminButton>
+
+      {enabled && memberStatuses.length > 0 && (
+        <div className="mt-4">
+          <p className="text-xs font-bold text-stone-500 mb-2">팀원 TOTP 초기화</p>
+          <div className="space-y-1">
+            {memberStatuses.map((m) => (
+              <div key={m.email} className="flex items-center gap-2 rounded-md border border-stone-100 px-3 py-2">
+                <span className="text-xs font-medium text-stone-700 flex-1 min-w-0 truncate">
+                  {m.displayName}
+                  <span className="text-stone-400 ml-1">({m.email})</span>
+                </span>
+                <AdminButton
+                  variant="ghost"
+                  disabled={resetting === m.email || !loaded}
+                  onClick={() => void handleReset(m.email)}
+                >
+                  <RotateCcw size={12} /> {resetting === m.email ? "..." : "초기화"}
+                </AdminButton>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -1061,7 +1118,7 @@ export function TeamsPage() {
                   </AdminButton>
                 </div>
 
-                <TeamPinSection teamId={selected.id} />
+                <TeamTotpSection teamId={selected.id} />
 
                 {selected.id !== TEAM_ID && (
                   <section className="border-t border-red-200 pt-5">

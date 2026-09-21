@@ -5,11 +5,11 @@ import {
 } from "@/infrastructure/supabase/server";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { decryptField } from "@/shared/server/fieldEncryption";
-import { verifyPin } from "@/shared/server/pinHash";
-import { validatePinToken } from "@/shared/server/pinToken";
+import { validateVerifyToken } from "@/shared/server/pinToken";
+import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
 import {
     requestRateLimitKey,
-    consumeSharedRateLimit,
+    consumeRateLimit,
     rateLimitResponse,
 } from "@/shared/server/rateLimit";
 
@@ -17,47 +17,11 @@ type RevealBody = {
     teamId?: string;
     projectId?: number;
     fieldDefId?: number;
-    /** 배치 모드 — 여러 필드를 한 번에 복호화 (PIN 검증 1회) */
+    /** 배치 모드 — 여러 필드를 한 번에 복호화 */
     fieldDefIds?: number[];
-    pin?: string;
-    /** PIN verify에서 발급받은 HMAC 토큰 — scrypt 재실행 없이 빠르게 인가 */
-    pinToken?: string;
+    /** TOTP verify에서 발급받은 HMAC 토큰 */
+    totpToken?: string;
 };
-
-/**
- * 팀 PIN 검증 — PIN이 설정되어 있으면 반드시 검증을 통과해야 한다.
- * pinToken이 유효하면 scrypt 없이 즉시 통과한다.
- * 반환: null이면 통과, Response면 거부 응답.
- */
-async function enforceTeamPin(
-    svc: ReturnType<typeof createServiceSupabaseClient>,
-    teamId: string,
-    pin: string | undefined,
-    pinToken: string | undefined,
-): Promise<NextResponse | null> {
-    const { data: team, error } = await svc
-        .from("teams")
-        .select("settings_pin_hash")
-        .eq("id", teamId)
-        .maybeSingle();
-    if (error) throw error;
-
-    const hash = team?.settings_pin_hash;
-    if (!hash) return null; // PIN 미설정 — 보호 비활성
-
-    // HMAC 토큰이 유효하면 scrypt 재실행 없이 즉시 통과 (PIN 해시 prefix 검증 포함)
-    if (pinToken && validatePinToken(teamId, pinToken, hash)) {
-        return null;
-    }
-
-    if (!pin) {
-        return NextResponse.json({ message: "PIN is required" }, { status: 403 });
-    }
-    if (!(await verifyPin(pin, hash))) {
-        return NextResponse.json({ message: "Invalid PIN" }, { status: 403 });
-    }
-    return null; // 검증 통과
-}
 
 /** POST — 암호화된 secret 필드 값을 복호화하여 반환 + 감사 로그 기록 */
 export async function POST(req: NextRequest) {
@@ -69,16 +33,6 @@ export async function POST(req: NextRequest) {
     }
 
     const teamId = body.teamId?.trim();
-    if (teamId) {
-        const rlKey = requestRateLimitKey(req, "secret-reveal", teamId);
-        const rl = await consumeSharedRateLimit(rlKey, {
-            limit: 10,
-            windowMs: 5 * 60 * 1000,
-            failClosed: true,
-        });
-        if (!rl.allowed) return rateLimitResponse(rl.retryAfterSeconds);
-    }
-
     const projectId = body.projectId;
     const fieldDefId = body.fieldDefId;
     const fieldDefIds = body.fieldDefIds;
@@ -91,18 +45,40 @@ export async function POST(req: NextRequest) {
         );
     }
 
+    // 인증
     const { user, role } = await getServerUserRole(teamId);
     if (!user?.email || !role) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
+    // rate limit — 인증 후, 유저별 키
+    const rlKey = requestRateLimitKey(req, "secret-reveal", `${teamId}:${user.email}`);
+    const rl = consumeRateLimit(rlKey, { limit: 10, windowMs: 5 * 60 * 1000 });
+    if (!rl.allowed) return rateLimitResponse(rl.retryAfterSeconds);
+
     try {
         const svc = createServiceSupabaseClient();
 
-        // PIN 검증 (1회) — pinToken이 있으면 scrypt 없이 빠르게 통과
-        const pinDenied = await enforceTeamPin(svc, teamId, body.pin?.trim(), body.pinToken?.trim());
-        if (pinDenied) return pinDenied;
+        const { data: teamData, error: teamErr } = await svc
+            .from("teams")
+            .select("totp_required")
+            .eq("id", teamId)
+            .maybeSingle();
+        if (teamErr) throw teamErr;
+        const totpRequired = teamData?.totp_required ?? false;
 
+        // TOTP 토큰 검증 — 토큰 유무와 무관하게 항상 서버 검증 실행
+        if (totpRequired) {
+            const identity = await loadNormalizedIdentity(svc, user.email);
+            const profileId = identity?.profile?.id;
+            const totpToken = body.totpToken?.trim() || "";
+            if (!profileId || !validateVerifyToken(teamId, totpToken, profileId)) {
+                return NextResponse.json(
+                    { message: "TOTP verification required" },
+                    { status: 403 },
+                );
+            }
+        }
         // ── 배치 모드 ──
         if (isBatch) {
             const ids = [...new Set(fieldDefIds)];
@@ -134,12 +110,13 @@ export async function POST(req: NextRequest) {
                 });
             }
             if (auditRows.length > 0) {
-                await svc.from("project_field_audit_logs").insert(auditRows);
+                const { error: auditErr } = await svc.from("project_field_audit_logs").insert(auditRows);
+                if (auditErr) throw auditErr;
             }
             return NextResponse.json({ values: result });
         }
 
-        // ── 단건 모드 (기존 호환) ──
+        // ── 단건 모드 ──
         const { data: row, error } = await svc
             .from("project_field_values")
             .select("encrypted_value")
@@ -156,17 +133,16 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // 복호화
         const plaintext = decryptField(row.encrypted_value);
 
-        // 감사 로그 기록
-        await svc.from("project_field_audit_logs").insert({
+        const { error: auditErr } = await svc.from("project_field_audit_logs").insert({
             team_id: teamId,
             project_id: projectId,
             field_def_id: fieldDefId!,
             action: "view",
             actor_email: user.email,
         });
+        if (auditErr) throw auditErr;
 
         return NextResponse.json({ value: plaintext });
     } catch (error) {
