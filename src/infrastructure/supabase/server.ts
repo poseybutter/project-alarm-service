@@ -65,22 +65,7 @@ export async function getServerUserRole(teamId: string) {
         };
     }
 
-    // 스키마 미적용 또는 백필 지연 시 폴백
-    const { data } = await supabase
-        .from("players")
-        .select("name, role, status")
-        .eq("team_id", teamId)
-        .eq("email", user.email)
-        .maybeSingle();
-
-    return {
-        supabase,
-        user,
-        role:
-            data?.status !== "active"
-                ? null
-                : data?.role ?? "member",
-    };
+    return { supabase, user, role: null };
 }
 
 export async function getServerCurrentTeamRole() {
@@ -111,23 +96,7 @@ export async function getServerCurrentTeamRole() {
         };
     }
 
-    // 스키마 미적용 또는 백필 지연 시 폴백
-    const teamId = cookieTeamId || TEAM_ID;
-    const { data } = await supabase
-        .from("players")
-        .select("name, role, status")
-        .eq("team_id", teamId)
-        .eq("email", user.email)
-        .maybeSingle();
-    return {
-        supabase,
-        user,
-        teamId,
-        role:
-            data?.status !== "active"
-                ? null
-                : data?.role ?? "member",
-    };
+    return { supabase, user, role: null, teamId: null };
 }
 
 export function createServiceSupabaseClient() {
