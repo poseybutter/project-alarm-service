@@ -95,27 +95,7 @@ async function loadTeams(): Promise<TeamRow[]> {
       status: "active" as const,
     }));
   }
-  if (error.code !== "42P01") throw error;
-
-  const { data: players, error: playersError } = await service
-    .from("players")
-    .select("team_id")
-    .not("team_id", "is", null);
-  if (playersError) throw playersError;
-
-  const ids = Array.from(
-    new Set(
-      (players ?? [])
-        .map((row) => row.team_id as string | null)
-        .filter((id): id is string => Boolean(id)),
-    ),
-  );
-  return ids.map((id) => ({
-    id,
-    name: fallbackTeamName(id),
-    description: null,
-    status: "active" as const,
-  }));
+  throw error;
 }
 
 async function loadActor(email: string) {
@@ -145,13 +125,7 @@ async function loadActor(email: string) {
     );
   }
 
-  const { data, error } = await service
-    .from("players")
-    .select("id, name, email, avatar_url, team_id, role, status, level, exp")
-    .eq("email", email.toLowerCase())
-    .eq("status", "active");
-  if (error) throw error;
-  return (data ?? []) as PlayerRow[];
+  return [];
 }
 
 async function loadOrganizationAdmin(email: string) {
@@ -413,33 +387,7 @@ async function queryAdminMembers(
   const teams = knownTeams ?? (await loadTeams());
   const teamNames = new Map(teams.map((team) => [team.id, team.name]));
 
-  let rows: PlayerRow[];
-  try {
-    rows = await queryAdminMembersNormalized(teamId);
-  } catch (err) {
-    if (!isIdentitySchemaUnavailable(err)) throw err;
-    // V31 미적용 환경 폴백: players 직접 조회
-    // sort_order 컬럼이 아직 없을 수 있으므로 먼저 시도 후 폴백
-    let legacyQuery = service
-      .from("players")
-      .select("id, name, email, avatar_url, team_id, role, status, level, exp, sort_order")
-      .order("sort_order", { ascending: true });
-    legacyQuery = applyScope(legacyQuery, teamId);
-    let { data, error } = await legacyQuery;
-    if (error && (error as { code?: string }).code === "42703") {
-      // sort_order 컬럼 미존재 — V48 미적용
-      let fallbackQuery = service
-        .from("players")
-        .select("id, name, email, avatar_url, team_id, role, status, level, exp")
-        .order("id", { ascending: true });
-      fallbackQuery = applyScope(fallbackQuery, teamId);
-      const fb = await fallbackQuery;
-      data = fb.data as typeof data;
-      error = fb.error;
-    }
-    if (error) throw error;
-    rows = (data ?? []) as PlayerRow[];
-  }
+  const rows = await queryAdminMembersNormalized(teamId);
 
   const authorizationIndex = await loadMembershipAuthorizationIndex(service, {
     legacyPlayerIds: rows.map((row) => row.id).filter((id) => id > 0),
