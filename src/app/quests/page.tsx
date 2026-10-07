@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '@/infrastructure/supabase/client'
 import { rpcSetQuestDone } from '@/features/gamification/maple'
 import Tooltip from '@/components/Tooltip'
@@ -36,22 +36,27 @@ export default function QuestsPage() {
     member: '', proj: '', content: '', end_date: ''
   })
 
-  useEffect(() => {
-    if (!teamId) return
-    const nextMember = member ?? members[0] ?? ''
-    if (nextMember) {
-      setFilter(nextMember)
-      // 퀘스트 추가 폼의 기본 담당자는 memberOptions에 있는 경우만 설정
-      const assignable = memberOptions.some(o => o.name === nextMember)
-      setForm(current => ({ ...current, member: assignable ? nextMember : '' }))
+  // 멤버/팀 변경 시 렌더 중에 필터·폼 기본값과 로딩 상태를 재설정한다.
+  // 초기값을 빈 문자열로 두어 마운트 시에도 1회 수행된다.
+  const defaultsKey = `${member ?? ''}|${teamId ?? ''}`
+  const [prevDefaultsKey, setPrevDefaultsKey] = useState('')
+  if (prevDefaultsKey !== defaultsKey) {
+    setPrevDefaultsKey(defaultsKey)
+    if (teamId) {
+      setLoading(true)
+      const nextMember = member ?? members[0] ?? ''
+      if (nextMember) {
+        setFilter(nextMember)
+        // 퀘스트 추가 폼의 기본 담당자는 memberOptions에 있는 경우만 설정
+        const assignable = memberOptions.some(o => o.name === nextMember)
+        setForm(current => ({ ...current, member: assignable ? nextMember : '' }))
+      }
     }
-    void loadQuests()
-    void loadProjects()
-  }, [member, teamId])
+  }
 
-  async function loadQuests() {
+  // effect 경로용 — setState 는 모두 await 이후에 일어난다.
+  const fetchQuests = useCallback(async () => {
     if (!teamId) return
-    setLoading(true)
     try {
       const { data } = await supabase
         .from('quests')
@@ -62,9 +67,16 @@ export default function QuestsPage() {
     } finally {
       setLoading(false)
     }
+  }, [teamId])
+
+  // 이벤트 핸들러 경로 — 로딩 표시 후 재조회 (여기서는 동기 setState 허용)
+  async function loadQuests() {
+    if (!teamId) return
+    setLoading(true)
+    await fetchQuests()
   }
 
-  async function loadProjects() {
+  const loadProjects = useCallback(async () => {
     if (!teamId) return
     const { data } = await supabase
       .from('projects')
@@ -76,7 +88,17 @@ export default function QuestsPage() {
         .map(row => normalizeProject(row as Record<string, unknown>))
         .filter(project => !project.is_archived),
     )
-  }
+  }, [teamId])
+
+  useEffect(() => {
+    if (!teamId) return
+    void (async () => {
+      await fetchQuests()
+    })()
+    void (async () => {
+      await loadProjects()
+    })()
+  }, [teamId, fetchQuests, loadProjects])
 
   function showToastMsg(msg: string) {
     setToast(msg)

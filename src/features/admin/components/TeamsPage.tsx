@@ -78,13 +78,18 @@ function TeamTotpSection({ teamId }: { teamId: string }) {
   const [memberStatuses, setMemberStatuses] = useState<TotpMemberStatus[]>([]);
   const [resetting, setResetting] = useState<string | null>(null);
 
-  useEffect(() => {
-    // 팀 변경 시 이전 상태 초기화
+  // 팀 변경 시 렌더 중에 이전 상태 초기화 — 초기값과 동일하므로 마운트 시엔 불필요
+  const [prevTeamId, setPrevTeamId] = useState(teamId);
+  if (prevTeamId !== teamId) {
+    setPrevTeamId(teamId);
     setEnabled(false);
     setMemberStatuses([]);
     setLoadError(false);
     setLoaded(false);
     setActionError(null);
+  }
+
+  useEffect(() => {
     let cancelled = false;
     Promise.all([
       fetch(`/api/totp/status?teamId=${encodeURIComponent(teamId)}`).then((r) => {
@@ -318,10 +323,19 @@ export function TeamsPage() {
     [membersData, selected?.id],
   );
 
-  // 드로어가 열리거나 멤버 데이터가 갱신되면 정렬 목록 동기화
-  useEffect(() => {
+  // 드로어가 열리거나 멤버 데이터가 갱신되면 렌더 중에 정렬 목록 동기화.
+  // members 초기값을 null 로 두어 첫 렌더에서도 동기화가 수행된다.
+  const [prevOrderSync, setPrevOrderSync] = useState<{
+    members: AdminMember[] | null;
+    saving: boolean;
+  }>({ members: null, saving: orderSaving });
+  if (
+    prevOrderSync.members !== selectedTeamMembers ||
+    prevOrderSync.saving !== orderSaving
+  ) {
+    setPrevOrderSync({ members: selectedTeamMembers, saving: orderSaving });
     if (!orderSaving) setOrderItems(selectedTeamMembers);
-  }, [selectedTeamMembers, orderSaving]);
+  }
   const selectedTeamAdmins = selectedTeamMembers.filter(
     (member) => member.role === "admin",
   );

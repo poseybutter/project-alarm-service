@@ -509,9 +509,14 @@ export default function ReportPage() {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
     const [editMode, setEditMode] = useState(false);
+    // 주차 이동 시 렌더 중에 편집 모드 해제 (ref 동기화는 effect 에서)
+    const [prevWOffForEdit, setPrevWOffForEdit] = useState(wOff);
+    if (prevWOffForEdit !== wOff) {
+        setPrevWOffForEdit(wOff);
+        setEditMode(false);
+    }
     useEffect(() => {
         wOffRef.current = wOff;
-        setEditMode(false);
     }, [wOff]);
     const [assignTab, setAssignTab] = useState<"active" | "waiting">("active");
     const [assignSort, setAssignSort] = useState<"type" | "newest">("newest");
@@ -724,7 +729,10 @@ export default function ReportPage() {
     }, [teamId]);
 
     useEffect(() => {
-        void loadAssignments();
+        // loadAssignments 의 setState 는 모두 await 이후에 일어난다.
+        void (async () => {
+            await loadAssignments();
+        })();
     }, [loadAssignments]);
 
     useEffect(() => {
@@ -800,22 +808,39 @@ export default function ReportPage() {
 
     // 기간 이동마다 리페치하되, 전체 스피너는 팀이 바뀔 때만 띄운다.
     const loadedTasksTeamRef = useRef<string | null>(null);
-    useEffect(() => {
-        let cancelled = false;
-        const isTeamChange = loadedTasksTeamRef.current !== teamId;
-        if (isTeamChange) setLoading(true);
-        // teamId 가 null 이면 loadTasks 가 즉시 반환하므로 로딩을 해제해야 한다.
-        if (!teamId) {
+
+    // 팀 변경 시 렌더 중에 스피너 전환·목록 초기화 (undefined 초기값으로 마운트 시에도 1회 수행)
+    const [prevTasksTeam, setPrevTasksTeam] = useState<string | null | undefined>(
+        undefined,
+    );
+    if (prevTasksTeam !== teamId) {
+        setPrevTasksTeam(teamId);
+        if (teamId) {
+            setLoading(true);
+        } else {
+            // teamId 가 null 이면 loadTasks 가 즉시 반환하므로 로딩을 해제해야 한다.
             setTasks([]);
-            loadedTasksTeamRef.current = teamId;
             setLoading(false);
+        }
+    }
+
+    useEffect(() => {
+        if (!teamId) {
+            loadedTasksTeamRef.current = teamId;
             return;
         }
-        void loadTasks().finally(() => {
-            if (cancelled) return;
-            loadedTasksTeamRef.current = teamId;
-            if (isTeamChange) setLoading(false);
-        });
+        let cancelled = false;
+        const isTeamChange = loadedTasksTeamRef.current !== teamId;
+        void (async () => {
+            try {
+                await loadTasks();
+            } finally {
+                if (!cancelled) {
+                    loadedTasksTeamRef.current = teamId;
+                    if (isTeamChange) setLoading(false);
+                }
+            }
+        })();
         return () => { cancelled = true; };
     }, [loadTasks, teamId]);
 
@@ -861,7 +886,11 @@ export default function ReportPage() {
         };
     }, [loadTasks, channelId, teamId]);
 
-    useEffect(() => {
+    // 주차/모드 변경 시 렌더 중에 편집기 상태 초기화 (마운트 시엔 초기값 그대로)
+    const editorResetKey = `${wOff}|${mode}`;
+    const [prevEditorResetKey, setPrevEditorResetKey] = useState(editorResetKey);
+    if (prevEditorResetKey !== editorResetKey) {
+        setPrevEditorResetKey(editorResetKey);
         setEditing(false);
         setEditingNotice(false);
         setNoticeEditorNonce((n) => n + 1);
@@ -870,7 +899,7 @@ export default function ReportPage() {
         setChecklistEditorNonce((n) => n + 1);
         setEditingOkr(false);
         setOkrEditorNonce((n) => n + 1);
-    }, [wOff, mode]);
+    }
 
     useEffect(() => {
         if (mode !== "weekly") return;
@@ -900,11 +929,22 @@ export default function ReportPage() {
         }
     }, [wOff, teamId]);
 
+    // 주차/모드/팀 변경 시 렌더 중에 저장본 초기화 (ref 초안은 effect 에서 정리)
+    const briefTasksResetKey = `${mode}|${wOff}|${teamId ?? ""}`;
+    const [prevBriefTasksResetKey, setPrevBriefTasksResetKey] =
+        useState(briefTasksResetKey);
+    if (prevBriefTasksResetKey !== briefTasksResetKey) {
+        setPrevBriefTasksResetKey(briefTasksResetKey);
+        if (mode === "weekly") setSavedBriefTasks({});
+    }
+
     useEffect(() => {
         if (mode !== "weekly") return;
         briefTaskDraftRef.current = {};
-        setSavedBriefTasks({});
-        void loadBriefingTasks();
+        // loadBriefingTasks 의 setState 는 모두 await 이후에 일어난다.
+        void (async () => {
+            await loadBriefingTasks();
+        })();
     }, [mode, wOff, loadBriefingTasks]);
 
     useEffect(() => {
@@ -978,7 +1018,7 @@ export default function ReportPage() {
                 if (!s || !e) return false;
                 return s <= mn.last && e >= mn.first;
             }),
-        [tasks, mOff],
+        [tasks, mn.first, mn.last],
     );
 
     const curTasks = mode === "weekly" ? wTasks : mTasks;

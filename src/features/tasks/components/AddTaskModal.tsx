@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { DayPicker, DateRange } from "react-day-picker";
 import { ko } from "date-fns/locale";
@@ -79,15 +79,18 @@ export default function AddTaskModal({
     const [formProjTab, setFormProjTab] = useState<"mine" | "all">("mine");
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // 모달이 열릴 때마다 폼을 기본값으로 초기화한다.
-    useEffect(() => {
-        if (!open) return;
-        setFormProjTab("mine");
-        setForm({ ...EMPTY_FORM, member: defaultMember });
-        setFormDateRange(undefined);
-        setShowFormDatePicker(false);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open]);
+    // 모달이 열릴 때마다 렌더 중에 폼을 기본값으로 초기화한다.
+    // prevOpen 초기값을 false 로 두어 open 상태로 마운트돼도 초기화가 수행된다.
+    const [prevOpen, setPrevOpen] = useState(false);
+    if (prevOpen !== open) {
+        setPrevOpen(open);
+        if (open) {
+            setFormProjTab("mine");
+            setForm({ ...EMPTY_FORM, member: defaultMember });
+            setFormDateRange(undefined);
+            setShowFormDatePicker(false);
+        }
+    }
 
     const allProjOptions = useMemo(
         () =>
