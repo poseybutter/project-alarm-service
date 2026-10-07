@@ -115,17 +115,26 @@ export default function AttendanceHeatmap({ member }: AttendanceHeatmapProps) {
     );
 
     const channelId = useId().replace(/[^a-zA-Z0-9]/g, "");
+    const targetKey = member && teamId ? `${member}|${teamId}` : null;
     const [counts, setCounts] = useState<Record<string, number>>({});
-    const [loading, setLoading] = useState(true);
+    // 조회 대상이 있을 때만 로딩으로 시작한다.
+    const [loading, setLoading] = useState(targetKey !== null);
 
-    const loadData = useCallback(async () => {
-        if (!member || !teamId) {
+    // 조회 대상 변경 시 렌더 중에 상태 전환 (effect 의 동기 setState 금지)
+    const [prevTargetKey, setPrevTargetKey] = useState(targetKey);
+    if (prevTargetKey !== targetKey) {
+        setPrevTargetKey(targetKey);
+        if (targetKey) {
+            setLoading(true);
+        } else {
             setCounts({});
             setLoading(false);
-            return;
         }
+    }
 
-        setLoading(true);
+    // effect 경로용 — setState 는 모두 await 이후에 일어난다.
+    const fetchData = useCallback(async () => {
+        if (!member || !teamId) return;
         const min = grid[0][0];
         const max = grid[4][15];
         const { data, error } = await supabase
@@ -149,14 +158,18 @@ export default function AttendanceHeatmap({ member }: AttendanceHeatmapProps) {
         setLoading(false);
     }, [member, teamId, grid]);
 
-    useEffect(() => {
-        if (!member || !teamId) {
-            setCounts({});
-            setLoading(false);
-            return;
-        }
+    // realtime 콜백 경로 — 로딩 표시 후 재조회 (콜백에서는 동기 setState 허용)
+    const loadData = useCallback(async () => {
+        setLoading(true);
+        await fetchData();
+    }, [fetchData]);
 
-        void loadData();
+    useEffect(() => {
+        if (!member || !teamId) return;
+
+        void (async () => {
+            await fetchData();
+        })();
 
         const channel = supabase
             .channel(`attendance-heatmap-${member}-${channelId}`)
@@ -177,7 +190,7 @@ export default function AttendanceHeatmap({ member }: AttendanceHeatmapProps) {
         return () => {
             supabase.removeChannel(channel).catch(console.error);
         };
-    }, [member, channelId, loadData]);
+    }, [member, teamId, channelId, fetchData, loadData]);
 
     if (!member) return null;
 
