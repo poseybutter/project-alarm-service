@@ -221,15 +221,20 @@ export default function HallOfFamePage() {
         }
     }, [teamId]);
 
-    const loadSeasons = useCallback(async () => {
-        const generation = ++teamGenerationRef.current;
-        // 팀 전환 시 이전 팀 데이터 초기화
+    // 팀 전환 시 렌더 중에 이전 팀 상태 초기화 (ref 는 렌더 중 쓰지 않고 loadSeasons 에서 정리)
+    const [prevTeamId, setPrevTeamId] = useState(teamId);
+    if (prevTeamId !== teamId) {
+        setPrevTeamId(teamId);
         setSeasons([]);
         setSeasonDataMap({});
         setActiveTab(null);
+        setLoading(true);
+    }
+
+    const loadSeasons = useCallback(async () => {
+        const generation = ++teamGenerationRef.current;
         seasonDataRef.current = {};
         seasonsRef.current = [];
-        setLoading(true);
         try {
             const { data } = await supabase
                 .from("seasons")

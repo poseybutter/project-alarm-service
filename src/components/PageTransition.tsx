@@ -2,7 +2,10 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
+
+// 구독할 외부 저장소 없음 — 서버/클라이언트 스냅샷 구분만 사용한다.
+const emptySubscribe = () => () => {};
 
 /**
  * framer-motion 의 motion.div 가 SSR HTML 과 클라이언트 첫 paint 에서
@@ -15,11 +18,12 @@ export default function PageTransition({
     children: React.ReactNode;
 }) {
     const pathname = usePathname();
-    const [mounted, setMounted] = useState(false);
-
-    useEffect(() => {
-        setMounted(true);
-    }, []);
+    // SSR/hydration 에서는 false, 이후 클라이언트에서 true
+    const mounted = useSyncExternalStore(
+        emptySubscribe,
+        () => true,
+        () => false,
+    );
 
     if (!mounted) {
         return <>{children}</>;

@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/infrastructure/supabase/client";
@@ -711,6 +712,12 @@ function SortableQuestItem({
     );
 }
 
+// 홈에서 실제로 사용하는 컬럼만 조회하여 전송량·파싱 비용을 줄인다.
+const TASK_COLS = "id,content,content_items,status,priority,type,proj,issue,workload,start_date,end_date,is_starred,is_plan,is_excluded_today,member,show_on_team_calendar,progress,created_at";
+const QUEST_COLS = "id,content,proj,status,end_date,task_id,member,team_id,order_index,created_at";
+const PLAYER_COLS = "id,name,exp,month_exp,week_exp,level,icons,attend_last,attend_streak,total_done,urgent_done,on_time_done,avatar_url,team_id";
+const PROJECT_COLS = "id,name,members,member,is_archived";
+
 export default function HomePage() {
     const {
         member,
@@ -865,13 +872,71 @@ export default function HomePage() {
         [editDateRange],
     );
 
+    const loadData = useCallback(async () => {
+        if (!teamId) return;
+        const generation = ++loadGenerationRef.current;
+        const [
+            { data: playerData },
+            { data: questData },
+            { data: myTaskData },
+            { data: guestTaskData },
+            { data: projData },
+        ] = await Promise.all([
+            supabase
+                .from("players")
+                .select(PLAYER_COLS)
+                .eq("team_id", teamId)
+                .eq("name", member)
+                .maybeSingle(),
+            supabase
+                .from("quests")
+                .select(QUEST_COLS)
+                .eq("team_id", teamId)
+                .eq("member", member)
+                .neq("status", "완료")
+                .order("order_index", { ascending: true, nullsFirst: false })
+                .order("created_at", { ascending: true }),
+            supabase
+                .from("tasks")
+                .select(TASK_COLS)
+                .eq("team_id", teamId)
+                .eq("member", member)
+                .order("end_date", { ascending: true }),
+            isGuest
+                ? supabase
+                      .from("tasks")
+                      .select(TASK_COLS)
+                      .eq("team_id", teamId)
+                      .order("end_date", { ascending: true })
+                : Promise.resolve({ data: [] as Task[] }),
+            supabase
+                .from("projects")
+                .select(PROJECT_COLS)
+                .eq("team_id", teamId)
+                .order("name", { ascending: true }),
+        ]);
+        if (generation !== loadGenerationRef.current) return;
+        setPlayer(playerData);
+        setQuests(questData || []);
+        setMyTasks(myTaskData || []);
+        setGuestTeamTasks(guestTaskData || []);
+        setProjects(
+            (projData || []).map((row) =>
+                normalizeProject(row as Record<string, unknown>),
+            ),
+        );
+    }, [teamId, member, isGuest]);
+
     useEffect(() => {
         if (!authLoading && !member) router.push("/login");
-    }, [authLoading, member]);
+    }, [authLoading, member, router]);
 
     useEffect(() => {
         if (member && teamId) {
-            loadData();
+            // loadData 의 setState 는 모두 await 이후에 일어난다.
+            void (async () => {
+                await loadData();
+            })();
 
             // Realtime 구독 — 다른 팀의 변경까지 받으면 팀 수에 비례해
             // 불필요한 loadData 리페치가 생기므로 INSERT/UPDATE 는 팀으로
@@ -921,7 +986,7 @@ export default function HomePage() {
                 supabase.removeChannel(channel).catch(console.error);
             };
         }
-    }, [member, teamId]);
+    }, [member, teamId, loadData]);
 
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -1019,9 +1084,17 @@ export default function HomePage() {
         };
     }, [member, teamId, authLoading]);
 
-    // myTasks/quests 가 바뀌면 통합 목록을 다시 만든다
-    // (드래그 중에는 allQuestItems 만 바뀌므로 deps 에 넣지 않는다)
-    useEffect(() => {
+    // myTasks/quests 가 바뀌면 렌더 중에 통합 목록을 다시 만든다
+    // (드래그 중에는 allQuestItems 만 바뀜 — null 초기값으로 마운트 시에도 1회 수행)
+    const [prevQuestSources, setPrevQuestSources] = useState<{
+        myTasks: Task[];
+        quests: Quest[];
+    } | null>(null);
+    if (
+        prevQuestSources?.myTasks !== myTasks ||
+        prevQuestSources?.quests !== quests
+    ) {
+        setPrevQuestSources({ myTasks, quests });
         const todayStr = toLocalYmd(new Date());
         const todayTasks = myTasks.filter((t) => {
             if (t.status === "완료") return false;
@@ -1035,71 +1108,10 @@ export default function HomePage() {
             ...todayTasks.map((t) => ({ type: "task" as const, data: t, id: `task-${t.id}` })),
             ...quests.map((q) => ({ type: "quest" as const, data: q, id: `quest-${q.id}` })),
         ]);
-    }, [myTasks, quests]);
+    }
 
     if (authLoading) return <PageSpinner />;
     if (!member) return null;
-
-    // 홈에서 실제로 사용하는 컬럼만 조회하여 전송량·파싱 비용을 줄인다.
-    const TASK_COLS = "id,content,content_items,status,priority,type,proj,issue,workload,start_date,end_date,is_starred,is_plan,is_excluded_today,member,show_on_team_calendar,progress,created_at";
-    const QUEST_COLS = "id,content,proj,status,end_date,task_id,member,team_id,order_index,created_at";
-    const PLAYER_COLS = "id,name,exp,month_exp,week_exp,level,icons,attend_last,attend_streak,total_done,urgent_done,on_time_done,avatar_url,team_id";
-    const PROJECT_COLS = "id,name,members,member,is_archived";
-
-    async function loadData() {
-        if (!teamId) return;
-        const generation = ++loadGenerationRef.current;
-        const [
-            { data: playerData },
-            { data: questData },
-            { data: myTaskData },
-            { data: guestTaskData },
-            { data: projData },
-        ] = await Promise.all([
-            supabase
-                .from("players")
-                .select(PLAYER_COLS)
-                .eq("team_id", teamId)
-                .eq("name", member)
-                .maybeSingle(),
-            supabase
-                .from("quests")
-                .select(QUEST_COLS)
-                .eq("team_id", teamId)
-                .eq("member", member)
-                .neq("status", "완료")
-                .order("order_index", { ascending: true, nullsFirst: false })
-                .order("created_at", { ascending: true }),
-            supabase
-                .from("tasks")
-                .select(TASK_COLS)
-                .eq("team_id", teamId)
-                .eq("member", member)
-                .order("end_date", { ascending: true }),
-            isGuest
-                ? supabase
-                      .from("tasks")
-                      .select(TASK_COLS)
-                      .eq("team_id", teamId)
-                      .order("end_date", { ascending: true })
-                : Promise.resolve({ data: [] as Task[] }),
-            supabase
-                .from("projects")
-                .select(PROJECT_COLS)
-                .eq("team_id", teamId)
-                .order("name", { ascending: true }),
-        ]);
-        if (generation !== loadGenerationRef.current) return;
-        setPlayer(playerData);
-        setQuests(questData || []);
-        setMyTasks(myTaskData || []);
-        setGuestTeamTasks(guestTaskData || []);
-        setProjects(
-            (projData || []).map((row) =>
-                normalizeProject(row as Record<string, unknown>),
-            ),
-        );
-    }
 
     function showToastMsg(msg: string) {
         setToast(msg);
@@ -1794,7 +1806,7 @@ export default function HomePage() {
                                                     </svg>
                                                 </button>
                                             )}
-                                            <img src="/npc.webp" alt="NPC" className="w-20 h-20 object-contain" />
+                                            <Image src="/npc.webp" alt="NPC" width={80} height={80} className="w-20 h-20 object-contain" />
                                         </div>
                                         <div className="mt-0.5 mx-auto w-24 rounded bg-stone-800/80 py-px text-center leading-none">
                                             <span className="text-xs font-bold text-amber-300">주먹펴고 일어서</span>
@@ -1848,7 +1860,7 @@ export default function HomePage() {
                                                 <div className="flex gap-3">
                                                     <div className="shrink-0 flex flex-col items-center gap-1">
                                                         <div className="rounded-lg border-2 border-amber-800/30 bg-amber-50 p-1.5 shadow-inner">
-                                                            <img src="/npc.webp" alt="NPC" className="w-16 h-16 object-contain" />
+                                                            <Image src="/npc.webp" alt="NPC" width={64} height={64} className="w-16 h-16 object-contain" />
                                                         </div>
                                                         <span className="text-[11px] font-bold text-amber-900/70">주먹펴고 일어서</span>
                                                     </div>
@@ -1969,7 +1981,7 @@ export default function HomePage() {
                                             <div className="flex gap-3 px-4 pt-4 pb-3">
                                                 <div className="shrink-0">
                                                     <div className="rounded-lg border-2 border-amber-800/30 bg-amber-50 p-1.5">
-                                                        <img src="/npc.webp" alt="NPC" className="w-14 h-14 object-contain" />
+                                                        <Image src="/npc.webp" alt="NPC" width={56} height={56} className="w-14 h-14 object-contain" />
                                                     </div>
                                                 </div>
                                                 <div className="min-w-0 flex-1 rounded-lg border border-amber-800/20 bg-white/50 px-4 py-3">

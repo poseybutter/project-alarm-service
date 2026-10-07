@@ -77,34 +77,43 @@ export default function TaskEditModal({
         window.setTimeout(() => setToast(""), 2600);
     }
 
-    useEffect(() => {
-        if (!task || !teamId) return;
-        setEditProjTab("mine");
-        setEditForm({
-            type: task.type || "",
-            proj: task.proj || "",
-            contentItems: getContentItems(task),
-            priority: task.priority || "",
-            issue: task.issue || "",
-            status: task.status || "대기",
-            is_plan: task.is_plan ?? false,
-            is_starred: task.is_starred ?? false,
-            show_on_team_calendar: task.show_on_team_calendar ?? false,
-        });
-        if (task.start_date || task.end_date) {
-            setEditDateRange({
-                from: parseYmdToLocalDate(task.start_date),
-                to: parseYmdToLocalDate(task.end_date),
+    // task/팀이 바뀌면 렌더 중에 편집 폼을 재초기화한다 (effect 의 동기 setState 금지).
+    // teamId 가 늦게 도착하는 경우도 비교 대상에 포함해 함께 처리한다.
+    const [prevInit, setPrevInit] = useState<{
+        task: Task | null;
+        teamId: string | null;
+    }>({ task: null, teamId: null });
+    if (prevInit.task !== task || prevInit.teamId !== teamId) {
+        setPrevInit({ task, teamId });
+        if (task && teamId) {
+            setEditProjTab("mine");
+            setEditForm({
+                type: task.type || "",
+                proj: task.proj || "",
+                contentItems: getContentItems(task),
+                priority: task.priority || "",
+                issue: task.issue || "",
+                status: task.status || "대기",
+                is_plan: task.is_plan ?? false,
+                is_starred: task.is_starred ?? false,
+                show_on_team_calendar: task.show_on_team_calendar ?? false,
             });
-        } else {
-            setEditDateRange(undefined);
+            if (task.start_date || task.end_date) {
+                setEditDateRange({
+                    from: parseYmdToLocalDate(task.start_date),
+                    to: parseYmdToLocalDate(task.end_date),
+                });
+            } else {
+                setEditDateRange(undefined);
+            }
+            setShowEditDatePicker(false);
         }
-        setShowEditDatePicker(false);
-        // teamId 가 늦게 도착하면 위에서 early return 되므로 deps 에 함께 둔다.
-    }, [task, teamId]);
+    }
+
+    const taskId = task?.id ?? null;
 
     useEffect(() => {
-        if (!task) return;
+        if (taskId === null) return;
         let cancelled = false;
         (async () => {
             const { data } = await supabase
@@ -122,7 +131,7 @@ export default function TaskEditModal({
         return () => {
             cancelled = true;
         };
-    }, [task?.id, teamId]);
+    }, [taskId, teamId]);
 
     const editMember = task?.member ?? "";
 

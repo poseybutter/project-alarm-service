@@ -91,9 +91,9 @@ export default function FieldHistoryPanel({
     const [nextCursor, setNextCursor] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
 
-    const load = useCallback(
+    // effect 경로용 — 동기 setState 없이 fetch 만 수행 (loading 은 초기값/렌더 조정이 담당)
+    const fetchHistory = useCallback(
         async (cursor?: number | null) => {
-            setLoading(true);
             try {
                 const result = await loadHistory(projectId, cursor);
                 if (cursor) {
@@ -109,9 +109,27 @@ export default function FieldHistoryPanel({
         [projectId, loadHistory],
     );
 
+    // 이벤트 핸들러 경로 (더 보기) — 여기서는 동기 setState 허용
+    const load = useCallback(
+        async (cursor?: number | null) => {
+            setLoading(true);
+            await fetchHistory(cursor);
+        },
+        [fetchHistory],
+    );
+
+    // 프로젝트가 바뀌면 렌더 중에 로딩 상태로 전환 후 effect 에서 재조회
+    const [prevProjectId, setPrevProjectId] = useState(projectId);
+    if (prevProjectId !== projectId) {
+        setPrevProjectId(projectId);
+        setItems([]);
+        setNextCursor(null);
+        setLoading(true);
+    }
+
     useEffect(() => {
-        void load();
-    }, [load]);
+        void fetchHistory();
+    }, [fetchHistory]);
 
     const groups = groupHistory(items);
 
