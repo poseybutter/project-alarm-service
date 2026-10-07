@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import { supabase } from '@/infrastructure/supabase/client'
 import { getMemberColors } from '@/shared/constants'
 import { useAuth } from '@/components/AuthProvider'
@@ -25,20 +26,22 @@ export default function Avatar({
   // 현재 사용자 본인 여부 — players 행 없는 팀에서 프로필 아바타로 fallback
   const isSelf = name === currentMember
 
+  // 팀/이름이 바뀌면 렌더 중에 캐시값으로 재설정 — 이전 대상의 아바타가 잠깐 보이지 않도록
+  const [prevCacheKey, setPrevCacheKey] = useState(cacheKey)
+  if (prevCacheKey !== cacheKey) {
+    setPrevCacheKey(cacheKey)
+    setUrl(avatarCache[cacheKey] ?? null)
+  }
+
   useEffect(() => {
-    let cancelled = false
-    if (!teamId) {
-      setUrl(null)
-      return () => { cancelled = true }
-    }
+    if (!teamId) return
     // 본인 인증 아바타 변경 시 캐시 무효화 — DB에서 players.avatar_url 우선 재조회
     if (isSelf && authAvatarUrl) {
       delete avatarCache[cacheKey]
     }
-    if (avatarCache[cacheKey] !== undefined) {
-      setUrl(avatarCache[cacheKey])
-      return () => { cancelled = true }
-    }
+    // 캐시 적중 — 렌더 시점 재설정에서 이미 반영됨
+    if (avatarCache[cacheKey] !== undefined) return
+    let cancelled = false
     supabase.from('players').select('avatar_url').eq('team_id', teamId).eq('name', name).single()
       .then(({ data }) => {
         // players 행이 없을 때 본인이면 프로필 아바타 사용
@@ -58,7 +61,7 @@ export default function Avatar({
         style={{ width: sz, height: sz, fontSize: size * 0.4 }}
       >
         {url ? (
-          <img src={url} alt={name} className="w-full h-full object-cover" />
+          <Image src={url} alt={name} width={size} height={size} className="w-full h-full object-cover" />
         ) : (
           name.slice(1)
         )}

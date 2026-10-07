@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { supabase } from "@/infrastructure/supabase/client";
 import {
     calcLevel,
@@ -192,13 +193,26 @@ export default function ProfilePage() {
     }, [isGuest, member, members, teamId]);
 
     useEffect(() => {
-        if (member && teamId) void loadAll();
+        // loadAll 의 setState 는 모두 await 이후에 일어난다.
+        if (member && teamId) {
+            void (async () => {
+                await loadAll();
+            })();
+        }
     }, [loadAll, member, teamId]); // member와 현재 팀이 준비된 뒤 실행
 
     const router = useRouter();
 
+    // 팀/멤버 전환 시 렌더 중에 이전 시즌 이력 초기화
+    const seasonHistoryKey = `${teamId ?? ""}|${member ?? ""}`;
+    const [prevSeasonHistoryKey, setPrevSeasonHistoryKey] =
+        useState(seasonHistoryKey);
+    if (prevSeasonHistoryKey !== seasonHistoryKey) {
+        setPrevSeasonHistoryKey(seasonHistoryKey);
+        setSeasonHistory([]);
+    }
+
     useEffect(() => {
-        setSeasonHistory([]); // 팀/멤버 전환 시 이전 데이터 초기화
         if (!teamId || !member) return;
         let cancelled = false;
         void (async () => {
@@ -477,9 +491,11 @@ export default function ProfilePage() {
                                         className="w-16 h-16 rounded-full overflow-hidden border-2 border-amber-200 relative"
                                     >
                                         {player?.avatar_url ? (
-                                            <img
+                                            <Image
                                                 src={player.avatar_url}
                                                 alt={member ?? ""}
+                                                width={64}
+                                                height={64}
                                                 className="w-full h-full object-cover"
                                             />
                                         ) : (
