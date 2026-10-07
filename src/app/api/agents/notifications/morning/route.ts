@@ -39,11 +39,6 @@ type NotificationSetting = {
     morning_enabled: boolean;
 };
 
-type PlayerNotificationTarget = {
-    name: string;
-    email: string | null;
-};
-
 const DEFAULT_MORNING_SEND_TIME = "08:30:00";
 const PUBLIC_HOLIDAYS_API_BASE_URL = "https://date.nager.at/api/v3/PublicHolidays";
 

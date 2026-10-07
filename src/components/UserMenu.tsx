@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { useAuth } from './AuthProvider'
 import { signOut } from '@/infrastructure/supabase/auth'
@@ -30,7 +31,7 @@ export default function UserMenu() {
         className="w-8 h-8 rounded-full overflow-hidden border-2 border-amber-200"
       >
         {avatarUrl ? (
-          <img src={avatarUrl} alt={member} className="w-full h-full object-cover" />
+          <Image src={avatarUrl} alt={member} width={32} height={32} className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full bg-amber-100 flex items-center justify-center text-sm font-bold text-amber-700">
             {member.slice(1)}
@@ -43,7 +44,7 @@ export default function UserMenu() {
           <div className="px-4 py-3 border-b border-stone-100 flex items-center gap-3">
             <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 relative">
               {avatarUrl ? (
-                <img src={avatarUrl} alt={member} className="w-full h-full object-cover" />
+                <Image src={avatarUrl} alt={member} width={32} height={32} className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full bg-amber-100 flex items-center justify-center text-xs font-bold text-amber-700">
                   {member.slice(1)}
@@ -98,7 +99,8 @@ export default function UserMenu() {
             onClick={async () => {
               setOpen(false)
               await signOut()
-              window.location.href = '/login'
+              // AuthProvider 가 SIGNED_OUT 이벤트에서 상태를 정리하므로 전체 리로드 불필요
+              router.push('/login')
             }}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors"
           >
