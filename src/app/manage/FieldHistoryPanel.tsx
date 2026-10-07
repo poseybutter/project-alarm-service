@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { HistoryItem } from "./useProjectFields";
 
 type Props = {
@@ -90,12 +90,16 @@ export default function FieldHistoryPanel({
     const [items, setItems] = useState<HistoryItem[]>([]);
     const [nextCursor, setNextCursor] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
+    // 프로젝트를 빠르게 전환할 때 늦게 도착한 이전 응답이 최신 상태를 덮지 않게 한다.
+    const fetchSeqRef = useRef(0);
 
     // effect 경로용 — 동기 setState 없이 fetch 만 수행 (loading 은 초기값/렌더 조정이 담당)
     const fetchHistory = useCallback(
         async (cursor?: number | null) => {
+            const seq = ++fetchSeqRef.current;
             try {
                 const result = await loadHistory(projectId, cursor);
+                if (seq !== fetchSeqRef.current) return;
                 if (cursor) {
                     setItems((prev) => [...prev, ...result.items]);
                 } else {
@@ -103,7 +107,7 @@ export default function FieldHistoryPanel({
                 }
                 setNextCursor(result.nextCursor);
             } finally {
-                setLoading(false);
+                if (seq === fetchSeqRef.current) setLoading(false);
             }
         },
         [projectId, loadHistory],
