@@ -1,0 +1,71 @@
+name: Validate PR Title and AutoLabel
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+
+jobs:
+  validate-title-and-label:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Validate PR title and apply label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # 이 작업은 GitHub API만 사용합니다. 포크 PR을 포함하여 PR의 파일을
+          # 체크아웃하거나 실행하지 않습니다.
+          # dependabot의 "chore(deps): ..." 형식을 위해 선택적 스코프를 허용합니다.
+          TYPE=$(printf '%s\n' "$PR_TITLE" | sed -nE \
+            's/^(feat|fix|refactor|test|docs|ci|chore)(\([a-z0-9-]+\))?:[[:space:]]+.+$/\1/p')
+
+          if [ -z "$TYPE" ]; then
+            echo "PR 제목은 'type: 작업 요약' 형식이어야 합니다." >&2
+            echo "지원 타입: feat, fix, refactor, test, docs, ci, chore (CONTRIBUTING.md 참고)" >&2
+            exit 1
+          fi
+
+          if ! EXISTING_LABELS=$(gh label list \
+            --repo "$REPO" \
+            --limit 1000 \
+            --json name \
+            --jq '.[].name'); then
+            echo "저장소 라벨 조회에 실패했습니다" >&2
+            exit 1
+          fi
+
+          if ! grep -Fqx "$TYPE" <<< "$EXISTING_LABELS"; then
+            gh label create "$TYPE" \
+                --repo "$REPO" \
+                --color "#1d76db" \
+                --description "PR type: $TYPE" \
+                --force
+          fi
+
+          if ! CURRENT_LABELS=$(gh pr view "$PR_NUMBER" \
+            --repo "$REPO" \
+            --json labels \
+            --jq '.labels[].name'); then
+            echo "PR 라벨 조회에 실패했습니다" >&2
+            exit 1
+          fi
+
+          for LABEL in feat fix refactor test docs ci chore; do
+            if [ "$LABEL" != "$TYPE" ] && grep -Fqx "$LABEL" <<< "$CURRENT_LABELS"; then
+              gh pr edit "$PR_NUMBER" \
+                --repo "$REPO" \
+                --remove-label "$LABEL"
+            fi
+          done
+
+          gh pr edit "$PR_NUMBER" \
+            --repo "$REPO" \
+            --add-label "$TYPE"
