@@ -1,0 +1,83 @@
+name: Validate PR Title and AutoLabel
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+
+# 연속 edited 실행 경합 방지 — PR 단위 직렬화
+concurrency:
+  group: pr-title-label-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate-title-and-label:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Validate PR title and apply label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # GitHub API 만 사용 — 포크 PR 포함, 코드 체크아웃·실행 없음
+          # 이벤트 페이로드 제목은 구버전 가능 — 실행 시점 조회
+          if ! PR_TITLE=$(gh pr view "$PR_NUMBER" \
+            --repo "$REPO" \
+            --json title \
+            --jq '.title'); then
+            echo "PR 제목 조회에 실패했습니다" >&2
+            exit 1
+          fi
+
+          # 선택적 스코프 허용 (dependabot "chore(deps):" 형식)
+          TYPE=$(printf '%s\n' "$PR_TITLE" | sed -nE \
+            's/^(feat|fix|refactor|test|docs|ci|chore)(\([a-z0-9-]+\))?:[[:space:]]+.+$/\1/p')
+
+          if [ -z "$TYPE" ]; then
+            echo "PR 제목은 'type: 작업 요약' 형식이어야 합니다." >&2
+            echo "지원 타입: feat, fix, refactor, test, docs, ci, chore (CONTRIBUTING.md 참고)" >&2
+            exit 1
+          fi
+
+          if ! EXISTING_LABELS=$(gh label list \
+            --repo "$REPO" \
+            --limit 1000 \
+            --json name \
+            --jq '.[].name'); then
+            echo "저장소 라벨 조회에 실패했습니다" >&2
+            exit 1
+          fi
+
+          if ! grep -Fqx "$TYPE" <<< "$EXISTING_LABELS"; then
+            gh label create "$TYPE" \
+                --repo "$REPO" \
+                --color "#1d76db" \
+                --description "PR type: $TYPE" \
+                --force
+          fi
+
+          if ! CURRENT_LABELS=$(gh pr view "$PR_NUMBER" \
+            --repo "$REPO" \
+            --json labels \
+            --jq '.labels[].name'); then
+            echo "PR 라벨 조회에 실패했습니다" >&2
+            exit 1
+          fi
+
+          for LABEL in feat fix refactor test docs ci chore; do
+            if [ "$LABEL" != "$TYPE" ] && grep -Fqx "$LABEL" <<< "$CURRENT_LABELS"; then
+              gh pr edit "$PR_NUMBER" \
+                --repo "$REPO" \
+                --remove-label "$LABEL"
+            fi
+          done
+
+          gh pr edit "$PR_NUMBER" \
+            --repo "$REPO" \
+            --add-label "$TYPE"

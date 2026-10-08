@@ -18,10 +18,12 @@
 
 ## 설계 결정
 
-**클라이언트 직접 쿼리와 서버 경계 분리**  
+상세한 맥락·결과는 [docs/adr/](docs/adr/)에 ADR로 기록합니다.
+
+**클라이언트 직접 쿼리와 서버 경계 분리** ([ADR](docs/adr/점수-쓰기-RPC-단일화.md))  
 일반 업무 데이터는 클라이언트가 Supabase를 직접 조회합니다. 단, 점수(EXP·레벨·출석) 쓰기는 `SECURITY DEFINER` RPC를 통해서만 처리하며 클라이언트의 직접 쓰기는 차단합니다. 관리자 변경은 Next.js Route Handler를 서버 경계로 처리합니다.
 
-**단계적 DB 정규화**  
+**단계적 DB 정규화** ([ADR](docs/adr/단계적-DB-정규화.md))  
 기존 `players` 테이블 의존성을 유지하면서 `profiles`, `team_memberships`, `access_requests`를 호환 트리거로 동기화합니다. 업무·리포트 조회가 안정화된 뒤 레거시 컬럼을 순서대로 제거합니다.
 
 **Spring Boot 이전 준비**  
@@ -66,9 +68,15 @@ npm run dev
 
 ---
 
-## 문서 (Wiki)
+## 문서
 
-아키텍처 상세, ERD, 인증 흐름, DB 마이그레이션 전략, Spring Boot 이전 계획은 [Wiki](../../wiki)에서 확인할 수 있습니다.
+개발 규칙과 설계 결정의 원본은 저장소 안 md 파일입니다 (PR 리뷰와 함께 버전 관리).
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — 작업 규칙 (Git·코드·테스트·문서)
+- [docs/adr/](docs/adr/) — 설계 결정 기록
+- [docs/ai/](docs/ai/) — AI 협업 지침
+
+아키텍처 상세, ERD, 인증 흐름 등 기존 문서는 [Wiki](../../wiki)에 있으며 순차적으로 `docs/`로 이전합니다.
 
 ---
 
