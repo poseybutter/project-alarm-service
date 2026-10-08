@@ -1,8 +1,10 @@
 name: CodeQL Security Scan
 
+# develop push 는 트리거하지 않는다 — develop 으로 들어오는 변경은 전부 PR 을 거치므로
+# pull_request 분석과 같은 커밋을 중복 분석하고 "CodeQL: skipping" 체크 소음만 만든다.
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
     branches: [main, develop]
   schedule:
