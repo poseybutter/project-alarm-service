@@ -26,9 +26,10 @@ AI 작업자의 권한 경계는 [`docs/ai/AI-협업-가이드.md`](docs/ai/AI-�
 ### 제목과 브랜치
 
 - 커밋·PR 제목: `type: 작업 요약` — 간결한 한국어 명사형 (`추가`, `수정`. `추가했습니다` 지양)
-- 브랜치 이름: `<type>/<작업요약>` — 작업요약은 짧은 영문 kebab-case (예: `fix/lint-warnings`)
-- 흐름: topic 브랜치 → `develop` PR → 검증 후 `develop` → `main` 승격 PR로 운영 배포.
-  `develop`·`main`에서 직접 개발하지 않고, 승격 PR은 squash 하지 않습니다 (두 브랜치의 공통 조상 유지).
+- 흐름 (1인 운영 기준): `develop`에 직접 push → push 마다 CI 검증 → 배포 시점에 `develop` → `main` 승격 PR.
+  승격 PR에서 리뷰(CodeRabbit)·CodeQL·의존성 검사·제목 검증이 수행되고, 머지가 곧 운영 배포입니다.
+- `main` 직접 push 는 금지합니다. 승격 PR은 squash 하지 않습니다 (두 브랜치의 공통 조상 유지).
+- 범위가 크거나 되돌릴 가능성이 있는 작업은 지금처럼 `<type>/<작업요약>` 브랜치(영문 kebab-case)로 분리해 `develop` PR을 거칠 수 있습니다.
 - 버전·릴리스: `main` push 시 자동화(`notify.yml`)가 `package.json` 버전 기준으로 태그·GitHub Release·알림을 만듭니다.
   버전은 릴리스 목적의 승격 PR에서만 올리고, 이미 태그로 존재하는 버전은 다시 쓰지 않습니다.
 
