@@ -10,8 +10,8 @@
 
 ## 결정
 
-- 점수(EXP·레벨·출석) 쓰기는 DB `SECURITY DEFINER` RPC(`rpcAttendanceCheck`, `rpcSetQuestDone` 등)가 단일 출처다.
-- 클라이언트의 점수 테이블 직접 쓰기는 RLS 로 차단한다.
+- **사용자(JWT) 컨텍스트**의 점수(EXP·레벨·출석) 쓰기는 DB `SECURITY DEFINER` RPC(`rpcAttendanceCheck`, `rpcSetQuestDone` 등)가 단일 출처다. 클라이언트의 점수 테이블 직접 쓰기는 가드 트리거로 차단한다.
+- 신뢰 컨텍스트는 예외다: `service_role`(서버 API)과 JWT 없는 컨텍스트(크론·마이그레이션·SQL 에디터), 그리고 `app.score_write_bypass` GUC 가 켜진 RPC 내부 경로는 직접 쓰기를 허용한다 (`db/V55_score_rpc_hardening.sql`의 가드와 동일).
 - 적립·레벨업 규칙은 RPC(DB) 안에서만 계산한다. 관련 마이그레이션: `db/V12_score_logic_server.sql`, `db/V55_score_rpc_hardening.sql`.
 
 ## 결과
