@@ -85,8 +85,11 @@ AI 작업자의 권한 경계는 [`docs/ai/AI-협업-가이드.md`](docs/ai/AI-�
 
 ### React
 
-- effect 안에서 동기 setState를 호출하지 않습니다. prop 변경에 따른 상태 리셋은 렌더 중 `prev` 비교 패턴, 데이터 로딩은 fetch 전용 함수(모든 setState가 await 이후) + 핸들러용 래퍼로 분리합니다.
-- 연속 요청이 가능한 조회에는 세대 가드(`seqRef`/`generationRef`)를 두어 늦게 도착한 응답이 최신 상태를 덮지 않게 합니다.
+- 신규 데이터 조회는 TanStack Query(`useQuery`)로 작성합니다. 조회 함수는 `features/<도메인>/api/`(순수, setState 없음),
+  훅은 `features/<도메인>/hooks/`에 두고, queryKey 에 `teamId` 를 포함해 팀 전환을 자동 처리합니다 (예: `features/quests`, `features/home`).
+- 내부 `/api/*` 호출은 `shared/api/client.ts` 의 `apiFetch` 를 경유합니다 (에러 정규화 일원화).
+- effect 안에서 동기 setState를 호출하지 않습니다. prop 변경에 따른 상태 리셋은 렌더 중 `prev` 비교 패턴을 사용합니다.
+- 아직 전환하지 않은 수제 조회 코드는 세대 가드(`seqRef`/`generationRef`)를 유지하되, 크게 손댈 때 `useQuery` 로 전환합니다.
 - Supabase realtime 구독은 팀 필터를 겁니다. DELETE 는 페이로드에 PK만 있어 무필터로 받되 리페치 쿼리를 팀 스코프로 유지합니다.
 - 이미지는 `next/image`를 사용합니다. 원격 호스트는 `next.config.ts`의 `remotePatterns`에 추가합니다.
 
