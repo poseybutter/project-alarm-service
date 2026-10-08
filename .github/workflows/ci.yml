@@ -1,10 +1,19 @@
 name: Web CI
 
+# 문서만 변경 시 빌드 생략 (필수 상태 체크 없음 확인)
 on:
   pull_request:
     branches: [develop, main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
   push:
     branches: [develop]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".github/ISSUE_TEMPLATE/**"
 
 concurrency:
   group: web-ci-${{ github.workflow }}-${{ github.ref }}
