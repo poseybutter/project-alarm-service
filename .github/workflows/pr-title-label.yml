@@ -4,6 +4,11 @@ on:
   pull_request_target:
     types: [opened, edited, reopened, synchronize]
 
+# 연속 edited 실행 경합 방지 — PR 단위 직렬화
+concurrency:
+  group: pr-title-label-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   validate-title-and-label:
     runs-on: ubuntu-latest
@@ -16,14 +21,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_TITLE: ${{ github.event.pull_request.title }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
 
-          # 이 작업은 GitHub API만 사용합니다. 포크 PR을 포함하여 PR의 파일을
-          # 체크아웃하거나 실행하지 않습니다.
-          # dependabot의 "chore(deps): ..." 형식을 위해 선택적 스코프를 허용합니다.
+          # GitHub API 만 사용 — 포크 PR 포함, 코드 체크아웃·실행 없음
+          # 이벤트 페이로드 제목은 구버전 가능 — 실행 시점 조회
+          if ! PR_TITLE=$(gh pr view "$PR_NUMBER" \
+            --repo "$REPO" \
+            --json title \
+            --jq '.title'); then
+            echo "PR 제목 조회에 실패했습니다" >&2
+            exit 1
+          fi
+
+          # 선택적 스코프 허용 (dependabot "chore(deps):" 형식)
           TYPE=$(printf '%s\n' "$PR_TITLE" | sed -nE \
             's/^(feat|fix|refactor|test|docs|ci|chore)(\([a-z0-9-]+\))?:[[:space:]]+.+$/\1/p')
 
