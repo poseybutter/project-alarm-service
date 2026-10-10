@@ -7,6 +7,7 @@ import "./globals.css";
 import Nav from "@/components/Nav";
 import PageTransition from "@/components/PageTransition";
 import { AuthProvider } from "@/components/AuthProvider";
+import QueryProvider from "@/components/QueryProvider";
 import AccessibilityMissionPopup from "@/components/AccessibilityMissionPopup";
 
 const jetbrainsMono = JetBrains_Mono({
@@ -84,11 +85,13 @@ export default function RootLayout({
                 <meta name="apple-mobile-web-app-title" content="UD2" />
             </head>
             <body className="bg-[#f7f6f3] overflow-x-hidden">
-                <AuthProvider>
-                    <PageTransition>{children}</PageTransition>
-                    <AccessibilityMissionPopup />
-                    <Nav />
-                </AuthProvider>
+                <QueryProvider>
+                    <AuthProvider>
+                        <PageTransition>{children}</PageTransition>
+                        <AccessibilityMissionPopup />
+                        <Nav />
+                    </AuthProvider>
+                </QueryProvider>
             </body>
         </html>
     );
