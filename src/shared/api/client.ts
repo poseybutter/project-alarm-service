@@ -23,14 +23,14 @@ export async function apiFetch<T>(
     init: ApiFetchInit = {},
 ): Promise<T> {
     const { body, headers, ...rest } = init;
+    // Headers 인스턴스·배열 형식 유실 방지 — 생성자로 정규화
+    const mergedHeaders = new Headers(headers);
+    if (body !== undefined && !mergedHeaders.has("Content-Type")) {
+        mergedHeaders.set("Content-Type", "application/json");
+    }
     const res = await fetch(path, {
         ...rest,
-        headers: {
-            ...(body !== undefined
-                ? { "Content-Type": "application/json" }
-                : {}),
-            ...headers,
-        },
+        headers: mergedHeaders,
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
 
