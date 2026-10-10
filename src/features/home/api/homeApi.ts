@@ -22,13 +22,8 @@ export async function fetchHomeData(
     member: string,
     isGuest: boolean,
 ): Promise<HomeData> {
-    const [
-        { data: playerData },
-        { data: questData },
-        { data: myTaskData },
-        { data: guestTaskData },
-        { data: projData },
-    ] = await Promise.all([
+    const [playerRes, questRes, myTaskRes, guestTaskRes, projRes] =
+        await Promise.all([
         supabase
             .from("players")
             .select(PLAYER_COLS)
@@ -55,7 +50,7 @@ export async function fetchHomeData(
                   .select(TASK_COLS)
                   .eq("team_id", teamId)
                   .order("end_date", { ascending: true })
-            : Promise.resolve({ data: [] as Task[] }),
+            : Promise.resolve({ data: [] as Task[], error: null }),
         supabase
             .from("projects")
             .select(PROJECT_COLS)
@@ -63,12 +58,17 @@ export async function fetchHomeData(
             .order("name", { ascending: true }),
     ]);
 
+    // 실패를 빈 결과로 캐시하지 않도록 throw — retry·isError 는 Query 담당
+    for (const res of [playerRes, questRes, myTaskRes, guestTaskRes, projRes]) {
+        if (res.error) throw res.error;
+    }
+
     return {
-        player: (playerData as Player | null) ?? null,
-        quests: (questData as Quest[]) || [],
-        myTasks: (myTaskData as Task[]) || [],
-        guestTeamTasks: (guestTaskData as Task[]) || [],
-        projects: (projData || []).map((row) =>
+        player: (playerRes.data as Player | null) ?? null,
+        quests: (questRes.data as Quest[]) || [],
+        myTasks: (myTaskRes.data as Task[]) || [],
+        guestTeamTasks: (guestTaskRes.data as Task[]) || [],
+        projects: (projRes.data || []).map((row) =>
             normalizeProject(row as Record<string, unknown>),
         ),
     };

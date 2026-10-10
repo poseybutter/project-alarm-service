@@ -19,6 +19,8 @@ import {
 const questsKey = (teamId: string | null) => ["quests", teamId] as const;
 const projectsKey = (teamId: string | null) =>
     ["quest-projects", teamId] as const;
+// 홈 캐시도 퀘스트·EXP 를 담으므로 함께 무효화 (접두사 매칭 — member 키 전체)
+const homeKeyPrefix = (teamId: string | null) => ["home", teamId] as const;
 
 export function useQuestsQuery(teamId: string | null) {
     return useQuery({
@@ -41,7 +43,10 @@ export function useAddQuestMutation(teamId: string | null) {
     return useMutation({
         mutationFn: (input: NewQuestInput) => insertQuest(input),
         onSuccess: () =>
-            queryClient.invalidateQueries({ queryKey: questsKey(teamId) }),
+            Promise.all([
+                queryClient.invalidateQueries({ queryKey: questsKey(teamId) }),
+                queryClient.invalidateQueries({ queryKey: homeKeyPrefix(teamId) }),
+            ]),
     });
 }
 
@@ -50,7 +55,10 @@ export function useDeleteQuestMutation(teamId: string | null) {
     return useMutation({
         mutationFn: (id: number) => deleteQuestById(id),
         onSuccess: () =>
-            queryClient.invalidateQueries({ queryKey: questsKey(teamId) }),
+            Promise.all([
+                queryClient.invalidateQueries({ queryKey: questsKey(teamId) }),
+                queryClient.invalidateQueries({ queryKey: homeKeyPrefix(teamId) }),
+            ]),
     });
 }
 
@@ -61,6 +69,9 @@ export function useSetQuestDoneMutation(teamId: string | null) {
         mutationFn: (vars: { id: number; done: boolean; member: string }) =>
             rpcSetQuestDone(vars.id, vars.done, vars.member),
         onSuccess: () =>
-            queryClient.invalidateQueries({ queryKey: questsKey(teamId) }),
+            Promise.all([
+                queryClient.invalidateQueries({ queryKey: questsKey(teamId) }),
+                queryClient.invalidateQueries({ queryKey: homeKeyPrefix(teamId) }),
+            ]),
     });
 }

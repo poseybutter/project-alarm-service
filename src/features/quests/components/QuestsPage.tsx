@@ -55,6 +55,8 @@ export default function QuestsPage() {
 
   async function addQuest() {
     if (!teamId) return
+    // 더블 클릭 중복 등록 방지
+    if (addQuestMutation.isPending) return
     if (!form.content) return alert('할 일 내용은 필수예요')
     const selectedPlayerId = findTeamMemberId(memberOptions, form.member)
     const selectedProjectId = findProjectId(projects, form.proj)
@@ -293,9 +295,10 @@ export default function QuestsPage() {
               </div>
               <button
                 onClick={addQuest}
-                className="w-full bg-amber-600 text-white font-bold py-3.5 rounded-xl text-sm"
+                disabled={addQuestMutation.isPending}
+                className="w-full bg-amber-600 text-white font-bold py-3.5 rounded-xl text-sm disabled:opacity-50"
               >
-                추가하기
+                {addQuestMutation.isPending ? '추가 중...' : '추가하기'}
               </button>
             </div>
           </div>
