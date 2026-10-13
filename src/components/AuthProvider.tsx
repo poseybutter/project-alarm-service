@@ -11,6 +11,7 @@ import {
 } from "react";
 import { User } from "@supabase/supabase-js";
 import { supabase } from "@/infrastructure/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
 import type {
     ModuleKey,
     TeamMemberOption,
@@ -81,6 +82,7 @@ function looksLikeInvalidRefreshOrJwt(message: string | undefined) {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+    const queryClient = useQueryClient();
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
     const [teamContextLoading, setTeamContextLoading] = useState(true);
@@ -227,6 +229,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // 사용자가 바뀌면 이전 사용자의 팀 컨텍스트를 즉시 초기화한다.
         // loadTeamContext 가 완료되기 전까지 이전 사용자 데이터가 노출되지 않도록 한다.
+        // 서버 상태 캐시도 함께 비운다 — queryKey 에는 사용자 식별자가 없어
+        // 같은 팀의 다음 사용자에게 이전 사용자 조회 결과가 보일 수 있다.
+        queryClient.clear();
         setResolvedMember(null);
         setAvatarUrl(null);
         setTeamId(null);
@@ -252,7 +257,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
         }, 0);
         return () => window.clearTimeout(timer);
-    }, [loadTeamContext, loading, user]);
+    }, [loadTeamContext, loading, user, queryClient]);
 
     const switchTeam = useCallback(async (nextTeamId: string) => {
         if (!nextTeamId || nextTeamId === teamId || switchingTeam) return;

@@ -199,6 +199,7 @@ export const RARITY_STYLE: Record<
 
 /** award.title 문자열 → season_award TitleDef id 매핑 */
 export const AWARD_TITLE_TO_ID: Record<string, string> = {
+    "시즌 MVP": "season_mvp",
     "업무 완료왕": "season_top_done",
     "긴급 해결사": "season_urgent",
     "꾸준왕": "season_streak",
