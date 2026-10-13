@@ -650,7 +650,7 @@ export default function ProfilePage() {
                                 </div>
                                 <p className="text-xs text-stone-400 text-right mt-1">
                                     {next
-                                        ? `수련 중인 검사까지 ${(next.exp - (player?.exp || 0)).toLocaleString()} EXP`
+                                        ? `${next.name}까지 ${(next.exp - (player?.exp || 0)).toLocaleString()} EXP`
                                         : "🌟 최고 레벨!"}
                                 </p>
                             </div>
