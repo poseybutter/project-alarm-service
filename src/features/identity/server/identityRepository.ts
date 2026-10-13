@@ -66,23 +66,6 @@ export async function resolveTeamMember(
     .eq("profiles.email", email.toLowerCase())
     .maybeSingle();
 
-  if (tmError && isIdentitySchemaUnavailable(tmError)) {
-    const { data: player, error: playerError } = await client
-      .from("players")
-      .select("id, name, email, role")
-      .eq("team_id", teamId)
-      .ilike("email", email)
-      .maybeSingle();
-    if (playerError) throw playerError;
-    if (!player?.name) return null;
-    return {
-      name: player.name,
-      email: player.email,
-      role: player.role === "admin" ? "admin" : "member",
-      membershipId: "",
-      legacyPlayerId: player.id,
-    };
-  }
   if (tmError) throw tmError;
   if (!tmRow) return null;
 
@@ -142,33 +125,6 @@ export async function listActiveTeamMembers(
     ({ data: tmRows, error: tmError } = await queryMemberships(false));
   }
 
-  if (tmError && isIdentitySchemaUnavailable(tmError)) {
-    // sort_order 컬럼이 아직 없을 수 있으므로 먼저 시도 후 폴백
-    let { data: players, error: playersError } = await client
-      .from("players")
-      .select("id, name, email, role, sort_order")
-      .eq("team_id", teamId)
-      .eq("status", "active")
-      .order("sort_order", { ascending: true });
-    if (playersError && (playersError as { code?: string }).code === "42703") {
-      const fb = await client
-        .from("players")
-        .select("id, name, email, role")
-        .eq("team_id", teamId)
-        .eq("status", "active")
-        .order("id", { ascending: true });
-      players = fb.data as typeof players;
-      playersError = fb.error;
-    }
-    if (playersError) throw playersError;
-    return (players ?? []).map((p) => ({
-      name: p.name,
-      email: p.email,
-      role: p.role === "admin" ? ("admin" as const) : ("member" as const),
-      membershipId: "",
-      legacyPlayerId: p.id,
-    }));
-  }
   if (tmError) throw tmError;
 
   // 레거시 호환: agent 테이블의 member 키는 players.name 기준
