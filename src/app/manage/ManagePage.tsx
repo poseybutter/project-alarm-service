@@ -533,12 +533,11 @@ export default function ManagePage() {
         : null;
 
     // loadData를 useEffect보다 먼저 선언 (react-hooks/immutability)
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 데이터 로딩 effect
-    const loadData = useCallback(async () => {
+     
+    // effect 경로용 — 동기 setState 없이 fetch 만 수행 (loading/loadError 는 초기값·렌더 조정이 담당)
+    const fetchData = useCallback(async () => {
         if (!teamId) return;
         const generation = ++loadGenerationRef.current;
-        setLoading(true);
-        setLoadError(null);
         let projData, accData;
         try {
             const [projResult, accResult] = await Promise.all([
@@ -604,15 +603,33 @@ export default function ManagePage() {
                 );
             }
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
     }, [teamId]);
+
+    // 이벤트 핸들러 경로 — 로딩 전환 후 재조회 (여기서는 동기 setState 허용)
+    const loadData = useCallback(async () => {
+        setLoading(true);
+        setLoadError(null);
+        await fetchData();
+    }, [fetchData]);
+
+    // 팀/멤버 변경 시 렌더 중에 TOTP 인증 상태와 로딩 상태 초기화
+    const totpResetKey = `${member ?? ""}|${teamId ?? ""}`;
+    const [prevTotpResetKey, setPrevTotpResetKey] = useState(totpResetKey);
+    if (prevTotpResetKey !== totpResetKey) {
+        setPrevTotpResetKey(totpResetKey);
+        setTotpVerifiedAt(0);
+        setTotpToken("");
+        setLoading(true);
+        setLoadError(null);
+    }
 
     useEffect(() => {
         if (member && teamId) {
-            // 팀 변경 시 이전 TOTP 인증 상태 초기화
-            setTotpVerifiedAt(0);
-            setTotpToken("");
-            void loadData();
+            // fetchData 의 setState 는 모두 await 이후에 일어난다.
+            void (async () => {
+                await fetchData();
+            })();
             void totp.checkStatus().then((status) => {
                 setTeamRequiresTotp(status.teamRequiresTotp);
                 setUserHasTotp(status.setupComplete);
@@ -622,8 +639,8 @@ export default function ManagePage() {
                 setUserHasTotp(false);
             });
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [member, teamId, loadData, totp]);
+
+    }, [member, teamId, fetchData, totp]);
 
     useEffect(() => {
         function handleAccessibilityChanged() {
@@ -1102,7 +1119,7 @@ export default function ManagePage() {
         }
         if (nextStatus === "신청완료") {
             const TWO_WEEKS_MS = 14 * 24 * 60 * 60 * 1000;
-            // eslint-disable-next-line react-hooks/purity -- 이벤트 핸들러 내부 호출
+             
             const snoozedUntil = new Date(Date.now() + TWO_WEEKS_MS).toISOString();
             const res = await fetch("/api/accessibility-mission-snoozes", {
                 method: "POST",

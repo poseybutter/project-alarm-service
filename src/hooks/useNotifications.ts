@@ -38,13 +38,17 @@ export function useNotifications() {
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [readIds, setReadIds] = useState<Set<number>>(new Set());
 
+    // 이메일이 바뀌면 재조회 전까지 렌더 중에 player id 초기화
+    const [prevEmail, setPrevEmail] = useState(email);
+    if (prevEmail !== email) {
+        setPrevEmail(email);
+        setPlayerId(null);
+    }
+
     // 1. 이메일 → player id
     useEffect(() => {
         let cancelled = false;
-        if (!email) {
-            setPlayerId(null);
-            return;
-        }
+        if (!email) return;
         void (async () => {
             const { data } = await supabase
                 .from("players")
@@ -80,7 +84,10 @@ export function useNotifications() {
     }, [playerId]);
 
     useEffect(() => {
-        void load();
+        // load 의 setState 는 모두 await 이후에 일어난다.
+        void (async () => {
+            await load();
+        })();
     }, [load, playerId]);
 
     // 3. realtime 구독: 새 알림 + 본인 읽음 변경

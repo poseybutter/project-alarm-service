@@ -105,7 +105,7 @@ async function buildFreshSuggestion(
 }
 
 export async function POST(request: Request) {
-    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    const { user, role, teamId } = await getServerCurrentTeamRole();
     if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
@@ -166,7 +166,7 @@ export async function POST(request: Request) {
                     { status: 404 },
                 );
             }
-            const { data: created, error: createError } = await serviceSupabase
+            const { error: createError } = await serviceSupabase
                 .from("agent_suggestions")
                 .upsert(
                     {
