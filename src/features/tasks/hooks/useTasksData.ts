@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/infrastructure/supabase/client";
 import type { Task, Project } from "@/shared/types";
 import { normalizeProject } from "@/shared/utils/utils";
@@ -12,66 +12,81 @@ import { normalizeProject } from "@/shared/utils/utils";
 export function useTasksData(teamId: string | null) {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(Boolean(teamId));
     const taskSeqRef = useRef(0);
 
-    /** 팀별 업무 목록을 조회하고 loading 상태를 갱신한다. taskSeqRef로 최신 요청만 setTasks를 실행한다. */
-    async function loadTasks(
-        requestedTeamId = teamId,
-        isCancelled = () => false,
-    ) {
-        if (!requestedTeamId) return;
-        setLoading(true);
-        const seq = ++taskSeqRef.current;
-        try {
-            // 화면(TasksPage)은 완료 업무를 렌더하지 않으므로 서버에서부터
-            // 미완료만 가져온다. 완료 업무가 쌓여도 로드가 느려지지 않는다.
-            // ('완료' 판정은 normalizeStatus 별칭에 완료 매핑이 없어 동일하다)
-            const { data } = await supabase
-                .from("tasks")
-                .select("*")
-                .eq("team_id", requestedTeamId)
-                .or("status.is.null,status.neq.완료")
-                .order("created_at", { ascending: false });
-            if (!isCancelled() && seq === taskSeqRef.current) {
-                setTasks(data || []);
-            }
-        } finally {
-            if (!isCancelled() && seq === taskSeqRef.current) setLoading(false);
-        }
-    }
-
-    /** 팀별 프로젝트 목록을 조회하고 정규화하여 저장한다. */
-    async function loadProjects(
-        requestedTeamId = teamId,
-        isCancelled = () => false,
-    ) {
-        if (!requestedTeamId) return;
-        const { data } = await supabase
-            .from("projects")
-            .select("*")
-            .eq("team_id", requestedTeamId)
-            .order("name");
-        if (isCancelled()) return;
-        setProjects(
-            (data || []).map((row) =>
-                normalizeProject(row as Record<string, unknown>),
-            ),
-        );
-    }
-
-    useEffect(() => {
-        if (!teamId) {
-            setTasks([]);
-            setProjects([]);
-            setLoading(false);
-            return;
-        }
-        let cancelled = false;
+    // 팀 변경 시 렌더 중에 목록·로딩 상태 초기화 (effect 의 동기 setState 금지)
+    const [prevTeamId, setPrevTeamId] = useState(teamId);
+    if (prevTeamId !== teamId) {
+        setPrevTeamId(teamId);
         setTasks([]);
         setProjects([]);
-        void loadTasks(teamId, () => cancelled);
-        void loadProjects(teamId, () => cancelled);
+        setLoading(Boolean(teamId));
+    }
+
+    /** effect 경로용 업무 조회 — setState 는 모두 await 이후. taskSeqRef로 최신 요청만 setTasks를 실행한다. */
+    const fetchTasks = useCallback(
+        async (requestedTeamId = teamId, isCancelled: () => boolean = () => false) => {
+            if (!requestedTeamId) return;
+            const seq = ++taskSeqRef.current;
+            try {
+                // 화면(TasksPage)은 완료 업무를 렌더하지 않으므로 서버에서부터
+                // 미완료만 가져온다. 완료 업무가 쌓여도 로드가 느려지지 않는다.
+                // ('완료' 판정은 normalizeStatus 별칭에 완료 매핑이 없어 동일하다)
+                const { data } = await supabase
+                    .from("tasks")
+                    .select("*")
+                    .eq("team_id", requestedTeamId)
+                    .or("status.is.null,status.neq.완료")
+                    .order("created_at", { ascending: false });
+                if (!isCancelled() && seq === taskSeqRef.current) {
+                    setTasks(data || []);
+                }
+            } finally {
+                if (!isCancelled() && seq === taskSeqRef.current) setLoading(false);
+            }
+        },
+        [teamId],
+    );
+
+    /** 외부(핸들러) 호출용 — 로딩 표시 후 업무 목록을 재조회한다. */
+    const loadTasks = useCallback(
+        async (requestedTeamId = teamId, isCancelled: () => boolean = () => false) => {
+            if (!requestedTeamId) return;
+            setLoading(true);
+            await fetchTasks(requestedTeamId, isCancelled);
+        },
+        [teamId, fetchTasks],
+    );
+
+    /** 팀별 프로젝트 목록을 조회하고 정규화하여 저장한다. setState 는 모두 await 이후. */
+    const loadProjects = useCallback(
+        async (requestedTeamId = teamId, isCancelled: () => boolean = () => false) => {
+            if (!requestedTeamId) return;
+            const { data } = await supabase
+                .from("projects")
+                .select("*")
+                .eq("team_id", requestedTeamId)
+                .order("name");
+            if (isCancelled()) return;
+            setProjects(
+                (data || []).map((row) =>
+                    normalizeProject(row as Record<string, unknown>),
+                ),
+            );
+        },
+        [teamId],
+    );
+
+    useEffect(() => {
+        if (!teamId) return;
+        let cancelled = false;
+        void (async () => {
+            await fetchTasks(teamId, () => cancelled);
+        })();
+        void (async () => {
+            await loadProjects(teamId, () => cancelled);
+        })();
 
         const refetchTasks = async () => {
             const seq = ++taskSeqRef.current;
@@ -112,7 +127,7 @@ export function useTasksData(teamId: string | null) {
             cancelled = true;
             supabase.removeChannel(channel).catch(console.error);
         };
-    }, [teamId]);
+    }, [teamId, fetchTasks, loadProjects]);
 
     return { tasks, projects, loading, loadTasks, loadProjects };
 }

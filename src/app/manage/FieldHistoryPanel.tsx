@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { HistoryItem } from "./useProjectFields";
 
 type Props = {
@@ -90,12 +90,16 @@ export default function FieldHistoryPanel({
     const [items, setItems] = useState<HistoryItem[]>([]);
     const [nextCursor, setNextCursor] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
+    // 프로젝트를 빠르게 전환할 때 늦게 도착한 이전 응답이 최신 상태를 덮지 않게 한다.
+    const fetchSeqRef = useRef(0);
 
-    const load = useCallback(
+    // effect 경로용 — 동기 setState 없이 fetch 만 수행 (loading 은 초기값/렌더 조정이 담당)
+    const fetchHistory = useCallback(
         async (cursor?: number | null) => {
-            setLoading(true);
+            const seq = ++fetchSeqRef.current;
             try {
                 const result = await loadHistory(projectId, cursor);
+                if (seq !== fetchSeqRef.current) return;
                 if (cursor) {
                     setItems((prev) => [...prev, ...result.items]);
                 } else {
@@ -103,15 +107,33 @@ export default function FieldHistoryPanel({
                 }
                 setNextCursor(result.nextCursor);
             } finally {
-                setLoading(false);
+                if (seq === fetchSeqRef.current) setLoading(false);
             }
         },
         [projectId, loadHistory],
     );
 
+    // 이벤트 핸들러 경로 (더 보기) — 여기서는 동기 setState 허용
+    const load = useCallback(
+        async (cursor?: number | null) => {
+            setLoading(true);
+            await fetchHistory(cursor);
+        },
+        [fetchHistory],
+    );
+
+    // 프로젝트가 바뀌면 렌더 중에 로딩 상태로 전환 후 effect 에서 재조회
+    const [prevProjectId, setPrevProjectId] = useState(projectId);
+    if (prevProjectId !== projectId) {
+        setPrevProjectId(projectId);
+        setItems([]);
+        setNextCursor(null);
+        setLoading(true);
+    }
+
     useEffect(() => {
-        void load();
-    }, [load]);
+        void fetchHistory();
+    }, [fetchHistory]);
 
     const groups = groupHistory(items);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { DayPicker } from "react-day-picker";
 import { ko } from "date-fns/locale";
@@ -26,11 +26,14 @@ export default function DragQuestModal({
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
-    useEffect(() => {
+    // 다른 task 로 바뀌면 렌더 중에 입력 상태를 초기화한다 (effect 불필요).
+    const [prevTaskId, setPrevTaskId] = useState(task.id);
+    if (prevTaskId !== task.id) {
+        setPrevTaskId(task.id);
         setContent(task.content ?? "");
         setEndDate("");
         setShowDatePicker(false);
-    }, [task.id]);
+    }
 
     const selectedDate = endDate ? new Date(`${endDate}T00:00:00`) : undefined;
     const dateLabel = selectedDate

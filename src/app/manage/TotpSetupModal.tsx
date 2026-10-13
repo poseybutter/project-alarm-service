@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 
 type TotpSetupModalProps = {
     open: boolean;
@@ -28,13 +29,21 @@ export default function TotpSetupModal({
     const [copied, setCopied] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
+    // 모달이 열릴 때 렌더 중에 입력 상태 초기화 (effect 의 동기 setState 금지)
+    const [prevOpen, setPrevOpen] = useState(false);
+    if (prevOpen !== open) {
+        setPrevOpen(open);
+        if (open) {
+            setStep("loading");
+            setCode("");
+            setError("");
+            setCopied(false);
+        }
+    }
+
     useEffect(() => {
         if (!open) return;
         let active = true;
-        setStep("loading");
-        setCode("");
-        setError("");
-        setCopied(false);
         setup()
             .then(({ qrDataUrl: qr, secret: s }) => {
                 if (!active) return;
@@ -109,12 +118,14 @@ export default function TotpSetupModal({
                         </p>
                         {qrDataUrl && (
                             <div className="flex justify-center mb-4">
-                                <img
+                                {/* data URL 이므로 최적화 대상이 아님 */}
+                                <Image
                                     src={qrDataUrl}
                                     alt="TOTP QR 코드"
                                     className="rounded-lg border border-stone-200"
                                     width={200}
                                     height={200}
+                                    unoptimized
                                 />
                             </div>
                         )}
