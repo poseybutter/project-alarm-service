@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from './AuthProvider'
 import { signOut } from '@/infrastructure/supabase/auth'
 
-export default function UserMenu() {
+export default function UserMenu({ dropUp }: { dropUp?: boolean }) {
   const { member, avatarUrl, teamId, teams, role } = useAuth()
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -40,7 +40,7 @@ export default function UserMenu() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-10 bg-white rounded-xl border border-stone-200 shadow-lg z-50 w-44 overflow-hidden">
+        <div className={`absolute bg-white rounded-xl border border-stone-200 shadow-lg z-50 w-44 overflow-hidden ${dropUp ? "bottom-full left-0 mb-2" : "right-0 top-10"}`}>
           <div className="px-4 py-3 border-b border-stone-100 flex items-center gap-3">
             <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 relative">
               {avatarUrl ? (

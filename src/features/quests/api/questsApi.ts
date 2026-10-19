@@ -1,18 +1,8 @@
 import { supabase } from "@/infrastructure/supabase/client";
 import { normalizeProject } from "@/shared/utils/utils";
-import type { Project } from "@/shared/types";
+import type { Project, Quest } from "@/shared/types";
 
-export type Quest = {
-    id: number;
-    player_id?: number | null;
-    project_id?: number | null;
-    member: string;
-    proj: string | null;
-    content: string;
-    status: string;
-    end_date: string | null;
-    created_at: string;
-};
+export type { Quest };
 
 export type NewQuestInput = {
     member: string;

@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
@@ -74,7 +75,6 @@ import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import TaskContentInputs from "@/components/TaskContentInputs";
 import TaskContentList from "@/components/TaskContentList";
 import { sanitizeHtml } from "@/shared/utils/sanitizeHtml";
-import { stripHtmlTags } from "@/features/gamification/questContentDisplay";
 import SeasonBanner from "@/components/SeasonBanner";
 
 // 이벤트 발생 시에만 뜨는 오버레이·에디터는 초기 번들에서 제외한다
@@ -205,8 +205,8 @@ function QuestFormModal({
             onClick={onClose}
         >
             <div
-                className="max-h-[calc(100dvh-83px)] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-5"
-                style={{ marginBottom: "67px" }}
+                className="max-h-[calc(100dvh-var(--nav-height,0px)-1rem)] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-5"
+                style={{ marginBottom: "var(--nav-height)" }}
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex justify-between items-center mb-5">
@@ -731,6 +731,7 @@ export default function HomePage() {
         loading: authLoading,
     } = useAuth();
     const router = useRouter();
+    const queryClient = useQueryClient();
     const isGuest = member === "GUEST";
 
     const channelIdRef = useRef(Math.random().toString(36).slice(2));
@@ -746,7 +747,6 @@ export default function HomePage() {
     const loadData = useReloadHomeData(teamId, member);
     const updateHomeCache = useUpdateHomeCache(teamId, member);
 
-    const [showQuestModal, setShowQuestModal] = useState(false);
     const [toast, setToast] = useState("");
     const [isAttending, setIsAttending] = useState(false);
     const [showAddQuest, setShowAddQuest] = useState(false);
@@ -790,17 +790,21 @@ export default function HomePage() {
                 const newIndex = prev.findIndex((item) => item.id === over.id);
                 if (oldIndex === -1 || newIndex === -1) return prev;
                 const reordered = arrayMove(prev, oldIndex, newIndex);
-                // quest 타입만 order_index 를 저장한다
-                reordered.forEach((item, i) => {
-                    if (item.type === "quest") {
-                        void supabase
+                // quest 타입만 order_index 를 저장한다 — 한꺼번에 보내고 실패 시 알림
+                const updates = reordered
+                    .map((item, i) => ({ item, index: i }))
+                    .filter(({ item }) => item.type === "quest")
+                    .map(({ item, index }) =>
+                        supabase
                             .from("quests")
-                            .update({ order_index: i })
+                            .update({ order_index: index })
                             .eq("id", item.data.id)
                             .then(({ error }) => {
-                                if (error) console.error("[quest reorder]", error.message);
-                            });
-                    }
+                                if (error) throw error;
+                            }),
+                    );
+                void Promise.all(updates).catch(() => {
+                    setToast("순서 저장에 실패했어요");
                 });
                 return reordered;
             });
@@ -1037,15 +1041,17 @@ export default function HomePage() {
 
     // myTasks/quests 가 바뀌면 렌더 중에 통합 목록을 다시 만든다
     // (드래그 중에는 allQuestItems 만 바뀜 — null 초기값으로 마운트 시에도 1회 수행)
-    const [prevQuestSources, setPrevQuestSources] = useState<{
-        myTasks: Task[];
-        quests: Quest[];
-    } | null>(null);
-    if (
-        prevQuestSources?.myTasks !== myTasks ||
-        prevQuestSources?.quests !== quests
-    ) {
-        setPrevQuestSources({ myTasks, quests });
+    // 실시간 이벤트가 참조만 바꾸고 내용은 같을 때 드래그 순서가 초기화되지 않도록
+    // ID + 핵심 필드 시그니처가 달라야만 재구축한다.
+    const prevSnapshotRef = useRef<string>("");
+    const questSourceSnapshot = useMemo(() => {
+        const taskSig = myTasks.map((t) => `${t.id}:${t.status}:${t.end_date}:${t.start_date}:${t.is_excluded_today}`).join("|");
+        const questSig = quests.map((q) => `${q.id}:${q.status}:${q.content}:${q.order_index}`).join("|");
+        return `${taskSig};;${questSig}`;
+    }, [myTasks, quests]);
+
+    if (prevSnapshotRef.current !== questSourceSnapshot) {
+        prevSnapshotRef.current = questSourceSnapshot;
         const todayStr = toLocalYmd(new Date());
         const todayTasks = myTasks.filter((t) => {
             if (t.status === "완료") return false;
@@ -1120,25 +1126,33 @@ export default function HomePage() {
         const result = await rpcSetQuestDone(quest.id, true, member).catch(
             () => null,
         );
-        if (result?.scored) {
+
+        // 애니메이션 종료
+        setCompletingQuestIds((prev) => {
+            const next = new Set(prev);
+            next.delete(quest.id);
+            return next;
+        });
+
+        // RPC 실패 시 원래 상태 유지
+        if (!result) {
+            showToastMsg("퀘스트 완료 처리 중 오류가 발생했어요");
+            return;
+        }
+
+        if (result.scored) {
             pushExpPopup(result.amount, clientX, clientY, "quest");
         }
-        if (result?.levelUp && result.newLv) {
+        if (result.levelUp && result.newLv) {
             setLevelUpInfo({
                 show: true,
                 level: result.newLv.level,
                 levelName: result.newLv.name,
             });
         } else {
-            showToastMsg(`완료! +${result?.amount ?? 0} EXP`);
+            showToastMsg(`완료! +${result.amount ?? 0} EXP`);
         }
 
-        // 애니메이션 종료 후 완료 목록으로 옮긴다
-        setCompletingQuestIds((prev) => {
-            const next = new Set(prev);
-            next.delete(quest.id);
-            return next;
-        });
         // 낙관적 갱신 — 캐시에서 즉시 제거 후 재조회
         updateHomeCache((prev) => ({
             ...prev,
@@ -1146,6 +1160,7 @@ export default function HomePage() {
         }));
         setCompletedQuestsThisSession((prev) => [...prev, quest]);
         loadData();
+        void queryClient.invalidateQueries({ queryKey: ["quests", teamId] });
     }
 
     async function addQuest() {
@@ -1190,12 +1205,18 @@ export default function HomePage() {
             end_date: "",
         });
         loadData();
+        // QuestsPage 의 React Query 캐시도 무효화해 양쪽 화면을 동기화한다
+        void queryClient.invalidateQueries({ queryKey: ["quests", teamId] });
     }
 
 
     async function undoQuest(quest: Quest) {
         // 완료 취소 시 서버 RPC 가 상태 되돌리기와 점수 차감을 함께 처리한다
-        await rpcSetQuestDone(quest.id, false, member!).catch(() => null);
+        const result = await rpcSetQuestDone(quest.id, false, member!).catch(() => null);
+        if (!result) {
+            showToastMsg("되돌리기 중 오류가 발생했어요");
+            return;
+        }
         setCompletedQuestsThisSession((prev) =>
             prev.filter((q) => q.id !== quest.id),
         );
@@ -1220,6 +1241,7 @@ export default function HomePage() {
 
     async function confirmDecline() {
         if (!declineConfirm) return;
+        const isQuest = declineConfirm.type === "quest";
         if (declineConfirm.type === "task") {
             const { error } = await supabase
                 .from("tasks")
@@ -1233,6 +1255,9 @@ export default function HomePage() {
         setDeclineConfirm(null);
         showToastMsg("흠... 다음엔 꼭 해오거라.");
         loadData();
+        if (isQuest) {
+            void queryClient.invalidateQueries({ queryKey: ["quests", teamId] });
+        }
     }
 
     function openEditQuest(quest: Quest) {
@@ -1274,6 +1299,7 @@ export default function HomePage() {
             end_date: "",
         });
         loadData();
+        void queryClient.invalidateQueries({ queryKey: ["quests", teamId] });
     }
 
     async function updateTaskStatus(
@@ -1512,113 +1538,31 @@ export default function HomePage() {
                         title={`${teams.find((team) => team.id === teamId)?.name ?? teamId} 업무`}
                     />
 
-                    <div className="max-w-2xl mx-auto px-4 pt-3 pb-24">
+                    <div className="max-w-2xl lg:max-w-none mx-auto px-4 pt-3 pb-24 lg:pb-6">
                         {!isGuest && (
                             <SeasonBanner teamId={teamId} currentMember={member} />
                         )}
 
-                        {/* 프로필 카드 */}
-                        <div className="rounded-2xl border border-stone-200 bg-gradient-to-br from-white to-amber-50/40 p-4 mb-3 shadow-sm">
-                            <div className="flex items-center gap-3 mb-3">
-                                {isGuest ? (
-                                    <div className="w-10 h-10 rounded-full bg-stone-100 flex items-center justify-center text-xl">
-                                        👤
-                                    </div>
-                                ) : (
-                                    <Avatar name={member} size={40} />
-                                )}
-                                <div className="flex-1">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-sm font-bold text-stone-900">
-                                            {member}
-                                        </span>
-                                        {isGuest ? (
-                                            <span className="text-xs px-2 py-0.5 bg-stone-200 text-stone-600 rounded-full font-medium">
-                                                게스트
-                                            </span>
-                                        ) : player ? (
-                                            <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
-                                                {lv.name}
-                                            </span>
-                                        ) : null}
-                                    </div>
-                                    {!isGuest && (
-                                        <button
-                                            onClick={(e) =>
-                                                void handleAttend(e)
-                                            }
-                                            disabled={!player || attended || isAttending}
-                                            title={!player ? "이 팀은 출석 체크를 지원하지 않습니다." : undefined}
-                                            className={`text-xs mt-1 px-2 py-0.5 rounded-full font-medium transition-all
-                    ${attended ? "bg-green-100 text-green-700" : !player ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-amber-500 text-white"}`}
-                                        >
-                                            {attended
-                                                ? "출석 완료"
-                                                : isAttending
-                                                  ? "처리 중..."
-                                                  : "출석 체크"}
-                                        </button>
-                                    )}
-                                </div>
-                                {!isGuest && (
-                                    <div className="text-right text-xs text-stone-400">
-                                        <div>
-                                            {player?.attend_streak || 0}일
-                                            연속
-                                        </div>
-                                        <div>
-                                            이번달 {stats.exp.toLocaleString()}{" "}
-                                            EXP
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                            {!isGuest && player && (
-                                <div>
-                                    <div className="flex justify-between text-xs text-stone-400 mb-1">
-                                        <span>
-                                            {player.exp.toLocaleString()}{" "}
-                                            EXP
-                                        </span>
-                                        <span>
-                                            다음 레벨까지{" "}
-                                            {next
-                                                ? (
-                                                      next.exp - player.exp
-                                                  ).toLocaleString()
-                                                : 0}{" "}
-                                            EXP
-                                        </span>
-                                    </div>
-                                    <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
-                                        <div
-                                            className="h-full rounded-full transition-all duration-500"
-                                            style={{
-                                                width: `${pct}%`,
-                                                background: barColor,
-                                            }}
-                                        />
-                                    </div>
-                                </div>
-                            )}
-                            {!isGuest && !player && !authLoading && (
-                                <p className="text-xs text-stone-400 mt-1">
-                                    이 팀은 퀘스트·출석·레벨 기능이 아직 설정되지 않았습니다.
-                                </p>
-                            )}
-                        </div>
-
-                        {!isGuest && player && (
-                            <div className="mb-3 w-full min-w-0 bg-white rounded-xl border border-stone-200 p-4">
-                                <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-3">
-                                    활동 기록
-                                </p>
-                                <AttendanceHeatmap member={member!} />
-                            </div>
-                        )}
-
                         {isGuest ? (
                             <>
+                                {/* 프로필 카드 (게스트) */}
+                                <div className="rounded-2xl border border-stone-200 bg-gradient-to-br from-white to-amber-50/40 p-4 mb-3 shadow-sm">
+                                    <div className="flex items-center gap-3 mb-3">
+                                        <div className="w-10 h-10 rounded-full bg-stone-100 flex items-center justify-center text-xl">
+                                            👤
+                                        </div>
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm font-bold text-stone-900">
+                                                    {member}
+                                                </span>
+                                                <span className="text-xs px-2 py-0.5 bg-stone-200 text-stone-600 rounded-full font-medium">
+                                                    게스트
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                                 <div className="bg-white rounded-xl border border-stone-200 px-4 py-3 mb-3">
                                     <p className="text-sm text-stone-500">
                                         게스트 계정으로 로그인되어 업무 현황을 확인할 수 있어요.
@@ -1717,210 +1661,199 @@ export default function HomePage() {
                                 </div>
                             </>
                         ) : (
-                            <>
-                                {/* NPC 퀘스트 */}
-                                <div className="mb-3">
-                                    <div className="w-full text-center">
-                                        {/* NPC 클릭 영역 (말풍선 + 이미지 + 이름표) */}
-                                        {/* 말풍선 */}
-                                        <div className="relative mx-auto w-fit rounded-xl border border-stone-200 bg-white px-4 py-2.5 mb-8 shadow-sm">
-                                            <p className="text-sm font-medium text-stone-700">전사가 되고 싶은 자는 나에게...</p>
-                                            <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 size-2.5 rotate-45 border-b border-r border-stone-200 bg-white" />
+                            <div className="lg:flex lg:gap-4 lg:items-start">
+                              {/* 왼쪽: 프로필 + 활동 기록 + 퀘스트 */}
+                              <div className="lg:flex-1 lg:min-w-0">
+                                {/* 프로필 카드 */}
+                                <div className="rounded-2xl border border-stone-200 bg-gradient-to-br from-white to-amber-50/40 p-4 mb-3 shadow-sm">
+                                    <div className="flex items-center gap-3 mb-3">
+                                        <Avatar name={member} size={40} />
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm font-bold text-stone-900">
+                                                    {member}
+                                                </span>
+                                                {player ? (
+                                                    <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
+                                                        {lv.name}
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                            <button
+                                                onClick={(e) =>
+                                                    void handleAttend(e)
+                                                }
+                                                disabled={!player || attended || isAttending}
+                                                title={!player ? "이 팀은 출석 체크를 지원하지 않습니다." : undefined}
+                                                className={`text-xs mt-1 px-2 py-0.5 rounded-full font-medium transition-all
+                    ${attended ? "bg-green-100 text-green-700" : !player ? "bg-stone-200 text-stone-400 cursor-not-allowed" : "bg-amber-500 text-white"}`}
+                                            >
+                                                {attended
+                                                    ? "출석 완료"
+                                                    : isAttending
+                                                      ? "처리 중..."
+                                                      : "출석 체크"}
+                                            </button>
                                         </div>
-                                        {/* NPC + 전구 버튼 */}
-                                        <div className="relative inline-block">
-                                            {(totalQuestCount === 0 || totalQuestCount - completedCount > 0) && (
-                                                <button
-                                                    type="button"
-                                                    aria-label="퀘스트 보기"
-                                                    onClick={() => setShowQuestModal(true)}
-                                                    className="absolute -top-5 -right-6 z-[5] transition-transform hover:scale-110 active:scale-95"
-                                                >
-                                                    <div className="rounded-xl border border-stone-300 bg-white px-2 py-1.5 shadow animate-bounce">
-                                                        <span className="text-lg">💡</span>
-                                                    </div>
-                                                    <svg className="absolute -bottom-2 left-1.5" width="12" height="10" viewBox="0 0 12 10" fill="none">
-                                                        <path d="M6 0C6 0 2 4 0 10" stroke="#d6d3d1" strokeWidth="1" fill="none" />
-                                                        <path d="M6.5 0C6.5 0 2.5 4 0.5 9.5" stroke="white" strokeWidth="2" fill="none" />
-                                                    </svg>
-                                                </button>
-                                            )}
-                                            {allQuestsDone && totalQuestCount > 0 && (
-                                                <button
-                                                    type="button"
-                                                    aria-label="모든 퀘스트 완료"
-                                                    onClick={() => setShowQuestModal(true)}
-                                                    className="absolute -top-5 -right-6 z-[5] transition-transform hover:scale-110 active:scale-95"
-                                                >
-                                                    <div className="rounded-xl border border-stone-300 bg-white px-2 py-1.5 shadow">
-                                                        <span className="text-lg">✅</span>
-                                                    </div>
-                                                    <svg className="absolute -bottom-2 left-1.5" width="12" height="10" viewBox="0 0 12 10" fill="none">
-                                                        <path d="M6 0C6 0 2 4 0 10" stroke="#d6d3d1" strokeWidth="1" fill="none" />
-                                                        <path d="M6.5 0C6.5 0 2.5 4 0.5 9.5" stroke="white" strokeWidth="2" fill="none" />
-                                                    </svg>
-                                                </button>
-                                            )}
-                                            <Image src="/npc.webp" alt="NPC" width={80} height={80} className="w-20 h-20 object-contain" />
+                                        <div className="text-right text-xs text-stone-400">
+                                            <div>
+                                                {player?.attend_streak || 0}일
+                                                연속
+                                            </div>
+                                            <div>
+                                                이번달 {stats.exp.toLocaleString()}{" "}
+                                                EXP
+                                            </div>
                                         </div>
-                                        <div className="mt-0.5 mx-auto w-24 rounded bg-stone-800/80 py-px text-center leading-none">
-                                            <span className="text-xs font-bold text-amber-300">주먹펴고 일어서</span>
+                                    </div>
+                                    {player && (
+                                        <div>
+                                            <div className="flex justify-between text-xs text-stone-400 mb-1">
+                                                <span>
+                                                    {player.exp.toLocaleString()}{" "}
+                                                    EXP
+                                                </span>
+                                                <span>
+                                                    다음 레벨까지{" "}
+                                                    {next
+                                                        ? (
+                                                              next.exp - player.exp
+                                                          ).toLocaleString()
+                                                        : 0}{" "}
+                                                    EXP
+                                                </span>
+                                            </div>
+                                            <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
+                                                <div
+                                                    className="h-full rounded-full transition-all duration-500"
+                                                    style={{
+                                                        width: `${pct}%`,
+                                                        background: barColor,
+                                                    }}
+                                                />
+                                            </div>
                                         </div>
-                                        {/* 퀘스트 목록 (클릭 영역 밖) */}
-                                        {allQuestItems.length > 0 && (
-                                            <div className="mt-3 space-y-1 text-left">
-                                                {allQuestItems.slice(0, 5).map((item) => (
-                                                    <div key={item.id} className="flex items-start gap-1.5">
-                                                        <span className="shrink-0 text-sm leading-none mt-0.5">
-                                                            {item.type === "task" ? "🗡️" : completingQuestIds.has(item.data.id) ? "✨" : "⚔️"}
-                                                        </span>
-                                                        <p className={`text-sm leading-snug line-clamp-1 ${item.type === "quest" && completingQuestIds.has((item.data as Quest).id) ? "line-through text-stone-400" : "text-stone-700"}`}>
-                                                            {item.type === "task" ? (item.data as Task).proj : stripHtmlTags((item.data as Quest).content)}
-                                                        </p>
+                                    )}
+                                    {!player && !authLoading && (
+                                        <p className="text-xs text-stone-400 mt-1">
+                                            이 팀은 퀘스트·출석·레벨 기능이 아직 설정되지 않았습니다.
+                                        </p>
+                                    )}
+                                </div>
+
+                                {player && (
+                                    <div className="mb-3 w-full min-w-0 bg-white rounded-xl border border-stone-200 p-4">
+                                        <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-3">
+                                            활동 기록
+                                        </p>
+                                        <AttendanceHeatmap member={member!} />
+                                    </div>
+                                )}
+                                {/* NPC 퀘스트 (인라인) */}
+                                <div className="mb-3 overflow-hidden rounded-xl border-2 border-amber-800/50 shadow-lg"
+                                    style={{ background: "linear-gradient(to bottom, #f5e6c8, #efe0c0)" }}
+                                >
+                                    {/* NPC 대화 영역 */}
+                                    <div className="px-4 pt-4 pb-3 border-b-2 border-amber-800/20">
+                                        <div className="flex gap-3">
+                                            <div className="shrink-0 flex flex-col items-center gap-1">
+                                                <div className="rounded-lg border-2 border-amber-800/30 bg-amber-50 p-1.5 shadow-inner">
+                                                    <Image src="/npc.webp" alt="NPC" width={64} height={64} className="w-16 h-16 object-contain" />
+                                                </div>
+                                                <span className="text-[11px] font-bold text-amber-900/70">주먹펴고 일어서</span>
+                                            </div>
+                                            <div className="min-w-0 flex-1 rounded-lg border border-amber-800/20 bg-white/50 px-4 py-3 shadow-inner">
+                                                <p className="whitespace-pre-line text-sm leading-relaxed text-amber-950">
+                                                    {allQuestsDone && totalQuestCount > 0
+                                                        ? "모든 퀘스트를 완료했구나! 대단해. 내일 다시 오거라."
+                                                        : totalQuestCount === 0
+                                                        ? "오늘은 할 일이 없구나... 아래에서 퀘스트를 추가해보거라."
+                                                        : "아래 퀘스트를 수행하거라! ...\n⠿ 표시를 끌어서 순서를 바꿀 수 있다.\n중요한 것부터 위에 두거라."}
+                                                </p>
+                                                {totalQuestCount > 0 && (
+                                                    <div className="mt-2 flex items-center gap-2">
+                                                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-amber-200/50">
+                                                            <div
+                                                                className={`h-full rounded-full transition-all duration-500 ${allQuestsDone ? "bg-green-500" : "bg-amber-600"}`}
+                                                                style={{ width: `${progressPct}%` }}
+                                                            />
+                                                        </div>
+                                                        <span className="shrink-0 text-xs font-bold text-amber-800">{completedCount}/{totalQuestCount}</span>
                                                     </div>
-                                                ))}
-                                                {allQuestItems.length > 5 && (
-                                                    <p className="text-[11px] text-stone-400">+{allQuestItems.length - 5}개 더</p>
                                                 )}
                                             </div>
-                                        )}
-                                        {/* 프로그레스 */}
-                                        {totalQuestCount > 0 && (
-                                            <div className="mt-2 flex items-center gap-2">
-                                                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-stone-200">
-                                                    <div
-                                                        className={`h-full rounded-full transition-all duration-500 ${allQuestsDone ? "bg-green-400" : "bg-amber-400"}`}
-                                                        style={{ width: `${progressPct}%` }}
-                                                    />
-                                                </div>
-                                                <span className="shrink-0 text-[11px] font-bold text-stone-400">{completedCount}/{totalQuestCount}</span>
+                                        </div>
+                                    </div>
+                                    {/* 퀘스트 목록 */}
+                                    <div className="bg-white/80">
+                                        <div className="flex items-center justify-between px-4 py-2.5 border-b border-amber-800/15 bg-amber-100/30">
+                                            <span className="text-sm font-bold text-amber-900">⚔️ 퀘스트 목록</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => { setQuestAddEditorNonce((n) => n + 1); setShowAddQuest(true); }}
+                                                className="rounded bg-amber-700 px-2.5 py-1 text-xs font-bold text-amber-100 hover:bg-amber-800 transition-colors"
+                                            >
+                                                + 추가
+                                            </button>
+                                        </div>
+                                        {allQuestItems.length === 0 && completedQuestsThisSession.length === 0 ? (
+                                            <div className="py-10 text-center">
+                                                <p className="text-sm text-stone-500">퀘스트가 없어요</p>
+                                                <p className="mt-1 text-xs text-stone-400">+ 추가 버튼으로 퀘스트를 만들어보세요!</p>
                                             </div>
+                                        ) : (
+                                            <SortableContext
+                                                items={allQuestItems.map((item) => item.id)}
+                                                strategy={verticalListSortingStrategy}
+                                            >
+                                                <div className="divide-y divide-stone-100">
+                                                    {allQuestItems.map((item, i) => {
+                                                        const showBorderBottom = i < allQuestItems.length - 1 || completedQuestsThisSession.length > 0;
+                                                        const showDragHandle = allQuestItems.length > 1;
+                                                        if (item.type === "task") {
+                                                            return (
+                                                                <TodayTaskItem
+                                                                    key={item.id}
+                                                                    id={item.id}
+                                                                    task={item.data}
+                                                                    showBorderBottom={showBorderBottom}
+                                                                    showDragHandle={showDragHandle}
+                                                                    isCompleting={completingTaskIds.has(item.data.id)}
+                                                                    onExclude={excludeToday}
+                                                                />
+                                                            );
+                                                        }
+                                                        return (
+                                                            <SortableQuestItem
+                                                                key={item.id}
+                                                                sortableId={item.id}
+                                                                quest={item.data}
+                                                                showBorderBottom={showBorderBottom}
+                                                                showDragHandle={showDragHandle}
+                                                                isCompleting={completingQuestIds.has(item.data.id)}
+                                                                myTasks={myTasks}
+                                                                onComplete={completeQuest}
+                                                                onEdit={openEditQuest}
+                                                            />
+                                                        );
+                                                    })}
+                                                    {completedQuestsThisSession.length > 0 && (
+                                                        <>
+                                                            {completedQuestsThisSession.map((q, i) => (
+                                                                <CompletedQuestItem
+                                                                    key={q.id}
+                                                                    quest={q}
+                                                                    showBorderBottom={i < completedQuestsThisSession.length - 1}
+                                                                    onUndo={undoQuest}
+                                                                />
+                                                            ))}
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </SortableContext>
                                         )}
                                     </div>
                                 </div>
-
-                                {/* 퀘스트 모달 */}
-                                {showQuestModal && (
-                                    <div
-                                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-                                        onClick={() => setShowQuestModal(false)}
-                                    >
-                                        <div
-                                            className="w-full max-w-lg overflow-hidden rounded-xl border-2 border-amber-800/50 shadow-2xl"
-                                            style={{ background: "linear-gradient(to bottom, #f5e6c8, #efe0c0)" }}
-                                            onClick={(e) => e.stopPropagation()}
-                                        >
-                                            {/* NPC 대화 영역 */}
-                                            <div className="px-4 pt-4 pb-3 border-b-2 border-amber-800/20">
-                                                <div className="flex gap-3">
-                                                    <div className="shrink-0 flex flex-col items-center gap-1">
-                                                        <div className="rounded-lg border-2 border-amber-800/30 bg-amber-50 p-1.5 shadow-inner">
-                                                            <Image src="/npc.webp" alt="NPC" width={64} height={64} className="w-16 h-16 object-contain" />
-                                                        </div>
-                                                        <span className="text-[11px] font-bold text-amber-900/70">주먹펴고 일어서</span>
-                                                    </div>
-                                                    <div className="min-w-0 flex-1 rounded-lg border border-amber-800/20 bg-white/50 px-4 py-3 shadow-inner">
-                                                        <p className="whitespace-pre-line text-sm leading-relaxed text-amber-950">
-                                                            {allQuestsDone && totalQuestCount > 0
-                                                                ? "모든 퀘스트를 완료했구나! 대단해. 내일 다시 오거라."
-                                                                : totalQuestCount === 0
-                                                                ? "오늘은 할 일이 없구나... 아래에서 퀘스트를 추가해보거라."
-                                                                : "아래 퀘스트를 수행하거라! ...\n⠿ 표시를 끌어서 순서를 바꿀 수 있다.\n중요한 것부터 위에 두거라."}
-                                                        </p>
-                                                        {totalQuestCount > 0 && (
-                                                            <div className="mt-2 flex items-center gap-2">
-                                                                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-amber-200/50">
-                                                                    <div
-                                                                        className={`h-full rounded-full transition-all duration-500 ${allQuestsDone ? "bg-green-500" : "bg-amber-600"}`}
-                                                                        style={{ width: `${progressPct}%` }}
-                                                                    />
-                                                                </div>
-                                                                <span className="shrink-0 text-xs font-bold text-amber-800">{completedCount}/{totalQuestCount}</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            {/* 퀘스트 목록 */}
-                                            <div className="max-h-[60vh] overflow-y-auto bg-white/80">
-                                                <div className="flex items-center justify-between px-4 py-2.5 border-b border-amber-800/15 bg-amber-100/30">
-                                                    <span className="text-sm font-bold text-amber-900">⚔️ 퀘스트 목록</span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => { setQuestAddEditorNonce((n) => n + 1); setShowAddQuest(true); }}
-                                                        className="rounded bg-amber-700 px-2.5 py-1 text-xs font-bold text-amber-100 hover:bg-amber-800 transition-colors"
-                                                    >
-                                                        + 추가
-                                                    </button>
-                                                </div>
-                                                {allQuestItems.length === 0 && completedQuestsThisSession.length === 0 ? (
-                                                    <div className="py-10 text-center">
-                                                        <p className="text-sm text-stone-500">퀘스트가 없어요</p>
-                                                        <p className="mt-1 text-xs text-stone-400">+ 추가 버튼으로 퀘스트를 만들어보세요!</p>
-                                                    </div>
-                                                ) : (
-                                                    <SortableContext
-                                                        items={allQuestItems.map((item) => item.id)}
-                                                        strategy={verticalListSortingStrategy}
-                                                    >
-                                                        <div className="divide-y divide-stone-100">
-                                                            {allQuestItems.map((item, i) => {
-                                                                const showBorderBottom = i < allQuestItems.length - 1 || completedQuestsThisSession.length > 0;
-                                                                const showDragHandle = allQuestItems.length > 1;
-                                                                if (item.type === "task") {
-                                                                    return (
-                                                                        <TodayTaskItem
-                                                                            key={item.id}
-                                                                            id={item.id}
-                                                                            task={item.data}
-                                                                            showBorderBottom={showBorderBottom}
-                                                                            showDragHandle={showDragHandle}
-                                                                            isCompleting={completingTaskIds.has(item.data.id)}
-                                                                            onExclude={excludeToday}
-                                                                        />
-                                                                    );
-                                                                }
-                                                                return (
-                                                                    <SortableQuestItem
-                                                                        key={item.id}
-                                                                        sortableId={item.id}
-                                                                        quest={item.data}
-                                                                        showBorderBottom={showBorderBottom}
-                                                                        showDragHandle={showDragHandle}
-                                                                        isCompleting={completingQuestIds.has(item.data.id)}
-                                                                        myTasks={myTasks}
-                                                                        onComplete={completeQuest}
-                                                                        onEdit={openEditQuest}
-                                                                    />
-                                                                );
-                                                            })}
-                                                            {completedQuestsThisSession.length > 0 && (
-                                                                <>
-                                                                    {completedQuestsThisSession.map((q, i) => (
-                                                                        <CompletedQuestItem
-                                                                            key={q.id}
-                                                                            quest={q}
-                                                                            showBorderBottom={i < completedQuestsThisSession.length - 1}
-                                                                            onUndo={undoQuest}
-                                                                        />
-                                                                    ))}
-                                                                </>
-                                                            )}
-                                                        </div>
-                                                    </SortableContext>
-                                                )}
-                                            </div>
-                                            {/* 하단 닫기 */}
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowQuestModal(false)}
-                                                className="w-full border-t-2 border-amber-800/20 bg-amber-900/10 py-3 text-sm font-bold text-amber-900/70 transition-colors hover:bg-amber-900/20"
-                                            >
-                                                닫기
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
 
                                 {/* NPC 거절 확인 모달 */}
                                 {declineConfirm && (
@@ -1963,7 +1896,7 @@ export default function HomePage() {
                                                 <button
                                                     type="button"
                                                     onClick={() => setDeclineConfirm(null)}
-                                                    className="rounded-lg bg-amber-600 py-2.5 text-sm font-bold text-white transition-colors hover:bg-amber-700"
+                                                    className="rounded-lg border border-amber-300 bg-white py-2.5 text-sm font-bold text-amber-900 transition-colors hover:bg-amber-50"
                                                 >
                                                     역시 하겠다
                                                 </button>
@@ -1972,6 +1905,9 @@ export default function HomePage() {
                                     </div>
                                 )}
 
+                              </div>
+                              {/* 오른쪽: 내 업무 */}
+                              <div className="lg:flex-1 lg:min-w-0">
                                 {/* 내 업무 */}
                                 <div className="mb-3">
                                     <div className="flex justify-between items-center mb-2">
@@ -2011,7 +1947,8 @@ export default function HomePage() {
                                         </div>
                                     )}
                                 </div>
-                            </>
+                              </div>
+                            </div>
                         )}
 
                         {/* 마감 임박 */}

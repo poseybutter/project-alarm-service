@@ -21,6 +21,10 @@ const FETCH_TIMEOUT_MS = 15_000;
 const RATE_LIMIT_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 500;
 const MAX_RETRY_DELAY_MS = 8_000;
+/** Retry-After 헤더로 서버가 직접 지정한 대기 시간의 상한. 자체 백오프보다 길게 잡는다. */
+const MAX_SERVER_RETRY_DELAY_MS = 60_000;
+/** Retry-After 파싱 실패 시 기본 대기(초). HTTP-date 가 올 수도 있으므로 보수적으로. */
+const DEFAULT_RETRY_SECONDS = 5;
 
 /**
  * 멤버 캘린더 조회 동시 처리 한도. 연결 계정 하나로 호출하므로
@@ -38,12 +42,14 @@ function retryDelayMs(res: Response, attempt: number) {
     if (header) {
         const seconds = Number(header);
         if (Number.isFinite(seconds) && seconds >= 0) {
-            return Math.min(seconds * 1000, MAX_RETRY_DELAY_MS);
+            return Math.min(seconds * 1000, MAX_SERVER_RETRY_DELAY_MS);
         }
         const at = Date.parse(header);
         if (!Number.isNaN(at)) {
-            return Math.min(Math.max(at - Date.now(), 0), MAX_RETRY_DELAY_MS);
+            return Math.min(Math.max(at - Date.now(), 0), MAX_SERVER_RETRY_DELAY_MS);
         }
+        // Number()=NaN 이고 Date.parse()=NaN 인 알 수 없는 형식 — 보수적 기본값 사용
+        return DEFAULT_RETRY_SECONDS * 1000;
     }
     return Math.min(RETRY_BASE_DELAY_MS * 2 ** attempt, MAX_RETRY_DELAY_MS);
 }
@@ -320,6 +326,7 @@ export async function refreshGoogleCalendarToken(refreshToken: string) {
     return json as GoogleTokenResponse;
 }
 
+/** KST(UTC+9) 기준 오늘 00:00~24:00 을 UTC ISO 문자열로 반환한다. */
 export function todayKstWindow(now = new Date()) {
     const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
     const y = kstNow.getUTCFullYear();
@@ -384,11 +391,14 @@ export async function fetchTodayGoogleCalendarEventsByCalendarId(
     return (json.items ?? []) as GoogleCalendarEvent[];
 }
 
+/** Google Calendar API의 start/end 객체를 파싱한다. all-day 이벤트는 KST 기준으로 변환. */
 function eventDateTime(
     value: { date?: string; dateTime?: string } | undefined,
 ) {
     if (!value) return { at: null, allDay: false };
+    // dateTime 필드는 Google이 타임존 오프셋을 포함한 ISO 문자열로 반환한다
     if (value.dateTime) return { at: value.dateTime, allDay: false };
+    // all-day 이벤트는 date만 제공 (YYYY-MM-DD) — 이 앱은 KST 전용이므로 +09:00 고정
     if (value.date) return { at: `${value.date}T00:00:00+09:00`, allDay: true };
     return { at: null, allDay: false };
 }

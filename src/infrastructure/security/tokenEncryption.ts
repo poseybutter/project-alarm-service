@@ -61,10 +61,11 @@ export function decryptIntegrationToken(value: string | null | undefined) {
     if (!key) {
         throw new Error("Integration token encryption key is not configured");
     }
-    const [, , ivValue, tagValue, ciphertextValue] = value.split(":");
-    if (!ivValue || !tagValue || !ciphertextValue) {
+    const parts = value.split(":");
+    if (parts.length !== 5) {
         throw new Error("Encrypted integration token is malformed");
     }
+    const [, , ivValue, tagValue, ciphertextValue] = parts;
 
     const decipher = createDecipheriv(
         "aes-256-gcm",
