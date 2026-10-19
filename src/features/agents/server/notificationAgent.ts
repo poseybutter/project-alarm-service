@@ -276,7 +276,6 @@ function accessibilityCardText(item: AccessibilityAlert, index: number) {
 }
 
 function buildMemberMessage(member: string, digest: MemberDigest) {
-    const todoCount = digest.tasks.length + digest.reminders.length;
     const lines = [
         `☀️ ${member}님, 좋은 아침이에요!`,
         "모닝 기상나팔 📯",
@@ -300,13 +299,20 @@ function buildMemberMessage(member: string, digest: MemberDigest) {
         );
     }
 
-    if (todoCount > 0) {
+    if (digest.tasks.length > 0) {
         lines.push(
             "",
-            `오늘의 퀘스트 (${todoCount}건)`,
+            `마감 임박 업무 (${digest.tasks.length}건)`,
             ...digest.tasks.map((item, index) => taskLine(item, index + 1)),
+        );
+    }
+
+    if (digest.reminders.length > 0) {
+        lines.push(
+            "",
+            `오늘의 퀘스트 (${digest.reminders.length}건)`,
             ...digest.reminders.map((reminder, index) =>
-                reminderLine(reminder, digest.tasks.length + index + 1),
+                reminderLine(reminder, index + 1),
             ),
         );
     }
@@ -319,7 +325,6 @@ function buildMemberCard(
     digest: MemberDigest,
 ): GoogleChatCardPayload {
     const sections: GoogleChatCardPayload["sections"] = [];
-    const todoCount = digest.tasks.length + digest.reminders.length;
 
     if (digest.events.length > 0) {
         sections.push({
@@ -343,24 +348,25 @@ function buildMemberCard(
         });
     }
 
-    if (todoCount > 0) {
+    if (digest.tasks.length > 0) {
         sections.push({
-            header: `오늘의 퀘스트 (${todoCount}건)`,
-            widgets: [
-                ...digest.tasks.map((item, index) => ({
-                    textParagraph: {
-                        text: taskCardText(item, index + 1),
-                    },
-                })),
-                ...digest.reminders.map((reminder, index) => ({
-                    textParagraph: {
-                        text: reminderCardText(
-                            reminder,
-                            digest.tasks.length + index + 1,
-                        ),
-                    },
-                })),
-            ],
+            header: `마감 임박 업무 (${digest.tasks.length}건)`,
+            widgets: digest.tasks.map((item, index) => ({
+                textParagraph: {
+                    text: taskCardText(item, index + 1),
+                },
+            })),
+        });
+    }
+
+    if (digest.reminders.length > 0) {
+        sections.push({
+            header: `오늘의 퀘스트 (${digest.reminders.length}건)`,
+            widgets: digest.reminders.map((reminder, index) => ({
+                textParagraph: {
+                    text: reminderCardText(reminder, index + 1),
+                },
+            })),
         });
     }
 
@@ -498,9 +504,7 @@ export function buildNotificationSuggestions(input: {
     for (const quest of input.quests ?? []) {
         if (!quest.member) continue;
         if (quest.task_id != null) continue;
-        if (quest.status && ["완료", "끝남", "done", "completed"].includes(quest.status)) {
-            continue;
-        }
+        if (isDone(quest.status)) continue;
         const content = htmlToPlainText(quest.content);
         if (!content) continue;
         ensureDigest(quest.member).reminders.push({
@@ -528,7 +532,7 @@ export function buildNotificationSuggestions(input: {
         const sortedAccessibility = [...digest.accessibility].sort(
             (a, b) =>
                 (a.diff ?? -9999) - (b.diff ?? -9999) ||
-                a.row.proj.localeCompare(b.row.proj),
+                (a.row.proj ?? "").localeCompare(b.row.proj ?? ""),
         );
         const sortedReminders = [...digest.reminders].sort((a, b) =>
             (a.remind_at ?? a.due_date ?? "").localeCompare(
@@ -542,13 +546,17 @@ export function buildNotificationSuggestions(input: {
             reminders: sortedReminders,
         };
         const signature = digestSignature(sortedDigest);
-        const todoCount = sortedTasks.length + sortedReminders.length;
         const summaryParts = [
             `오늘 일정 ${sortedEvents.length}건`,
             sortedAccessibility.length > 0
                 ? `접근성 인증 ${sortedAccessibility.length}건`
                 : null,
-            `오늘의 퀘스트 ${todoCount}건`,
+            sortedTasks.length > 0
+                ? `마감 임박 업무 ${sortedTasks.length}건`
+                : null,
+            sortedReminders.length > 0
+                ? `오늘의 퀘스트 ${sortedReminders.length}건`
+                : null,
         ].filter(Boolean);
 
         return {

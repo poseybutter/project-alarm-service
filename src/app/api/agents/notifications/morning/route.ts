@@ -290,6 +290,10 @@ async function handleMorningBriefings(req: NextRequest) {
                     };
                 }
 
+                // 이 dedupeKey 는 "멤버당 하루 1회 발송" 방어용이다.
+                // suggestion 의 dedupe_key(`notification:member:...:signature`)와는 별도:
+                // - morning-briefing dedupeKey → 같은 날 재발송 방지 (배달 기록)
+                // - suggestion dedupe_key → 내용이 같은 제안 중복 생성 방지 (제안 테이블 유니크)
                 const dedupeKey = `morning-briefing:${setting.email}:${today}`;
                 if (
                     !forceSend &&

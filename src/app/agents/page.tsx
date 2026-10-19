@@ -565,7 +565,7 @@ export default function AgentsPage() {
         <AuthGuard>
             <div className="min-h-screen bg-[#f7f6f3] pb-24">
                 <div className="sticky top-0 z-10 border-b border-stone-200 bg-white px-4 py-3">
-                    <div className="mx-auto flex max-w-2xl items-center justify-between gap-3">
+                    <div className="mx-auto flex max-w-2xl lg:max-w-none items-center justify-between gap-3">
                         <div className="min-w-0">
                             <h1 className="text-base font-bold text-stone-900">
                                 모닝 알림 에이전트

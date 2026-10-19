@@ -462,7 +462,7 @@ export default function ProfilePage() {
             <div className="min-h-screen bg-[#f7f6f3]">
                 {/* 헤더 */}
                 <div className="bg-white border-b border-stone-200 px-4 py-3 sticky top-0 z-10">
-                    <div className="max-w-2xl mx-auto flex justify-between items-center">
+                    <div className="max-w-2xl mx-auto lg:max-w-none flex justify-between items-center">
                         <h1 className="text-base font-bold text-stone-900">
                             내 프로필
                         </h1>

@@ -16,6 +16,7 @@ import {
 } from "@/features/agents/server/notificationAgent";
 import {
     syncTodayGoogleCalendarEvents,
+    syncTodayTeamCalendarEvents,
     type GoogleCalendarConnection,
 } from "@/infrastructure/google-calendar";
 import type { Accessibility, Task } from "@/shared/types";
@@ -59,7 +60,9 @@ export async function POST(req: Request) {
                   connection: calendarConnection as GoogleCalendarConnection,
               })
             : [];
-        const teamCalendarEvents: CalendarEventInput[] = [];
+        const teamCalendarEvents = await syncTodayTeamCalendarEvents(serviceSupabase, {
+            teamId,
+        }).catch(() => [] as CalendarEventInput[]);
 
         const [
             { data: tasks, error: taskError },
@@ -146,7 +149,7 @@ export async function POST(req: Request) {
             .eq("payload->>recipientMember", member.name);
 
         if (refreshedIds.length > 0) {
-            cleanup = cleanup.not("id", "in", `(${refreshedIds.join(",")})`);
+            cleanup = cleanup.not("id", "in", `(${refreshedIds.map((id) => String(Number(id))).join(",")})`);
         }
 
         const { error: cleanupError } = await cleanup;

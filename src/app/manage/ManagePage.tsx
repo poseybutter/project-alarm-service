@@ -1277,7 +1277,7 @@ export default function ManagePage() {
         <AuthGuard>
             <div className="min-h-screen bg-[#f7f6f3] pb-24">
                 <div className="bg-white border-b border-stone-200 px-4 py-3 sticky top-0 z-10">
-                    <div className="max-w-2xl mx-auto flex justify-between items-center gap-2">
+                    <div className="max-w-2xl mx-auto lg:max-w-none flex justify-between items-center gap-2">
                         <h1 className="text-base font-bold text-stone-900 shrink-0">
                             관리
                         </h1>

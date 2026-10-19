@@ -106,6 +106,17 @@ html {
     scrollbar-gutter: stable;
 }
 
+/* PC 좌측 사이드바 레이아웃 */
+@media (min-width: 1024px) {
+    body {
+        padding-left: 200px;
+        transition: padding-left 200ms ease;
+    }
+    body[data-sidebar="collapsed"] {
+        padding-left: 56px;
+    }
+}
+
 ::-webkit-scrollbar {
     width: 4px;
 }

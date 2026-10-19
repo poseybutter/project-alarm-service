@@ -118,7 +118,7 @@ export default function QuestsPage() {
     <div className="min-h-screen bg-stone-50">
       {/* 헤더 */}
       <div className="bg-white border-b border-stone-200 px-4 py-3 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto flex justify-between items-center">
+        <div className="max-w-2xl mx-auto lg:max-w-none flex justify-between items-center">
           <div>
             <h1 className="text-base font-bold text-stone-800">오늘의 퀘스트</h1>
             <p className="text-xs text-stone-400 mt-0.5">완료하면 EXP +10</p>
