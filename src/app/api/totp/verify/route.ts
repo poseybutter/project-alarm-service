@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
             });
         }
 
-        const token = issueVerifyToken(teamId, profileId);
+        const token = issueVerifyToken(teamId, profileId, row.id);
         return NextResponse.json({ ok: true, token });
     } catch (error) {
         return internalErrorResponse("totp-verify", error);

@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
         // TOTP 토큰 서버 검증
         const identity = await loadNormalizedIdentity(svc, user.email);
         const profileId = identity?.profile?.id;
-        if (!profileId || !validateVerifyToken(teamId, totpToken, profileId)) {
+        if (!profileId || !(await validateVerifyToken(svc, teamId, totpToken, profileId))) {
             return NextResponse.json(
                 { message: "TOTP token invalid or expired" },
                 { status: 403 },

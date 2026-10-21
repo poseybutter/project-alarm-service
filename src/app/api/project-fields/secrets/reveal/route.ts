@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
             const identity = await loadNormalizedIdentity(svc, user.email);
             const profileId = identity?.profile?.id;
             const totpToken = body.totpToken?.trim() || "";
-            if (!profileId || !validateVerifyToken(teamId, totpToken, profileId)) {
+            if (!profileId || !(await validateVerifyToken(svc, teamId, totpToken, profileId))) {
                 return NextResponse.json(
                     { message: "TOTP verification required" },
                     { status: 403 },

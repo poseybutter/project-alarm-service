@@ -39,7 +39,7 @@ export async function enforceTeamTotp(
     const token = req.headers.get(TOTP_TOKEN_HEADER)?.trim() || "";
     const identity = token ? await loadNormalizedIdentity(svc, userEmail) : null;
     const profileId = identity?.profile?.id;
-    if (!profileId || !validateVerifyToken(teamId, token, profileId)) {
+    if (!profileId || !(await validateVerifyToken(svc, teamId, token, profileId))) {
         return NextResponse.json(
             { message: "TOTP verification required", totpRequired: true },
             { status: 403 },
