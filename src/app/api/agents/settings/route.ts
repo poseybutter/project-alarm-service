@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
     AdminApiError,
+    hasAdminPermission,
     requireAdminSession,
 } from "@/features/admin/server/adminRepository";
 import { adminErrorResponse } from "@/features/admin/server/http";
@@ -51,8 +52,7 @@ export async function GET() {
             calendar_id: string;
             updated_at: string;
         }> = [];
-        if (role === "admin") {
-            await requireAdminSession(teamId, "integrations.read");
+        if (await hasAdminPermission(teamId, "integrations.read")) {
             const [teamResult, memberResult] = await Promise.all([
                 service
                     .from("agent_team_calendar_settings")

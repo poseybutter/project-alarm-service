@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createHmac, timingSafeEqual } from "crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * 인증 검증 성공 후 발급되는 단기 HMAC 토큰.
@@ -65,61 +66,57 @@ export function validatePinToken(
 // ─── TOTP 검증 토큰 ────────────────────────────────────────────────
 
 /**
- * 인메모리 revocation map: TOTP 초기화 시 기존 토큰 즉시 무효화.
- * key = `${teamId}:${profileId}`, value = 폐기 시각(ms).
- * TTL이 지난 항목은 자동 정리된다.
+ * 토큰 구조: `${timestamp}.${secretId}.${hmac}`
+ * - secretId: 발급 당시 검증에 쓴 totp_secrets 행 id
+ * - hmac: HMAC-SHA256(secret, `${teamId}:${profileId}:${secretId}:${timestamp}`)
  *
- * 단일 프로세스 전제 — 다중 인스턴스 배포 시 Redis 또는 DB 기반
- * revocation store로 교체 필요. 현재 단일 인스턴스이며 TTL이 5분이므로
- * 최악 시나리오에서도 리스크 윈도우가 제한된다.
+ * 검증 시 현재 시크릿 행 id 와 비교한다. TOTP 초기화는 시크릿 행을 지우므로
+ * 이전 토큰은 인스턴스 수와 무관하게 즉시 무효가 된다 (인메모리 폐기 목록 불필요).
  */
-const revokedAt = new Map<string, number>();
 
-/** 관리자 TOTP 초기화 시 호출 — 해당 사용자의 기존 verify token을 즉시 폐기 */
-export function revokeVerifyTokens(teamId: string, profileId: string): void {
-    const key = `${teamId}:${profileId}`;
-    revokedAt.set(key, Date.now());
-
-    // TTL이 지난 항목 정리
-    const cutoff = Date.now() - TOKEN_TTL_MS;
-    for (const [k, v] of revokedAt) {
-        if (v < cutoff) revokedAt.delete(k);
-    }
-}
-
-/** TOTP 검증 성공 후 발급 — profileId를 바인딩하여 사용자별 토큰 */
-export function issueVerifyToken(teamId: string, profileId: string): string {
+/** TOTP 검증 성공 후 발급 — profileId·시크릿 행을 바인딩한 사용자별 토큰 */
+export function issueVerifyToken(
+    teamId: string,
+    profileId: string,
+    secretId: number,
+): string {
     const ts = Date.now().toString();
     const hmac = createHmac("sha256", getSecret())
-        .update(`${teamId}:${profileId}:${ts}`)
+        .update(`${teamId}:${profileId}:${secretId}:${ts}`)
         .digest("base64url");
-    return `${ts}.${hmac}`;
+    return `${ts}.${secretId}.${hmac}`;
 }
 
-export function validateVerifyToken(
+export async function validateVerifyToken(
+    svc: SupabaseClient,
     teamId: string,
     token: string,
     profileId: string,
-): boolean {
-    const dot = token.indexOf(".");
-    if (dot < 1) return false;
+): Promise<boolean> {
+    const [ts, secretIdRaw, hmac] = token.split(".");
+    if (!ts || !secretIdRaw || !hmac) return false;
 
-    const ts = token.slice(0, dot);
-    const hmac = token.slice(dot + 1);
     const issued = Number(ts);
+    const secretId = Number(secretIdRaw);
     if (!issued || Date.now() - issued > TOKEN_TTL_MS) return false;
-
-    // 폐기된 토큰인지 확인: 발급 시각이 revocation 시각보다 이전이면 무효
-    const revokeKey = `${teamId}:${profileId}`;
-    const revoked = revokedAt.get(revokeKey);
-    if (revoked && issued <= revoked) return false;
+    if (!Number.isSafeInteger(secretId) || secretId <= 0) return false;
 
     const expected = createHmac("sha256", getSecret())
-        .update(`${teamId}:${profileId}:${ts}`)
+        .update(`${teamId}:${profileId}:${secretId}:${ts}`)
         .digest("base64url");
-
     const actualBuf = Buffer.from(hmac, "utf8");
     const expectedBuf = Buffer.from(expected, "utf8");
     if (actualBuf.length !== expectedBuf.length) return false;
-    return timingSafeEqual(actualBuf, expectedBuf);
+    if (!timingSafeEqual(actualBuf, expectedBuf)) return false;
+
+    // 발급 이후 TOTP 가 초기화·재설정되었으면 시크릿 행이 사라지거나 바뀐다
+    const { data, error } = await svc
+        .from("totp_secrets")
+        .select("id")
+        .eq("profile_id", profileId)
+        .eq("team_id", teamId)
+        .not("verified_at", "is", null)
+        .maybeSingle();
+    if (error) throw error;
+    return data?.id === secretId;
 }

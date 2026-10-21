@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
     AdminApiError,
+    hasAdminPermission,
     requireAdminSession,
 } from "@/features/admin/server/adminRepository";
 import { adminErrorResponse } from "@/features/admin/server/http";
@@ -137,7 +138,9 @@ export async function GET(req: NextRequest) {
 
     try {
         const service = createServiceSupabaseClient();
-        const shouldShowTeam = role === "admin" && scopeParam === "team";
+        const shouldShowTeam =
+            scopeParam === "team" &&
+            (await hasAdminPermission(teamId, "integrations.read"));
 
         let recipientMember: string | undefined;
         if (!shouldShowTeam && user.email) {

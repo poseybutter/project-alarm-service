@@ -13,6 +13,7 @@ import {
     syncTeamCalendarTaskEvents,
 } from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
+import { hasAdminPermission } from "@/features/admin/server/adminRepository";
 import {
     consumeSharedRateLimit,
     rateLimitResponse,
@@ -24,15 +25,13 @@ type RouteContext = {
     params: Promise<{ id: string }>;
 };
 
-function canManageTask(params: {
-    role: string | null;
+async function canManageTask(params: {
+    teamId: string;
     playerName?: string | null;
     taskMember?: string | null;
 }) {
-    return (
-        params.role === "admin" ||
-        Boolean(params.playerName && params.playerName === params.taskMember)
-    );
+    if (params.playerName && params.playerName === params.taskMember) return true;
+    return hasAdminPermission(params.teamId, "integrations.manage");
 }
 
 async function loadTeamCalendarContext(
@@ -142,17 +141,18 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             { limit: 60, windowMs: 60 * 1000 },
         );
         if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
-        authorizedTeamId = task.team_id;
         const member = await resolveTeamMember(supabase, user.email, task.team_id);
         if (
-            !canManageTask({
-                role,
+            !(await canManageTask({
+                teamId: task.team_id,
                 playerName: member?.name,
                 taskMember: task.member,
-            })
+            }))
         ) {
             return NextResponse.json({ message: "Forbidden" }, { status: 403 });
         }
+        // 권한 확인 후에만 설정 — catch 에서 이 팀 업무의 동기화 오류를 기록한다
+        authorizedTeamId = task.team_id;
 
         const [{ calendarId, sharedCalendarId, accessToken }, memberSortOrder] =
             await Promise.all([
@@ -320,11 +320,11 @@ export async function DELETE(_req: NextRequest, context: RouteContext) {
         if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
         const member = await resolveTeamMember(supabase, user.email, task.team_id);
         if (
-            !canManageTask({
-                role,
+            !(await canManageTask({
+                teamId: task.team_id,
                 playerName: member?.name,
                 taskMember: task.member,
-            })
+            }))
         ) {
             return NextResponse.json({ message: "Forbidden" }, { status: 403 });
         }

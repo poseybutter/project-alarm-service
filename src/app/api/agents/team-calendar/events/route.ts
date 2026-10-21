@@ -13,6 +13,7 @@ import {
     type TeamCalendarEventInput,
 } from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
+import { hasAdminPermission } from "@/features/admin/server/adminRepository";
 import {
     consumeSharedRateLimit,
     rateLimitResponse,
@@ -202,7 +203,10 @@ export async function POST(req: NextRequest) {
                 return NextResponse.json({ message: "현재 팀의 활성 구성원을 선택해주세요" }, { status: 400 });
             }
             // 이름이 아닌 email로 본인 확인 (동명이인 우회 방지)
-            if (role !== "admin" && target.email.toLowerCase() !== user.email!.toLowerCase()) {
+            if (
+                target.email.toLowerCase() !== user.email!.toLowerCase() &&
+                !(await hasAdminPermission(teamId, "integrations.manage"))
+            ) {
                 return NextResponse.json({ message: "본인 일정만 등록할 수 있습니다" }, { status: 403 });
             }
         }
