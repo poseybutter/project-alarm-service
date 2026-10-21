@@ -61,8 +61,8 @@ export default function DragQuestModal({
             onClick={onClose}
         >
             <div
-                className="max-h-[calc(100dvh-83px)] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-5"
-                style={{ marginBottom: "67px" }}
+                className="max-h-[calc(100dvh-var(--nav-height,0px)-1rem)] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-5"
+                style={{ marginBottom: "var(--nav-height)" }}
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="mb-5 flex items-center justify-between">

@@ -4,6 +4,7 @@ import {
     getServerUserRole,
 } from "@/infrastructure/supabase/server";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
+import { enforceTeamTotp } from "@/shared/server/totpGate";
 
 const PAGE_SIZE = 30;
 const VALID_ACTIONS = ["create", "update", "delete"] as const;
@@ -34,9 +35,9 @@ export async function POST(req: NextRequest) {
     }
 
     const teamId = body.teamId?.trim();
-    const projectId = body.projectId;
+    const projectId = body.projectId as number;
     const entries = body.entries;
-    if (!teamId || !projectId || !entries?.length) {
+    if (!teamId || !Number.isInteger(projectId) || !Array.isArray(entries) || !entries.length) {
         return NextResponse.json(
             { message: "teamId, projectId, entries are required" },
             { status: 400 },
@@ -52,15 +53,32 @@ export async function POST(req: NextRequest) {
 
     // 입력 검증
     for (const e of entries) {
-        if (!(VALID_ACTIONS as readonly string[]).includes(e.action)) {
+        if (
+            typeof e !== "object" ||
+            e === null ||
+            !(VALID_ACTIONS as readonly string[]).includes(e.action)
+        ) {
             return NextResponse.json(
                 { message: `Invalid action: ${e.action}` },
                 { status: 400 },
             );
         }
-        if (!e.field_label || e.field_label.length > MAX_LABEL_LENGTH) {
+        if (
+            typeof e.field_label !== "string" ||
+            !e.field_label ||
+            e.field_label.length > MAX_LABEL_LENGTH
+        ) {
             return NextResponse.json(
                 { message: `field_label must be 1–${MAX_LABEL_LENGTH} characters` },
+                { status: 400 },
+            );
+        }
+        if (
+            (e.old_value != null && typeof e.old_value !== "string") ||
+            (e.new_value != null && typeof e.new_value !== "string")
+        ) {
+            return NextResponse.json(
+                { message: "old_value/new_value must be strings" },
                 { status: 400 },
             );
         }
@@ -82,9 +100,26 @@ export async function POST(req: NextRequest) {
     if (!user?.email || !role) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
+    // viewer 는 프로젝트를 수정할 수 없으므로 이력도 기록할 수 없다
+    if (role === "viewer") {
+        return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+    }
 
     try {
         const svc = createServiceSupabaseClient();
+
+        // 다른 팀 프로젝트에 이력을 남기지 못하도록 소속 확인
+        const { data: project, error: projectErr } = await svc
+            .from("projects")
+            .select("id")
+            .eq("id", projectId)
+            .eq("team_id", teamId)
+            .maybeSingle();
+        if (projectErr) throw projectErr;
+        if (!project) {
+            return NextResponse.json({ message: "Project not found" }, { status: 404 });
+        }
+
         const now = new Date().toISOString();
         const rows = entries.map((e) => ({
             team_id: teamId,
@@ -112,11 +147,14 @@ export async function GET(req: NextRequest) {
     const projectId = req.nextUrl.searchParams.get("projectId")?.trim();
     const cursor = req.nextUrl.searchParams.get("cursor")?.trim();
 
-    if (!teamId || !projectId) {
+    if (!teamId || !projectId || !Number.isInteger(Number(projectId))) {
         return NextResponse.json(
             { message: "teamId and projectId are required" },
             { status: 400 },
         );
+    }
+    if (cursor && !Number.isInteger(Number(cursor))) {
+        return NextResponse.json({ message: "cursor must be a number" }, { status: 400 });
     }
 
     const { user, role } = await getServerUserRole(teamId);
@@ -126,6 +164,10 @@ export async function GET(req: NextRequest) {
 
     try {
         const svc = createServiceSupabaseClient();
+
+        // TOTP 필수 팀은 이력(일반 필드 값 포함)도 TOTP 잠금 대상
+        const totpDenied = await enforceTeamTotp(svc, req, teamId, user.email);
+        if (totpDenied) return totpDenied;
 
         let query = svc
             .from("project_field_history")
@@ -155,6 +197,7 @@ export async function GET(req: NextRequest) {
             const { data: defs } = await svc
                 .from("project_field_definitions")
                 .select("id, label")
+                .eq("team_id", teamId)
                 .in("id", defIds);
             defMap = new Map(
                 (defs ?? []).map((d) => [d.id, d.label]),

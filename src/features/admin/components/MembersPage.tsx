@@ -35,7 +35,7 @@ type MembersResponse = { members: AdminMember[] };
 type MemberFilter = "all" | "active" | "suspended" | "pending";
 
 export function MembersPage() {
-  const { identity, scopes } = useAdmin();
+  const { identity, scopes, selectedTeamId } = useAdmin();
   const { data, error, loading, reload } =
     useAdminResource<MembersResponse>("/api/admin/members");
   const { data: roleCatalog } =
@@ -43,6 +43,8 @@ export function MembersPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<MemberFilter>("all");
   const [selected, setSelected] = useState<AdminMember | null>(null);
+  // 역할·상태를 편집할 소속 팀 (멤버십 단위 편집)
+  const [editTeamId, setEditTeamId] = useState<string | null>(null);
   const [draftRoleId, setDraftRoleId] = useState("legacy:member");
   const [draftStatus, setDraftStatus] = useState<"active" | "suspended">(
     "active",
@@ -87,11 +89,13 @@ export function MembersPage() {
 
   const members = useMemo(() => {
     const query = search.trim().toLowerCase();
-    // 사람 기준으로 중복 제거 — 기본 소속(isDefault=true)을 우선, 없으면 첫 번째 행 사용
+    // 사람 기준으로 중복 제거 — 현재 선택된 팀의 소속을 우선, 그다음 기본 소속(isDefault=true), 없으면 첫 번째 행
+    const rank = (m: AdminMember) =>
+      selectedTeamId && m.teamId === selectedTeamId ? 2 : m.isDefault ? 1 : 0;
     const seen = new Map<string, AdminMember>();
     for (const member of data?.members ?? []) {
       const existing = seen.get(member.email);
-      if (!existing || (!existing.isDefault && member.isDefault)) {
+      if (!existing || rank(member) > rank(existing)) {
         seen.set(member.email, member);
       }
     }
@@ -105,16 +109,34 @@ export function MembersPage() {
         t.toLowerCase().includes(query),
       );
     });
-  }, [data, filter, search, teamNamesByEmail]);
+  }, [data, filter, search, teamNamesByEmail, selectedTeamId]);
 
   const allMembershipsForSelected = useMemo(
     () => (selected ? (data?.members ?? []).filter((m) => m.email === selected.email) : []),
     [data, selected],
   );
-  const selectedPrimary = useMemo(
-    () => allMembershipsForSelected.find((m) => m.isDefault) ?? selected,
-    [allMembershipsForSelected, selected],
+  // 관리 권한이 있는 팀의 소속만 편집 가능
+  const editableMemberships = useMemo(
+    () =>
+      allMembershipsForSelected.filter(
+        (m) => m.teamId && teamOptions.some((s) => s.teamId === m.teamId),
+      ),
+    [allMembershipsForSelected, teamOptions],
   );
+  // 편집 대상 멤버십 — 드로어에서 고른 팀 → 현재 스코프 팀 → 편집 가능한 기본 소속 → 편집 가능한 첫 소속 → 기본 소속 순
+  const editTarget = useMemo(() => {
+    if (!selected) return null;
+    const byTeam = (teamId: string | null) =>
+      teamId ? allMembershipsForSelected.find((m) => m.teamId === teamId) : undefined;
+    return (
+      byTeam(editTeamId) ??
+      byTeam(selectedTeamId) ??
+      editableMemberships.find((m) => m.isDefault) ??
+      editableMemberships[0] ??
+      allMembershipsForSelected.find((m) => m.isDefault) ??
+      selected
+    );
+  }, [selected, editTeamId, selectedTeamId, allMembershipsForSelected, editableMemberships]);
 
   // 선택된 구성원이 아직 속하지 않은 팀만 — "다른 팀에 추가" 대상
   const eligibleTeamsForSelected = useMemo(() => {
@@ -131,28 +153,32 @@ export function MembersPage() {
     [selected, addEmail, eligibleTeamsForSelected, teamOptions],
   );
 
-  // 기본 소속 팀에 members.manage 권한이 있을 때만 역할·상태 편집 허용
-  const canEditPrimary = useMemo(
+  // 편집 대상 소속 팀에 members.manage 권한이 있을 때 역할·상태 편집 허용 (기본 소속 여부와 무관)
+  const canEditTarget = useMemo(
     () =>
       Boolean(
-        selectedPrimary?.isDefault &&
-          teamOptions.some((s) => s.teamId === selectedPrimary.teamId),
+        editTarget?.teamId &&
+          teamOptions.some((s) => s.teamId === editTarget.teamId),
       ),
-    [selectedPrimary, teamOptions],
+    [editTarget, teamOptions],
   );
 
   const dirty = Boolean(
-    selectedPrimary &&
-    ((selectedPrimary.roleId ?? `legacy:${selectedPrimary.role}`) !== draftRoleId ||
-      selectedPrimary.status !== draftStatus),
+    editTarget &&
+    ((editTarget.roleId ?? `legacy:${editTarget.role}`) !== draftRoleId ||
+      editTarget.status !== draftStatus),
   );
+
+  function resetDrafts(target: AdminMember) {
+    setDraftRoleId(target.roleId ?? `legacy:${target.role}`);
+    setDraftStatus(target.status === "suspended" ? "suspended" : "active");
+  }
 
   function openMember(member: AdminMember) {
     setSelected(member);
-    // find the primary membership for this user to initialize drafts
-    const primary = (data?.members ?? []).find((m) => m.email === member.email && m.isDefault) ?? member;
-    setDraftRoleId(primary.roleId ?? `legacy:${primary.role}`);
-    setDraftStatus(primary.status === "suspended" ? "suspended" : "active");
+    // 목록 행(현재 스코프 팀 우선)의 소속을 편집 대상으로 초기화
+    setEditTeamId(member.teamId);
+    resetDrafts(member);
     setSaveError(null);
     setDiscardPrompt(false);
     setRemoveConfirm(false);
@@ -233,7 +259,7 @@ export function MembersPage() {
   }
 
   async function saveMember() {
-    if (!selectedPrimary?.teamId || !dirty || saving) return;
+    if (!editTarget?.teamId || !dirty || saving) return;
     setSaving(true);
     setSaveError(null);
     setSuccessMessage(null);
@@ -242,8 +268,10 @@ export function MembersPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: selectedPrimary.id,
-          teamId: selectedPrimary.teamId,
+          // 멤버십 단위 편집 — legacy players id(없으면 0)와 membershipId·teamId 를 함께 보낸다
+          id: editTarget.id,
+          ...(editTarget.membershipId ? { membershipId: editTarget.membershipId } : {}),
+          teamId: editTarget.teamId,
           ...(roleCatalog?.schemaReady && !draftRoleId.startsWith("legacy:")
             ? { roleId: draftRoleId }
             : { role: draftRoleId === "legacy:admin" ? "admin" : "member" }),
@@ -252,7 +280,7 @@ export function MembersPage() {
       });
       const body = (await response.json()) as ApiFailure;
       if (!response.ok) throw body;
-      setSuccessMessage(`${selectedPrimary.name}님의 권한과 상태를 저장했습니다.`);
+      setSuccessMessage(`${editTarget.name}님의 ${editTarget.teamName} 권한과 상태를 저장했습니다.`);
       setSelected(null);
       await reload();
     } catch (reason) {
@@ -269,7 +297,7 @@ export function MembersPage() {
   return (
     <AdminPage
       title="구성원 관리"
-      description="전체 구성원 목록입니다. 이름을 클릭하면 소속 팀, 역할, 계정 상태를 변경할 수 있습니다. 편집은 해당 구성원의 기본 소속 팀에 대한 구성원 관리 권한이 필요합니다. 구성원을 완전히 삭제하는 대신 '정지' 상태로 비활성화하는 것을 권장합니다."
+      description="전체 구성원 목록입니다. 이름을 클릭하면 소속 팀, 역할, 계정 상태를 변경할 수 있습니다. 역할·상태는 소속 팀별로 관리되며, 편집하려는 소속 팀에 대한 구성원 관리 권한이 필요합니다. 구성원을 완전히 삭제하는 대신 '정지' 상태로 비활성화하는 것을 권장합니다."
     >
       {successMessage && <SuccessMessage>{successMessage}</SuccessMessage>}
       <div className="mb-3 flex flex-col gap-2 sm:flex-row">
@@ -431,7 +459,7 @@ export function MembersPage() {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="font-extrabold">{selected.name}</p>
-                  <StatusBadge status={selectedPrimary?.status ?? selected.status} />
+                  <StatusBadge status={editTarget?.status ?? selected.status} />
                 </div>
                 <p className="mt-1 break-all font-mono text-xs text-stone-500">
                   {selected.email}
@@ -440,9 +468,9 @@ export function MembersPage() {
             </div>
 
             {/* Pending/Rejected state */}
-            {(selectedPrimary?.status === "pending" ||
-              selectedPrimary?.status === "rejected" ||
-              !selectedPrimary?.teamId) ? (
+            {(editTarget?.status === "pending" ||
+              editTarget?.status === "rejected" ||
+              !editTarget?.teamId) ? (
               <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
                 이 사용자는 접근 요청 단계에 있습니다. 접근 요청 화면에서 팀과 역할을 지정해 주세요.
               </div>
@@ -521,20 +549,47 @@ export function MembersPage() {
                   )}
                 </div>
 
-                {/* Role & Status editing — primary membership only */}
-                {!selectedPrimary?.isDefault && (
+                {/* Role & Status editing — 소속(멤버십) 단위 */}
+                {!canEditTarget && (
                   <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
-                    기본 소속이 없는 구성원입니다. 역할·상태 변경을 하려면 기본 소속 팀에서 관리해 주세요.
+                    이 구성원의 소속 팀에 대한 구성원 관리 권한이 없습니다. 해당 팀 관리자에게 문의해 주세요.
                   </div>
                 )}
-                {selectedPrimary?.isDefault && !canEditPrimary && (
-                  <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
-                    이 구성원의 기본 소속 팀에 대한 관리 권한이 없습니다. 해당 팀 관리자에게 문의해 주세요.
-                  </div>
-                )}
-                {canEditPrimary && (
+                {canEditTarget && editTarget && (
                   <fieldset className="space-y-4">
                     <legend className="text-sm font-extrabold">권한 및 상태</legend>
+                    {editableMemberships.length > 1 ? (
+                      <label className="block">
+                        <span className="mb-1.5 block text-xs font-bold text-stone-600">
+                          편집할 소속 팀
+                        </span>
+                        <select
+                          className="admin-select w-full"
+                          value={editTarget.teamId ?? ""}
+                          onChange={(event) => {
+                            const next = editableMemberships.find(
+                              (m) => m.teamId === event.target.value,
+                            );
+                            if (!next) return;
+                            setEditTeamId(next.teamId);
+                            resetDrafts(next);
+                            setSaveError(null);
+                          }}
+                          disabled={saving}
+                        >
+                          {editableMemberships.map((m) => (
+                            <option key={m.membershipId ?? `legacy-${m.id}`} value={m.teamId ?? ""}>
+                              {m.teamName}
+                              {m.isDefault ? " · 기본" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : (
+                      <p className="text-xs text-stone-500">
+                        <span className="font-bold">{editTarget.teamName}</span> 소속의 역할과 상태를 변경합니다.
+                      </p>
+                    )}
                     <label className="block">
                       <span className="mb-1.5 block text-xs font-bold text-stone-600">
                         팀 역할
@@ -551,7 +606,7 @@ export function MembersPage() {
                               (role) =>
                                 role.status === "active" &&
                                 (role.teamId === null ||
-                                  role.teamId === selectedPrimary.teamId),
+                                  role.teamId === editTarget.teamId),
                             )
                             .map((role) => (
                               <option key={role.id} value={role.id}>
@@ -594,13 +649,13 @@ export function MembersPage() {
                         자신의 관리자 권한과 계정 상태는 직접 변경할 수 없습니다.
                       </div>
                     )}
-                    {draftStatus === "suspended" && selectedPrimary.status !== "suspended" && (
+                    {draftStatus === "suspended" && editTarget.status !== "suspended" && (
                       <div className="flex gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800">
                         <Pause className="mt-0.5 shrink-0" size={16} />
                         정지하면 이 사용자는 로그인 후 업무 데이터에 접근할 수 없습니다. 기존 데이터는 삭제되지 않습니다.
                       </div>
                     )}
-                    {draftStatus === "active" && selectedPrimary.status === "suspended" && (
+                    {draftStatus === "active" && editTarget.status === "suspended" && (
                       <div className="flex gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-800">
                         <Play className="mt-0.5 shrink-0" size={16} />
                         저장 즉시 계정 접근이 복구됩니다.
@@ -642,9 +697,9 @@ export function MembersPage() {
                   </AdminButton>
                 </div>
               </div>
-            ) : canEditPrimary &&
-              selectedPrimary?.status !== "pending" &&
-              selectedPrimary?.status !== "rejected" ? (
+            ) : canEditTarget &&
+              editTarget?.status !== "pending" &&
+              editTarget?.status !== "rejected" ? (
               <div className="flex justify-end gap-2 border-t border-stone-200 pt-4">
                 <AdminButton onClick={closeDrawer} disabled={saving}>
                   취소
@@ -652,7 +707,7 @@ export function MembersPage() {
                 <AdminButton
                   variant="primary"
                   onClick={() => {
-                    if (draftStatus === "suspended" && selectedPrimary?.status !== "suspended") {
+                    if (draftStatus === "suspended" && editTarget?.status !== "suspended") {
                       setSuspendConfirm(true);
                     } else {
                       void saveMember();

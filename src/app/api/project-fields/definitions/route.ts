@@ -70,8 +70,8 @@ export async function POST(req: NextRequest) {
     }
 
     const teamId = body.teamId?.trim();
-    const projectId = body.projectId;
-    if (!teamId || !projectId) {
+    const projectId = body.projectId as number;
+    if (!teamId || !Number.isInteger(projectId)) {
         return NextResponse.json(
             { message: "teamId and projectId are required" },
             { status: 400 },
@@ -106,9 +106,22 @@ export async function POST(req: NextRequest) {
     try {
         const svc = createServiceSupabaseClient();
 
+        // 다른 팀 프로젝트에 필드 정의를 만들지 못하도록 소속 확인
+        const { data: project, error: projectErr } = await svc
+            .from("projects")
+            .select("id")
+            .eq("id", projectId)
+            .eq("team_id", teamId)
+            .maybeSingle();
+        if (projectErr) throw projectErr;
+        if (!project) {
+            return NextResponse.json({ message: "Project not found" }, { status: 404 });
+        }
+
         const { data: maxRow } = await svc
             .from("project_field_definitions")
             .select("sort_order")
+            .eq("team_id", teamId)
             .eq("project_id", projectId)
             .order("sort_order", { ascending: false })
             .limit(1)
@@ -174,17 +187,20 @@ export async function PATCH(req: NextRequest) {
         const svc = createServiceSupabaseClient();
 
         if (body.reorder && Array.isArray(body.reorder)) {
-            const updates = body.reorder.map((item) =>
-                svc
-                    .from("project_field_definitions")
-                    .update({
-                        sort_order: item.sort_order,
-                        updated_at: new Date().toISOString(),
-                    })
-                    .eq("id", item.id)
-                    .eq("team_id", teamId),
+            const results = await Promise.all(
+                body.reorder.map((item) =>
+                    svc
+                        .from("project_field_definitions")
+                        .update({
+                            sort_order: item.sort_order,
+                            updated_at: new Date().toISOString(),
+                        })
+                        .eq("id", item.id)
+                        .eq("team_id", teamId),
+                ),
             );
-            await Promise.all(updates);
+            const failed = results.find((r) => r.error);
+            if (failed?.error) throw failed.error;
             return NextResponse.json({ ok: true });
         }
 

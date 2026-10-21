@@ -120,8 +120,8 @@ export async function POST(req: NextRequest) {
     const { data: brief, error: bErr } = await supabase
         .from("briefings")
         .upsert(
-            { week_start: week, team_id: teamId, is_locked: false },
-            { onConflict: "team_id,week_start" },
+            { week_start: week, team_id: teamId },
+            { onConflict: "team_id,week_start", ignoreDuplicates: true },
         )
         .select("id")
         .maybeSingle();

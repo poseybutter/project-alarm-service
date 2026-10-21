@@ -4,6 +4,7 @@ import {
     getServerUserRole,
 } from "@/infrastructure/supabase/server";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
+import { hasAdminPermission } from "@/features/admin/server/adminRepository";
 
 type AdminBody = { teamId?: string; enabled?: boolean };
 
@@ -25,7 +26,12 @@ export async function POST(req: NextRequest) {
     }
 
     const { user, role } = await getServerUserRole(teamId);
-    if (!user?.email || role !== "admin") {
+    // 팀 보안 설정 변경 — 역할 문자열이 아니라 teams.manage 권한으로 판정
+    if (
+        !user?.email ||
+        !role ||
+        !(await hasAdminPermission(teamId, "teams.manage"))
+    ) {
         return NextResponse.json({ message: "Admin access required" }, { status: 403 });
     }
 

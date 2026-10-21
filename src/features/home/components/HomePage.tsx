@@ -32,14 +32,15 @@ import {
     formatWorkload,
 } from "@/shared/utils/utils";
 import {
-    questContentLooksLikeStoredHtml,
     questRichTextIsEffectivelyEmpty,
     toQuestEditorInitialHtml,
 } from "@/features/gamification/questContentDisplay";
+import QuestCardContent from "@/features/gamification/QuestCardContent";
 import {
     BAR_COLORS,
     TYPE_COLORS,
     STATUS_COLORS,
+    TASK_STATUS_OPTIONS,
 } from "@/shared/constants";
 import Avatar from "@/components/Avatar";
 import dynamic from "next/dynamic";
@@ -71,10 +72,9 @@ import {
     modalFormSelectStyles,
     badgeSelectStyles,
 } from "@/shared/styles/reactSelectStyles";
-import { toLocalYmd } from "@/shared/utils/toLocalYmd";
+import { toLocalYmd, toSeoulYmd } from "@/shared/utils/toLocalYmd";
 import TaskContentInputs from "@/components/TaskContentInputs";
 import TaskContentList from "@/components/TaskContentList";
-import { sanitizeHtml } from "@/shared/utils/sanitizeHtml";
 import SeasonBanner from "@/components/SeasonBanner";
 
 // 이벤트 발생 시에만 뜨는 오버레이·에디터는 초기 번들에서 제외한다
@@ -105,41 +105,6 @@ function statusChangeErrorMessage(error: unknown) {
         : "상태를 변경하지 못했어요";
 }
 
-function QuestCardContent({
-    content,
-    plainClassName,
-    completing,
-}: {
-    content: string;
-    plainClassName?: string;
-    completing?: boolean;
-}) {
-    const isHtml = questContentLooksLikeStoredHtml(content);
-    if (isHtml) {
-        const inner = sanitizeHtml(content.trim() ? content.trim() : "<p></p>");
-        return (
-            <div className={`notice-editor min-w-0 ${completing ? "line-through text-stone-400" : ""}`}>
-                <div
-                    className={`ProseMirror tiptap break-words text-sm font-medium leading-snug [&_li]:mb-0 [&_ol]:mb-0 [&_p]:!text-sm [&_p]:mb-1 [&_p:last-child]:mb-0 [&_ul]:mb-0 ${completing ? "text-stone-400" : "text-stone-800"}`}
-                    dangerouslySetInnerHTML={{ __html: inner }}
-                />
-            </div>
-        );
-    }
-    return (
-        <p
-            className={
-                completing
-                    ? "whitespace-pre-wrap break-words text-sm font-medium text-stone-400 line-through"
-                    : (plainClassName ??
-                      "whitespace-pre-wrap break-words text-sm font-medium text-stone-800")
-            }
-        >
-            {content}
-        </p>
-    );
-}
-
 type QuestFormType = {
     content: string;
     proj: string;
@@ -160,17 +125,6 @@ type QuestFormModalProps = {
     projects: Project[];
     editorMountKey: string;
 };
-
-function toSeoulYmd(date: Date = new Date()) {
-    const parts = new Intl.DateTimeFormat("en-US", {
-        timeZone: "Asia/Seoul",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-    }).formatToParts(date);
-    const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-    return `${value.year}-${value.month}-${value.day}`;
-}
 
 function addDaysToYmd(ymd: string, days: number) {
     const date = new Date(`${ymd}T00:00:00Z`);
@@ -407,9 +361,11 @@ function HomeMyTaskRow({
     onStatusChange,
     onEdit,
     onCompleting,
+    readOnly = false,
 }: {
     task: Task;
     showBorderBottom: boolean;
+    readOnly?: boolean;
     onStatusChange: (
         id: number,
         status: string,
@@ -468,10 +424,11 @@ function HomeMyTaskRow({
                     <div className="shrink-0" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                         <div ref={statusWrapRef} className={`rounded-lg ${STATUS_COLORS[t.status] || "bg-gray-100 text-gray-600"}`}>
                             <Select
-                                options={["대기", "시작 전", "진행중", "지연/보류", "완료"].map((s) => ({ value: s, label: s }))}
+                                options={TASK_STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
                                 value={{ value: t.status, label: t.status }}
+                                isDisabled={readOnly}
                                 onChange={(opt) => {
-                                    if (!opt) return;
+                                    if (!opt || readOnly) return;
                                     const r = statusWrapRef.current?.getBoundingClientRect();
                                     if (opt.value === "완료" && t.status !== "완료") onCompleting?.(t.id);
                                     void onStatusChange(t.id, opt.value, t, { x: (r?.left ?? 0) + (r?.width ?? 0) / 2, y: (r?.top ?? 0) + (r?.height ?? 0) / 2 });
@@ -532,6 +489,7 @@ function TodayTaskItem({
     showDragHandle,
     isCompleting,
     onExclude,
+    readOnly = false,
 }: {
     id: string;
     task: Task;
@@ -539,6 +497,7 @@ function TodayTaskItem({
     showDragHandle: boolean;
     isCompleting: boolean;
     onExclude: (id: number) => void;
+    readOnly?: boolean;
 }) {
     const {
         attributes,
@@ -597,13 +556,15 @@ function TodayTaskItem({
                     {t.is_starred && <span className="text-xs" title="핵심 프로젝트">⭐</span>}
                 </div>
             </div>
-            <button
-                type="button"
-                onClick={() => onExclude(t.id)}
-                className="shrink-0 self-center rounded px-2 py-1 text-xs font-medium text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500"
-            >
-                거절하기
-            </button>
+            {!readOnly && (
+                <button
+                    type="button"
+                    onClick={() => onExclude(t.id)}
+                    className="shrink-0 self-center rounded px-2 py-1 text-xs font-medium text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500"
+                >
+                    거절하기
+                </button>
+            )}
         </div>
     );
 }
@@ -617,6 +578,7 @@ function SortableQuestItem({
     myTasks,
     onComplete,
     onEdit,
+    readOnly = false,
 }: {
     sortableId: string;
     quest: Quest;
@@ -626,6 +588,7 @@ function SortableQuestItem({
     myTasks: Task[];
     onComplete: (q: Quest, e: React.MouseEvent) => void;
     onEdit: (q: Quest) => void;
+    readOnly?: boolean;
 }) {
     const {
         attributes,
@@ -679,8 +642,8 @@ function SortableQuestItem({
                 </button>
             )}
             <button
-                onClick={(ev) => { if (!isCompleting) onComplete(q, ev); }}
-                disabled={isCompleting}
+                onClick={(ev) => { if (!isCompleting && !readOnly) onComplete(q, ev); }}
+                disabled={isCompleting || readOnly}
                 className={`mt-0.5 shrink-0 text-base leading-none transition-transform ${isCompleting ? "cursor-default" : "hover:scale-125 active:scale-110"}`}
                 aria-label={isCompleting ? "완료 처리 중" : "퀘스트 완료"}
             >
@@ -703,7 +666,7 @@ function SortableQuestItem({
                     )}
                 </div>
             </div>
-            {!isCompleting && (
+            {!isCompleting && !readOnly && (
                 <button
                     onClick={() => onEdit(q)}
                     aria-label="수정"
@@ -729,15 +692,26 @@ export default function HomePage() {
         teamId,
         teams,
         loading: authLoading,
+        canWrite,
+        modules,
+        accessDenied,
     } = useAuth();
     const router = useRouter();
     const queryClient = useQueryClient();
     const isGuest = member === "GUEST";
+    // 팀 모듈 설정 — 비활성 기능은 홈에서도 노출하지 않는다
+    const gamificationOn = modules.has("gamification");
+    const tasksOn = modules.has("tasks");
 
     const channelIdRef = useRef(Math.random().toString(36).slice(2));
 
     // 서버 상태 — 로딩·응답 경합·팀 전환 리셋은 queryKey(teamId·member)가 담당
-    const { data: homeData } = useHomeDataQuery(teamId, member, isGuest);
+    const {
+        data: homeData,
+        isError: isHomeError,
+        refetch: refetchHome,
+        isFetching: isHomeFetching,
+    } = useHomeDataQuery(teamId, member, isGuest, playerId);
     const player = homeData?.player ?? null;
     const quests = homeData?.quests ?? EMPTY_QUESTS;
     const myTasks = homeData?.myTasks ?? EMPTY_TASKS;
@@ -748,12 +722,15 @@ export default function HomePage() {
     const updateHomeCache = useUpdateHomeCache(teamId, member);
 
     const [toast, setToast] = useState("");
+    const toastTimer = useRef<ReturnType<typeof setTimeout>>(null);
     const [isAttending, setIsAttending] = useState(false);
     const [showAddQuest, setShowAddQuest] = useState(false);
     const [completingQuestIds, setCompletingQuestIds] = useState<Set<number>>(new Set());
     const [completedQuestsThisSession, setCompletedQuestsThisSession] = useState<Quest[]>([]);
     const [completingTaskIds, setCompletingTaskIds] = useState<Set<number>>(new Set());
     const [allQuestItems, setAllQuestItems] = useState<QuestListItem[]>([]);
+    // 통합 목록 재구축 판단용 스냅샷 (아래 렌더 중 파생 상태 조정 참고)
+    const prevSnapshotRef = useRef<string>("");
     const [showEditQuest, setShowEditQuest] = useState(false);
     const [editTarget, setEditTarget] = useState<Quest | null>(null);
     const [questForm, setQuestForm] = useState<QuestFormType>({
@@ -780,36 +757,56 @@ export default function HomePage() {
         }),
     );
 
+    const showToastMsg = useCallback((msg: string) => {
+        if (toastTimer.current) clearTimeout(toastTimer.current);
+        setToast(msg);
+        toastTimer.current = setTimeout(() => setToast(""), 3000);
+    }, []);
+
     const onQuestDragEnd = useCallback(
         (event: DragEndEvent) => {
             const { active, over } = event;
-            if (!over || active.id === over.id) return;
+            if (!over || active.id === over.id || !teamId || !canWrite) return;
 
-            setAllQuestItems((prev) => {
-                const oldIndex = prev.findIndex((item) => item.id === active.id);
-                const newIndex = prev.findIndex((item) => item.id === over.id);
-                if (oldIndex === -1 || newIndex === -1) return prev;
-                const reordered = arrayMove(prev, oldIndex, newIndex);
-                // quest 타입만 order_index 를 저장한다 — 한꺼번에 보내고 실패 시 알림
-                const updates = reordered
-                    .map((item, i) => ({ item, index: i }))
-                    .filter(({ item }) => item.type === "quest")
-                    .map(({ item, index }) =>
-                        supabase
-                            .from("quests")
-                            .update({ order_index: index })
-                            .eq("id", item.data.id)
-                            .then(({ error }) => {
-                                if (error) throw error;
-                            }),
-                    );
-                void Promise.all(updates).catch(() => {
-                    setToast("순서 저장에 실패했어요");
+            // 부수 효과(DB 저장)는 setState 업데이터 밖에서 실행한다
+            // (StrictMode 에서 업데이터가 두 번 호출되면 저장도 두 번 나간다)
+            const oldIndex = allQuestItems.findIndex((item) => item.id === active.id);
+            const newIndex = allQuestItems.findIndex((item) => item.id === over.id);
+            if (oldIndex === -1 || newIndex === -1) return;
+            const reordered = arrayMove(allQuestItems, oldIndex, newIndex);
+            setAllQuestItems(reordered);
+
+            // quest 타입만 order_index 를 저장한다 — 한꺼번에 보내고 실패 시 알림
+            // RLS 로 0행이 갱신되면 error 없이 끝나므로 갱신된 행 수까지 확인한다
+            const updates = reordered
+                .map((item, i) => ({ item, index: i }))
+                .filter(({ item }) => item.type === "quest")
+                .map(({ item, index }) =>
+                    supabase
+                        .from("quests")
+                        .update({ order_index: index })
+                        .eq("id", item.data.id)
+                        .eq("team_id", teamId)
+                        .select("id")
+                        .then(({ data, error }) => {
+                            if (error) throw error;
+                            if (!data || data.length === 0) {
+                                throw new Error("순서 저장 대상 없음");
+                            }
+                        }),
+                );
+            void Promise.all(updates)
+                .then(() =>
+                    queryClient.invalidateQueries({ queryKey: ["quests", teamId] }),
+                )
+                .catch(() => {
+                    showToastMsg("순서 저장에 실패했어요");
+                    // 스냅샷을 비워 재조회 결과(서버 순서)로 목록을 다시 만든다
+                    prevSnapshotRef.current = "";
+                    void loadData();
                 });
-                return reordered;
-            });
         },
-        [],
+        [allQuestItems, canWrite, loadData, queryClient, showToastMsg, teamId],
     );
 
     const [levelUpInfo, setLevelUpInfo] = useState({
@@ -886,8 +883,11 @@ export default function HomePage() {
     );
 
     useEffect(() => {
-        if (!authLoading && !member) router.push("/login");
-    }, [authLoading, member, router]);
+        // 403(승인 대기·활성 팀 없음)은 로그인 화면이 아니라 대기 화면으로 보낸다
+        if (!authLoading && !member) {
+            router.push(accessDenied ? "/pending" : "/login");
+        }
+    }, [accessDenied, authLoading, member, router]);
 
     useEffect(() => {
         if (member && teamId) {
@@ -946,6 +946,8 @@ export default function HomePage() {
     useEffect(() => {
         if (typeof window === "undefined") return;
         if (!member || !teamId || member === "GUEST" || authLoading) return;
+        // MVP 는 게이미피케이션 기능 — 모듈이 꺼진 팀에는 띄우지 않는다
+        if (!gamificationOn) return;
         let cancelled = false;
 
         const todayYmd = toSeoulYmd();
@@ -1037,23 +1039,25 @@ export default function HomePage() {
         return () => {
             cancelled = true;
         };
-    }, [member, teamId, authLoading]);
+    }, [member, teamId, authLoading, gamificationOn]);
 
     // myTasks/quests 가 바뀌면 렌더 중에 통합 목록을 다시 만든다
     // (드래그 중에는 allQuestItems 만 바뀜 — null 초기값으로 마운트 시에도 1회 수행)
     // 실시간 이벤트가 참조만 바꾸고 내용은 같을 때 드래그 순서가 초기화되지 않도록
     // ID + 핵심 필드 시그니처가 달라야만 재구축한다.
-    const prevSnapshotRef = useRef<string>("");
     const questSourceSnapshot = useMemo(() => {
         const taskSig = myTasks.map((t) => `${t.id}:${t.status}:${t.end_date}:${t.start_date}:${t.is_excluded_today}`).join("|");
         const questSig = quests.map((q) => `${q.id}:${q.status}:${q.content}:${q.order_index}`).join("|");
-        return `${taskSig};;${questSig}`;
-    }, [myTasks, quests]);
+        return `${tasksOn};;${taskSig};;${questSig}`;
+    }, [myTasks, quests, tasksOn]);
 
     if (prevSnapshotRef.current !== questSourceSnapshot) {
         prevSnapshotRef.current = questSourceSnapshot;
-        const todayStr = toLocalYmd(new Date());
+        // "오늘" 은 서버와 같은 KST 기준 (기기 타임존이 달라도 동일하게 판정)
+        const todayStr = toSeoulYmd();
         const todayTasks = myTasks.filter((t) => {
+            // 업무 모듈이 꺼진 팀은 업무를 퀘스트 목록에 섞지 않는다
+            if (!tasksOn) return false;
             if (t.status === "완료") return false;
             if (t.is_excluded_today === true) return false;
             if (!t.end_date) return false;
@@ -1070,14 +1074,10 @@ export default function HomePage() {
     if (authLoading) return <PageSpinner />;
     if (!member) return null;
 
-    function showToastMsg(msg: string) {
-        setToast(msg);
-        setTimeout(() => setToast(""), 3000);
-    }
-
     async function handleAttend(e: React.MouseEvent) {
         if (!player || !member || isAttending) return;
-        const today = toLocalYmd(new Date());
+        // 출석일은 서버(KST)와 같은 기준으로 판정한다
+        const today = toSeoulYmd();
         if (player.attend_last === today) {
             showToastMsg("오늘은 이미 출석했어요");
             return;
@@ -1221,6 +1221,8 @@ export default function HomePage() {
             prev.filter((q) => q.id !== quest.id),
         );
         loadData();
+        // QuestsPage 캐시도 함께 갱신 (완료 → 대기 되돌림 반영)
+        void queryClient.invalidateQueries({ queryKey: ["quests", teamId] });
     }
 
     function handleTaskCompleting(taskId: number) {
@@ -1242,15 +1244,18 @@ export default function HomePage() {
     async function confirmDecline() {
         if (!declineConfirm) return;
         const isQuest = declineConfirm.type === "quest";
+        // RLS 로 막히면 error 없이 0행이 처리되므로 처리된 행 수까지 확인한다
         if (declineConfirm.type === "task") {
-            const { error } = await supabase
+            const { data, error } = await supabase
                 .from("tasks")
                 .update({ is_excluded_today: true })
-                .eq("id", declineConfirm.id);
-            if (error) { showToastMsg("처리 중 오류가 발생했어요"); return; }
+                .eq("id", declineConfirm.id)
+                .eq("team_id", teamId)
+                .select("id");
+            if (error || !data?.length) { showToastMsg("처리 중 오류가 발생했어요"); return; }
         } else {
-            const { error } = await supabase.from("quests").delete().eq("id", declineConfirm.id);
-            if (error) { showToastMsg("퀘스트 삭제 중 오류가 발생했어요"); return; }
+            const { data, error } = await supabase.from("quests").delete().eq("id", declineConfirm.id).eq("team_id", teamId).select("id");
+            if (error || !data?.length) { showToastMsg("퀘스트 삭제 중 오류가 발생했어요"); return; }
         }
         setDeclineConfirm(null);
         showToastMsg("흠... 다음엔 꼭 해오거라.");
@@ -1277,7 +1282,7 @@ export default function HomePage() {
             showToastMsg("현재 팀의 프로젝트를 다시 선택해주세요");
             return;
         }
-        const { error } = await supabase
+        const { data, error } = await supabase
             .from("quests")
             .update({
                 content: questForm.content,
@@ -1286,8 +1291,11 @@ export default function HomePage() {
                 end_date: questForm.end_date || null,
                 task_id: editTarget.task_id ?? null,
             })
-            .eq("id", editTarget.id);
-        if (error) {
+            .eq("id", editTarget.id)
+            .eq("team_id", teamId)
+            .select("id");
+        // 0행 갱신(권한 없음·이미 삭제됨)도 실패로 처리한다
+        if (error || !data?.length) {
             showToastMsg("퀘스트 저장에 실패했어요");
             return;
         }
@@ -1385,8 +1393,8 @@ export default function HomePage() {
                 return false;
             }
         }
-        const { error } = await supabase.from("tasks").delete().eq("id", id);
-        if (error) {
+        const { data, error } = await supabase.from("tasks").delete().eq("id", id).eq("team_id", teamId).select("id");
+        if (error || !data?.length) {
             showToastMsg("업무 삭제 중 오류가 발생했어요");
             return false;
         }
@@ -1435,7 +1443,7 @@ export default function HomePage() {
             return;
         }
         const ciPayload = contentItemsPayload(editForm.contentItems);
-        const { error } = await supabase
+        const { data: updatedRows, error } = await supabase
             .from("tasks")
             .update({
                 type: editForm.type,
@@ -1452,15 +1460,21 @@ export default function HomePage() {
                       ? toLocalYmd(editDateRange.from)
                       : null,
                 issue: editForm.issue || null,
-                status: editForm.status,
                 is_plan: editForm.is_plan ?? false,
                 is_starred: editForm.is_starred ?? false,
                 show_on_team_calendar: true,
             })
-            .eq("id", editTask.id);
-        if (error) {
+            .eq("id", editTask.id)
+            .eq("team_id", teamId)
+            .select("id");
+        // 0행 갱신(권한 없음·이미 삭제됨)도 실패로 처리한다
+        if (error || !updatedRows?.length) {
             showToastMsg("업무 저장에 실패했어요");
             return;
+        }
+        // 상태는 점수 반영을 위해 RPC 로만 바꾼다 (DB 가 직접 변경을 막는다)
+        if (editForm.status && editForm.status !== editTask.status) {
+            await updateTaskStatus(editTask.id, editForm.status, editTask);
         }
         void syncTaskToTeamCalendar(editTask.id).catch((err) => {
             showToastMsg(
@@ -1480,7 +1494,7 @@ export default function HomePage() {
     const lv = player ? calcLevel(player.exp) : LEVELS[0];
     const next = player ? getNextLevel(player.exp) : null;
     const pct = player ? expBar(player.exp) : 0;
-    const today = toLocalYmd(new Date());
+    const today = toSeoulYmd();
     const attended = player?.attend_last === today;
     const barColor =
         BAR_COLORS[Math.min((lv.level || 1) - 1, BAR_COLORS.length - 1)];
@@ -1539,11 +1553,26 @@ export default function HomePage() {
                     />
 
                     <div className="max-w-2xl lg:max-w-none mx-auto px-4 pt-3 pb-24 lg:pb-6">
-                        {!isGuest && (
+                        {!isGuest && gamificationOn && (
                             <SeasonBanner teamId={teamId} currentMember={member} />
                         )}
 
-                        {isGuest ? (
+                        {isHomeError && !homeData ? (
+                            // 조회 실패를 빈 화면("업무가 없어요")으로 오해하지 않도록 오류와 재시도를 보여준다
+                            <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-8 text-center">
+                                <p className="text-sm font-medium text-red-700">
+                                    홈 데이터를 불러오지 못했어요
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={() => void refetchHome()}
+                                    disabled={isHomeFetching}
+                                    className="mt-3 rounded-lg border border-red-300 bg-white px-4 py-2 text-xs font-bold text-red-600 transition-colors hover:bg-red-100 disabled:opacity-50"
+                                >
+                                    {isHomeFetching ? "다시 불러오는 중..." : "다시 시도"}
+                                </button>
+                            </div>
+                        ) : isGuest ? (
                             <>
                                 {/* 프로필 카드 (게스트) */}
                                 <div className="rounded-2xl border border-stone-200 bg-gradient-to-br from-white to-amber-50/40 p-4 mb-3 shadow-sm">
@@ -1568,6 +1597,8 @@ export default function HomePage() {
                                         게스트 계정으로 로그인되어 업무 현황을 확인할 수 있어요.
                                     </p>
                                 </div>
+                                {tasksOn && (
+                                <>
                                 <div className="mb-3">
                                     <div className="flex justify-between items-center mb-2">
                                         <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
@@ -1659,6 +1690,8 @@ export default function HomePage() {
                                         </div>
                                     )}
                                 </div>
+                                </>
+                                )}
                             </>
                         ) : (
                             <div className="lg:flex lg:gap-4 lg:items-start">
@@ -1673,12 +1706,13 @@ export default function HomePage() {
                                                 <span className="text-sm font-bold text-stone-900">
                                                     {member}
                                                 </span>
-                                                {player ? (
+                                                {player && gamificationOn ? (
                                                     <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full font-medium">
                                                         {lv.name}
                                                     </span>
                                                 ) : null}
                                             </div>
+                                            {gamificationOn && (
                                             <button
                                                 onClick={(e) =>
                                                     void handleAttend(e)
@@ -1694,7 +1728,9 @@ export default function HomePage() {
                                                       ? "처리 중..."
                                                       : "출석 체크"}
                                             </button>
+                                            )}
                                         </div>
+                                        {gamificationOn && (
                                         <div className="text-right text-xs text-stone-400">
                                             <div>
                                                 {player?.attend_streak || 0}일
@@ -1705,8 +1741,9 @@ export default function HomePage() {
                                                 EXP
                                             </div>
                                         </div>
+                                        )}
                                     </div>
-                                    {player && (
+                                    {player && gamificationOn && (
                                         <div>
                                             <div className="flex justify-between text-xs text-stone-400 mb-1">
                                                 <span>
@@ -1734,14 +1771,14 @@ export default function HomePage() {
                                             </div>
                                         </div>
                                     )}
-                                    {!player && !authLoading && (
+                                    {!player && !authLoading && gamificationOn && (
                                         <p className="text-xs text-stone-400 mt-1">
                                             이 팀은 퀘스트·출석·레벨 기능이 아직 설정되지 않았습니다.
                                         </p>
                                     )}
                                 </div>
 
-                                {player && (
+                                {player && gamificationOn && (
                                     <div className="mb-3 w-full min-w-0 bg-white rounded-xl border border-stone-200 p-4">
                                         <p className="text-xs font-bold text-stone-400 uppercase tracking-wide mb-3">
                                             활동 기록
@@ -1749,7 +1786,8 @@ export default function HomePage() {
                                         <AttendanceHeatmap member={member!} />
                                     </div>
                                 )}
-                                {/* NPC 퀘스트 (인라인) */}
+                                {/* NPC 퀘스트 (인라인) — 게이미피케이션 모듈 */}
+                                {gamificationOn && (
                                 <div className="mb-3 overflow-hidden rounded-xl border-2 border-amber-800/50 shadow-lg"
                                     style={{ background: "linear-gradient(to bottom, #f5e6c8, #efe0c0)" }}
                                 >
@@ -1788,18 +1826,22 @@ export default function HomePage() {
                                     <div className="bg-white/80">
                                         <div className="flex items-center justify-between px-4 py-2.5 border-b border-amber-800/15 bg-amber-100/30">
                                             <span className="text-sm font-bold text-amber-900">⚔️ 퀘스트 목록</span>
-                                            <button
-                                                type="button"
-                                                onClick={() => { setQuestAddEditorNonce((n) => n + 1); setShowAddQuest(true); }}
-                                                className="rounded bg-amber-700 px-2.5 py-1 text-xs font-bold text-amber-100 hover:bg-amber-800 transition-colors"
-                                            >
-                                                + 추가
-                                            </button>
+                                            {canWrite && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setQuestAddEditorNonce((n) => n + 1); setShowAddQuest(true); }}
+                                                    className="rounded bg-amber-700 px-2.5 py-1 text-xs font-bold text-amber-100 hover:bg-amber-800 transition-colors"
+                                                >
+                                                    + 추가
+                                                </button>
+                                            )}
                                         </div>
                                         {allQuestItems.length === 0 && completedQuestsThisSession.length === 0 ? (
                                             <div className="py-10 text-center">
                                                 <p className="text-sm text-stone-500">퀘스트가 없어요</p>
-                                                <p className="mt-1 text-xs text-stone-400">+ 추가 버튼으로 퀘스트를 만들어보세요!</p>
+                                                {canWrite && (
+                                                    <p className="mt-1 text-xs text-stone-400">+ 추가 버튼으로 퀘스트를 만들어보세요!</p>
+                                                )}
                                             </div>
                                         ) : (
                                             <SortableContext
@@ -1809,7 +1851,8 @@ export default function HomePage() {
                                                 <div className="divide-y divide-stone-100">
                                                     {allQuestItems.map((item, i) => {
                                                         const showBorderBottom = i < allQuestItems.length - 1 || completedQuestsThisSession.length > 0;
-                                                        const showDragHandle = allQuestItems.length > 1;
+                                                        // 읽기 전용(viewer)은 순서 변경·완료·수정 컨트롤을 숨긴다
+                                                        const showDragHandle = canWrite && allQuestItems.length > 1;
                                                         if (item.type === "task") {
                                                             return (
                                                                 <TodayTaskItem
@@ -1820,6 +1863,7 @@ export default function HomePage() {
                                                                     showDragHandle={showDragHandle}
                                                                     isCompleting={completingTaskIds.has(item.data.id)}
                                                                     onExclude={excludeToday}
+                                                                    readOnly={!canWrite}
                                                                 />
                                                             );
                                                         }
@@ -1834,6 +1878,7 @@ export default function HomePage() {
                                                                 myTasks={myTasks}
                                                                 onComplete={completeQuest}
                                                                 onEdit={openEditQuest}
+                                                                readOnly={!canWrite}
                                                             />
                                                         );
                                                     })}
@@ -1854,6 +1899,7 @@ export default function HomePage() {
                                         )}
                                     </div>
                                 </div>
+                                )}
 
                                 {/* NPC 거절 확인 모달 */}
                                 {declineConfirm && (
@@ -1906,7 +1952,8 @@ export default function HomePage() {
                                 )}
 
                               </div>
-                              {/* 오른쪽: 내 업무 */}
+                              {/* 오른쪽: 내 업무 — 업무 모듈이 꺼진 팀은 숨긴다 */}
+                              {tasksOn && (
                               <div className="lg:flex-1 lg:min-w-0">
                                 {/* 내 업무 */}
                                 <div className="mb-3">
@@ -1937,22 +1984,28 @@ export default function HomePage() {
                                                     onStatusChange={
                                                         updateTaskStatus
                                                     }
-                                                    onEdit={openEditTask}
+                                                    onEdit={
+                                                        canWrite
+                                                            ? openEditTask
+                                                            : undefined
+                                                    }
                                                     onDelete={deleteMyTask}
                                                     onCompleting={
                                                         handleTaskCompleting
                                                     }
+                                                    readOnly={!canWrite}
                                                 />
                                             ))}
                                         </div>
                                     )}
                                 </div>
                               </div>
+                              )}
                             </div>
                         )}
 
                         {/* 마감 임박 */}
-                        {!isGuest && urgentQuests.length > 0 && (
+                        {!isGuest && gamificationOn && urgentQuests.length > 0 && (
                             <div>
                                 <div className="flex justify-between items-center mb-2">
                                     <span className="text-xs font-bold text-stone-500 uppercase tracking-wide">
@@ -1998,7 +2051,7 @@ export default function HomePage() {
                     </div>
 
                     {/* 퀘스트 추가 모달 */}
-                    {showAddQuest && (
+                    {showAddQuest && canWrite && (
                         <QuestFormModal
                             title="퀘스트 추가"
                             questForm={questForm}
@@ -2018,7 +2071,7 @@ export default function HomePage() {
                     )}
 
                     {/* 퀘스트 수정 모달 */}
-                    {showEditQuest && editTarget && (
+                    {showEditQuest && editTarget && canWrite && (
                         <QuestFormModal
                             title="퀘스트 수정"
                             questForm={questForm}
@@ -2036,20 +2089,27 @@ export default function HomePage() {
                                 });
                             }}
                             onDelete={async () => {
-                                const { error } = await supabase.from("quests").delete().eq("id", editTarget.id);
-                                if (error) {
+                                const { data, error } = await supabase
+                                    .from("quests")
+                                    .delete()
+                                    .eq("id", editTarget.id)
+                                    .eq("team_id", teamId)
+                                    .select("id");
+                                // 0행 삭제(권한 없음·이미 삭제됨)도 실패로 처리한다
+                                if (error || !data?.length) {
                                     showToastMsg("퀘스트 삭제 중 오류가 발생했어요");
                                     return;
                                 }
                                 setShowEditQuest(false);
                                 setEditTarget(null);
                                 loadData();
+                                void queryClient.invalidateQueries({ queryKey: ["quests", teamId] });
                             }}
                         />
                     )}
 
                     {/* 내 업무 수정 모달 */}
-                    {showEditTask && editTask && (
+                    {showEditTask && editTask && canWrite && (
                         <div
                             className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
                             style={{ marginBottom: `var(--nav-height)` }}

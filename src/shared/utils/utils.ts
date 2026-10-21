@@ -42,12 +42,13 @@ export function findProjectId(
 
 export function getDiff(dateStr: string | null) {
     if (!dateStr) return null;
-    // "YYYY-MM-DD" 문자열을 로컬 날짜로 파싱 (UTC 변환 없이 D-day 계산)
+    // KST 기준 오늘 날짜로 D-day 계산 (서버/클라이언트 TZ 무관)
     const [y, m, d] = dateStr.split("-").map(Number);
     const target = new Date(y, m - 1, d);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
     target.setHours(0, 0, 0, 0);
+    const nowMs = Date.now() + 9 * 60 * 60 * 1000; // UTC → KST
+    const kstNow = new Date(nowMs);
+    const today = new Date(kstNow.getUTCFullYear(), kstNow.getUTCMonth(), kstNow.getUTCDate());
     return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 

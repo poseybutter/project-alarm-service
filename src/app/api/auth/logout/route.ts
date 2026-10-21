@@ -53,10 +53,13 @@ export async function POST(req: NextRequest) {
     const { error: signOutError } = await supabase.auth.signOut();
     if (signOutError) {
         console.error("[logout] supabase signOut failed:", signOutError);
-        return NextResponse.json(
+        const failed = NextResponse.json(
             { message: "로그아웃 처리에 실패했습니다." },
             { status: 500 },
         );
+        // 서버 세션 종료에 실패해도 이 브라우저의 세션·팀 쿠키는 지운다
+        clearAuthCookies(req, failed);
+        return failed;
     }
 
     const res = NextResponse.json({ ok: true });

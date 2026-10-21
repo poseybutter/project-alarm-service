@@ -7,7 +7,7 @@ import { useAuth } from './AuthProvider'
 import { signOut } from '@/infrastructure/supabase/auth'
 
 export default function UserMenu({ dropUp }: { dropUp?: boolean }) {
-  const { member, avatarUrl, teamId, teams, role } = useAuth()
+  const { member, avatarUrl, teamId, teams, role, modules } = useAuth()
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -34,7 +34,7 @@ export default function UserMenu({ dropUp }: { dropUp?: boolean }) {
           <Image src={avatarUrl} alt={member} width={32} height={32} className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full bg-amber-100 flex items-center justify-center text-sm font-bold text-amber-700">
-            {member.slice(1)}
+            {member.charAt(0) || '?'}
           </div>
         )}
       </button>
@@ -47,7 +47,7 @@ export default function UserMenu({ dropUp }: { dropUp?: boolean }) {
                 <Image src={avatarUrl} alt={member} width={32} height={32} className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full bg-amber-100 flex items-center justify-center text-xs font-bold text-amber-700">
-                  {member.slice(1)}
+                  {member.charAt(0) || '?'}
                 </div>
               )}
               {role === 'admin' && (
@@ -80,12 +80,15 @@ export default function UserMenu({ dropUp }: { dropUp?: boolean }) {
           >
             <span>🏠</span> 홈으로
           </button>
-          <button
-            onClick={() => { router.push('/agents'); setOpen(false) }}
-            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-stone-700 hover:bg-stone-50 transition-colors"
-          >
-            <span>🤖</span> 알림 에이전트
-          </button>
+          {/* 에이전트 모듈이 꺼진 팀에는 메뉴를 노출하지 않는다 */}
+          {modules.has('agent') && (
+            <button
+              onClick={() => { router.push('/agents'); setOpen(false) }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-stone-700 hover:bg-stone-50 transition-colors"
+            >
+              <span>🤖</span> 알림 에이전트
+            </button>
+          )}
           {role === 'admin' && (
             <button
               onClick={() => { router.push('/admin'); setOpen(false) }}

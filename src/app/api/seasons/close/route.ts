@@ -9,6 +9,8 @@
  * 수동 강제 종료: ?force=true (CRON_SECRET 필수)
  */
 
+export const maxDuration = 60;
+
 import { NextResponse, type NextRequest } from "next/server";
 import {
     consumeSharedRateLimit,
@@ -80,6 +82,7 @@ export async function POST(req: NextRequest) {
     );
     if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
 
+
     const force = req.nextUrl.searchParams.get("force") === "true";
     const supabase = createServiceSupabaseClient();
     const today = todayKst();
@@ -130,9 +133,18 @@ export async function POST(req: NextRequest) {
                 };
             });
 
-            // player_id 로 특별상 수상자를 다시 찾기 위한 맵
+            // player_id 로 특별상 수상자를 다시 찾기 위한 맵.
+            // tasks 에는 담당자 이름(member)만 있고 player id 가 없으므로 이름으로 찾되,
+            // 같은 이름이 둘 이상이면(동명이인) 엉뚱한 사람에게 칭호가 가지 않도록
+            // player_id 를 비워 둔다 (기록에는 이름만 남는다).
+            const idsByName = new Map<string, number[]>();
+            for (const p of players) {
+                idsByName.set(p.name, [...(idsByName.get(p.name) ?? []), p.id]);
+            }
             const playerIdByName = new Map(
-                players.map((p) => [p.name, p.id] as const),
+                [...idsByName.entries()]
+                    .filter(([, ids]) => ids.length === 1)
+                    .map(([name, ids]) => [name, ids[0]] as const),
             );
 
             // 3. 특별상 계산
@@ -251,9 +263,20 @@ export async function POST(req: NextRequest) {
                 }
             }
 
-            // 개별 플레이어 icons 컬럼에 append (read → write)
+            // 개별 플레이어 icons 컬럼에 append.
+            // V66 append_player_icon RPC 로 단일 UPDATE(원자적 append)를 우선 사용하고,
+            // V66 미적용 환경에서만 기존 read → write 로 폴백한다(동시 실행 시 유실 가능).
             // team_id 필터 제거: 보조팀 멤버는 players.team_id가 다를 수 있음
             for (const { player_id, title_id } of iconWinners) {
+                const { error: appendErr } = await supabase.rpc(
+                    "append_player_icon",
+                    { p_player_id: player_id, p_icon: title_id },
+                );
+                if (!appendErr) continue;
+                if (appendErr.code !== "42883" && appendErr.code !== "PGRST202") {
+                    console.error(`[close_season] icons 추가 실패 (player ${player_id}):`, appendErr.message);
+                    continue;
+                }
                 const { data: row, error: readErr } = await supabase
                     .from("players")
                     .select("icons")

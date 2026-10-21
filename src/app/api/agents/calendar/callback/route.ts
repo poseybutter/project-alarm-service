@@ -4,7 +4,12 @@ import {
     createServiceSupabaseClient,
     getServerUserRole,
 } from "@/infrastructure/supabase/server";
-import { exchangeGoogleCalendarCode } from "@/infrastructure/google-calendar";
+import {
+    exchangeGoogleCalendarCode,
+    fetchGoogleCalendarAccountEmail,
+    GOOGLE_CALENDAR_READ_SCOPE,
+    hasGoogleCalendarScope,
+} from "@/infrastructure/google-calendar";
 import { encryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
 import { resolveTeamMember } from "@/features/identity/server/identityRepository";
 
@@ -32,6 +37,16 @@ export async function GET(req: NextRequest) {
         }
 
         const token = await exchangeGoogleCalendarCode(code);
+        // 세분화된 동의 화면에서 캘린더 권한을 빼고 승인할 수 있으므로 실제 부여 범위를 확인한다.
+        if (!hasGoogleCalendarScope(token.scope, GOOGLE_CALENDAR_READ_SCOPE)) {
+            return NextResponse.redirect(
+                `${origin}/agents?calendar=missing_scope`,
+            );
+        }
+        // 앱 로그인 이메일과 연결한 Google 계정이 다를 수 있으므로 실제 계정 이메일을 저장한다.
+        const googleEmail = await fetchGoogleCalendarAccountEmail(
+            token.access_token,
+        );
         const serviceSupabase = createServiceSupabaseClient();
         const expiresAt = new Date(
             Date.now() + token.expires_in * 1000,
@@ -44,7 +59,7 @@ export async function GET(req: NextRequest) {
                     team_id: teamId,
                     member: member.name,
                     email: user.email,
-                    google_email: user.email,
+                    google_email: googleEmail,
                     access_token: encryptIntegrationToken(token.access_token),
                     ...(token.refresh_token
                         ? {

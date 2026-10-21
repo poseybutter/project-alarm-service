@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Avatar from "@/components/Avatar";
 import { useAuth } from "@/components/AuthProvider";
@@ -125,7 +125,7 @@ function legacyMissionKey(
 export default function AccessibilityMissionPopup() {
     const pathname = usePathname();
     const router = useRouter();
-    const { user, member, role, teamId, loading } = useAuth();
+    const { user, member, role, teamId, loading, modules, canWrite } = useAuth();
     const [items, setItems] = useState<Accessibility[]>([]);
     const [snoozedUntilByKey, setSnoozedUntilByKey] =
         useState<Record<string, number>>({});
@@ -138,13 +138,18 @@ export default function AccessibilityMissionPopup() {
     const [toast, setToast] = useState("");
     const [saving, setSaving] = useState(false);
 
-    const isActivePath = ACTIVE_PATHS.has(pathname);
+    // 미션은 /manage 로 이동해 접근성 항목을 수정하게 하므로,
+    // 관리 모듈이 꺼졌거나 쓰기 권한이 없으면(viewer) 띄우지 않는다
+    const isActivePath =
+        ACTIVE_PATHS.has(pathname) && modules.has("manage") && canWrite;
     const isGuest = member === "GUEST" || role === "guest";
     const userEmail = user?.email ?? "";
 
+    const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const showToast = useCallback((message: string) => {
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
         setToast(message);
-        window.setTimeout(() => setToast(""), 2600);
+        toastTimerRef.current = setTimeout(() => setToast(""), 2600);
     }, []);
 
     const loadItems = useCallback(async () => {
