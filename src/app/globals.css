@@ -53,7 +53,7 @@
     animation: auth-sandfall 0.8s linear infinite;
 }
 .font-mono-auth {
-    font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
 }
 
 /* 메이플스토리 커서 */
