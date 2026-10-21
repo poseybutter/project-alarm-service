@@ -21,6 +21,12 @@ type MemberWebhook = {
     updatedAt: string | null;
 };
 
+type TeamWebhookStatus = {
+    configured: boolean;
+    updatedAt: string | null;
+    legacyFallback: boolean;
+};
+
 type CalendarStatus = {
     connected: boolean;
     connection: {
@@ -141,6 +147,9 @@ export default function AgentsPage() {
     const [savingMemberWebhook, setSavingMemberWebhook] = useState<string | null>(
         null,
     );
+    const [teamWebhook, setTeamWebhook] = useState<TeamWebhookStatus | null>(null);
+    const [teamWebhookDraft, setTeamWebhookDraft] = useState("");
+    const [teamWebhookSaving, setTeamWebhookSaving] = useState(false);
 
     const [toast, setToast] = useState("");
 
@@ -227,6 +236,29 @@ export default function AgentsPage() {
         }
     }, [showToast]);
 
+    const loadTeamWebhook = useCallback(async () => {
+        const generation = loadGenerationRef.current;
+        // 연동 조회 권한이 없으면 서버가 403 을 주므로 관리자만 요청한다.
+        if (!isAdmin) {
+            setTeamWebhook(null);
+            return;
+        }
+        try {
+            const res = await fetch("/api/agents/team-webhook");
+            const json = await res.json();
+            if (generation !== loadGenerationRef.current) return;
+            if (!res.ok) throw new Error(json.message || "팀 대화방 Webhook 조회 실패");
+            setTeamWebhook(json as TeamWebhookStatus);
+            setTeamWebhookDraft("");
+        } catch (err) {
+            if (generation !== loadGenerationRef.current) return;
+            setTeamWebhook(null);
+            showToast(
+                err instanceof Error ? err.message : "팀 대화방 Webhook 조회 실패",
+            );
+        }
+    }, [isAdmin, showToast]);
+
     const loadSettings = useCallback(async () => {
         const generation = loadGenerationRef.current;
         setSettingsLoading(true);
@@ -272,6 +304,7 @@ export default function AgentsPage() {
             void loadSuggestions();
             void loadCalendarStatus();
             void loadWebhook();
+            void loadTeamWebhook();
             void loadSettings();
 
             const params = new URLSearchParams(window.location.search);
@@ -284,7 +317,7 @@ export default function AgentsPage() {
             }
         }, 0);
         return () => window.clearTimeout(timer);
-    }, [loadCalendarStatus, loadSettings, loadSuggestions, loadWebhook, showToast, teamId]);
+    }, [loadCalendarStatus, loadSettings, loadSuggestions, loadTeamWebhook, loadWebhook, showToast, teamId]);
 
     async function saveTeamCalendarSettings() {
         setTeamCalendarSaving(true);
@@ -592,6 +625,54 @@ export default function AgentsPage() {
         }
     }
 
+    async function saveTeamWebhook() {
+        if (!isAdmin) return;
+        setTeamWebhookSaving(true);
+        try {
+            const res = await fetch("/api/agents/team-webhook", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ webhookUrl: teamWebhookDraft }),
+            });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.message || "팀 대화방 Webhook 저장 실패");
+            setTeamWebhook(json as TeamWebhookStatus);
+            setTeamWebhookDraft("");
+            showToast("팀 대화방 webhook을 저장했습니다");
+        } catch (err) {
+            showToast(
+                err instanceof Error ? err.message : "팀 대화방 Webhook 저장 실패",
+            );
+        } finally {
+            setTeamWebhookSaving(false);
+        }
+    }
+
+    async function deleteTeamWebhook() {
+        if (!isAdmin) return;
+        if (!window.confirm("팀 대화방 Google Chat Webhook을 삭제할까요?")) return;
+        setTeamWebhookSaving(true);
+        try {
+            const res = await fetch("/api/agents/team-webhook", {
+                method: "DELETE",
+            });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.message || "팀 대화방 Webhook 삭제 실패");
+            setTeamWebhook({
+                configured: false,
+                updatedAt: null,
+                legacyFallback: Boolean(json.legacyFallback),
+            });
+            showToast("팀 대화방 webhook을 삭제했습니다");
+        } catch (err) {
+            showToast(
+                err instanceof Error ? err.message : "팀 대화방 Webhook 삭제 실패",
+            );
+        } finally {
+            setTeamWebhookSaving(false);
+        }
+    }
+
     return (
         <AuthGuard>
             <div className="min-h-screen bg-[#f7f6f3] pb-24">
@@ -823,6 +904,9 @@ export default function AgentsPage() {
                         memberWebhooks={memberWebhooks}
                         memberWebhookDrafts={memberWebhookDrafts}
                         savingMemberWebhook={savingMemberWebhook}
+                        teamWebhook={teamWebhook}
+                        teamWebhookDraft={teamWebhookDraft}
+                        teamWebhookSaving={teamWebhookSaving}
                         teamCalendar={teamCalendar}
                         teamCalendarId={teamCalendarId}
                         teamEventMembers={teamEventMembers}
@@ -834,6 +918,9 @@ export default function AgentsPage() {
                         onSaveWebhook={saveWebhook}
                         onDeleteWebhook={deleteWebhook}
                         onSaveMemberWebhook={saveMemberWebhook}
+                        onTeamWebhookDraftChange={setTeamWebhookDraft}
+                        onSaveTeamWebhook={saveTeamWebhook}
+                        onDeleteTeamWebhook={deleteTeamWebhook}
                         onTeamCalendarIdChange={setTeamCalendarId}
                         onMemberCalendarIdsChange={setMemberCalendarIds}
                         onSaveTeamCalendarSettings={saveTeamCalendarSettings}
@@ -1056,6 +1143,9 @@ function WebhookModal({
     memberWebhooks,
     memberWebhookDrafts,
     savingMemberWebhook,
+    teamWebhook,
+    teamWebhookDraft,
+    teamWebhookSaving,
     teamCalendar,
     teamCalendarId,
     teamEventMembers,
@@ -1067,6 +1157,9 @@ function WebhookModal({
     onSaveWebhook,
     onDeleteWebhook,
     onSaveMemberWebhook,
+    onTeamWebhookDraftChange,
+    onSaveTeamWebhook,
+    onDeleteTeamWebhook,
     onTeamCalendarIdChange,
     onMemberCalendarIdsChange,
     onSaveTeamCalendarSettings,
@@ -1080,6 +1173,9 @@ function WebhookModal({
     memberWebhooks: MemberWebhook[];
     memberWebhookDrafts: Record<string, string>;
     savingMemberWebhook: string | null;
+    teamWebhook: TeamWebhookStatus | null;
+    teamWebhookDraft: string;
+    teamWebhookSaving: boolean;
     teamCalendar: TeamCalendarSettings | null;
     teamCalendarId: string;
     teamEventMembers: string[];
@@ -1093,6 +1189,9 @@ function WebhookModal({
     onSaveWebhook: () => void;
     onDeleteWebhook: () => void;
     onSaveMemberWebhook: (member: string) => void;
+    onTeamWebhookDraftChange: (value: string) => void;
+    onSaveTeamWebhook: () => void;
+    onDeleteTeamWebhook: () => void;
     onTeamCalendarIdChange: (value: string) => void;
     onMemberCalendarIdsChange: React.Dispatch<
         React.SetStateAction<Record<string, string>>
@@ -1212,6 +1311,72 @@ function WebhookModal({
                                 )}
                             </div>
                         </section>
+
+                        {isAdmin && teamWebhook && (
+                            <section className="mt-4 rounded-xl border border-stone-200 bg-white p-4">
+                                <div className="mb-3 flex items-start justify-between gap-3">
+                                    <div>
+                                        <h3 className="text-sm font-bold text-stone-900">
+                                            팀 대화방 webhook
+                                        </h3>
+                                        <p className="mt-1 text-xs leading-relaxed text-stone-400">
+                                            레벨업 알림 등 팀 공용 알림을 보낼 Google Chat 스페이스 주소입니다.
+                                        </p>
+                                    </div>
+                                    <span
+                                        className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-bold ${
+                                            teamWebhook.configured
+                                                ? "bg-green-100 text-green-700"
+                                                : teamWebhook.legacyFallback
+                                                  ? "bg-amber-100 text-amber-700"
+                                                  : "bg-stone-100 text-stone-500"
+                                        }`}
+                                    >
+                                        {teamWebhook.configured
+                                            ? "등록됨"
+                                            : teamWebhook.legacyFallback
+                                              ? "기본값 사용"
+                                              : "미등록"}
+                                    </span>
+                                </div>
+                                <div className="flex gap-2">
+                                    <SensitiveInput
+                                        type="url"
+                                        value={teamWebhookDraft}
+                                        disabled={teamWebhookSaving}
+                                        onChange={onTeamWebhookDraftChange}
+                                        placeholder={
+                                            teamWebhook.configured
+                                                ? "등록된 webhook은 숨김 처리됨"
+                                                : "https://chat.googleapis.com/v1/spaces/..."
+                                        }
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={onSaveTeamWebhook}
+                                        disabled={teamWebhookSaving || !teamWebhookDraft.trim()}
+                                        className="shrink-0 rounded-lg bg-stone-900 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
+                                    >
+                                        {teamWebhookSaving ? "저장 중" : "저장"}
+                                    </button>
+                                    {teamWebhook.configured && (
+                                        <button
+                                            type="button"
+                                            onClick={onDeleteTeamWebhook}
+                                            disabled={teamWebhookSaving}
+                                            className="shrink-0 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-bold text-red-600 disabled:opacity-50"
+                                        >
+                                            삭제
+                                        </button>
+                                    )}
+                                </div>
+                                {teamWebhook.updatedAt && (
+                                    <p className="mt-2 text-[11px] text-stone-400">
+                                        마지막 변경 {formatDateTime(teamWebhook.updatedAt)}
+                                    </p>
+                                )}
+                            </section>
+                        )}
 
                         {isAdmin && memberWebhooks.length > 0 && (
                             <section className="mt-4 rounded-xl border border-stone-200 bg-white p-4">

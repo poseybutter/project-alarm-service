@@ -1621,6 +1621,7 @@ const TEAM_DEPENDENCY_TABLES = [
   ["agent_suggestions", "에이전트 제안"],
   ["agent_notification_deliveries", "알림 발송 기록"],
   ["agent_member_webhooks", "웹훅"],
+  ["agent_team_webhooks", "팀 대화방 웹훅"],
   ["agent_personal_reminders", "개인 알림"],
   ["agent_calendar_connections", "캘린더 연결"],
   ["agent_calendar_events", "캘린더 일정"],

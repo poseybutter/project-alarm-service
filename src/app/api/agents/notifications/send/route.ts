@@ -23,9 +23,9 @@ import {
 import { updateAgentSuggestionStatus } from "@/features/agents/server/suggestions";
 import {
     DeliveryUnknownError,
-    resolveTeamRoomWebhook,
     sendGoogleChatMessage,
 } from "@/infrastructure/google-chat";
+import { resolveTeamRoomWebhook } from "@/features/agents/server/teamWebhooks";
 import { decryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
 
 type SendRequest = {
@@ -151,7 +151,7 @@ export async function POST(req: NextRequest) {
                 );
             }
         } else {
-            webhookUrl = resolveTeamRoomWebhook(teamId);
+            webhookUrl = await resolveTeamRoomWebhook(service, teamId);
             if (!webhookUrl) {
                 return NextResponse.json(
                     { message: "이 팀에는 팀 대화방 webhook이 설정되어 있지 않습니다." },
