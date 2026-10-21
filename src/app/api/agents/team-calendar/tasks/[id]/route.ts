@@ -141,7 +141,6 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             { limit: 60, windowMs: 60 * 1000 },
         );
         if (!rate.allowed) return rateLimitResponse(rate.retryAfterSeconds);
-        authorizedTeamId = task.team_id;
         const member = await resolveTeamMember(supabase, user.email, task.team_id);
         if (
             !(await canManageTask({
@@ -152,6 +151,8 @@ export async function POST(_req: NextRequest, context: RouteContext) {
         ) {
             return NextResponse.json({ message: "Forbidden" }, { status: 403 });
         }
+        // 권한 확인 후에만 설정 — catch 에서 이 팀 업무의 동기화 오류를 기록한다
+        authorizedTeamId = task.team_id;
 
         const [{ calendarId, sharedCalendarId, accessToken }, memberSortOrder] =
             await Promise.all([

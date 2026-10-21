@@ -39,7 +39,19 @@ export async function enforceTeamTotp(
     const token = req.headers.get(TOTP_TOKEN_HEADER)?.trim() || "";
     const identity = token ? await loadNormalizedIdentity(svc, userEmail) : null;
     const profileId = identity?.profile?.id;
-    if (!profileId || !(await validateVerifyToken(svc, teamId, token, profileId))) {
+    let valid = false;
+    if (profileId) {
+        try {
+            valid = await validateVerifyToken(svc, teamId, token, profileId);
+        } catch (secretError) {
+            console.error("[totp-gate] TOTP 시크릿 조회 실패", secretError);
+            return NextResponse.json(
+                { message: "TOTP 설정을 확인하지 못했습니다." },
+                { status: 503 },
+            );
+        }
+    }
+    if (!valid) {
         return NextResponse.json(
             { message: "TOTP verification required", totpRequired: true },
             { status: 403 },
