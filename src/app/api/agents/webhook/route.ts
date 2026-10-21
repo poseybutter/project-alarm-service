@@ -19,26 +19,7 @@ import {
     resolveTeamMember,
     listActiveTeamMembers,
 } from "@/features/identity/server/identityRepository";
-
-function validateWebhookUrl(value: string) {
-    if (!value.trim()) return "Webhook URL is required";
-    try {
-        const url = new URL(value);
-        const isGoogleChatWebhook =
-            url.protocol === "https:" &&
-            url.hostname === "chat.googleapis.com" &&
-            !url.username &&
-            !url.password &&
-            (!url.port || url.port === "443") &&
-            /^\/v1\/spaces\/[^/]+\/messages$/.test(url.pathname) &&
-            Boolean(url.searchParams.get("key")) &&
-            Boolean(url.searchParams.get("token"));
-        if (isGoogleChatWebhook) return null;
-    } catch {
-        // The fixed validation message below is intentionally non-specific.
-    }
-    return "올바른 Google Chat Webhook URL을 입력해주세요.";
-}
+import { validateGoogleChatWebhookUrl as validateWebhookUrl } from "@/features/agents/server/teamWebhooks";
 
 export async function GET() {
     const { user, role, teamId } = await getServerCurrentTeamRole();
