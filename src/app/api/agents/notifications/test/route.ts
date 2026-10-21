@@ -9,7 +9,11 @@ import {
     type QuestBriefingInput,
 } from "@/features/agents/server/notificationAgent";
 import { sendGoogleChatMessage } from "@/infrastructure/google-chat";
-import { syncTodayTeamCalendarEvents } from "@/infrastructure/google-calendar";
+import {
+    syncTodayTeamCalendarEvents,
+    todayKstWindow,
+} from "@/infrastructure/google-calendar";
+import { hasAdminPermission } from "@/features/admin/server/adminRepository";
 import type {
     AgentSuggestion,
     NotificationSuggestionPayload,
@@ -51,6 +55,7 @@ async function buildFreshSuggestion(
     if (params.canSyncTeamCalendar) {
         await syncTodayTeamCalendarEvents(supabase, { teamId: params.teamId });
     }
+    const { timeMin, timeMax } = todayKstWindow();
 
     const [
         { data: tasks, error: taskError },
@@ -76,6 +81,9 @@ async function buildFreshSuggestion(
             )
             .eq("team_id", params.teamId)
             .eq("email", params.email)
+            // 오늘과 겹치는 일정만 — 날짜 제한이 없으면 누적된 전체 일정을 읽는다
+            .lt("starts_at", timeMax)
+            .gt("ends_at", timeMin)
             .order("starts_at", { ascending: true }),
         supabase
             .from("quests")
@@ -143,7 +151,10 @@ export async function POST(request: Request) {
             member: member.name,
             email: user.email,
             teamId,
-            canSyncTeamCalendar: role === "admin",
+            canSyncTeamCalendar: await hasAdminPermission(
+                teamId,
+                "integrations.manage",
+            ),
         });
         if (!fresh) {
             return NextResponse.json(

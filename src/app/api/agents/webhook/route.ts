@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
     AdminApiError,
+    hasAdminPermission,
     requireAdminSession,
 } from "@/features/admin/server/adminRepository";
 import { adminErrorResponse } from "@/features/admin/server/http";
@@ -78,8 +79,7 @@ export async function GET() {
             if (encryptionError) throw encryptionError;
         }
 
-        if (role === "admin") {
-            await requireAdminSession(teamId, "integrations.read");
+        if (await hasAdminPermission(teamId, "integrations.read")) {
             const [teamMembers, { data: hooks, error: hooksError }] =
                 await Promise.all([
                     listActiveTeamMembers(service, teamId),
@@ -159,10 +159,8 @@ export async function PUT(req: NextRequest) {
             );
         }
 
-        const targetMember =
-            role === "admin" && body.member?.trim()
-                ? body.member.trim()
-                : currentMember.name;
+        // 다른 구성원 지정은 아래에서 integrations.manage 로 검증한다
+        const targetMember = body.member?.trim() || currentMember.name;
         const isOwnWebhook = targetMember === currentMember.name;
         if (!isOwnWebhook) {
             await requireAdminSession(teamId, "integrations.manage");
@@ -237,10 +235,8 @@ export async function DELETE(req: NextRequest) {
             );
         }
 
-        const targetMember =
-            role === "admin" && requestedMember
-                ? requestedMember
-                : currentMember.name;
+        // 다른 구성원 지정은 아래에서 integrations.manage 로 검증한다
+        const targetMember = requestedMember || currentMember.name;
         if (targetMember !== currentMember.name) {
             await requireAdminSession(teamId, "integrations.manage");
         }

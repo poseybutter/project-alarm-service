@@ -10,6 +10,7 @@ import type {
     GoogleChatCardPayload,
 } from "@/features/agents/server/types";
 import { resolveTeamMember } from "@/features/identity/server/identityRepository";
+import { hasAdminPermission } from "@/features/admin/server/adminRepository";
 
 const REVIEW_STATUSES = new Set<AgentSuggestionStatus>([
     "approved",
@@ -120,9 +121,10 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
 
         const recipient = payloadRecipient(existing.payload);
         const isOwner = Boolean(player?.name && recipient === player.name);
+        const canManage = await hasAdminPermission(teamId, "integrations.manage");
 
         if ("action" in body) {
-            if (!isOwner && role !== "admin") {
+            if (!isOwner && !canManage) {
                 return NextResponse.json(
                     { message: "Forbidden" },
                     { status: 403 },
@@ -235,7 +237,7 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
             );
         }
 
-        if (role !== "admin") {
+        if (!canManage) {
             if (body.status !== "dismissed" || !isOwner) {
                 return NextResponse.json(
                     { message: "Forbidden" },
