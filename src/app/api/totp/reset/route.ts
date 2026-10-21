@@ -6,6 +6,7 @@ import {
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { revokeVerifyTokens } from "@/shared/server/pinToken";
 import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
+import { hasAdminPermission } from "@/features/admin/server/adminRepository";
 
 type ResetBody = {
     teamId?: string;
@@ -33,7 +34,12 @@ export async function POST(req: NextRequest) {
     }
 
     const { user, role } = await getServerUserRole(teamId);
-    if (!user?.email || role !== "admin") {
+    // 다른 구성원의 인증 수단 초기화 — members.manage 권한으로 판정
+    if (
+        !user?.email ||
+        !role ||
+        !(await hasAdminPermission(teamId, "members.manage"))
+    ) {
         return NextResponse.json({ message: "Admin access required" }, { status: 403 });
     }
 

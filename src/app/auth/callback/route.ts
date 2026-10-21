@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { isIdentitySchemaUnavailable } from "@/features/identity/server/identityRepository";
 import { minimizedAuditMetadata } from "@/shared/server/auditMetadata";
+import { createServiceSupabaseClient } from "@/infrastructure/supabase/server";
 
 /**
  * Supabase OAuth (Google) 콜백.
@@ -77,6 +78,22 @@ export async function GET(req: NextRequest) {
     });
     if (auditError) {
         console.error("[auth/callback] audit_logs insert failed:", auditError);
+    }
+
+    // 관리자가 먼저 만든 프로필(로그인 이력 없음)은 auth_user_id 가 비어 있다.
+    // auth.uid() 기반 RLS·아래 조회가 동작하도록 이메일이 같은 프로필에 연결한다.
+    // profiles 는 authenticated 에 UPDATE 권한이 없으므로 service role 로 처리.
+    try {
+        const { error: linkError } = await createServiceSupabaseClient()
+            .from("profiles")
+            .update({ auth_user_id: user.id })
+            .eq("email", email.toLowerCase())
+            .is("auth_user_id", null);
+        if (linkError && !isIdentitySchemaUnavailable(linkError)) {
+            console.error("[auth/callback] profiles auth_user_id backfill failed:", linkError);
+        }
+    } catch (linkError) {
+        console.error("[auth/callback] profiles auth_user_id backfill failed:", linkError);
     }
 
     const { data: normalizedProfile, error: normalizedProfileError } =

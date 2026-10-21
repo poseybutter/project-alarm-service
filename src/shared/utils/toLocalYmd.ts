@@ -21,6 +21,21 @@ export function toLocalYmd(date: Date): string {
 }
 
 /**
+ * 한국 시간(Asia/Seoul) 기준 YYYY-MM-DD.
+ * 출석·"오늘" 판정은 서버(KST)와 같은 기준이어야 하므로 기기 타임존 대신 이것을 쓴다.
+ */
+export function toSeoulYmd(date: Date = new Date()): string {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).formatToParts(date);
+    const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${value.year}-${value.month}-${value.day}`;
+}
+
+/**
  * 해당 주(월요일 시작) 월요일의 로컬 YYYY-MM-DD.
  * 일요일은 직전 월요일(-6일)로, 그 외에는 (1 - 요일)만큼 당겨서 계산.
  */

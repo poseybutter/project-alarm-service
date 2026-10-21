@@ -4,7 +4,11 @@ import {
   listRoleCatalog,
   saveRole,
 } from "@/features/admin/server/roleRepository";
-import { adminErrorResponse, readTeamId } from "@/features/admin/server/http";
+import {
+  adminErrorResponse,
+  readJsonObject,
+  readTeamId,
+} from "@/features/admin/server/http";
 
 export async function GET(request: NextRequest) {
   try {
@@ -26,7 +30,7 @@ export async function PATCH(request: NextRequest) {
 
 async function save(request: NextRequest) {
   try {
-    const body = (await request.json()) as Record<string, unknown>;
+    const body = (await readJsonObject(request)) as Record<string, unknown>;
     if (
       typeof body.teamId !== "string" ||
       typeof body.key !== "string" ||

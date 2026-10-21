@@ -11,10 +11,11 @@ export function useHomeDataQuery(
     teamId: string | null,
     member: string | null,
     isGuest: boolean,
+    playerId: number | null,
 ) {
     return useQuery({
         queryKey: homeKey(teamId, member),
-        queryFn: () => fetchHomeData(teamId!, member!, isGuest),
+        queryFn: () => fetchHomeData(teamId!, member!, isGuest, playerId),
         enabled: Boolean(teamId && member),
     });
 }

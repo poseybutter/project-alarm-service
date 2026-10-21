@@ -1,12 +1,7 @@
 import type { ContentItem } from "@/shared/types";
+import { CONTENT_ITEM_STATUS_COLORS } from "@/shared/constants";
 
-const STATUS_COLORS: Record<string, string> = {
-    "대기": "bg-stone-100 text-stone-500",
-    "시작 전": "bg-stone-100 text-stone-500",
-    "진행중": "bg-blue-100 text-blue-700",
-    "지연/보류": "bg-red-100 text-red-700",
-    "완료": "bg-green-100 text-green-700",
-};
+const STATUS_COLORS = CONTENT_ITEM_STATUS_COLORS;
 
 type TaskContentListProps = {
     content: string;

@@ -97,15 +97,13 @@ export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProp
     useEffect(() => {
         if (!teamId) return;
         let cancelled = false;
-        // load 의 setState 는 모두 await 이후에 일어난다.
         void (async () => {
             await load(() => cancelled);
         })();
         return () => {
             cancelled = true;
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [teamId]);
+    }, [teamId, currentMember]); // eslint-disable-line react-hooks/exhaustive-deps -- load는 teamId·currentMember에 의존
 
     if (!season) return null;
 

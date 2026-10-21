@@ -35,9 +35,12 @@ export function RequestsPage() {
   const [confirmReject, setConfirmReject] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // 접근 요청 검토 권한(requests.review)이 있는 팀만 승인 대상 팀으로 노출
   const teamScopes = scopes.filter(
     (scope): scope is typeof scope & { teamId: string } =>
-      scope.kind === "team" && Boolean(scope.teamId),
+      scope.kind === "team" &&
+      Boolean(scope.teamId) &&
+      scope.permissions.includes("requests.review"),
   );
   const rows = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -53,7 +56,14 @@ export function RequestsPage() {
 
   function openRequest(request: AccessRequest) {
     setSelected(request);
-    setTeamId(request.teamId ?? selectedTeamId ?? teamScopes[0]?.teamId ?? "");
+    const reviewable = (id: string | null | undefined) =>
+      id && teamScopes.some((scope) => scope.teamId === id) ? id : null;
+    setTeamId(
+      reviewable(request.teamId) ??
+        reviewable(selectedTeamId) ??
+        teamScopes[0]?.teamId ??
+        "",
+    );
     setRole(request.role === "admin" ? "admin" : "member");
     setActionError(null);
     setConfirmReject(false);

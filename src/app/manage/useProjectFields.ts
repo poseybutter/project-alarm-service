@@ -99,6 +99,16 @@ export function isSystemField(name: string) {
     return name.startsWith("access_") || name.startsWith("dev_");
 }
 
+/** API 오류 — HTTP status 를 보존해 409(중복)·403(TOTP 필요) 등을 구분할 수 있게 한다 */
+export class ProjectFieldsApiError extends Error {
+    status: number;
+    constructor(message: string, status: number) {
+        super(message);
+        this.name = "ProjectFieldsApiError";
+        this.status = status;
+    }
+}
+
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
     const res = await fetch(url, {
         ...init,
@@ -106,12 +116,23 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
     });
     if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(
+        throw new ProjectFieldsApiError(
             (body as { message?: string }).message ?? `HTTP ${res.status}`,
+            res.status,
         );
     }
     return res.json() as Promise<T>;
 }
+
+/** TOTP 검증 토큰 헤더 — reveal 은 body 로, GET(values/history) 은 헤더로 전달한다 */
+export const TOTP_TOKEN_HEADER = "x-totp-token";
+
+function totpHeaders(totpToken?: string): Record<string, string> {
+    return totpToken ? { [TOTP_TOKEN_HEADER]: totpToken } : {};
+}
+
+/** 진행 중인 기본 필드 생성 요청 — 같은 프로젝트에 대한 중복 호출(더블 클릭)을 하나로 합친다 */
+const ensureInFlight = new Map<string, Promise<FieldDef[]>>();
 
 /** 프로젝트별 커스텀 필드 API 호출 유틸 */
 export function useProjectFields(teamId: string | null) {
@@ -127,28 +148,33 @@ export function useProjectFields(teamId: string | null) {
     );
 
     const loadValues = useCallback(
-        async (projectId: number): Promise<FieldValue[]> => {
+        async (projectId: number, totpToken?: string): Promise<FieldValue[]> => {
             if (!teamId) return [];
             return api<FieldValue[]>(
                 `/api/project-fields/values?teamId=${encodeURIComponent(teamId)}&projectId=${projectId}`,
+                { headers: totpHeaders(totpToken) },
             );
         },
         [teamId],
     );
 
-    /** 기본 필드가 아직 없으면 자동 생성, 최종 defs 반환 */
+    /** 기본 필드가 아직 없으면 자동 생성, 최종 defs 반환 (순차·멱등 — 409 는 이미 생성된 것으로 간주) */
     const ensureDefaultFields = useCallback(
         async (projectId: number): Promise<FieldDef[]> => {
             if (!teamId) return [];
-            const existing = await loadDefs(projectId);
-            const existingNames = new Set(existing.map((d) => d.name));
-            const missing = DEFAULT_FIELD_SPECS.filter(
-                (spec) => !existingNames.has(spec.name),
-            );
-            if (missing.length > 0) {
-                await Promise.all(
-                    missing.map((spec) =>
-                        api("/api/project-fields/definitions", {
+            const key = `${teamId}:${projectId}`;
+            const pending = ensureInFlight.get(key);
+            if (pending) return pending;
+            const run = (async () => {
+                const existing = await loadDefs(projectId);
+                const existingNames = new Set(existing.map((d) => d.name));
+                const missing = DEFAULT_FIELD_SPECS.filter(
+                    (spec) => !existingNames.has(spec.name),
+                );
+                if (missing.length === 0) return existing;
+                for (const spec of missing) {
+                    try {
+                        await api("/api/project-fields/definitions", {
                             method: "POST",
                             body: JSON.stringify({
                                 teamId,
@@ -158,12 +184,21 @@ export function useProjectFields(teamId: string | null) {
                                 field_type: spec.field_type,
                                 sort_order: spec.sort_order,
                             }),
-                        }),
-                    ),
-                );
+                        });
+                    } catch (err) {
+                        // 동시 생성으로 이미 존재하면 성공으로 처리
+                        if (err instanceof ProjectFieldsApiError && err.status === 409) continue;
+                        throw err;
+                    }
+                }
                 return loadDefs(projectId);
+            })();
+            ensureInFlight.set(key, run);
+            try {
+                return await run;
+            } finally {
+                ensureInFlight.delete(key);
             }
-            return existing;
         },
         [teamId, loadDefs],
     );
@@ -262,11 +297,12 @@ export function useProjectFields(teamId: string | null) {
         async (
             projectId: number,
             cursor?: number | null,
+            totpToken?: string,
         ): Promise<{ items: HistoryItem[]; nextCursor: number | null }> => {
             if (!teamId) return { items: [], nextCursor: null };
             let url = `/api/project-fields/history?teamId=${encodeURIComponent(teamId)}&projectId=${projectId}`;
             if (cursor) url += `&cursor=${cursor}`;
-            return api(url);
+            return api(url, { headers: totpHeaders(totpToken) });
         },
         [teamId],
     );

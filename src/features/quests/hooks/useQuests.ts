@@ -53,7 +53,7 @@ export function useAddQuestMutation(teamId: string | null) {
 export function useDeleteQuestMutation(teamId: string | null) {
     const queryClient = useQueryClient();
     return useMutation({
-        mutationFn: (id: number) => deleteQuestById(id),
+        mutationFn: (id: number) => deleteQuestById(id, teamId ?? undefined),
         onSuccess: () =>
             Promise.all([
                 queryClient.invalidateQueries({ queryKey: questsKey(teamId) }),

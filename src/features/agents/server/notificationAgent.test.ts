@@ -87,3 +87,65 @@ describe("모닝 기상나팔 업무 내용", () => {
         expect(text).not.toContain("(완료)");
     });
 });
+
+describe("모닝 기상나팔 오늘 일정", () => {
+    const NOW = new Date("2026-09-03T00:00:00+09:00");
+    const event = (overrides: Record<string, unknown>) => ({
+        id: 1,
+        member: "홍길동",
+        email: "hong@example.com",
+        title: "일정",
+        starts_at: "2026-09-03T10:00:00+09:00",
+        ends_at: "2026-09-03T11:00:00+09:00",
+        all_day: false,
+        location: null,
+        html_link: null,
+        ...overrides,
+    });
+    const eventIds = (events: ReturnType<typeof event>[]) => {
+        const [suggestion] = buildNotificationSuggestions({
+            teamId: "t1",
+            tasks: [],
+            calendarEvents: events,
+            createdBy: null,
+            now: NOW,
+        });
+        return (suggestion?.evidence.calendarEventIds as unknown[]) ?? [];
+    };
+
+    it("어제 시작해 오늘까지 이어지는 여러 날짜 일정을 포함한다", () => {
+        expect(
+            eventIds([
+                event({
+                    id: 7,
+                    starts_at: "2026-09-01T00:00:00+09:00",
+                    ends_at: "2026-09-05T00:00:00+09:00",
+                    all_day: true,
+                }),
+            ]),
+        ).toEqual([7]);
+    });
+
+    it("어제 끝난 종일 일정(종료 = 오늘 00:00)은 제외한다", () => {
+        expect(
+            eventIds([
+                event({
+                    id: 8,
+                    starts_at: "2026-09-02T00:00:00+09:00",
+                    ends_at: "2026-09-03T00:00:00+09:00",
+                    all_day: true,
+                }),
+            ]),
+        ).toEqual([]);
+    });
+
+    it("팀 캘린더와 개인 캘린더의 같은 Google 일정은 한 번만 넣는다", () => {
+        expect(
+            eventIds([
+                event({ id: 1, google_event_id: "g1" }),
+                event({ id: 2, google_event_id: "g1" }),
+                event({ id: 3, google_event_id: "g2" }),
+            ]),
+        ).toEqual([1, 3]);
+    });
+});

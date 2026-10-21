@@ -53,7 +53,7 @@
     animation: auth-sandfall 0.8s linear infinite;
 }
 .font-mono-auth {
-    font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
 }
 
 /* 메이플스토리 커서 */
@@ -90,6 +90,13 @@ button:disabled {
     --foreground: #171717;
 }
 
+/* PC에서는 하단 네비 없음(좌측 사이드바) → 모달 하단 여백 제거 */
+@media (min-width: 1024px) {
+    :root {
+        --nav-height: 0px;
+    }
+}
+
 @theme inline {
     --color-background: var(--background);
     --color-foreground: var(--foreground);
@@ -104,6 +111,18 @@ body {
 
 html {
     scrollbar-gutter: stable;
+}
+
+/* PC 좌측 사이드바 레이아웃 — Nav가 data-sidebar를 설정한 페이지에서만 적용 */
+@media (min-width: 1024px) {
+    body[data-sidebar="expanded"] {
+        padding-left: 200px;
+        transition: padding-left 200ms ease;
+    }
+    body[data-sidebar="collapsed"] {
+        padding-left: 56px;
+        transition: padding-left 200ms ease;
+    }
 }
 
 ::-webkit-scrollbar {

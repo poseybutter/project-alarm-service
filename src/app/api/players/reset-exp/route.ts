@@ -67,18 +67,32 @@ export async function GET(req: NextRequest) {
     const supabase = createServiceSupabaseClient();
     const field = type === "monthly" ? "month_exp" : "week_exp";
 
-    const { error, data } = await supabase
-        .from("players")
-        .update({ [field]: 0 })
-        .neq("id", 0) // 전체 행 대상 (RLS 우회용 dummy 조건)
-        .select("id");
-    const count = data?.length ?? 0;
-
-    if (error) {
-        console.error(`[reset-exp] ${type} 실패`, error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    // 활성 팀별로 리셋하여 팀 간 격리 유지 + 팀별 결과 로깅
+    const { data: teams, error: teamError } = await supabase
+        .from("teams")
+        .select("id")
+        .eq("status", "active");
+    if (teamError) {
+        console.error(`[reset-exp] 팀 목록 조회 실패`, teamError);
+        return NextResponse.json({ error: teamError.message }, { status: 500 });
     }
 
-    console.log(`[reset-exp] ${type} 완료 — ${count ?? "?"}명 초기화`);
-    return NextResponse.json({ message: `${type} EXP 초기화 완료`, count });
+    let totalCount = 0;
+    for (const team of teams ?? []) {
+        const { error, data } = await supabase
+            .from("players")
+            .update({ [field]: 0 })
+            .eq("team_id", team.id)
+            .select("id");
+        const count = data?.length ?? 0;
+        if (error) {
+            console.error(`[reset-exp] ${type} 실패 (team: ${team.id})`, error);
+            return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+        totalCount += count;
+        console.log(`[reset-exp] ${type} team:${team.id} — ${count}명 초기화`);
+    }
+
+    console.log(`[reset-exp] ${type} 완료 — 총 ${totalCount}명 초기화`);
+    return NextResponse.json({ message: `${type} EXP 초기화 완료`, count: totalCount });
 }

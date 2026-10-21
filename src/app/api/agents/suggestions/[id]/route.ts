@@ -96,6 +96,9 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     } catch {
         return NextResponse.json({ message: "Invalid JSON" }, { status: 400 });
     }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+        return NextResponse.json({ message: "Invalid JSON" }, { status: 400 });
+    }
 
     try {
         const service = createServiceSupabaseClient();
@@ -123,6 +126,29 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
                 return NextResponse.json(
                     { message: "Forbidden" },
                     { status: 403 },
+                );
+            }
+
+            // 클라이언트 입력이므로 형태를 확인한다. 검증 없이 쓰면 .trim() 등에서 500 이 난다.
+            if (
+                (body.action !== "removeWidget" && body.action !== "editWidget") ||
+                !Number.isInteger(body.sectionIndex) ||
+                !Number.isInteger(body.widgetIndex) ||
+                body.sectionIndex < 0 ||
+                body.widgetIndex < 0
+            ) {
+                return NextResponse.json(
+                    { message: "Invalid card item action or index" },
+                    { status: 400 },
+                );
+            }
+            if (
+                body.action === "editWidget" &&
+                (typeof body.text !== "string" || !body.text.trim())
+            ) {
+                return NextResponse.json(
+                    { message: "text must be a non-empty string" },
+                    { status: 400 },
                 );
             }
 

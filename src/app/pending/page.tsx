@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { signOut } from "@/infrastructure/supabase/auth";
+import { useAuth } from "@/components/AuthProvider";
 import { GameButton } from "@/components/auth/GameButton";
 import { Hourglass, Gem } from "@/components/auth/Pix";
 import {
@@ -25,6 +27,7 @@ function fmtElapsed(s: number) {
 
 export default function PendingPage() {
     const router = useRouter();
+    const { reloadTeamContext } = useAuth();
     const [elapsed, setElapsed] = useState(0);
     const [sandFrame, setSandFrame] = useState(0);
     const [me, setMe] = useState<MeResponse | null>(null);
@@ -55,6 +58,10 @@ export default function PendingPage() {
                 if (cancelled) return;
                 setMe(data);
                 if (data.status === "active") {
+                    // 클라이언트 라우팅만 하면 AuthProvider 의 팀 컨텍스트(403 상태)가
+                    // 그대로라 홈이 튕긴다 → 팀 컨텍스트를 다시 불러온 뒤 이동한다
+                    await reloadTeamContext();
+                    if (cancelled) return;
                     router.push("/");
                 } else if (data.status === "rejected") {
                     router.push("/login?rejected=1");
@@ -69,10 +76,11 @@ export default function PendingPage() {
             cancelled = true;
             clearInterval(id);
         };
-    }, [router]);
+    }, [router, reloadTeamContext]);
 
     async function handleLogout() {
-        await fetch("/api/auth/logout", { method: "POST" });
+        // 서버 로그아웃(감사 로그) + 로컬 세션 정리(signOut scope:"local")를 함께 수행
+        await signOut();
         router.push("/login");
     }
 

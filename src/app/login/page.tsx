@@ -13,39 +13,48 @@ import {
     Icons,
 } from "@/components/auth/atoms";
 
+/** /auth/callback 이 넘겨주는 error 코드별 안내 문구 */
+const LOGIN_ERROR_MESSAGES: Record<string, string> = {
+    rejected: "이전 가입 신청이 거부되었습니다.",
+    exchange_failed: "로그인 인증에 실패했어요. 다시 시도해주세요.",
+    db_error: "계정 정보를 처리하지 못했어요. 잠시 후 다시 시도해주세요.",
+    no_email: "Google 계정의 이메일을 확인할 수 없어요. 다른 계정으로 시도해주세요.",
+    missing_code: "로그인 요청이 올바르지 않아요. 다시 로그인해주세요.",
+};
+
 function LoginContent() {
     const searchParams = useSearchParams();
-    const rejected =
-        searchParams.get("rejected") === "1" ||
-        searchParams.get("error") === "rejected";
-    const errorMessage = rejected
-        ? "이전 가입 신청이 거부되었습니다."
+    const errorCode =
+        searchParams.get("rejected") === "1"
+            ? "rejected"
+            : searchParams.get("error");
+    const errorMessage = errorCode
+        ? (LOGIN_ERROR_MESSAGES[errorCode] ??
+          "로그인 중 문제가 발생했어요. 다시 시도해주세요.")
         : null;
 
     return (
         <div
-            className="min-h-screen w-full bg-white text-stone-900 flex"
+            className="min-h-screen w-full bg-white text-stone-900 flex relative"
             style={{
                 fontFamily:
                     "'SUIT Variable', 'Pretendard Variable', system-ui, sans-serif",
             }}
         >
-            <div className="w-full lg:w-[560px] flex flex-col justify-between px-8 lg:px-16 py-12 border-r-2 border-stone-200 bg-white min-h-screen">
-                <AuthLogo size={32} />
+            <div className="relative z-10 w-full lg:w-[560px] flex flex-col justify-between items-center lg:items-start px-6 sm:px-8 lg:px-16 py-8 sm:py-12 lg:border-r-2 border-stone-200 lg:bg-white min-h-screen">
+                <div className="w-full max-w-[400px]"><AuthLogo size={32} /></div>
 
-                <div className="max-w-[400px] w-full">
+                <div className="max-w-[400px] w-full bg-white/90 backdrop-blur-xl lg:bg-transparent lg:backdrop-blur-none rounded-2xl lg:rounded-none p-6 lg:p-0 shadow-lg lg:shadow-none border border-stone-200/60 lg:border-0">
                     <div className="mb-7">
                         <div className="inline-flex items-center gap-1.5 text-[11px] font-extrabold text-amber-800 bg-amber-50 border-2 border-amber-400 rounded-md px-2 py-0.5 mb-4">
                             <span className="w-1.5 h-1.5 bg-amber-500" />
-                            CHAPTER 02 · 봄 시즌 진행 중
+                            시즌 진행 중
                         </div>
                         <h1 className="text-[30px] font-black tracking-tight leading-[1.15] text-stone-900">
                             다시 만나서 반가워요.
                         </h1>
                         <p className="text-[14px] text-stone-500 mt-2">
-                            어제 작업으로{" "}
-                            <b className="text-amber-700">+240 EXP</b>를
-                            쌓았어요. 이어서 시작해 볼까요?
+                            팀과 함께 업무를 관리하고 EXP를 쌓아보세요.
                         </p>
                     </div>
 
@@ -73,23 +82,19 @@ function LoginContent() {
                     <div className="mt-5 p-3 bg-stone-50 border-2 border-stone-200 rounded-md flex gap-2 text-[12px] text-stone-600">
                         <div className="text-stone-400 pt-0.5">🛡️</div>
                         <span>
-                            <b className="text-stone-900">UD2 내부 전용</b>{" "}
+                            <b className="text-stone-900">내부 전용</b>{" "}
                             워크스페이스 — 외부 접근은 감사 로그에 기록됩니다.
                         </span>
                     </div>
                 </div>
 
-                <div className="flex gap-4 text-[11px] text-stone-400 font-bold mt-2">
-                    <span>© 2026 UD2 Publishing</span>
-                    <a className="hover:text-stone-600 cursor-pointer">
-                        도움말
-                    </a>
-                    <a className="hover:text-stone-600 cursor-pointer">상태</a>
+                <div className="w-full max-w-[400px] text-[11px] text-stone-400 font-bold mt-2">
+                    <span>© 2026 Workspace</span>
                 </div>
             </div>
 
-            {/* RIGHT — 게임 사이드 */}
-            <div className="hidden lg:block flex-1 relative overflow-hidden bg-gradient-to-b from-amber-50 via-amber-100 to-amber-50">
+            {/* RIGHT — 게임 사이드 (모바일: 배경으로 표시, PC: 우측 패널) */}
+            <div className="absolute inset-0 lg:relative lg:flex-1 overflow-hidden bg-gradient-to-b from-amber-50 via-amber-100 to-amber-50">
                 <div
                     className="absolute inset-0 opacity-50"
                     style={{
@@ -103,7 +108,7 @@ function LoginContent() {
                     }}
                 />
 
-                <div className="relative h-full flex flex-col justify-center items-center p-12 min-h-screen">
+                <div className="relative h-full hidden lg:flex flex-col justify-center items-center p-12 min-h-screen">
                     <div className="mb-6 relative">
                         <div className="absolute inset-0 translate-y-2 bg-amber-300/60 rounded-full blur-xl" />
                         <div className="auth-bob">
@@ -172,15 +177,15 @@ function LoginContent() {
                             <div className="flex flex-col gap-1.5">
                                 {[
                                     {
-                                        t: "메인 헤더 마크업 리뷰",
-                                        xp: 60,
+                                        t: "오늘 할당된 업무 확인",
+                                        xp: 50,
                                         urgent: true,
                                     },
                                     {
-                                        t: "상품 카드 컴포넌트 마무리",
-                                        xp: 120,
+                                        t: "프로젝트 진행 상태 업데이트",
+                                        xp: 50,
                                     },
-                                    { t: "QA 피드백 3건 반영", xp: 80 },
+                                    { t: "팀 리포트 작성", xp: 50 },
                                 ].map((q) => (
                                     <div
                                         key={q.t}
@@ -206,10 +211,10 @@ function LoginContent() {
                     <div className="mt-5 w-[440px] flex items-center gap-3 px-1">
                         <div className="flex">
                             {[
-                                { n: "석", c: "#0ea5e9" },
-                                { n: "연", c: "#10b981" },
-                                { n: "헌", c: "#f59e0b" },
-                                { n: "지", c: "#ef4444" },
+                                { n: "A", c: "#0ea5e9" },
+                                { n: "B", c: "#10b981" },
+                                { n: "C", c: "#f59e0b" },
+                                { n: "D", c: "#ef4444" },
                             ].map((p, i) => (
                                 <div
                                     key={i}

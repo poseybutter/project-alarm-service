@@ -43,6 +43,13 @@ export default function MemberCredentials({
     const [revealing, setRevealing] = useState<number | null>(null);
     const [revealError, setRevealError] = useState<Record<number, string>>({});
     const [actionError, setActionError] = useState<string | null>(null);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [reloadKey, setReloadKey] = useState(0);
+
+    // TOTP 인증이 만료되면 노출된 비밀번호를 즉시 가린다
+    if (!totpVerified && Object.keys(revealed).length > 0) {
+        setRevealed({});
+    }
 
     // 추가 모달
     const [addOpen, setAddOpen] = useState(false);
@@ -66,14 +73,22 @@ export default function MemberCredentials({
         setRevealed({});
         setRevealError({});
         setLoaded(false);
+        setLoadError(null);
         let active = true;
         void mc.load().then((m) => {
             if (!active) return;
             setMembers(m);
             setLoaded(true);
+        }).catch((err) => {
+            if (!active) return;
+            setLoadError(
+                err instanceof Error && err.message
+                    ? `계정 정보를 불러오지 못했습니다: ${err.message}`
+                    : "계정 정보를 불러오지 못했습니다.",
+            );
         });
         return () => { active = false; };
-    }, [teamId, mc]);
+    }, [teamId, mc, reloadKey]);
 
     const reload = async () => {
         const m = await mc.load();
@@ -157,7 +172,21 @@ export default function MemberCredentials({
         }
     };
 
-    if (!loaded) return null;
+    if (loadError) {
+        return (
+            <div className="mx-4 mt-8 rounded-lg border border-red-200 bg-red-50 p-4 text-center">
+                <p className="text-sm text-red-700">{loadError}</p>
+                <button
+                    type="button"
+                    className="mt-3 rounded-lg bg-red-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-red-700"
+                    onClick={() => setReloadKey((k) => k + 1)}
+                >
+                    다시 시도
+                </button>
+            </div>
+        );
+    }
+    if (!loaded) return <p className="text-sm text-stone-400 text-center py-6">불러오는 중...</p>;
 
     const hasAnyCredentials = members.some((m) => m.credentials.length > 0);
     if (!hasAnyCredentials && !isAdmin) return null;

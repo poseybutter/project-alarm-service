@@ -17,7 +17,7 @@ import NotificationButton from "@/components/NotificationButton";
 import { useAuth } from "@/components/AuthProvider";
 import { PageSpinner } from "@/components/Spinner";
 import type { Task } from "@/shared/types";
-import { normalizeStatus } from "@/shared/constants";
+import { normalizeStatus, REPORT_WEEK_START_DOW, REPORT_EDITABLE_DOW, REPORT_EDITABLE_HOUR_END } from "@/shared/constants";
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import dynamic from "next/dynamic";
 
@@ -124,7 +124,7 @@ function htmlToMarkdown(html: string): string {
         .trim();
 }
 
-/** 브리핑 편집 허용 윈도우: 목요일 00:00 ~ 18:00 (KST). */
+/** 브리핑 편집 허용 윈도우 (KST). 요일·마감시각은 constants에서 관리. */
 function isEditableWindow(): boolean {
     const parts = new Intl.DateTimeFormat("en-US", {
         timeZone: "Asia/Seoul",
@@ -132,9 +132,10 @@ function isEditableWindow(): boolean {
         hour: "numeric",
         hour12: false,
     }).formatToParts(new Date());
-    const weekday = parts.find((p) => p.type === "weekday")?.value; // "Thu"
+    const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const dow = dayMap[parts.find((p) => p.type === "weekday")?.value ?? ""] ?? -1;
     const hour = Number(parts.find((p) => p.type === "hour")?.value ?? -1);
-    if (weekday === "Thu" && hour >= 0 && hour < 18) return true; // 목 00:00~17:59
+    if (dow === REPORT_EDITABLE_DOW && hour >= 0 && hour < REPORT_EDITABLE_HOUR_END) return true;
     return false;
 }
 
@@ -157,8 +158,8 @@ function seoulNow() {
 
 function getWeekWin(offset: number) {
     const { year, month, day, dow } = seoulNow();
-    // 목~목 한 주: 주 시작은 목요일, 끝은 다음 목요일(끝 포함).
-    const daysFromWeekStart = (dow - 4 + 7) % 7;
+    // 주 시작 요일은 constants에서 관리 (REPORT_WEEK_START_DOW).
+    const daysFromWeekStart = (dow - REPORT_WEEK_START_DOW + 7) % 7;
     const thu = new Date(year, month, day - daysFromWeekStart + offset * 7);
     thu.setHours(0, 0, 0, 0);
     const nextThu = new Date(
@@ -497,7 +498,9 @@ const EMPTY_ASSIGN_FORM: {
 
 export default function ReportPage() {
     const { member: currentMember, members, role, teamId } = useAuth();
-    const isGuest = currentMember === "GUEST" || role === "guest";
+    // 뷰어·게스트는 읽기 전용
+    const canWrite =
+        (role === "admin" || role === "member") && currentMember !== "GUEST";
     const [mode, setMode] = useState<"weekly" | "monthly">("weekly");
     // 콘텐츠 탭: 현황 보드(브리핑+배정) / 공지(확인·OKR·전달사항)
     const [reportTab, setReportTab] = useState<"board" | "notice">("board");
@@ -509,11 +512,16 @@ export default function ReportPage() {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
     const [editMode, setEditMode] = useState(false);
+    const [briefing, setBriefing] = useState<BriefingRow | null>(null);
+    const [briefingError, setBriefingError] = useState<string | null>(null);
     // 주차 이동 시 렌더 중에 편집 모드 해제 (ref 동기화는 effect 에서)
     const [prevWOffForEdit, setPrevWOffForEdit] = useState(wOff);
     if (prevWOffForEdit !== wOff) {
         setPrevWOffForEdit(wOff);
         setEditMode(false);
+        // 이전 주차 브리핑이 새 주차로 저장되지 않도록 로드 완료 전까지 비워 둔다
+        setBriefing(null);
+        setBriefingError(null);
     }
     useEffect(() => {
         wOffRef.current = wOff;
@@ -529,7 +537,6 @@ export default function ReportPage() {
         scrollLeft: 0,
     });
 
-    const [briefing, setBriefing] = useState<BriefingRow | null>(null);
     const [, setEditing] = useState(false);
     const [briefingEditorKey, setBriefingEditorKey] = useState(0);
     const [saving] = useState(false);
@@ -592,6 +599,8 @@ export default function ReportPage() {
     const [savingTaskId, setSavingTaskId] = useState<number | null>(null);
 
     const [assignments, setAssignments] = useState<Assignment[]>([]);
+    const [assignmentsError, setAssignmentsError] = useState<string | null>(null);
+    const [tasksError, setTasksError] = useState<string | null>(null);
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [editAssignment, setEditAssignment] = useState<Assignment | null>(
         null,
@@ -628,103 +637,83 @@ export default function ReportPage() {
             .eq("week_start", weekStart)
             .maybeSingle();
 
+        if (wOffRef.current !== offsetAtStart) {
+            return;
+        }
+
         if (error) {
             console.error("[loadBriefing]", error.message);
+            // 이전 주차 상태가 남아 새 주차에 저장되지 않도록 비우고 오류를 표시한다
+            setBriefing(null);
+            setBriefingError("브리핑을 불러오지 못했어요: " + error.message);
             return;
         }
 
-        if (wOffRef.current !== offsetAtStart) {
-            return;
+        // 공지·확인사항·OKR 은 각각 독립적으로 이번 주 값이 없으면 직전 주 값을 이월한다 (화면 표시용, 저장하지 않음)
+        let carriedNotice: string | null = null;
+        let carriedChecklist: string | null = null;
+        let carriedOkr: string | null = null;
+        if (data?.notice == null || data?.checklist == null || data?.okr == null) {
+            // 주간 기준 변경(수→목) 이후 기존 수요일 데이터도 이월 가능하도록
+            // 정확한 이전 주 날짜 대신 현재 week_start 이전의 가장 최근 행을 가져온다.
+            const { data: prevData, error: prevError } = await supabase
+                .from("briefings")
+                .select("notice, checklist, okr")
+                .eq("team_id", teamId)
+                .lt("week_start", weekStart)
+                .order("week_start", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (wOffRef.current !== offsetAtStart) {
+                return;
+            }
+            if (prevError) {
+                // 이월 실패는 치명적이지 않으므로 이번 주 데이터만 표시한다
+                console.error("[loadBriefing:carry]", prevError.message);
+            }
+
+            const rawPrev = prevData?.notice ?? null;
+            carriedNotice = noticeHtmlHasText(rawPrev) ? rawPrev : null;
+            const rawPrevChecklist = prevData?.checklist ?? null;
+            carriedChecklist = noticeHtmlHasText(rawPrevChecklist) ? rawPrevChecklist : null;
+            const rawPrevOkr = prevData?.okr ?? null;
+            carriedOkr = noticeHtmlHasText(rawPrevOkr) ? rawPrevOkr : null;
         }
 
-        if (data && noticeHtmlHasText(data.notice)) {
-            setBriefing({
-                project: data.project ?? "",
-                maintenance: data.maintenance ?? "",
-                etc: data.etc ?? "",
-                notice: data.notice ?? null,
-                checklist: data.checklist ?? null,
-                okr: data.okr ?? null,
-                in_progress: data.in_progress ?? null,
-                waiting: data.waiting ?? null,
-                not_started: data.not_started ?? null,
-                delayed: data.delayed ?? null,
-                done: data.done ?? null,
-                is_locked: data.is_locked ?? false,
-                edited_by: data.edited_by ?? null,
-                updated_at: data.updated_at ?? null,
-            });
-            return;
-        }
-
-        // 주간 기준 변경(수→목) 이후 기존 수요일 데이터도 이월 가능하도록
-        // 정확한 이전 주 날짜 대신 현재 week_start 이전의 가장 최근 행을 가져온다.
-        const { data: prevData } = await supabase
-            .from("briefings")
-            .select("notice, checklist, okr")
-            .eq("team_id", teamId)
-            .lt("week_start", weekStart)
-            .order("week_start", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-        if (wOffRef.current !== offsetAtStart) {
-            return;
-        }
-
-        const rawPrev = prevData?.notice ?? null;
-        const carriedNotice = noticeHtmlHasText(rawPrev) ? rawPrev : null;
-        const rawPrevChecklist = prevData?.checklist ?? null;
-        const carriedChecklist = noticeHtmlHasText(rawPrevChecklist) ? rawPrevChecklist : null;
-        const rawPrevOkr = prevData?.okr ?? null;
-        const carriedOkr = noticeHtmlHasText(rawPrevOkr) ? rawPrevOkr : null;
-
-        if (data) {
-            setBriefing({
-                project: data.project ?? "",
-                maintenance: data.maintenance ?? "",
-                etc: data.etc ?? "",
-                notice: carriedNotice,
-                checklist: data.checklist ?? carriedChecklist,
-                okr: data.okr ?? null,
-                in_progress: data.in_progress ?? null,
-                waiting: data.waiting ?? null,
-                not_started: data.not_started ?? null,
-                delayed: data.delayed ?? null,
-                done: data.done ?? null,
-                is_locked: data.is_locked ?? false,
-                edited_by: data.edited_by ?? null,
-                updated_at: data.updated_at ?? null,
-            });
-            return;
-        }
-
+        setBriefingError(null);
         setBriefing({
-            project: "",
-            maintenance: "",
-            etc: "",
-            notice: carriedNotice,
-            checklist: carriedChecklist,
-            okr: carriedOkr,
-            in_progress: null,
-            waiting: null,
-            not_started: null,
-            delayed: null,
-            done: null,
-            is_locked: false,
-            edited_by: null,
-            updated_at: null,
+            project: data?.project ?? "",
+            maintenance: data?.maintenance ?? "",
+            etc: data?.etc ?? "",
+            notice: data?.notice ?? carriedNotice,
+            checklist: data?.checklist ?? carriedChecklist,
+            okr: data?.okr ?? carriedOkr,
+            in_progress: data?.in_progress ?? null,
+            waiting: data?.waiting ?? null,
+            not_started: data?.not_started ?? null,
+            delayed: data?.delayed ?? null,
+            done: data?.done ?? null,
+            is_locked: data?.is_locked ?? false,
+            edited_by: data?.edited_by ?? null,
+            updated_at: data?.updated_at ?? null,
         });
     }, [teamId]);
 
     const loadAssignments = useCallback(async () => {
         if (!teamId) return;
-        const { data } = await supabase
+        const { data, error } = await supabase
             .from("assignments")
             .select("*")
             .eq("team_id", teamId)
             .order("sort_order", { ascending: true })
             .order("created_at", { ascending: true });
+        if (error) {
+            console.error("[loadAssignments]", error.message);
+            setAssignmentsError("담당 배정을 불러오지 못했어요: " + error.message);
+            return;
+        }
+        setAssignmentsError(null);
         setAssignments((data as Assignment[]) || []);
     }, [teamId]);
 
@@ -787,7 +776,7 @@ export default function ReportPage() {
         // 아래 wTasks/mTasks memo 와 같은 규칙의 상위집합이라 표시 결과는 같다.
         const from = mode === "weekly" ? wk.from : mn.first;
         const to = mode === "weekly" ? wk.to : mn.last;
-        const { data } = await supabase
+        const { data, error } = await supabase
             .from("tasks")
             .select("*")
             .eq("team_id", teamId)
@@ -803,7 +792,15 @@ export default function ReportPage() {
             )
             .order("created_at", { ascending: false });
         // 주차를 빠르게 넘길 때 늦게 도착한 이전 응답이 최신 상태를 덮지 않게 한다.
-        if (seq === taskSeqRef.current) setTasks(data || []);
+        if (seq !== taskSeqRef.current) return;
+        if (error) {
+            // 실패를 빈 목록으로 오인하지 않도록 기존 목록을 유지하고 오류를 표시한다
+            console.error("[loadTasks]", error.message);
+            setTasksError("업무를 불러오지 못했어요: " + error.message);
+            return;
+        }
+        setTasksError(null);
+        setTasks(data || []);
     }, [teamId, mode, wk.from, wk.to, mn.first, mn.last]);
 
     // 기간 이동마다 리페치하되, 전체 스피너는 팀이 바뀔 때만 띄운다.
@@ -1032,7 +1029,7 @@ export default function ReportPage() {
         return [...ordered, ...extra, ...(hasUnassigned ? ["미지정"] : [])];
     }, [curTasks, members]);
 
-    const canOpenEdit = !isGuest && isEditableWindow();
+    const canOpenEdit = canWrite && isEditableWindow();
     const editAllowed = canOpenEdit && editMode;
 
     /** 업무별 브리핑 카드 저장 (POST /api/briefing-tasks upsert) */
@@ -1067,33 +1064,62 @@ export default function ReportPage() {
         }
     }
 
+    /**
+     * 브리핑의 단일 필드만 저장한다.
+     * 다른 필드를 로컬 state 로 덮어쓰지 않도록 기존 행은 해당 컬럼만 update 하고, 행이 없을 때만 insert 한다.
+     */
+    async function saveBriefingField(
+        field: "notice" | "checklist" | "okr",
+        value: string | null,
+    ): Promise<string | null> {
+        if (!teamId) return "팀 정보가 없어요";
+        const weekStart = wk.from;
+        const patch = {
+            [field]: value,
+            edited_by: currentMember ?? null,
+            updated_at: new Date().toISOString(),
+        };
+        const updateExisting = () =>
+            supabase
+                .from("briefings")
+                .update(patch)
+                .eq("team_id", teamId)
+                .eq("week_start", weekStart)
+                .select("week_start");
+        const { data: updated, error: updateError } = await updateExisting();
+        if (updateError) return updateError.message;
+        if (updated && updated.length > 0) return null;
+
+        const { error: insertError } = await supabase.from("briefings").insert({
+            week_start: weekStart,
+            team_id: teamId,
+            project: "",
+            maintenance: "",
+            etc: "",
+            is_locked: false,
+            ...patch,
+        });
+        if (!insertError) return null;
+        // 동시에 다른 사용자가 행을 만든 경우 → 해당 필드만 다시 update
+        if (insertError.code === "23505") {
+            const { error: retryError } = await updateExisting();
+            return retryError ? retryError.message : null;
+        }
+        return insertError.message;
+    }
+
     async function saveNotice() {
-        if (!teamId) return;
+        if (!teamId || !briefing) return;
         setSavingNotice(true);
         try {
             const noticeHtml = editNoticeDraftRef.current;
-            const weekStart = wk.from;
-            const { error } = await supabase.from("briefings").upsert(
-                {
-                    week_start: weekStart,
-                    project: briefing?.project ?? "",
-                    maintenance: briefing?.maintenance ?? "",
-                    etc: briefing?.etc ?? "",
-                    notice: noticeHtmlHasText(noticeHtml)
-                        ? noticeHtml.trim()
-                        : null,
-                    checklist: briefing?.checklist ?? null,
-                    okr: briefing?.okr ?? null,
-                    is_locked: briefing?.is_locked ?? false,
-                    edited_by: currentMember ?? null,
-                    updated_at: new Date().toISOString(),
-                    team_id: teamId,
-                },
-                { onConflict: "team_id,week_start" },
+            const error = await saveBriefingField(
+                "notice",
+                noticeHtmlHasText(noticeHtml) ? noticeHtml.trim() : null,
             );
             if (error) {
                 console.error(error);
-                alert("저장에 실패했어요: " + error.message);
+                alert("저장에 실패했어요: " + error);
                 return;
             }
             await loadBriefing();
@@ -1105,32 +1131,17 @@ export default function ReportPage() {
     }
 
     async function saveChecklist() {
-        if (!teamId) return;
+        if (!teamId || !briefing) return;
         setSavingChecklist(true);
         try {
             const checklistHtml = editChecklistDraftRef.current;
-            const weekStart = wk.from;
-            const { error } = await supabase.from("briefings").upsert(
-                {
-                    week_start: weekStart,
-                    project: briefing?.project ?? "",
-                    maintenance: briefing?.maintenance ?? "",
-                    etc: briefing?.etc ?? "",
-                    notice: briefing?.notice ?? null,
-                    checklist: noticeHtmlHasText(checklistHtml)
-                        ? checklistHtml.trim()
-                        : null,
-                    okr: briefing?.okr ?? null,
-                    is_locked: briefing?.is_locked ?? false,
-                    edited_by: currentMember ?? null,
-                    updated_at: new Date().toISOString(),
-                    team_id: teamId,
-                },
-                { onConflict: "team_id,week_start" },
+            const error = await saveBriefingField(
+                "checklist",
+                noticeHtmlHasText(checklistHtml) ? checklistHtml.trim() : null,
             );
             if (error) {
                 console.error(error);
-                alert("저장에 실패했어요: " + error.message);
+                alert("저장에 실패했어요: " + error);
                 return;
             }
             await loadBriefing();
@@ -1142,30 +1153,17 @@ export default function ReportPage() {
     }
 
     async function saveOkr() {
-        if (!teamId) return;
+        if (!teamId || !briefing) return;
         setSavingOkr(true);
         try {
             const okrHtml = editOkrDraftRef.current;
-            const weekStart = wk.from;
-            const { error } = await supabase.from("briefings").upsert(
-                {
-                    week_start: weekStart,
-                    project: briefing?.project ?? "",
-                    maintenance: briefing?.maintenance ?? "",
-                    etc: briefing?.etc ?? "",
-                    notice: briefing?.notice ?? null,
-                    checklist: briefing?.checklist ?? null,
-                    okr: noticeHtmlHasText(okrHtml) ? okrHtml.trim() : null,
-                    is_locked: briefing?.is_locked ?? false,
-                    edited_by: currentMember ?? null,
-                    updated_at: new Date().toISOString(),
-                    team_id: teamId,
-                },
-                { onConflict: "team_id,week_start" },
+            const error = await saveBriefingField(
+                "okr",
+                noticeHtmlHasText(okrHtml) ? okrHtml.trim() : null,
             );
             if (error) {
                 console.error(error);
-                alert("저장에 실패했어요: " + error.message);
+                alert("저장에 실패했어요: " + error);
                 return;
             }
             await loadBriefing();
@@ -1436,7 +1434,8 @@ export default function ReportPage() {
             const { error } = await supabase
                 .from("assignments")
                 .update(payload)
-                .eq("id", editAssignment.id);
+                .eq("id", editAssignment.id)
+                .eq("team_id", teamId);
             if (error) {
                 alert("수정 실패: " + error.message);
                 return;
@@ -1465,7 +1464,8 @@ export default function ReportPage() {
         const { error } = await supabase
             .from("assignments")
             .delete()
-            .eq("id", id);
+            .eq("id", id)
+            .eq("team_id", teamId);
         if (error) {
             alert("삭제 실패: " + error.message);
             return;
@@ -1487,13 +1487,12 @@ export default function ReportPage() {
             <div className="min-h-screen bg-[#f7f6f3]">
                 {/* 헤더 */}
                 <div className="bg-white border-b border-stone-200 px-4 py-3 sticky top-0 z-10">
-                    <div className="max-w-2xl mx-auto flex justify-between items-center">
+                    <div className="max-w-2xl mx-auto lg:max-w-none flex justify-between items-center">
                         <h1 className="text-base font-bold text-stone-900">
                             리포트
                         </h1>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 lg:hidden">
                             <TeamSwitcher />
-
                             <NotificationButton />
                             <UserMenu />
                         </div>
@@ -1599,6 +1598,24 @@ export default function ReportPage() {
                         <PageSpinner />
                     ) : (
                         <>
+                            {(tasksError || assignmentsError) && (
+                                <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                                    <div className="text-xs text-red-700">
+                                        {tasksError && <p>{tasksError}</p>}
+                                        {assignmentsError && <p>{assignmentsError}</p>}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (tasksError) void loadTasks();
+                                            if (assignmentsError) void loadAssignments();
+                                        }}
+                                        className="shrink-0 rounded-lg bg-red-600 px-3 py-1 text-xs font-bold text-white hover:bg-red-700"
+                                    >
+                                        다시 시도
+                                    </button>
+                                </div>
+                            )}
                             {/* 주간 브리핑 (상태별 아코디언) */}
                             {(mode === "monthly" ||
                                 reportTab === "board") && (
@@ -2062,6 +2079,19 @@ export default function ReportPage() {
                                 </div>
                             )}
 
+                            {mode === "weekly" && reportTab === "notice" && briefingError && (
+                                <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                                    <p className="text-xs text-red-700">{briefingError}</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => void loadBriefing()}
+                                        className="shrink-0 rounded-lg bg-red-600 px-3 py-1 text-xs font-bold text-white hover:bg-red-700"
+                                    >
+                                        다시 시도
+                                    </button>
+                                </div>
+                            )}
+
                             {/* 확인해주세요 */}
                             {mode === "weekly" && reportTab === "notice" && (
                                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden mb-3">
@@ -2081,7 +2111,7 @@ export default function ReportPage() {
                                             📌 확인해주세요
                                         </p>
                                         <div className="flex items-center gap-2">
-                                            {isLeader && !editingChecklist && (
+                                            {isLeader && briefing && !editingChecklist && (
                                                 <button
                                                     type="button"
                                                     onClick={(e) => {
@@ -2186,7 +2216,7 @@ export default function ReportPage() {
                                             OKR
                                         </p>
                                         <div className="flex items-center gap-2">
-                                            {isLeader && !editingOkr && (
+                                            {isLeader && briefing && !editingOkr && (
                                                 <button
                                                     type="button"
                                                     onClick={(e) => {
@@ -2295,7 +2325,7 @@ export default function ReportPage() {
                                             주간 전달사항
                                         </p>
                                         <div className="flex items-center gap-2">
-                                            {isLeader && !editingNotice && (
+                                            {isLeader && briefing && !editingNotice && (
                                                 <button
                                                     type="button"
                                                     onClick={(e) => {
