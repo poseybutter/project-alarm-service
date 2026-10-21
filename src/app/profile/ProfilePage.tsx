@@ -1316,6 +1316,7 @@ export default function ProfilePage() {
                                                     if (items) {
                                                         // content_items: 개별 일정 있는 항목은 개별로
                                                         let fallbackWl = 0;
+                                                        let hasUndatedItem = false;
                                                         for (const ci of items) {
                                                             const cs = ci.start_date || ci.end_date;
                                                             const ce = ci.end_date || ci.start_date;
@@ -1323,10 +1324,12 @@ export default function ProfilePage() {
                                                                 addRange(cs, ce, ci.workload || 0);
                                                             } else {
                                                                 // 개별 일정 없는 항목 공수는 Task 일정으로 폴백
+                                                                hasUndatedItem = true;
                                                                 fallbackWl += ci.workload || 0;
                                                             }
                                                         }
-                                                        if (fallbackWl > 0) {
+                                                        // 공수가 0이어도 업무 기간에 표시해야 날짜를 눌러 목록을 열 수 있다
+                                                        if (hasUndatedItem) {
                                                             const s = t.start_date || t.end_date;
                                                             const e = t.end_date || t.start_date;
                                                             if (s && e) addRange(s, e, fallbackWl);
