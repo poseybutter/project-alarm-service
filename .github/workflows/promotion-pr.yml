@@ -1,0 +1,79 @@
+name: Open Promotion PR
+
+# develop 에 푸시되면 develop → main 승격 PR 을 열어 둔다 — Dependabot 업데이트도 바로 승격 대기
+# 이미 열린 승격 PR 이 있으면 새 커밋은 그 PR 에 자동으로 실리므로 아무것도 하지 않는다
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  group: promotion-pr
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  open-promotion-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open develop → main PR if missing
+        env:
+          # GITHUB_TOKEN 으로 만든 PR 은 CI 가 돌지 않아 PAT 사용 (contents: read, pull-requests: write)
+          GH_TOKEN: ${{ secrets.PROMOTION_PR_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$GH_TOKEN" ]; then
+            echo "PROMOTION_PR_TOKEN 시크릿이 없습니다 — 저장소 Secrets 에 등록해 주세요" >&2
+            exit 1
+          fi
+
+          EXISTING=$(gh pr list \
+            --repo "$REPO" \
+            --base main \
+            --head develop \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            echo "승격 PR #$EXISTING 이 이미 열려 있습니다"
+            exit 0
+          fi
+
+          # main 에 없는 커밋이 없으면 열지 않는다 (승격 직후 등)
+          AHEAD=$(gh api "repos/$REPO/compare/main...develop" --jq '.ahead_by')
+          if [ "$AHEAD" = "0" ]; then
+            echo "main 대비 새 커밋이 없습니다"
+            exit 0
+          fi
+
+          BODY=$(cat <<'EOF'
+          ## 변경 목적
+
+          - 관련 이슈: 없음 — develop 푸시 시 자동 생성된 승격 PR
+          - 해결하려는 문제: develop 에 반영된 변경(Dependabot 업데이트 포함)을 운영에 반영
+
+          ## 주요 변경
+
+          - 포함된 커밋은 Commits 탭 참고. 기능 변경이 섞이면 본문을 직접 보완해 주세요.
+
+          ## 검증
+
+          - [ ] `npm run check` 통과
+          - [ ] 변경 기능 직접 확인 (확인 경로 기재)
+
+          ## 참고 사항
+
+          - 승격 PR 은 squash 하지 말고 merge commit 으로 머지해 주세요.
+          EOF
+          )
+
+          gh pr create \
+            --repo "$REPO" \
+            --base main \
+            --head develop \
+            --title "chore: develop → main 승격" \
+            --body "$BODY"
