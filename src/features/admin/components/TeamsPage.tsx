@@ -58,7 +58,6 @@ import {
   ALL_TEAM_MODULES,
   TEAM_MODULE_LABELS,
 } from "@/features/admin/types";
-import { TEAM_ID } from "@/shared/constants";
 
 type TeamsResponse = { teams: AdminTeam[] };
 type MembersResponse = { members: AdminMember[] };
@@ -127,6 +126,8 @@ function TeamTotpSection({ teamId }: { teamId: string }) {
   }, [teamId]);
 
   const handleToggle = async () => {
+    const action = enabled ? "비활성화" : "활성화";
+    if (!window.confirm(`TOTP 인증을 ${action}하시겠습니까? 모든 팀원에게 영향을 줍니다.`)) return;
     setSaving(true);
     setActionError(null);
     try {
@@ -145,6 +146,7 @@ function TeamTotpSection({ teamId }: { teamId: string }) {
   };
 
   const handleReset = async (email: string) => {
+    if (!window.confirm(`${email}의 TOTP를 초기화하시겠습니까? 해당 사용자는 다시 설정해야 합니다.`)) return;
     setResetting(email);
     setActionError(null);
     try {
@@ -238,7 +240,7 @@ function TeamTotpSection({ teamId }: { teamId: string }) {
 
 export function TeamsPage() {
   const router = useRouter();
-  const { identity } = useAdmin();
+  const { identity, selectedTeamId } = useAdmin();
   const { data, error, loading, reload } =
     useAdminResource<TeamsResponse>("/api/admin/teams");
   const {
@@ -272,6 +274,14 @@ export function TeamsPage() {
   const [orderItems, setOrderItems] = useState<AdminMember[]>([]);
   const [orderSaving, setOrderSaving] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
+
+  // 관리 범위(팀) 전환 시 렌더 중에 열린 드로어를 닫는다 — 이전 범위의 팀과 새 범위의 구성원 목록이 섞이지 않도록
+  const [prevScopeTeamId, setPrevScopeTeamId] = useState(selectedTeamId);
+  if (prevScopeTeamId !== selectedTeamId) {
+    setPrevScopeTeamId(selectedTeamId);
+    setSelected(null);
+    setCreating(false);
+  }
 
   const dndSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -699,11 +709,6 @@ export function TeamsPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <h3 className="text-sm font-extrabold">{team.name}</h3>
-                    {team.id === TEAM_ID && (
-                      <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
-                        기본 운영팀
-                      </span>
-                    )}
                     {team.status === "archived" && (
                       <span className="rounded border border-stone-200 bg-stone-100 px-1.5 py-0.5 text-[10px] font-bold text-stone-500">
                         보관
@@ -1052,16 +1057,6 @@ export function TeamsPage() {
               </div>
             )}
 
-            {selected.id === TEAM_ID && (
-              <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                <ShieldAlert className="mt-0.5 shrink-0" size={16} />
-                <span>
-                  기존 업무·리포트 기능이 이 팀 ID를 사용하고 있어 이름과 설명만
-                  변경할 수 있습니다. 멀티팀 전환이 완료되기 전에는 보관하거나
-                  삭제할 수 없습니다.
-                </span>
-              </div>
-            )}
 
             <RequestError error={saveError} />
 
@@ -1091,8 +1086,7 @@ export function TeamsPage() {
             ) : identity.isOrganizationAdmin ? (
               <>
                 <div className="flex flex-wrap justify-end gap-2 border-t border-stone-200 pt-4">
-                  {selected.id !== TEAM_ID && (
-                    <AdminButton
+                  <AdminButton
                       onClick={() =>
                         void updateTeam(
                           selected.status === "active" ? "archived" : "active",
@@ -1110,7 +1104,6 @@ export function TeamsPage() {
                         </>
                       )}
                     </AdminButton>
-                  )}
                   <AdminButton
                     onClick={closeTeamDrawer}
                     disabled={saving || orderSaving}
@@ -1134,8 +1127,7 @@ export function TeamsPage() {
 
                 <TeamTotpSection teamId={selected.id} />
 
-                {selected.id !== TEAM_ID && (
-                  <section className="border-t border-red-200 pt-5">
+                <section className="border-t border-red-200 pt-5">
                     <h3 className="text-sm font-extrabold text-red-900">
                       위험 작업
                     </h3>
@@ -1156,7 +1148,6 @@ export function TeamsPage() {
                       <Trash2 size={14} /> 팀 영구 삭제
                     </AdminButton>
                   </section>
-                )}
               </>
             ) : null}
           </div>

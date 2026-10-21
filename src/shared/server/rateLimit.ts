@@ -23,6 +23,12 @@ export function requestRateLimitKey(
         .digest("base64url");
 }
 
+/**
+ * 인메모리 레이트리밋 — 단일 프로세스 안에서만 유효하다.
+ * 서버리스/수평 확장 환경에서는 인스턴스마다 카운터가 따로 세어져 한도를 넘길 수 있다.
+ * 분산 환경에서는 consumeSharedRateLimit() 을 사용해 DB(consume_rate_limit RPC)로
+ * 전역 한도를 확정해야 한다.
+ */
 export function consumeRateLimit(
     key: string,
     options: { limit: number; windowMs: number },

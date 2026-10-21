@@ -3,7 +3,11 @@ import {
   listAccessRequests,
   reviewAccessRequest,
 } from "@/features/admin/server/adminRepository";
-import { adminErrorResponse, readTeamId } from "@/features/admin/server/http";
+import {
+  adminErrorResponse,
+  readJsonObject,
+  readTeamId,
+} from "@/features/admin/server/http";
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,7 +21,7 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const body = (await request.json()) as {
+    const body = (await readJsonObject(request)) as {
       id?: unknown;
       decision?: unknown;
       teamId?: unknown;

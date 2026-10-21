@@ -11,9 +11,10 @@ import type { Project, ContentItem } from "@/shared/types";
 import type { TeamMemberOption } from "@/features/team-context/types";
 import { findProjectId, findTeamMemberId } from "@/shared/utils/utils";
 import { contentItemsPayload } from "@/shared/utils/contentItems";
-import { getMemberColors } from "@/shared/constants";
+import { getMemberColors, TASK_TYPE_OPTIONS, TASK_PRIORITY_OPTIONS } from "@/shared/constants";
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import Avatar from "@/components/Avatar";
+import { useAuth } from "@/components/AuthProvider";
 import TaskContentInputs from "@/components/TaskContentInputs";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import {
@@ -73,6 +74,7 @@ export default function AddTaskModal({
     onCreated,
     onToast,
 }: AddTaskModalProps) {
+    const { canWrite } = useAuth();
     const [form, setForm] = useState({ ...EMPTY_FORM });
     const [formDateRange, setFormDateRange] = useState<DateRange | undefined>();
     const [showFormDatePicker, setShowFormDatePicker] = useState(false);
@@ -145,6 +147,11 @@ export default function AddTaskModal({
     /** 폼 유효성 검사 후 업무를 Supabase에 저장하고 팀 캘린더와 동기화한다. 중복 제출은 isSubmitting으로 방지한다. */
     async function addTask() {
         if (isSubmitting || !teamId) return;
+        // 읽기 전용 사용자(viewer·게스트)는 등록할 수 없다 (DB 도 막지만 UI 에서 먼저 차단)
+        if (!canWrite) {
+            onToast("읽기 전용 권한이라 업무를 추가할 수 없어요");
+            return;
+        }
         if (!form.member || !form.proj)
             return alert("담당자와 프로젝트명은 필수예요");
         if (!form.type) {
@@ -181,9 +188,12 @@ export default function AddTaskModal({
                         start_date: formDateRange?.from
                             ? toLocalYmd(formDateRange.from)
                             : null,
+                        // 하루만 선택하면 to 가 비므로 시작일을 마감일로 쓴다 (홈 수정 모달과 동일)
                         end_date: formDateRange?.to
                             ? toLocalYmd(formDateRange.to)
-                            : null,
+                            : formDateRange?.from
+                              ? toLocalYmd(formDateRange.from)
+                              : null,
                         issue: form.issue || null,
                         status: "대기",
                         is_plan: form.is_plan ?? false,
@@ -266,13 +276,7 @@ export default function AddTaskModal({
                                 구분 <span className="text-red-500">*</span>
                             </label>
                             <Select
-                                options={[
-                                    "프로젝트",
-                                    "유지보수",
-                                    "고도화",
-                                    "접근성",
-                                    "업무지원",
-                                ].map((t) => ({ value: t, label: t }))}
+                                options={TASK_TYPE_OPTIONS.map((t) => ({ value: t, label: t }))}
                                 value={
                                     form.type
                                         ? { value: form.type, label: form.type }
@@ -297,7 +301,7 @@ export default function AddTaskModal({
                                 우선순위
                             </label>
                             <Select
-                                options={["긴급", "높음", "보통", "낮음"].map(
+                                options={TASK_PRIORITY_OPTIONS.map(
                                     (p) => ({ value: p, label: p }),
                                 )}
                                 value={

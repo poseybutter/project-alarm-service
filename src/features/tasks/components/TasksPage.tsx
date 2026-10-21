@@ -59,17 +59,19 @@ export default function TasksPage() {
         memberOptions,
         role,
         teamId,
+        canWrite,
     } = useAuth();
-    const isGuest = role === "guest";
+    // viewer·게스트는 읽기 전용 — 추가/수정/삭제/상태 변경 컨트롤을 숨기거나 비활성화한다
     const canEditOrDelete = (taskMember: string) =>
-        role !== "guest" && (role === "admin" || taskMember === currentMember);
+        canWrite && (role === "admin" || taskMember === currentMember);
     const memberOptionNames = memberOptions.map((o) => o.name);
     const assignableMembers =
         role === "admin"
             ? memberOptionNames
             : memberOptionNames.filter((n) => n === currentMember);
 
-    const { tasks, projects, loading, loadTasks } = useTasksData(teamId);
+    const { tasks, projects, loading, error, loadTasks, retry } =
+        useTasksData(teamId);
     const [toast, setToast] = useState("");
     const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     /** 토스트 메시지를 3초간 표시한다. 이전 타이머가 있으면 취소 후 새로 시작한다. */
@@ -196,6 +198,7 @@ export default function TasksPage() {
             .from("tasks")
             .delete()
             .eq("id", id)
+            .eq("team_id", teamId)
             .select();
         if (error || !data || data.length === 0) {
             // DB 삭제 실패 시 캘린더 일정을 복구한다
@@ -219,6 +222,10 @@ export default function TasksPage() {
             return true;
         });
 
+    // 현재 팀원 순서대로 묶고, 팀원 목록에 없는 담당자(정지·이름 변경 등)의 업무는
+    // 숨기지 않고 "기타" 그룹으로 모은다
+    const OTHER_GROUP = "기타";
+    const memberSet = new Set(members);
     const grouped = members.reduce(
         (acc, m) => {
             const mt = filtered.filter((t) => t.member === m);
@@ -227,6 +234,15 @@ export default function TasksPage() {
         },
         {} as Record<string, Task[]>,
     );
+    const otherTasks = filtered.filter((t) => !memberSet.has(t.member));
+    const groupEntries: [string, Task[], boolean][] = [
+        ...Object.entries(grouped).map(
+            ([m, mt]) => [m, mt, false] as [string, Task[], boolean],
+        ),
+        ...(otherTasks.length > 0
+            ? [[OTHER_GROUP, otherTasks, true] as [string, Task[], boolean]]
+            : []),
+    ];
 
     const filterProjectSelectOptions = useMemo(
         () =>
@@ -241,7 +257,7 @@ export default function TasksPage() {
             <div className="min-h-screen bg-[#f7f6f3]">
                 {/* 헤더 */}
                 <div className="bg-white border-b border-stone-200 px-4 py-3 sticky top-0 z-10">
-                    <div className="max-w-2xl mx-auto flex justify-between items-center">
+                    <div className="max-w-2xl mx-auto lg:max-w-none flex justify-between items-center">
                         <div>
                             <h1 className="text-base font-bold text-stone-900">
                                 업무 관리
@@ -251,8 +267,8 @@ export default function TasksPage() {
                             </p>
                         </div>
                         <div className="flex items-center gap-2">
-                            <TeamSwitcher />
-                            {!isGuest && (
+                            <div className="lg:hidden"><TeamSwitcher /></div>
+                            {canWrite && (
                                 <button
                                     onClick={() => setShowModal(true)}
                                     className="bg-amber-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg"
@@ -260,10 +276,12 @@ export default function TasksPage() {
                                     + 업무
                                 </button>
                             )}
-                            {/* ?뚮┝ + ?좎?硫붾돱??Header 而댄룷?뚰듃 ?놁씠 吏곸젒 */}
+                            {/*?뚮┝ + ?좎?硫붾돱??Header 而댄룷?뚰듃 ?놁씠 吏곸젒 */}
 
-                            <NotificationButton />
-                            <UserMenu />
+                            <div className="flex items-center gap-2 lg:hidden">
+                                <NotificationButton />
+                                <UserMenu />
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -284,15 +302,48 @@ export default function TasksPage() {
                     {/* ?낅Т 紐⑸줉 */}
                     {loading ? (
                         <PageSpinner />
-                    ) : filtered.length === 0 ? (
+                    ) : error && tasks.length === 0 ? (
+                        // 조회 실패를 "업무가 없어요"로 오해하지 않도록 오류와 재시도를 보여준다
+                        <div className="mx-4 my-8 rounded-xl border border-red-200 bg-red-50 px-4 py-8 text-center">
+                            <p className="text-sm font-medium text-red-700">
+                                {error}
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() => void retry()}
+                                className="mt-3 rounded-lg border border-red-300 bg-white px-4 py-2 text-xs font-bold text-red-600 transition-colors hover:bg-red-100"
+                            >
+                                다시 시도
+                            </button>
+                        </div>
+                    ) : groupEntries.length === 0 ? (
                         <div className="text-center py-16 text-stone-400 text-sm">
                             업무가 없어요
                         </div>
                     ) : (
-                        Object.entries(grouped).map(([member, memberTasks]) => (
-                            <div key={member} className="px-4 mb-4">
+                        <>
+                        {error && (
+                            <div className="mx-4 mt-3 flex items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                                <span>{error}</span>
+                                <button
+                                    type="button"
+                                    onClick={() => void retry()}
+                                    className="shrink-0 font-bold underline"
+                                >
+                                    다시 시도
+                                </button>
+                            </div>
+                        )}
+                        {groupEntries.map(([member, memberTasks, isOther]) => (
+                            <div key={isOther ? "__other__" : member} className="px-4 mb-4">
                                 <div className="flex justify-between items-center py-2">
-                                    <Avatar name={member} size={26} showName />
+                                    {isOther ? (
+                                        <span className="text-sm font-medium text-stone-500">
+                                            {OTHER_GROUP}
+                                        </span>
+                                    ) : (
+                                        <Avatar name={member} size={26} showName />
+                                    )}
                                     <div className="flex items-center gap-2">
                                         <span className="text-xs text-stone-400">
                                             {memberTasks.length}건
@@ -315,7 +366,6 @@ export default function TasksPage() {
                                             task={t}
                                             isLast={i === memberTasks.length - 1}
                                             disabled={
-                                                isGuest ||
                                                 !canEditOrDelete(t.member)
                                             }
                                             canEdit={canEditOrDelete(t.member)}
@@ -328,17 +378,17 @@ export default function TasksPage() {
                                                 )
                                             }
                                             onEdit={openEdit}
-                                            onDelete={deleteTask}
                                         />
                                     ))}
                                 </div>
                             </div>
-                        ))
+                        ))}
+                        </>
                     )}
                     <div className="h-24" />
                 </div>
 
-                {showModal && (
+                {showModal && canWrite && (
                     <AddTaskModal
                         open={showModal}
                         onClose={() => setShowModal(false)}
@@ -352,7 +402,7 @@ export default function TasksPage() {
                     />
                 )}
 
-                {editTask && (
+                {editTask && canEditOrDelete(editTask.member) && (
                     <TaskEditModal
                         task={editTask}
                         onClose={() => setEditTask(null)}

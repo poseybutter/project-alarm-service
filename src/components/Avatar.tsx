@@ -42,7 +42,7 @@ export default function Avatar({
     // 캐시 적중 — 렌더 시점 재설정에서 이미 반영됨
     if (avatarCache[cacheKey] !== undefined) return
     let cancelled = false
-    supabase.from('players').select('avatar_url').eq('team_id', teamId).eq('name', name).single()
+    supabase.from('players').select('avatar_url').eq('team_id', teamId).eq('name', name).maybeSingle()
       .then(({ data }) => {
         // players 행이 없을 때 본인이면 프로필 아바타 사용
         const u = data?.avatar_url || (isSelf ? (authAvatarUrl ?? null) : null)
@@ -63,7 +63,7 @@ export default function Avatar({
         {url ? (
           <Image src={url} alt={name} width={size} height={size} className="w-full h-full object-cover" />
         ) : (
-          name.slice(1)
+          name.charAt(0) || '?'
         )}
       </div>
       {showName && (

@@ -1,6 +1,11 @@
 import { after, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import {
+    AdminApiError,
+    requireAdminSession,
+} from "@/features/admin/server/adminRepository";
+import { adminErrorResponse } from "@/features/admin/server/http";
+import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
 } from "@/infrastructure/supabase/server";
@@ -15,6 +20,7 @@ import {
 } from "@/infrastructure/google-calendar";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { mapWithConcurrency } from "@/shared/server/concurrency";
+import { isCronAuthorized } from "@/shared/server/cronAuth";
 import {
     consumeSharedRateLimit,
     rateLimitResponse,
@@ -37,18 +43,74 @@ const SYNC_CONCURRENCY = 4;
 const MISSING_MEMBER_CALENDAR_MESSAGE =
     "담당자별 캘린더 ID가 설정되어 있지 않습니다";
 
-/** 내부 이어받기 호출인지 CRON_SECRET 으로 확인한다. */
-function isCronAuthorized(req: { headers: { get(name: string): string | null } }) {
-    const secret = process.env.CRON_SECRET;
-    if (!secret) return process.env.NODE_ENV !== "production";
-    return req.headers.get("authorization") === `Bearer ${secret}`;
-}
-
 /** 업무 하나의 처리 결과. 배치가 끝난 뒤 입력 순서대로 집계한다. */
 type TaskSyncOutcome =
     | { kind: "synced" }
     | { kind: "skipped"; id: number; message: string }
     | { kind: "failed"; id: number; message: string };
+
+/**
+ * 부분 실패 시 tasks 에 저장할 진행분.
+ *
+ * 캘린더 이동 중이면 진행분의 ID 는 새 캘린더 것이므로 team_calendar_id 도 새 캘린더로
+ * 함께 저장해야 한다(안 그러면 새 ID 가 이전 캘린더 것으로 잘못 기록된다).
+ * 새 캘린더에 아무것도 만들지 못했다면 이전 ID·캘린더를 그대로 두어 다음 시도에서
+ * 정리할 수 있게 하고, 일부라도 만들었다면 참조를 잃게 될 이전 일정을 지금 정리한다.
+ */
+async function partialProgressUpdate(params: {
+    err: unknown;
+    task: TeamCalendarTaskInput;
+    targetCalendarId: string;
+    /** team_calendar_id 가 없는 레거시 업무의 일정이 있던 공용 팀 캘린더 */
+    legacyCalendarId: string;
+    accessToken: string;
+}): Promise<Record<string, unknown>> {
+    const { err, task, targetCalendarId, legacyCalendarId, accessToken } =
+        params;
+    if (!(err instanceof TeamCalendarPartialSyncError)) return {};
+
+    const created = [
+        err.progress.baseEventId,
+        ...err.progress.itemEventIds,
+    ].filter((id): id is string => Boolean(id));
+    const previousEventIds = [
+        task.team_calendar_event_id,
+        ...(task.team_calendar_item_event_ids ?? []),
+    ].filter((id): id is string => Boolean(id));
+    const previousCalendarId =
+        previousEventIds.length > 0
+            ? task.team_calendar_id || legacyCalendarId
+            : null;
+    const isMove =
+        previousCalendarId !== null && previousCalendarId !== targetCalendarId;
+
+    if (isMove && created.length === 0) return {};
+
+    if (isMove) {
+        for (const staleId of previousEventIds) {
+            try {
+                await deleteTeamCalendarTaskEvent({
+                    accessToken,
+                    calendarId: previousCalendarId,
+                    eventId: staleId,
+                });
+            } catch (deleteErr) {
+                console.error(
+                    `[team-calendar-resync-stale-delete:${task.id}]`,
+                    deleteErr,
+                );
+            }
+        }
+    }
+
+    return {
+        team_calendar_event_id: err.progress.baseEventId,
+        team_calendar_item_event_ids: err.progress.itemEventIds.length
+            ? err.progress.itemEventIds
+            : null,
+        team_calendar_id: targetCalendarId,
+    };
+}
 
 export async function POST(request: Request) {
     const url = new URL(request.url);
@@ -60,17 +122,21 @@ export async function POST(request: Request) {
         teamId = url.searchParams.get("teamId")!;
     } else {
         // 사용자 호출: 세션 인증
-        const { user, role, teamId: tid } = await getServerCurrentTeamRole();
+        const { user, teamId: tid } = await getServerCurrentTeamRole();
         if (!user?.email || !tid) {
             return NextResponse.json(
                 { message: "Unauthorized" },
                 { status: 401 },
             );
         }
-        if (role !== "admin") {
-            return NextResponse.json(
-                { message: "Forbidden" },
-                { status: 403 },
+        try {
+            await requireAdminSession(tid, "integrations.manage");
+        } catch (error) {
+            if (error instanceof AdminApiError) return adminErrorResponse(error);
+            return internalErrorResponse(
+                "team-calendar-resync-auth",
+                error,
+                "권한을 확인하지 못했습니다.",
             );
         }
         teamId = tid;
@@ -303,16 +369,13 @@ export async function POST(request: Request) {
                         : "팀 캘린더 재동기화 실패";
                 // 중간까지 만들어진 이벤트 ID 를 저장해야 고아 일정이 남지 않는다.
                 // 진행분은 업무마다 다르므로 모아 쓰지 않고 즉시 기록한다.
-                const progress =
-                    err instanceof TeamCalendarPartialSyncError
-                        ? {
-                              team_calendar_event_id: err.progress.baseEventId,
-                              team_calendar_item_event_ids: err.progress
-                                  .itemEventIds.length
-                                  ? err.progress.itemEventIds
-                                  : null,
-                          }
-                        : {};
+                const progress = await partialProgressUpdate({
+                    err,
+                    task,
+                    targetCalendarId,
+                    legacyCalendarId: setting.calendar_id,
+                    accessToken,
+                });
                 const { error: errWriteErr } = await supabase
                     .from("tasks")
                     .update({ ...progress, team_calendar_sync_error: message })

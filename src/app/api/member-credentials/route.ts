@@ -5,6 +5,20 @@ import {
 } from "@/infrastructure/supabase/server";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { encryptField } from "@/shared/server/fieldEncryption";
+import { hasAdminPermission } from "@/features/admin/server/adminRepository";
+import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
+
+/** 자격증명 관리 권한 — 역할 문자열이 아니라 권한(members.manage)으로 판정 */
+const CREDENTIAL_MANAGE_PERMISSION = "members.manage" as const;
+
+async function requireCredentialAdmin(teamId: string) {
+    const { user, role } = await getServerUserRole(teamId);
+    if (!user?.email || !role) return null;
+    if (!(await hasAdminPermission(teamId, CREDENTIAL_MANAGE_PERMISSION))) {
+        return null;
+    }
+    return { ...user, email: user.email };
+}
 
 type CredentialRow = {
     id: number;
@@ -37,6 +51,13 @@ export async function GET(req: NextRequest) {
 
     try {
         const svc = createServiceSupabaseClient();
+
+        // 메모(notes)는 본인 것 또는 관리 권한자만 볼 수 있다
+        const [identity, canManage] = await Promise.all([
+            loadNormalizedIdentity(svc, user.email),
+            hasAdminPermission(teamId, CREDENTIAL_MANAGE_PERMISSION),
+        ]);
+        const actorProfileId = identity?.profile?.id ?? null;
 
         // 팀 멤버십 + 프로필 조회
         const { data: memberships, error: mErr } = await svc
@@ -80,7 +101,10 @@ export async function GET(req: NextRequest) {
                     id: c.id,
                     label: c.label,
                     hasPassword: Boolean(c.encrypted_pw),
-                    notes: c.notes,
+                    notes:
+                        canManage || String(c.profile_id) === actorProfileId
+                            ? c.notes
+                            : null,
                     sortOrder: c.sort_order,
                     updatedAt: c.updated_at,
                 })),
@@ -119,13 +143,30 @@ export async function POST(req: NextRequest) {
         );
     }
 
-    const { user, role } = await getServerUserRole(teamId);
-    if (!user?.email || role !== "admin") {
+    const user = await requireCredentialAdmin(teamId);
+    if (!user) {
         return NextResponse.json({ message: "Admin access required" }, { status: 403 });
     }
 
     try {
         const svc = createServiceSupabaseClient();
+
+        // 대상 프로필이 이 팀의 활성 구성원인지 확인 — 다른 팀 사용자에게
+        // 이 팀 자격증명을 붙이지 못하게 한다
+        const { data: targetMembership, error: targetErr } = await svc
+            .from("team_memberships")
+            .select("id")
+            .eq("team_id", teamId)
+            .eq("profile_id", profileId)
+            .eq("status", "active")
+            .maybeSingle();
+        if (targetErr) throw targetErr;
+        if (!targetMembership) {
+            return NextResponse.json(
+                { message: "profileId is not a member of this team" },
+                { status: 400 },
+            );
+        }
 
         const encryptedPw = body.password?.trim()
             ? encryptField(body.password.trim())
@@ -186,8 +227,8 @@ export async function PATCH(req: NextRequest) {
         );
     }
 
-    const { user, role } = await getServerUserRole(teamId);
-    if (!user?.email || role !== "admin") {
+    const user = await requireCredentialAdmin(teamId);
+    if (!user) {
         return NextResponse.json({ message: "Admin access required" }, { status: 403 });
     }
 
@@ -248,8 +289,8 @@ export async function DELETE(req: NextRequest) {
         );
     }
 
-    const { user, role } = await getServerUserRole(teamId);
-    if (!user?.email || role !== "admin") {
+    const user = await requireCredentialAdmin(teamId);
+    if (!user) {
         return NextResponse.json({ message: "Admin access required" }, { status: 403 });
     }
 

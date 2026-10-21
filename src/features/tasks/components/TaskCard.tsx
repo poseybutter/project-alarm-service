@@ -4,17 +4,11 @@ import { useRef } from "react";
 import Select from "react-select";
 import type { Task } from "@/shared/types";
 import { getDiff, formatWorkload } from "@/shared/utils/utils";
-import { TYPE_COLORS, STATUS_COLORS, normalizeStatus } from "@/shared/constants";
+import { TYPE_COLORS, STATUS_COLORS, TASK_STATUS_OPTIONS, normalizeStatus } from "@/shared/constants";
 import { badgeSelectStyles } from "@/shared/styles/reactSelectStyles";
 import TaskContentList from "@/components/TaskContentList";
 
-const STATUS_OPTIONS = [
-    "대기",
-    "시작 전",
-    "진행중",
-    "지연/보류",
-    "완료",
-].map((s) => ({ value: s, label: s }));
+const STATUS_OPTIONS = TASK_STATUS_OPTIONS.map((s) => ({ value: s, label: s }));
 
 type StatusChangeAnchor = { x: number; y: number };
 
@@ -75,7 +69,6 @@ interface TaskCardProps {
         anchor: StatusChangeAnchor,
     ) => void;
     onEdit: (task: Task) => void;
-    onDelete: (id: number) => void;
 }
 
 /** 업무 목록의 카드 1개. TasksPage.tsx 에서 분리 — 렌더링 전용 컴포넌트. */

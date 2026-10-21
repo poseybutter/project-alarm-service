@@ -2,8 +2,9 @@
 
 import Select from "react-select";
 import { taskFilterProjectSelectStyles } from "@/shared/styles/reactSelectStyles";
+import { TASK_PRIORITY_OPTIONS } from "@/shared/constants";
 
-const PRIORITY_OPTIONS = ["긴급", "높음", "보통", "낮음"].map((p) => ({
+const PRIORITY_OPTIONS = TASK_PRIORITY_OPTIONS.map((p) => ({
     value: p,
     label: p,
 }));

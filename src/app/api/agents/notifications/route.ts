@@ -1,4 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
+import {
+    AdminApiError,
+    requireAdminSession,
+} from "@/features/admin/server/adminRepository";
+import { adminErrorResponse } from "@/features/admin/server/http";
 import { buildAccessibilityReminderSuggestions } from "@/features/agents/server/accessibilityReminderAgent";
 import { buildNotificationSuggestions } from "@/features/agents/server/notificationAgent";
 import {
@@ -15,6 +20,7 @@ import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
 } from "@/infrastructure/supabase/server";
+import { todayKstWindow } from "@/infrastructure/google-calendar";
 import type { Accessibility, Task } from "@/shared/types";
 import type {
     CalendarEventInput,
@@ -32,12 +38,19 @@ function excludeRecentlyDelivered<T extends { dedupe_key: string | null }>(
 }
 
 export async function POST(req: NextRequest) {
-    const { user, role, teamId } = await getServerCurrentTeamRole();
+    const { user, teamId } = await getServerCurrentTeamRole();
     if (!user || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
-    if (role !== "admin") {
-        return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+    try {
+        await requireAdminSession(teamId, "integrations.manage");
+    } catch (error) {
+        if (error instanceof AdminApiError) return adminErrorResponse(error);
+        return internalErrorResponse(
+            "agent-notifications-auth",
+            error,
+            "권한을 확인하지 못했습니다.",
+        );
     }
 
     // 팀 데이터 전반을 읽는 무거운 생성 작업이므로 남용을 막는다.
@@ -49,6 +62,8 @@ export async function POST(req: NextRequest) {
 
     const save = req.nextUrl.searchParams.get("save") !== "false";
     const service = createServiceSupabaseClient();
+    // 캘린더 일정은 오늘(KST)과 겹치는 것만 읽는다. 날짜 제한 없이 읽으면 누적 이력 전체를 가져온다.
+    const { timeMin, timeMax } = todayKstWindow();
 
     const [
         { data: tasks, error: taskError },
@@ -70,9 +85,11 @@ export async function POST(req: NextRequest) {
             service
                 .from("agent_calendar_events")
                 .select(
-                    "id, member, email, title, starts_at, ends_at, all_day, location, html_link",
+                    "id, member, email, title, starts_at, ends_at, all_day, location, html_link, google_event_id",
                 )
                 .eq("team_id", teamId)
+                .lt("starts_at", timeMax)
+                .gt("ends_at", timeMin)
                 .order("starts_at", { ascending: true }),
             service
                 .from("quests")

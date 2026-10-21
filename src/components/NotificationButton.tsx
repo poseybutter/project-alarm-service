@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useNotifications } from "@/hooks/useNotifications";
 import { timeAgo } from "@/shared/utils/utils";
 
-export default function NotificationButton() {
+export default function NotificationButton({ dropUp }: { dropUp?: boolean }) {
     const router = useRouter();
     const { notifications, unreadCount, readIds, markAllRead } =
         useNotifications();
@@ -64,7 +64,7 @@ export default function NotificationButton() {
 
             {/* 드롭다운 팝업 */}
             {open && (
-                <div className="absolute right-0 top-10 w-80 bg-white rounded-lg border-2 border-stone-200 shadow-xl z-50 overflow-hidden">
+                <div className={`absolute w-80 bg-white rounded-lg border-2 border-stone-200 shadow-xl z-50 overflow-hidden ${dropUp ? "bottom-full left-0 mb-2" : "right-0 top-10"}`}>
                     {/* 헤더 */}
                     <div className="flex items-center gap-2 px-4 py-3 border-b border-stone-100">
                         <span className="text-base">🔔</span>

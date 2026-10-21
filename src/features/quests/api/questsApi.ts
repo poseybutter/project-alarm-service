@@ -1,18 +1,8 @@
 import { supabase } from "@/infrastructure/supabase/client";
 import { normalizeProject } from "@/shared/utils/utils";
-import type { Project } from "@/shared/types";
+import type { Project, Quest } from "@/shared/types";
 
-export type Quest = {
-    id: number;
-    player_id?: number | null;
-    project_id?: number | null;
-    member: string;
-    proj: string | null;
-    content: string;
-    status: string;
-    end_date: string | null;
-    created_at: string;
-};
+export type { Quest };
 
 export type NewQuestInput = {
     member: string;
@@ -64,7 +54,13 @@ export async function insertQuest(input: NewQuestInput): Promise<void> {
     if (error) throw error;
 }
 
-export async function deleteQuestById(id: number): Promise<void> {
-    const { error } = await supabase.from("quests").delete().eq("id", id);
+export async function deleteQuestById(id: number, teamId?: string): Promise<void> {
+    let query = supabase.from("quests").delete().eq("id", id);
+    if (teamId) query = query.eq("team_id", teamId);
+    const { data, error } = await query.select("id");
     if (error) throw error;
+    // RLS 로 막히면 error 없이 0행이 삭제되므로 실패로 처리한다
+    if (!data || data.length === 0) {
+        throw new Error("삭제할 수 있는 퀘스트가 없습니다 (권한 없음 또는 이미 삭제됨)");
+    }
 }

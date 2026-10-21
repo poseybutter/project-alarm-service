@@ -21,15 +21,17 @@ export async function fetchHomeData(
     teamId: string,
     member: string,
     isGuest: boolean,
+    playerId: number | null,
 ): Promise<HomeData> {
+    // 본인 player 는 team-context 의 playerId(멤버십 연결 행)로 찾는다.
+    // 이름 조회는 동명이인·이름 변경 시 다른 행을 가리킬 수 있어 폴백으로만 쓴다.
+    const playerQuery = supabase.from("players").select(PLAYER_COLS);
     const [playerRes, questRes, myTaskRes, guestTaskRes, projRes] =
         await Promise.all([
-        supabase
-            .from("players")
-            .select(PLAYER_COLS)
-            .eq("team_id", teamId)
-            .eq("name", member)
-            .maybeSingle(),
+        (playerId != null
+            ? playerQuery.eq("id", playerId)
+            : playerQuery.eq("team_id", teamId).eq("name", member)
+        ).maybeSingle(),
         supabase
             .from("quests")
             .select(QUEST_COLS)

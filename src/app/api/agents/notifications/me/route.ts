@@ -8,6 +8,7 @@ import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
 } from "@/infrastructure/supabase/server";
+import { requireAdminSession } from "@/features/admin/server/adminRepository";
 import { resolveTeamMember } from "@/features/identity/server/identityRepository";
 import {
     buildNotificationSuggestions,
@@ -16,6 +17,8 @@ import {
 } from "@/features/agents/server/notificationAgent";
 import {
     syncTodayGoogleCalendarEvents,
+    syncTodayTeamCalendarEvents,
+    todayKstWindow,
     type GoogleCalendarConnection,
 } from "@/infrastructure/google-calendar";
 import type { Accessibility, Task } from "@/shared/types";
@@ -53,13 +56,58 @@ export async function POST(req: Request) {
                 .maybeSingle();
         if (connectionError) throw connectionError;
 
+        // 개인 캘린더 오류(토큰 만료 등)로 브리핑 전체가 실패하지 않도록 빈 목록으로 대체한다.
         const personalCalendarEvents = calendarConnection
             ? await syncTodayGoogleCalendarEvents(serviceSupabase, {
                   teamId,
                   connection: calendarConnection as GoogleCalendarConnection,
+              }).catch((err) => {
+                  console.error("[personal-briefing-calendar]", err);
+                  return [] as CalendarEventInput[];
               })
             : [];
-        const teamCalendarEvents: CalendarEventInput[] = [];
+
+        // 팀 캘린더 동기화는 팀 전체 데이터를 다시 쓰므로 연동 관리 권한이 있는 관리자만 실행한다.
+        // 그 외 멤버는 마지막으로 동기화된 결과 중 본인 일정만 읽는다.
+        const canSyncTeamCalendar = await requireAdminSession(
+            teamId,
+            "integrations.manage",
+        ).then(
+            () => true,
+            () => false,
+        );
+        let teamCalendarEvents: CalendarEventInput[];
+        if (canSyncTeamCalendar) {
+            teamCalendarEvents = await syncTodayTeamCalendarEvents(
+                serviceSupabase,
+                { teamId },
+            ).catch(() => [] as CalendarEventInput[]);
+        } else {
+            const { timeMin, timeMax } = todayKstWindow();
+            const { data: storedTeamEvents, error: storedTeamEventsError } =
+                await serviceSupabase
+                    .from("agent_calendar_events")
+                    .select(
+                        "id, member, email, title, starts_at, ends_at, all_day, location, html_link, google_event_id",
+                    )
+                    .eq("team_id", teamId)
+                    .eq("email", user.email)
+                    .neq("calendar_id", "primary")
+                    .lt("starts_at", timeMax)
+                    .gt("ends_at", timeMin);
+            teamCalendarEvents = storedTeamEventsError
+                ? []
+                : ((storedTeamEvents ?? []) as CalendarEventInput[]);
+        }
+        // 팀 동기화 결과에는 모든 멤버 일정이 섞여 있으므로 호출자 본인 것만 남긴다.
+        const ownCalendarEvents = [
+            ...(personalCalendarEvents ?? []),
+            ...(teamCalendarEvents ?? []),
+        ].filter(
+            (event) =>
+                event.member === member.name ||
+                event.email?.toLowerCase() === user.email?.toLowerCase(),
+        ) as CalendarEventInput[];
 
         const [
             { data: tasks, error: taskError },
@@ -95,12 +143,13 @@ export async function POST(req: Request) {
             teamId,
             tasks: (tasks ?? []) as Task[],
             accessibility: (accessibility ?? []) as Accessibility[],
-            calendarEvents: [
-                ...(personalCalendarEvents ?? []),
-                ...(teamCalendarEvents ?? []),
-            ] as CalendarEventInput[],
+            calendarEvents: ownCalendarEvents,
             quests: (quests ?? []) as QuestBriefingInput[],
             createdBy: user.email,
+        }).filter((suggestion) => {
+            // 호출자 본인에게 가는 브리핑만 저장·반환한다.
+            const payload = suggestion.payload as { recipientMember?: unknown };
+            return payload.recipientMember === member.name;
         });
 
         const rows = suggestions.map((suggestion) => ({
@@ -146,7 +195,7 @@ export async function POST(req: Request) {
             .eq("payload->>recipientMember", member.name);
 
         if (refreshedIds.length > 0) {
-            cleanup = cleanup.not("id", "in", `(${refreshedIds.join(",")})`);
+            cleanup = cleanup.not("id", "in", `(${refreshedIds.map((id) => String(Number(id))).join(",")})`);
         }
 
         const { error: cleanupError } = await cleanup;

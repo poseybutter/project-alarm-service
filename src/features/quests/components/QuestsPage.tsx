@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import Tooltip from '@/components/Tooltip'
 import Select from 'react-select'
 import { modalFormSelectStyles } from '@/shared/styles/reactSelectStyles'
 import { useAuth } from '@/components/AuthProvider'
 import { findProjectId, findTeamMemberId, getDiff } from '@/shared/utils/utils'
 import type { Quest } from '@/features/quests/api/questsApi'
+import QuestCardContent from '@/features/gamification/QuestCardContent'
 import {
   useAddQuestMutation,
   useDeleteQuestMutation,
@@ -16,7 +17,8 @@ import {
 } from '@/features/quests/hooks/useQuests'
 
 export default function QuestsPage() {
-  const { member, members, memberOptions, teamId } = useAuth()
+  // viewer·게스트는 읽기 전용 — 추가/완료/삭제 컨트롤을 숨긴다
+  const { member, members, memberOptions, teamId, canWrite } = useAuth()
   const memberOptionNames = memberOptions.map(o => o.name)
   const [filter, setFilter]     = useState('')
   const [showModal, setShowModal] = useState(false)
@@ -26,7 +28,13 @@ export default function QuestsPage() {
   })
 
   // 서버 상태 — 로딩·캐싱·팀 전환은 queryKey 가 담당
-  const { data: quests = [], isLoading } = useQuestsQuery(teamId)
+  const {
+    data: quests = [],
+    isLoading,
+    isError,
+    refetch,
+    isFetching,
+  } = useQuestsQuery(teamId)
   const { data: projects = [] } = useQuestProjectsQuery(teamId)
   const addQuestMutation = useAddQuestMutation(teamId)
   const deleteQuestMutation = useDeleteQuestMutation(teamId)
@@ -48,10 +56,12 @@ export default function QuestsPage() {
     }
   }
 
-  function showToastMsg(msg: string) {
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>(null)
+  const showToastMsg = useCallback((msg: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current)
     setToast(msg)
-    setTimeout(() => setToast(''), 3000)
-  }
+    toastTimer.current = setTimeout(() => setToast(''), 3000)
+  }, [])
 
   async function addQuest() {
     if (!teamId) return
@@ -118,17 +128,19 @@ export default function QuestsPage() {
     <div className="min-h-screen bg-stone-50">
       {/* 헤더 */}
       <div className="bg-white border-b border-stone-200 px-4 py-3 sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto flex justify-between items-center">
+        <div className="max-w-2xl mx-auto lg:max-w-none flex justify-between items-center">
           <div>
             <h1 className="text-base font-bold text-stone-800">오늘의 퀘스트</h1>
             <p className="text-xs text-stone-400 mt-0.5">완료하면 EXP +10</p>
           </div>
-          <button
-            onClick={() => { setForm({...form, member: filter}); setShowModal(true) }}
-            className="bg-amber-600 text-white text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-1"
-          >
-            <span className="text-lg leading-none">+</span> 추가
-          </button>
+          {canWrite && (
+            <button
+              onClick={() => { setForm({...form, member: filter}); setShowModal(true) }}
+              className="bg-amber-600 text-white text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-1"
+            >
+              <span className="text-lg leading-none">+</span> 추가
+            </button>
+          )}
         </div>
       </div>
 
@@ -165,10 +177,23 @@ export default function QuestsPage() {
         <div className="px-4 pb-24">
           {isLoading ? (
             <div className="text-center py-16 text-stone-400 text-sm">불러오는 중...</div>
+          ) : isError && quests.length === 0 ? (
+            // 조회 실패를 "퀘스트가 없어요"로 오해하지 않도록 오류와 재시도를 보여준다
+            <div className="my-8 rounded-xl border border-red-200 bg-red-50 px-4 py-8 text-center">
+              <p className="text-sm font-medium text-red-700">퀘스트를 불러오지 못했어요</p>
+              <button
+                type="button"
+                onClick={() => void refetch()}
+                disabled={isFetching}
+                className="mt-3 rounded-lg border border-red-300 bg-white px-4 py-2 text-xs font-bold text-red-600 transition-colors hover:bg-red-100 disabled:opacity-50"
+              >
+                {isFetching ? '다시 불러오는 중...' : '다시 시도'}
+              </button>
+            </div>
           ) : filtered.length === 0 ? (
             <div className="text-center py-16 text-stone-400 text-sm">
               퀘스트가 없어요<br />
-              <span className="text-xs">+ 버튼으로 추가해보세요!</span>
+              {canWrite && <span className="text-xs">+ 버튼으로 추가해보세요!</span>}
             </div>
           ) : (
             <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
@@ -186,8 +211,10 @@ export default function QuestsPage() {
                   >
                     {/* 체크 버튼 */}
                     <button
-                      onClick={() => updateQuestStatus(q, isDone ? '대기' : '완료')}
-                      className={`w-5 h-5 rounded-full border-2 shrink-0 mt-0.5 flex items-center justify-center transition-all
+                      onClick={() => { if (canWrite) void updateQuestStatus(q, isDone ? '대기' : '완료') }}
+                      disabled={!canWrite}
+                      aria-label={isDone ? '완료 취소' : '퀘스트 완료'}
+                      className={`w-5 h-5 rounded-full border-2 shrink-0 mt-0.5 flex items-center justify-center transition-all disabled:cursor-default
                         ${isDone
                           ? 'bg-green-500 border-green-500 text-white'
                           : 'border-stone-300'}`}
@@ -196,9 +223,8 @@ export default function QuestsPage() {
                     </button>
 
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-medium ${isDone ? 'line-through text-stone-400' : 'text-stone-800'}`}>
-                        {q.content}
-                      </p>
+                      {/* Tiptap 으로 저장된 HTML 은 태그가 그대로 보이지 않도록 정제 후 렌더 */}
+                      <QuestCardContent content={q.content} completing={isDone} />
                       {q.proj && (
                         <p className="text-xs text-stone-400 mt-0.5">{q.proj}</p>
                       )}
@@ -214,13 +240,15 @@ export default function QuestsPage() {
                           {diff !== null && diff >= 0 && diff <= 7 && ` D-${diff}`}
                         </span>
                       )}
-                      <Tooltip label="삭제">
-                        <button
-                          onClick={() => deleteQuest(q.id)}
-                          aria-label="삭제"
-                          className="text-base text-stone-300 hover:text-red-400 transition-colors"
-                        ><i className="ri-delete-bin-line" aria-hidden /></button>
-                      </Tooltip>
+                      {canWrite && (
+                        <Tooltip label="삭제">
+                          <button
+                            onClick={() => deleteQuest(q.id)}
+                            aria-label="삭제"
+                            className="text-base text-stone-300 hover:text-red-400 transition-colors"
+                          ><i className="ri-delete-bin-line" aria-hidden /></button>
+                        </Tooltip>
+                      )}
                     </div>
                   </div>
                 )
@@ -231,7 +259,7 @@ export default function QuestsPage() {
       </div>
 
       {/* 추가 모달 */}
-      {showModal && (
+      {showModal && canWrite && (
         <div
           className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
           onClick={() => setShowModal(false)}
