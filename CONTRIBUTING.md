@@ -29,6 +29,8 @@ AI 작업자의 권한 경계는 [`docs/ai/AI-협업-가이드.md`](docs/ai/AI-�
 - 흐름 (1인 운영 기준): `develop`에 직접 push → push 마다 CI 검증 → 배포 시점에 `develop` → `main` 승격 PR.
   승격 PR에서 리뷰(CodeRabbit)·CodeQL·의존성 검사·제목 검증이 수행되고, 머지가 곧 운영 배포입니다.
 - `main` 직접 push 는 금지합니다. 승격 PR은 squash 하지 않습니다 (두 브랜치의 공통 조상 유지).
+- Dependabot 버전 업데이트는 `develop`을 대상으로 열립니다. 보안 업데이트는 GitHub 정책상 항상 `main`으로 열리므로,
+  머지 후 `main` → `develop` 역머지로 두 브랜치를 맞춥니다.
 - 범위가 크거나 되돌릴 가능성이 있는 작업은 지금처럼 `<type>/<작업요약>` 브랜치(영문 kebab-case)로 분리해 `develop` PR을 거칠 수 있습니다.
 - 버전·릴리스: `main` push 시 자동화(`notify.yml`)가 `package.json` 버전 기준으로 태그·GitHub Release·알림을 만듭니다.
   버전은 릴리스 목적의 승격 PR에서만 올리고, 이미 태그로 존재하는 버전은 다시 쓰지 않습니다.
