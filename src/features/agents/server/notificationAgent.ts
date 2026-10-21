@@ -19,6 +19,8 @@ export type CalendarEventInput = {
     all_day: boolean;
     location: string | null;
     html_link: string | null;
+    /** 같은 일정이 팀 캘린더·개인 primary 양쪽에서 올 때 중복 제거에 쓴다. */
+    google_event_id?: string | null;
 };
 
 export type PersonalReminderInput = {
@@ -78,16 +80,28 @@ function todayKstYmd(now = new Date()) {
     }).format(now);
 }
 
-function isTodayKst(value: string | null, today: string) {
-    if (!value) return false;
-    return (
-        new Intl.DateTimeFormat("en-CA", {
-            timeZone: "Asia/Seoul",
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-        }).format(new Date(value)) === today
-    );
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * 일정이 KST 오늘(00:00~24:00)과 겹치는지. 시작일만 보면 어제 시작한
+ * 여러 날짜 일정(휴가 등)이 빠지므로 [시작, 종료) 구간 겹침으로 판단한다.
+ * 종일 일정의 종료는 다음 날 00:00(배타)이라 경계 비교는 엄격 부등호를 쓴다.
+ */
+function overlapsTodayKst(
+    startsAt: string | null,
+    endsAt: string | null,
+    today: string,
+) {
+    if (!startsAt) return false;
+    const dayStart = new Date(`${today}T00:00:00+09:00`).getTime();
+    const dayEnd = dayStart + DAY_MS;
+    const start = new Date(startsAt).getTime();
+    if (Number.isNaN(start)) return false;
+    const parsedEnd = endsAt ? new Date(endsAt).getTime() : Number.NaN;
+    // 종료가 없거나 시작 이전이면 시작 시각 한 점으로 본다.
+    const end = Number.isNaN(parsedEnd) || parsedEnd < start ? start : parsedEnd;
+    if (end === start) return start >= dayStart && start < dayEnd;
+    return start < dayEnd && end > dayStart;
 }
 
 function formatDue(diff: number) {
@@ -467,9 +481,16 @@ export function buildNotificationSuggestions(input: {
         ensureDigest(task.member).tasks.push({ task, diff });
     }
 
+    // 팀 캘린더와 개인 primary 에 같은 일정(같은 Google 이벤트 ID)이 있으면 한 번만 넣는다.
+    const seenEventKeys = new Set<string>();
     for (const event of input.calendarEvents ?? []) {
         if (!event.member) continue;
-        if (!isTodayKst(event.starts_at, today)) continue;
+        if (!overlapsTodayKst(event.starts_at, event.ends_at, today)) continue;
+        if (event.google_event_id) {
+            const key = `${event.member}|${event.google_event_id}`;
+            if (seenEventKeys.has(key)) continue;
+            seenEventKeys.add(key);
+        }
         ensureDigest(event.member).events.push(event);
     }
 

@@ -9,13 +9,26 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  * players 폴백은 제거되었다.
  */
 
-const { mockGetUser, mockMaybeSingle, mockLoadNormalizedIdentity } = vi.hoisted(
-    () => ({
-        mockGetUser: vi.fn(),
-        mockMaybeSingle: vi.fn(),
-        mockLoadNormalizedIdentity: vi.fn(),
+const {
+    mockGetUser,
+    mockMaybeSingle,
+    mockLoadNormalizedIdentity,
+    mockTeamsIn,
+} = vi.hoisted(() => ({
+    mockGetUser: vi.fn(),
+    mockMaybeSingle: vi.fn(),
+    mockLoadNormalizedIdentity: vi.fn(),
+    mockTeamsIn: vi.fn(),
+}));
+
+// 팀 상태(teams.status) 조회는 service role 클라이언트로 한다
+vi.mock("@supabase/supabase-js", () => ({
+    createClient: () => ({
+        from: () => ({
+            select: () => ({ in: mockTeamsIn }),
+        }),
     }),
-);
+}));
 
 vi.mock("next/headers", () => ({
     cookies: async () => ({ getAll: () => [], set: () => {} }),
@@ -64,8 +77,14 @@ function profileWith(
 
 beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://localhost:54321");
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "service-role-key");
     mockMaybeSingle.mockResolvedValue({ data: null });
     mockLoadNormalizedIdentity.mockResolvedValue(null);
+    mockTeamsIn.mockImplementation(async (_column: string, ids: string[]) => ({
+        data: ids.map((id) => ({ id, status: "active" })),
+        error: null,
+    }));
 });
 
 describe("getServerUserRole", () => {
@@ -88,6 +107,40 @@ describe("getServerUserRole", () => {
         const { role } = await getServerUserRole(TEAM);
 
         expect(role).toBe("admin");
+    });
+
+    it("보관(archived)된 팀이면 활성 멤버십이어도 권한이 없다", async () => {
+        signedInAs("member@example.com");
+        mockLoadNormalizedIdentity.mockResolvedValue(
+            profileWith("active", [
+                { teamId: TEAM, status: "active", role: "admin" },
+            ]),
+        );
+        mockTeamsIn.mockResolvedValue({
+            data: [{ id: TEAM, status: "archived" }],
+            error: null,
+        });
+
+        const { role } = await getServerUserRole(TEAM);
+
+        expect(role).toBeNull();
+    });
+
+    it("팀 상태 조회가 실패하면 권한이 없다 (fail-closed)", async () => {
+        signedInAs("member@example.com");
+        mockLoadNormalizedIdentity.mockResolvedValue(
+            profileWith("active", [
+                { teamId: TEAM, status: "active", role: "admin" },
+            ]),
+        );
+        mockTeamsIn.mockResolvedValue({
+            data: null,
+            error: { code: "500", message: "boom" },
+        });
+
+        const { role } = await getServerUserRole(TEAM);
+
+        expect(role).toBeNull();
     });
 
     it("다른 팀 멤버십만 있으면 해당 팀 권한이 없다", async () => {

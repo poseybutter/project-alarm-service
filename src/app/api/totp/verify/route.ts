@@ -9,7 +9,7 @@ import {
     consumeSharedRateLimit,
     rateLimitResponse,
 } from "@/shared/server/rateLimit";
-import { verifyTotpCode } from "@/shared/server/totp";
+import { consumeTotpStep, verifyTotpCodeStep } from "@/shared/server/totp";
 import { decryptField } from "@/shared/server/fieldEncryption";
 import { issueVerifyToken } from "@/shared/server/pinToken";
 import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
@@ -77,10 +77,18 @@ export async function POST(req: NextRequest) {
         }
 
         const secret = decryptField(row.encrypted_secret);
-        const ok = verifyTotpCode(secret, code);
+        const step = verifyTotpCodeStep(secret, code);
 
-        if (!ok) {
+        if (step === null) {
             return NextResponse.json({ ok: false, message: "코드가 올바르지 않습니다." });
+        }
+
+        // 재사용 방지 — 이미 사용한 time-step(같은 코드 또는 더 이전 코드)은 거부
+        if (!(await consumeTotpStep(svc, row.id, step))) {
+            return NextResponse.json({
+                ok: false,
+                message: "이미 사용된 코드입니다. 다음 코드를 입력해주세요.",
+            });
         }
 
         const token = issueVerifyToken(teamId, profileId);

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AuthGuard from "@/components/AuthGuard";
 import NotificationButton from "@/components/NotificationButton";
 import UserMenu from "@/components/UserMenu";
@@ -53,6 +53,10 @@ type EditingBriefingItem = {
     widgetIndex: number;
     text: string;
 };
+
+function memberCalendarMap(rows: MemberCalendarSettings[]) {
+    return Object.fromEntries(rows.map((row) => [row.member, row.calendar_id]));
+}
 
 function getPayload(suggestion: AgentSuggestion) {
     return suggestion.payload as Partial<NotificationSuggestionPayload>;
@@ -140,12 +144,17 @@ export default function AgentsPage() {
 
     const [toast, setToast] = useState("");
 
+    const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // 팀 전환 시 이전 팀 요청의 늦은 응답이 새 팀 상태를 덮어쓰지 않도록 세대 번호로 거른다.
+    const loadGenerationRef = useRef(0);
     const showToast = useCallback((message: string) => {
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
         setToast(message);
-        window.setTimeout(() => setToast(""), 2600);
+        toastTimerRef.current = setTimeout(() => setToast(""), 2600);
     }, []);
 
     const loadSuggestions = useCallback(async () => {
+        const generation = loadGenerationRef.current;
         setSuggestionsLoading(true);
         try {
             const params = new URLSearchParams({
@@ -155,38 +164,49 @@ export default function AgentsPage() {
             });
             const res = await fetch(`/api/agents/suggestions?${params}`);
             const json = await res.json();
+            if (generation !== loadGenerationRef.current) return;
             if (!res.ok) throw new Error(json.message || "브리핑 후보 조회 실패");
             setSuggestions(json.suggestions ?? []);
         } catch (err) {
+            if (generation !== loadGenerationRef.current) return;
             showToast(
                 err instanceof Error ? err.message : "브리핑 후보 조회 실패",
             );
         } finally {
-            setSuggestionsLoading(false);
+            if (generation === loadGenerationRef.current) {
+                setSuggestionsLoading(false);
+            }
         }
     }, [showToast]);
 
     const loadCalendarStatus = useCallback(async () => {
+        const generation = loadGenerationRef.current;
         setCalendarLoading(true);
         try {
             const res = await fetch("/api/agents/calendar/status");
             const json = await res.json();
+            if (generation !== loadGenerationRef.current) return;
             if (!res.ok) throw new Error(json.message || "캘린더 상태 조회 실패");
             setCalendarStatus(json);
         } catch (err) {
+            if (generation !== loadGenerationRef.current) return;
             showToast(
                 err instanceof Error ? err.message : "캘린더 상태 조회 실패",
             );
         } finally {
-            setCalendarLoading(false);
+            if (generation === loadGenerationRef.current) {
+                setCalendarLoading(false);
+            }
         }
     }, [showToast]);
 
     const loadWebhook = useCallback(async () => {
+        const generation = loadGenerationRef.current;
         setWebhookLoading(true);
         try {
             const res = await fetch("/api/agents/webhook");
             const json = await res.json();
+            if (generation !== loadGenerationRef.current) return;
             if (!res.ok) throw new Error(json.message || "Webhook 조회 실패");
 
             setWebhookUrl(json.webhookUrl ?? "");
@@ -198,38 +218,42 @@ export default function AgentsPage() {
                 Object.fromEntries(members.map((row) => [row.member, ""])),
             );
         } catch (err) {
+            if (generation !== loadGenerationRef.current) return;
             showToast(err instanceof Error ? err.message : "Webhook 조회 실패");
         } finally {
-            setWebhookLoading(false);
+            if (generation === loadGenerationRef.current) {
+                setWebhookLoading(false);
+            }
         }
     }, [showToast]);
 
     const loadSettings = useCallback(async () => {
+        const generation = loadGenerationRef.current;
         setSettingsLoading(true);
         try {
             const res = await fetch("/api/agents/settings");
             const json = await res.json();
+            if (generation !== loadGenerationRef.current) return;
             if (!res.ok) throw new Error(json.message || "알림 설정 조회 실패");
             setSettings(json.settings);
             setTeamCalendar(json.teamCalendar ?? null);
             setTeamCalendarId(json.teamCalendar?.calendar_id ?? "");
-            const memberCalendars =
-                (json.memberCalendars ?? []) as MemberCalendarSettings[];
+            // 멤버 목록과의 매핑은 렌더·저장 시점에 한다. 여기서 members 에 의존하면
+            // 멤버 목록이 바뀔 때마다 4개 API 를 다시 호출하게 된다.
             setMemberCalendarIds(
-                Object.fromEntries(
-                    teamEventMembers.map((name) => [
-                        name,
-                        memberCalendars.find((row) => row.member === name)
-                            ?.calendar_id ?? "",
-                    ]),
+                memberCalendarMap(
+                    (json.memberCalendars ?? []) as MemberCalendarSettings[],
                 ),
             );
         } catch (err) {
+            if (generation !== loadGenerationRef.current) return;
             showToast(err instanceof Error ? err.message : "알림 설정 조회 실패");
         } finally {
-            setSettingsLoading(false);
+            if (generation === loadGenerationRef.current) {
+                setSettingsLoading(false);
+            }
         }
-    }, [showToast, teamEventMembers]);
+    }, [showToast]);
 
     const refreshMyBriefing = useCallback(async () => {
         const res = await fetch("/api/agents/notifications/me", {
@@ -242,6 +266,8 @@ export default function AgentsPage() {
     }, [loadSuggestions]);
 
     useEffect(() => {
+        // 팀이 바뀌면 세대를 올려 진행 중인 이전 팀 요청의 응답을 버린다.
+        loadGenerationRef.current += 1;
         const timer = window.setTimeout(() => {
             void loadSuggestions();
             void loadCalendarStatus();
@@ -251,6 +277,9 @@ export default function AgentsPage() {
             const params = new URLSearchParams(window.location.search);
             if (params.get("calendar") === "connected") {
                 showToast("Google Calendar가 연결되었습니다");
+                window.history.replaceState({}, "", "/agents");
+            } else if (params.get("calendar") === "missing_scope") {
+                showToast("캘린더 권한이 허용되지 않았습니다. 권한을 모두 허용해 다시 연결해 주세요");
                 window.history.replaceState({}, "", "/agents");
             }
         }, 0);
@@ -265,9 +294,15 @@ export default function AgentsPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     morningSendTime: settings.morning_send_time.slice(0, 5),
-                    morningEnabled: true,
+                    morningEnabled: settings.morning_enabled,
                     teamCalendarId,
-                    memberCalendarIds,
+                    // 현재 팀 멤버 기준으로 보낸다(빈 값 = 해당 멤버 설정 삭제).
+                    memberCalendarIds: Object.fromEntries(
+                        teamEventMembers.map((name) => [
+                            name,
+                            memberCalendarIds[name] ?? "",
+                        ]),
+                    ),
                 }),
             });
             const json = await res.json();
@@ -275,17 +310,13 @@ export default function AgentsPage() {
             setSettings(json.settings);
             setTeamCalendar(json.teamCalendar ?? null);
             setTeamCalendarId(json.teamCalendar?.calendar_id ?? teamCalendarId);
-            const savedMemberCalendars =
-                (json.memberCalendars ?? []) as MemberCalendarSettings[];
-            setMemberCalendarIds(
-                Object.fromEntries(
-                    teamEventMembers.map((name) => [
-                        name,
-                        savedMemberCalendars.find((row) => row.member === name)
-                            ?.calendar_id ?? memberCalendarIds[name] ?? "",
-                    ]),
-                ),
-            );
+            if (json.memberCalendars) {
+                setMemberCalendarIds(
+                    memberCalendarMap(
+                        json.memberCalendars as MemberCalendarSettings[],
+                    ),
+                );
+            }
             if (!calendarStatus?.connected) {
                 showToast("팀 캘린더 설정을 저장했습니다");
                 return;
@@ -584,9 +615,11 @@ export default function AgentsPage() {
                             >
                                 <i className="ri-settings-3-line text-lg" />
                             </button>
-                            <NotificationButton />
-                            <TeamSwitcher />
-                            <UserMenu />
+                            <div className="flex items-center gap-2 lg:hidden">
+                                <NotificationButton />
+                                <TeamSwitcher />
+                                <UserMenu />
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -26,16 +26,33 @@ const STORAGE_KEY = "sidebar-collapsed";
 export default function Nav() {
     const { member, loading, modules } = useAuth();
     const pathname = usePathname();
-    const [collapsed, setCollapsed] = useState(false);
+    // 저장된 접힘 상태를 지연 초기값으로 읽는다 (effect 안의 동기 setState 회피).
+    // 사이드바는 auth 로딩이 끝난 뒤(클라이언트)에만 렌더되므로 SSR 불일치가 없다.
+    const [collapsed, setCollapsed] = useState(() => {
+        if (typeof window === "undefined") return false;
+        try {
+            return localStorage.getItem(STORAGE_KEY) === "true";
+        } catch {
+            return false;
+        }
+    });
 
-    useEffect(() => {
-        setCollapsed(localStorage.getItem(STORAGE_KEY) === "true");
-    }, []);
+    const sidebarVisible = !loading && !!member && pathname !== "/login" && !pathname.startsWith("/admin");
 
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY, String(collapsed));
-        document.body.dataset.sidebar = collapsed ? "collapsed" : "expanded";
     }, [collapsed]);
+
+    useEffect(() => {
+        if (sidebarVisible) {
+            document.body.dataset.sidebar = collapsed ? "collapsed" : "expanded";
+        } else {
+            delete document.body.dataset.sidebar;
+        }
+        return () => {
+            delete document.body.dataset.sidebar;
+        };
+    }, [collapsed, sidebarVisible]);
 
     const toggle = useCallback(() => setCollapsed((c) => !c), []);
 
@@ -43,8 +60,7 @@ export default function Nav() {
         window.scrollTo(0, 0);
     }, [pathname]);
 
-    if (loading || !member) return null;
-    if (pathname === "/login" || pathname.startsWith("/admin")) return null;
+    if (!sidebarVisible) return null;
 
     const visibleItems = NAV_ITEMS.filter(
         (item) => item.module === null || modules.has(item.module),
@@ -83,8 +99,9 @@ export default function Nav() {
                 }`}
             >
                 {/* 상단: 팀 전환 + 토글 */}
-                <div className={`flex items-center py-4 ${collapsed ? "justify-center px-2" : "justify-between px-4"}`}>
-                    {!collapsed && <TeamSwitcher />}
+                <div className={`flex items-center py-4 ${collapsed ? "flex-col gap-2 justify-center px-2" : "justify-between px-4"}`}>
+                    {/* 접힌 상태에서도 팀 전환이 가능하도록 아이콘형 선택기를 둔다 */}
+                    <TeamSwitcher compact={collapsed} />
                     <button
                         type="button"
                         onClick={toggle}

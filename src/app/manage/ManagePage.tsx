@@ -31,7 +31,11 @@ import {
     badgeSelectStyles,
 } from "@/shared/styles/reactSelectStyles";
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
-import { useProjectFields, type FieldDef } from "./useProjectFields";
+import {
+    useProjectFields,
+    ProjectFieldsApiError,
+    type FieldDef,
+} from "./useProjectFields";
 import {
     AccessSection,
     DevSection,
@@ -47,6 +51,11 @@ import MemberCredentials from "./MemberCredentials";
 
 const MAINTENANCE_STATUS_URL =
     process.env.NEXT_PUBLIC_MAINTENANCE_STATUS_URL?.trim() ?? "";
+/**
+ * 유지보수 현황/통합 엑셀 링크는 단일 팀 시절(구 TEAM_ID) 팀 전용 리소스다.
+ * TODO: 팀 설정(teams 테이블)으로 옮겨 팀별로 링크를 관리하도록 변경
+ */
+const LEGACY_MAINTENANCE_TEAM_ID = "ud2";
 
 const EMPTY_PROJ_FORM = {
     name: "",
@@ -230,7 +239,7 @@ function ProjectDetailTabs({
     project: p,
     projMembers,
     pf,
-    isGuest,
+    readOnly,
     onEdit,
     onDelete,
     onArchive,
@@ -239,11 +248,12 @@ function ProjectDetailTabs({
     totpVerified,
     totpToken,
     onTotpRequired,
+    onTotpInvalid,
 }: {
     project: import("@/shared/types").Project;
     projMembers: string[];
     pf: ReturnType<typeof useProjectFields>;
-    isGuest: boolean;
+    readOnly: boolean;
     onEdit: () => void;
     onDelete: () => void;
     onArchive: () => void;
@@ -252,13 +262,29 @@ function ProjectDetailTabs({
     totpVerified: boolean;
     totpToken: string;
     onTotpRequired: (callback: (token?: string) => void) => void;
+    /** 서버가 TOTP 토큰을 거부했을 때 — 상위의 인증 상태를 초기화한다 */
+    onTotpInvalid: () => void;
 }) {
     const [tab, setTab] = useState<"basic" | "setting">("basic");
     const [defs, setDefs] = useState<FieldDef[]>([]);
     const [values, setValues] = useState<import("./useProjectFields").FieldValue[]>([]);
     const [loaded, setLoaded] = useState(false);
+    const [fieldsError, setFieldsError] = useState<string | null>(null);
+    const [reloadKey, setReloadKey] = useState(0);
 
     const needsAuth = requiresTotp && !totpVerified;
+
+    // TOTP 인증이 만료되면 열려 있던 세팅 탭을 닫는다 (노출된 secret 도 언마운트로 함께 초기화)
+    if (needsAuth && tab === "setting") {
+        setTab("basic");
+    }
+
+    function handleRevealError(err: unknown) {
+        if (requiresTotp && err instanceof ProjectFieldsApiError && err.status === 403) {
+            onTotpInvalid();
+            onTotpRequired(() => setTab("setting"));
+        }
+    }
 
     function handleSettingTab() {
         if (needsAuth) {
@@ -279,11 +305,25 @@ function ProjectDetailTabs({
     useEffect(() => {
         let cancelled = false;
         void (async () => {
-            const [d, v] = await Promise.all([pf.loadDefs(p.id), pf.loadValues(p.id)]);
-            if (!cancelled) { setDefs(d); setValues(v); setLoaded(true); }
+            try {
+                const [d, v] = await Promise.all([
+                    pf.loadDefs(p.id),
+                    pf.loadValues(p.id, totpToken || undefined),
+                ]);
+                if (!cancelled) { setDefs(d); setValues(v); setFieldsError(null); setLoaded(true); }
+            } catch (err) {
+                if (!cancelled) {
+                    setFieldsError(
+                        err instanceof Error && err.message
+                            ? `필드 정보를 불러오지 못했습니다: ${err.message}`
+                            : "필드 정보를 불러오지 못했습니다.",
+                    );
+                    setLoaded(true);
+                }
+            }
         })();
         return () => { cancelled = true; };
-    }, [p.id, pf]);
+    }, [p.id, pf, totpToken, reloadKey]);
 
     const valueMap = new Map(values.map((v) => [v.field_def_id, { value: v.value, has_secret: v.has_secret }]));
 
@@ -333,6 +373,19 @@ function ProjectDetailTabs({
                 </button>
             </div>
 
+            {fieldsError && (
+                <div className="mb-3 flex items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+                    <p className="text-xs text-red-700">{fieldsError}</p>
+                    <button
+                        type="button"
+                        onClick={() => { setLoaded(false); setFieldsError(null); setReloadKey((k) => k + 1); }}
+                        className="shrink-0 rounded-md bg-red-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-red-700"
+                    >
+                        다시 시도
+                    </button>
+                </div>
+            )}
+
             {/* 기본 정보 탭 */}
             {tab === "basic" && (
                 <div className="space-y-2">
@@ -375,13 +428,14 @@ function ProjectDetailTabs({
             )}
 
             {/* 세팅 정보 탭 */}
-            {tab === "setting" && loaded && (
+            {tab === "setting" && loaded && !fieldsError && (
                 <div className="space-y-3">
                     <AccessReadCard
                         defs={defs}
                         values={valueMap}
                         onReveal={(defId) => pf.revealSecret(p.id, defId, totpToken || undefined)}
                         onRevealAll={(defIds) => pf.revealSecrets(p.id, defIds, totpToken || undefined)}
+                        onRevealError={handleRevealError}
                     />
                     <DevReadCard defs={defs} values={valueMap} />
                 </div>
@@ -390,8 +444,8 @@ function ProjectDetailTabs({
                 <p className="text-sm text-stone-400 text-center py-4">불러오는 중...</p>
             )}
 
-            {/* 하단 버튼 */}
-            {!isGuest && (
+            {/* 하단 버튼 — 뷰어·게스트는 읽기 전용 */}
+            {!readOnly && (
                 <div className="flex items-center gap-2 mt-3 pt-2 border-t border-stone-100">
                     <button type="button" onClick={onEdit} className="flex-1 rounded-lg bg-amber-500 py-2 text-xs font-medium text-white hover:bg-amber-600 transition-colors">수정</button>
                     <button type="button" onClick={onDelete} className="flex-1 rounded-lg border border-red-300 py-2 text-xs font-medium text-red-500 hover:bg-red-50 transition-colors">삭제</button>
@@ -406,7 +460,10 @@ const TOTP_EXPIRY_MS = 5 * 60 * 1000; // 5분
 
 export default function ManagePage() {
     const { member, members, memberOptions, role, teamId } = useAuth();
-    const isGuest = member === "GUEST" || role === "guest";
+    // 뷰어·게스트는 읽기 전용 (DB 도 viewer 쓰기를 차단하지만 UI 에서도 쓰기 컨트롤을 숨긴다)
+    const canWrite =
+        (role === "admin" || role === "member") && member !== "GUEST";
+    const readOnly = !canWrite;
     const isAdmin = role === "admin";
 
     const [manageTab, setManageTab] = useState<"project" | "accessibility" | "credentials">(
@@ -504,6 +561,28 @@ export default function ManagePage() {
         }, remaining);
         return () => clearTimeout(timer);
     }, [totpVerifiedAt]);
+
+    /** 서버가 토큰을 거부하면 인증 상태를 초기화한다 (재인증 유도) */
+    const invalidateTotp = useCallback(() => {
+        setTotpVerifiedAt(0);
+        setTotpToken("");
+    }, []);
+
+    // TOTP 보호 팀에서 인증이 만료되면 수정 모달의 세팅 탭·변경 이력 패널을 닫는다
+    const totpLocked = teamRequiresTotp && !totpVerified;
+    if (totpLocked && modalTab === "setting") {
+        setModalTab("basic");
+    }
+    if (totpLocked && historyProjectId !== null) {
+        setHistoryProjectId(null);
+    }
+
+    // values/history GET 에도 reveal 과 동일한 TOTP 토큰을 전달한다 (서버가 요구하는 팀 대비)
+    const loadHistoryWithTotp = useCallback(
+        (projectId: number, cursor?: number | null) =>
+            pf.loadHistory(projectId, cursor, totpToken || undefined),
+        [pf, totpToken],
+    );
     const [totpInput, setTotpInput] = useState("");
     const [totpError, setTotpError] = useState("");
     const [totpVerifying, setTotpVerifying] = useState(false);
@@ -634,9 +713,9 @@ export default function ManagePage() {
                 setTeamRequiresTotp(status.teamRequiresTotp);
                 setUserHasTotp(status.setupComplete);
             }).catch(() => {
-                // 상태 조회 실패 시 보호 모드 유지 — reveal API가 별도로 토큰을 요구하므로 권한 우회 없음
-                setTeamRequiresTotp(false);
-                setUserHasTotp(false);
+                // 상태 조회 실패 시 잠금 상태로 간주 (fail closed) — OTP 입력은 허용하고 최종 판단은 서버가 한다
+                setTeamRequiresTotp(true);
+                setUserHasTotp(true);
             });
         }
 
@@ -677,7 +756,7 @@ export default function ManagePage() {
 
     const accModalProjOptions = useMemo(
         () =>
-            projects
+            [...projects]
                 .sort((a, b) => a.name.localeCompare(b.name, "ko"))
                 .map((p) => ({ value: p.name, label: p.name })),
         [projects],
@@ -716,18 +795,24 @@ export default function ManagePage() {
         [],
     );
 
+    const toastTimer = useRef<ReturnType<typeof setTimeout>>(null);
+    // 수정 모달 열기 요청 세대 — 연속 클릭 시 마지막 요청만 반영한다
+    const projEditGenRef = useRef(0);
     function showToastMsg(msg: string) {
+        if (toastTimer.current) clearTimeout(toastTimer.current);
         setToast(msg);
-        setTimeout(() => setToast(""), 3000);
+        toastTimer.current = setTimeout(() => setToast(""), 3000);
     }
 
     function closeProjModal() {
+        projEditGenRef.current++;
         setShowProjModal(false);
         setEditProj(null);
         setProjForm({ ...EMPTY_PROJ_FORM });
     }
 
     function openProjModalForAdd() {
+        projEditGenRef.current++;
         setEditProj(null);
         setProjForm({ ...EMPTY_PROJ_FORM });
         setModalDefs([]);
@@ -739,6 +824,8 @@ export default function ManagePage() {
     }
 
     async function openProjModalForEdit(p: Project) {
+        if (readOnly) return;
+        const generation = ++projEditGenRef.current;
         setEditProj(p);
         setProjForm({
             name: p.name,
@@ -758,10 +845,24 @@ export default function ManagePage() {
             note: p.note ?? "",
         });
         // 기본 필드 ensure + 로드
-        const [defs, vals] = await Promise.all([
-            pf.ensureDefaultFields(p.id),
-            pf.loadValues(p.id),
-        ]);
+        let defs: FieldDef[];
+        let vals: Awaited<ReturnType<typeof pf.loadValues>>;
+        try {
+            [defs, vals] = await Promise.all([
+                pf.ensureDefaultFields(p.id),
+                pf.loadValues(p.id, totpToken || undefined),
+            ]);
+        } catch (err) {
+            if (generation !== projEditGenRef.current) return;
+            setEditProj(null);
+            showToastMsg(
+                "프로젝트 정보를 불러오지 못했습니다: " +
+                    (err instanceof Error ? err.message : "알 수 없는 오류"),
+            );
+            return;
+        }
+        // 더 최근 요청이 있거나 모달이 닫혔으면 무시
+        if (generation !== projEditGenRef.current) return;
         setModalDefs(defs);
         const valMap = new Map(vals.map((v) => [v.field_def_id, v]));
 
@@ -825,114 +926,120 @@ export default function ManagePage() {
     }
 
     async function saveProject() {
-        if (isGuest || projSaving) return;
+        if (readOnly || projSaving) return;
         if (!projForm.name.trim()) return alert("프로젝트명은 필수예요");
         if (!projForm.members.length)
             return alert("담당자를 1명 이상 선택해 주세요");
         setProjSaving(true);
+        try {
+            const langStr =
+                ["PHP", "JSP", "기타"]
+                    .filter((l) => projForm.languages.includes(l))
+                    .join(", ") || null;
 
-        const langStr =
-            ["PHP", "JSP", "기타"]
-                .filter((l) => projForm.languages.includes(l))
-                .join(", ") || null;
+            const payload = {
+                name: projForm.name.trim(),
+                client: projForm.client || null,
+                members: projForm.members,
+                member: projForm.members[0] || null,
+                language: langStr,
+                pm: modalValues.pm || null,
+                developer: modalValues.developer || null,
+                designer: modalValues.designer || null,
+                frequency: modalValues.frequency || null,
+                prev_member: modalValues.prev_member || null,
+                note: modalValues.note || null,
+                field_order: extraFields.map((f) => f.key),
+            };
 
-        const payload = {
-            name: projForm.name.trim(),
-            client: projForm.client || null,
-            members: projForm.members,
-            member: projForm.members[0] || null,
-            language: langStr,
-            pm: modalValues.pm || null,
-            developer: modalValues.developer || null,
-            designer: modalValues.designer || null,
-            frequency: modalValues.frequency || null,
-            prev_member: modalValues.prev_member || null,
-            note: modalValues.note || null,
-            field_order: extraFields.map((f) => f.key),
-        };
-
-        let projectId: number | null = null;
-        if (editProj) {
-            const { error } = await supabase
-                .from("projects")
-                .update(payload)
-                .eq("id", editProj.id);
-            if (error) {
-                alert("저장 실패: " + error.message);
-                return;
+            let projectId: number | null = null;
+            if (editProj) {
+                const { error } = await supabase
+                    .from("projects")
+                    .update(payload)
+                    .eq("id", editProj.id)
+                    .eq("team_id", teamId);
+                if (error) {
+                    alert("저장 실패: " + error.message);
+                    return;
+                }
+                projectId = editProj.id;
+            } else {
+                if (!teamId) return;
+                const { data: inserted, error } = await supabase.from("projects").insert([{ ...payload, team_id: teamId }]).select("id").single();
+                if (error) {
+                    alert("추가 실패: " + error.message);
+                    return;
+                }
+                projectId = inserted?.id ?? null;
             }
-            projectId = editProj.id;
-        } else {
-            if (!teamId) return;
-            const { data: inserted, error } = await supabase.from("projects").insert([{ ...payload, team_id: teamId }]).select("id").single();
-            if (error) {
-                alert("추가 실패: " + error.message);
-                return;
-            }
-            projectId = inserted?.id ?? null;
-        }
-        // 고정 필드 변경 이력 기록
-        if (editProj && teamId) {
-            const fixedFieldLabels: Record<string, string> = {
-                name: "프로젝트명", client: "고객사", pm: "PM",
-                developer: "개발자", designer: "디자이너",
-                frequency: "빈도", prev_member: "이전 담당자", note: "비고",
-            };
-            const oldVals: Record<string, string | null> = {
-                name: editProj.name, client: editProj.client,
-                pm: editProj.pm, developer: editProj.developer,
-                designer: editProj.designer, frequency: editProj.frequency,
-                prev_member: editProj.prev_member, note: editProj.note,
-            };
-            const newVals: Record<string, string | null> = {
-                name: payload.name, client: payload.client,
-                pm: payload.pm, developer: payload.developer,
-                designer: payload.designer, frequency: payload.frequency,
-                prev_member: payload.prev_member, note: payload.note,
-            };
-            const entries = Object.keys(fixedFieldLabels)
-                .filter((k) => (oldVals[k] ?? "") !== (newVals[k] ?? ""))
-                .map((k) => ({
-                    field_label: fixedFieldLabels[k],
-                    old_value: oldVals[k] || null,
-                    new_value: newVals[k] || null,
-                    action: oldVals[k] ? "update" : "create",
-                }));
-            if (entries.length > 0) {
-                fetch("/api/project-fields/history", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ teamId, projectId, entries }),
-                }).catch(() => {});
-            }
-        }
-        // 커스텀 필드 값 저장 (시스템 필드 + 기타 커스텀, 변경 이력은 values API에서 자동 기록)
-        if (projectId && modalDefs.length > 0) {
-            const fields = modalDefs
-                .map((def) => ({ field_def_id: def.id, value: modalValues[def.name]?.trim() || null }))
-                .filter((f) => {
-                    const def = modalDefs.find((d) => d.id === f.field_def_id);
-                    if (def?.field_type === "secret" && !f.value) return false;
-                    return true;
-                });
-            if (fields.length > 0) {
-                try {
-                    await pf.saveValues(projectId, fields);
-                } catch (err) {
-                    showToastMsg(
-                        "커스텀 필드 저장 실패: " +
-                            (err instanceof Error ? err.message : "알 수 없는 오류"),
-                    );
+            // 고정 필드 변경 이력 기록
+            if (editProj && teamId) {
+                const fixedFieldLabels: Record<string, string> = {
+                    name: "프로젝트명", client: "고객사", pm: "PM",
+                    developer: "개발자", designer: "디자이너",
+                    frequency: "빈도", prev_member: "이전 담당자", note: "비고",
+                };
+                const oldVals: Record<string, string | null> = {
+                    name: editProj.name, client: editProj.client,
+                    pm: editProj.pm, developer: editProj.developer,
+                    designer: editProj.designer, frequency: editProj.frequency,
+                    prev_member: editProj.prev_member, note: editProj.note,
+                };
+                const newVals: Record<string, string | null> = {
+                    name: payload.name, client: payload.client,
+                    pm: payload.pm, developer: payload.developer,
+                    designer: payload.designer, frequency: payload.frequency,
+                    prev_member: payload.prev_member, note: payload.note,
+                };
+                const entries = Object.keys(fixedFieldLabels)
+                    .filter((k) => (oldVals[k] ?? "") !== (newVals[k] ?? ""))
+                    .map((k) => ({
+                        field_label: fixedFieldLabels[k],
+                        old_value: oldVals[k] || null,
+                        new_value: newVals[k] || null,
+                        action: oldVals[k] ? "update" : "create",
+                    }));
+                if (entries.length > 0) {
+                    fetch("/api/project-fields/history", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ teamId, projectId, entries }),
+                    }).catch(() => {});
                 }
             }
+            // 커스텀 필드 값 저장 (시스템 필드 + 기타 커스텀, 변경 이력은 values API에서 자동 기록)
+            if (projectId && modalDefs.length > 0) {
+                const fields = modalDefs
+                    .map((def) => ({ field_def_id: def.id, value: modalValues[def.name]?.trim() || null }))
+                    .filter((f) => {
+                        const def = modalDefs.find((d) => d.id === f.field_def_id);
+                        if (def?.field_type === "secret" && !f.value) return false;
+                        return true;
+                    });
+                if (fields.length > 0) {
+                    try {
+                        await pf.saveValues(projectId, fields);
+                    } catch (err) {
+                        showToastMsg(
+                            "커스텀 필드 저장 실패: " +
+                                (err instanceof Error ? err.message : "알 수 없는 오류"),
+                        );
+                    }
+                }
+            }
+            closeProjModal();
+        } catch (err) {
+            alert("저장 실패: " + (err instanceof Error ? err.message : "알 수 없는 오류"));
+            return;
+        } finally {
+            setProjSaving(false);
         }
-        closeProjModal();
-        setProjSaving(false);
         await loadData();
     }
 
     function deleteProject(id: number) {
-        if (isGuest) return;
+        if (readOnly) return;
         const proj = projects.find((p) => p.id === id);
         setDeleteTarget({
             type: "project",
@@ -984,7 +1091,7 @@ export default function ManagePage() {
 
     async function saveAccessibility() {
         if (!accForm.proj) return alert("프로젝트명은 필수예요");
-        if (isGuest) return;
+        if (readOnly) return;
         const selectedProjectId = findProjectId(projects, accForm.proj);
         if (selectedProjectId === null) {
             showToastMsg("현재 팀의 프로젝트를 다시 선택해주세요");
@@ -1061,7 +1168,7 @@ export default function ManagePage() {
             }
         }
         closeAccModal();
-        await loadData();
+        // accessibility:changed 리스너가 loadData 를 호출하므로 여기서 중복 재조회하지 않는다
         notifyAccessibilityChanged();
     }
 
@@ -1145,7 +1252,7 @@ export default function ManagePage() {
     async function updateAccStatus(id: number, status: string) {
         const row = accessibility.find((a) => a.id === id);
         if (!row) return;
-        const can = !isGuest;
+        const can = !readOnly;
         if (!can) return;
         const canChangeStatus = await prepareAccStatusTransition(row, status);
         if (!canChangeStatus) return;
@@ -1161,14 +1268,14 @@ export default function ManagePage() {
             showToastMsg(error.message || "상태 변경에 실패했어요");
             return;
         }
-        await loadData();
+        // accessibility:changed 리스너가 loadData 를 호출한다
         notifyAccessibilityChanged();
     }
 
     function deleteAcc(id: number) {
         const row = accessibility.find((a) => a.id === id);
         if (!row) return;
-        if (isGuest) return;
+        if (readOnly) return;
         setDeleteTarget({
             type: "accessibility",
             id,
@@ -1185,18 +1292,24 @@ export default function ManagePage() {
                 const { error } = await supabase
                     .from("projects")
                     .delete()
-                    .eq("id", deleteTarget.id);
+                    .eq("id", deleteTarget.id)
+                    .eq("team_id", teamId);
                 if (error) throw error;
             } else {
                 const { error } = await supabase
                     .from("accessibility")
                     .delete()
-                    .eq("id", deleteTarget.id);
+                    .eq("id", deleteTarget.id)
+                    .eq("team_id", teamId);
                 if (error) throw error;
-                notifyAccessibilityChanged();
             }
             setDeleteTarget(null);
-            await loadData();
+            if (deleteTarget.type === "project") {
+                await loadData();
+            } else {
+                // accessibility:changed 리스너가 loadData 를 호출한다
+                notifyAccessibilityChanged();
+            }
         } catch (err: unknown) {
             const e = err as { message?: string; details?: string; hint?: string; code?: string };
             const parts = [e.code, e.message, e.details, e.hint].filter(Boolean);
@@ -1207,10 +1320,12 @@ export default function ManagePage() {
     }
 
     async function toggleArchive(id: number, current: boolean) {
+        if (readOnly) return;
         const { error } = await supabase
             .from("projects")
             .update({ is_archived: !current })
-            .eq("id", id);
+            .eq("id", id)
+            .eq("team_id", teamId);
         if (error) {
             showToastMsg(current ? "보관 해제에 실패했습니다." : "보관에 실패했습니다.");
             return;
@@ -1271,7 +1386,7 @@ export default function ManagePage() {
             return (a.proj || "").localeCompare(b.proj || "", "ko");
         });
 
-    const canEditRowAcc = () => !isGuest;
+    const canEditRowAcc = () => !readOnly;
 
     return (
         <AuthGuard>
@@ -1282,8 +1397,8 @@ export default function ManagePage() {
                             관리
                         </h1>
                         <div className="flex items-center gap-2 shrink-0">
-                            <TeamSwitcher />
-                            {manageTab === "project" && !isGuest && (
+                            <div className="lg:hidden"><TeamSwitcher /></div>
+                            {manageTab === "project" && !readOnly && (
                                 <button
                                     type="button"
                                     onClick={openProjModalForAdd}
@@ -1292,7 +1407,7 @@ export default function ManagePage() {
                                     + 프로젝트 추가
                                 </button>
                             )}
-                            {manageTab === "accessibility" && !isGuest && (
+                            {manageTab === "accessibility" && !readOnly && (
                                 <button
                                     type="button"
                                     onClick={openAccModalForAdd}
@@ -1301,8 +1416,10 @@ export default function ManagePage() {
                                     + 접근성 추가
                                 </button>
                             )}
-                            <NotificationButton />
-                            <UserMenu />
+                            <div className="flex items-center gap-2 lg:hidden">
+                                <NotificationButton />
+                                <UserMenu />
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1415,7 +1532,7 @@ export default function ManagePage() {
                                 </button>
                                 <span className="text-xs text-stone-400 ml-auto">{filteredProjects.length}개</span>
                                 {/* 더보기 */}
-                                {(MAINTENANCE_STATUS_URL || teamId === "ud2") && (
+                                {teamId === LEGACY_MAINTENANCE_TEAM_ID && (
                                     <div className="relative">
                                         <button type="button" onClick={() => setShowMoreMenu((v) => !v)} className="rounded-full bg-stone-100 p-1.5 text-stone-400 hover:bg-stone-200 transition-colors" aria-label="더보기">
                                             <i className="ri-more-2-fill text-xs" aria-hidden />
@@ -1429,7 +1546,7 @@ export default function ManagePage() {
                                                             <i className="ri-bar-chart-line" aria-hidden />유지보수 현황 <i className="ri-external-link-line text-stone-400 ml-auto" aria-hidden />
                                                         </a>
                                                     )}
-                                                    {teamId === "ud2" && (
+                                                    {teamId === LEGACY_MAINTENANCE_TEAM_ID && (
                                                         <a href="https://docs.google.com/spreadsheets/d/1ACScLXCcap3Vvz9eH7sXX0yOcZKcV8blH53h6C63ObE/edit?gid=1191028141#gid=1191028141" target="_blank" rel="noopener noreferrer" onClick={() => setShowMoreMenu(false)} className="flex items-center gap-2 px-3 py-2 text-xs text-stone-600 hover:bg-stone-50">
                                                             <i className="ri-file-excel-line" aria-hidden />퍼블팀 통합 유지보수 엑셀 <i className="ri-external-link-line text-stone-400 ml-auto" aria-hidden />
                                                         </a>
@@ -1535,8 +1652,8 @@ export default function ManagePage() {
                                                     project={p}
                                                     projMembers={projMembers}
                                                     pf={pf}
-                                                    isGuest={isGuest}
-                                                    onEdit={() => openProjModalForEdit(p)}
+                                                    readOnly={readOnly}
+                                                    onEdit={() => void openProjModalForEdit(p)}
                                                     onDelete={() => void deleteProject(p.id)}
                                                     onArchive={() => void toggleArchive(p.id, p.is_archived ?? false)}
                                                     onHistory={() => setHistoryProjectId(p.id)}
@@ -1544,6 +1661,7 @@ export default function ManagePage() {
                                                     totpVerified={totpVerified}
                                                     totpToken={totpToken}
                                                     onTotpRequired={(cb) => { setTotpModal({ callback: cb }); setTotpInput(""); setTotpError(""); }}
+                                                    onTotpInvalid={invalidateTotp}
                                                 />
                                             )}
                                         </div>
@@ -2050,7 +2168,7 @@ export default function ManagePage() {
                                         </div>
                                     </div>
                                 )}
-                                {!editAcc && !isAdmin && !isGuest && (
+                                {!editAcc && !isAdmin && !readOnly && (
                                     <p className="text-xs text-stone-500 bg-stone-50 rounded-lg px-3 py-2">
                                         본인 프로젝트로 등록돼요 (담당자:{" "}
                                         {member})
@@ -2475,7 +2593,7 @@ export default function ManagePage() {
                     <FieldHistoryPanel
                         projectId={historyProject.id}
                         projectName={historyProject.name}
-                        loadHistory={pf.loadHistory}
+                        loadHistory={loadHistoryWithTotp}
                         onClose={() => setHistoryProjectId(null)}
                     />
                 )}

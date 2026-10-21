@@ -14,11 +14,14 @@ import { createHmac, timingSafeEqual } from "crypto";
 const TOKEN_TTL_MS = 5 * 60 * 1000; // 5분
 
 function getSecret(): string {
-    return (
-        process.env.PIN_TOKEN_SECRET ||
-        process.env.SUPABASE_SERVICE_ROLE_KEY ||
-        "fallback-pin-token-secret"
-    );
+    const secret =
+        process.env.PIN_TOKEN_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!secret) {
+        throw new Error(
+            "PIN_TOKEN_SECRET 또는 SUPABASE_SERVICE_ROLE_KEY 환경변수가 필요합니다",
+        );
+    }
+    return secret;
 }
 
 // ─── Legacy PIN 토큰 (기존 호환) ────────────────────────────────────

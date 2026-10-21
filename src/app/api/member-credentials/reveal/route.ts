@@ -9,9 +9,10 @@ import { validateVerifyToken } from "@/shared/server/pinToken";
 import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
 import {
     requestRateLimitKey,
-    consumeRateLimit,
+    consumeSharedRateLimit,
     rateLimitResponse,
 } from "@/shared/server/rateLimit";
+import { hasAdminPermission } from "@/features/admin/server/adminRepository";
 
 type RevealBody = {
     teamId?: string;
@@ -29,11 +30,11 @@ export async function POST(req: NextRequest) {
     }
 
     const teamId = body.teamId?.trim();
-    const credentialId = body.credentialId;
+    const credentialId = body.credentialId as number;
     const totpToken = body.totpToken?.trim();
 
     // 입력 검증 — totpToken도 필수 파라미터로 취급
-    if (!teamId || !credentialId || !totpToken) {
+    if (!teamId || !Number.isInteger(credentialId) || !totpToken) {
         return NextResponse.json(
             { message: "teamId, credentialId, totpToken are required" },
             { status: 400 },
@@ -46,9 +47,14 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    // rate limit — 인증 후, 유저별 키
+    // rate limit — 인증 후, 유저별 키. 인스턴스 간 공유되는 DB 카운터로 확정하고
+    // DB 장애 시에는 거부(fail-closed)한다.
     const rlKey = requestRateLimitKey(req, "mc-reveal", `${teamId}:${user.email}`);
-    const rl = consumeRateLimit(rlKey, { limit: 10, windowMs: 5 * 60 * 1000 });
+    const rl = await consumeSharedRateLimit(rlKey, {
+        limit: 10,
+        windowMs: 5 * 60 * 1000,
+        failClosed: true,
+    });
     if (!rl.allowed) return rateLimitResponse(rl.retryAfterSeconds);
 
     try {
@@ -80,8 +86,11 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // IDOR 방지: 본인 자격증명이거나 관리자만 열람 가능
-        if (String(row.profile_id) !== profileId && role !== "admin") {
+        // IDOR 방지: 본인 자격증명이거나 관리 권한(members.manage) 보유자만 열람 가능
+        if (
+            String(row.profile_id) !== profileId &&
+            !(await hasAdminPermission(teamId, "members.manage"))
+        ) {
             return NextResponse.json(
                 { message: "Forbidden" },
                 { status: 403 },
@@ -97,6 +106,7 @@ export async function POST(req: NextRequest) {
             action: "view",
             actor_email: user.email,
         });
+        // 감사 로그를 남기지 못하면 비밀번호를 내주지 않는다 (fail-closed)
         if (auditErr) throw auditErr;
 
         return NextResponse.json({ password });

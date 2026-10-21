@@ -1,3 +1,5 @@
+import "server-only";
+
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 
 // PIN은 4~6자리 숫자 — 키 길이 32바이트, cost N=16384.

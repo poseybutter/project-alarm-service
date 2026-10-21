@@ -1,4 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
+import {
+    AdminApiError,
+    requireAdminSession,
+} from "@/features/admin/server/adminRepository";
+import { adminErrorResponse } from "@/features/admin/server/http";
+import { listActiveTeamMembers } from "@/features/identity/server/identityRepository";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import {
     consumeSharedRateLimit,
@@ -15,7 +21,11 @@ import {
     recordNotificationDelivery,
 } from "@/features/agents/server/notificationDeliveries";
 import { updateAgentSuggestionStatus } from "@/features/agents/server/suggestions";
-import { DeliveryUnknownError, sendGoogleChatMessage } from "@/infrastructure/google-chat";
+import {
+    DeliveryUnknownError,
+    resolveTeamRoomWebhook,
+    sendGoogleChatMessage,
+} from "@/infrastructure/google-chat";
 import { decryptIntegrationToken } from "@/infrastructure/security/tokenEncryption";
 
 type SendRequest = {
@@ -29,12 +39,20 @@ function isNotificationPayload(
 }
 
 export async function POST(req: NextRequest) {
-    const { user, role, teamId } = await getServerCurrentTeamRole();
+    const { user, teamId } = await getServerCurrentTeamRole();
     if (!user?.email || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
-    if (role !== "admin") {
-        return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+    try {
+        // role 문자열만으로는 커스텀 역할 권한을 반영하지 못하므로 관리자 세션으로 확인한다.
+        await requireAdminSession(teamId, "integrations.manage");
+    } catch (error) {
+        if (error instanceof AdminApiError) return adminErrorResponse(error);
+        return internalErrorResponse(
+            "agent-notification-send-auth",
+            error,
+            "권한을 확인하지 못했습니다.",
+        );
     }
 
     // 외부 채팅 웹훅 발송이므로 남용을 막는다.
@@ -102,19 +120,44 @@ export async function POST(req: NextRequest) {
         }
 
         let webhookUrl: string | null = null;
-        if (
-            suggestion.payload.channel === "personal_dm" &&
-            suggestion.payload.recipientMember
-        ) {
+        if (suggestion.payload.channel === "personal_dm") {
+            // 이름은 팀 간·팀 내에서 겹칠 수 있으므로 수신자 이메일로 웹훅을 찾는다.
+            const recipientName = suggestion.payload.recipientMember;
+            const recipients = recipientName
+                ? (await listActiveTeamMembers(service, teamId)).filter(
+                      (m) => m.name === recipientName && Boolean(m.email),
+                  )
+                : [];
+            if (recipients.length !== 1) {
+                return NextResponse.json(
+                    { message: "알림 수신자를 팀에서 확인할 수 없습니다." },
+                    { status: 400 },
+                );
+            }
+
             const { data: webhookRow, error: webhookError } = await service
                 .from("agent_member_webhooks")
                 .select("webhook_url")
                 .eq("team_id", teamId)
-                .eq("member", suggestion.payload.recipientMember)
+                .eq("email", recipients[0].email)
                 .maybeSingle();
 
             if (webhookError) throw webhookError;
             webhookUrl = decryptIntegrationToken(webhookRow?.webhook_url);
+            if (!webhookUrl) {
+                return NextResponse.json(
+                    { message: `${recipientName}님의 개인 Google Chat webhook이 등록되어 있지 않습니다.` },
+                    { status: 400 },
+                );
+            }
+        } else {
+            webhookUrl = resolveTeamRoomWebhook(teamId);
+            if (!webhookUrl) {
+                return NextResponse.json(
+                    { message: "이 팀에는 팀 대화방 webhook이 설정되어 있지 않습니다." },
+                    { status: 400 },
+                );
+            }
         }
 
         try {
@@ -124,6 +167,7 @@ export async function POST(req: NextRequest) {
                 channel: suggestion.payload.channel,
                 recipientMember: suggestion.payload.recipientMember,
                 webhookUrl,
+                teamId,
             });
         } catch (err) {
             if (err instanceof DeliveryUnknownError) {
