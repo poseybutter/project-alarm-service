@@ -11,8 +11,16 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  * 여기에 새 보장 두 가지: 동시 호출이 한도를 넘지 않고, 스킵 기록은 한 번에 쓴다.
  */
 
-const { mockGetRole, mockGetToken, mockSync, mockDelete, mockAfter } = vi.hoisted(() => ({
+const {
+    mockGetRole,
+    mockRequireAdmin,
+    mockGetToken,
+    mockSync,
+    mockDelete,
+    mockAfter,
+} = vi.hoisted(() => ({
     mockGetRole: vi.fn(),
+    mockRequireAdmin: vi.fn(),
     mockGetToken: vi.fn(),
     mockSync: vi.fn(),
     mockDelete: vi.fn(),
@@ -23,6 +31,15 @@ class FakeTeamCalendarSyncError extends Error {
     constructor(message: string) {
         super(message);
         this.name = "TeamCalendarSyncError";
+    }
+}
+
+class FakeAdminApiError extends Error {
+    constructor(
+        message: string,
+        readonly status: number,
+    ) {
+        super(message);
     }
 }
 
@@ -56,6 +73,7 @@ type UpdateLog = {
 type FakeDbConfig = {
     setting?: { calendar_id: string; connection_email: string } | null;
     memberCalendars?: Array<{ member: string; calendar_id: string }>;
+    memberships?: Array<{ name: string; sort_order: number }>;
     connection?: Record<string, unknown> | null;
     tasks?: TaskRow[];
 };
@@ -74,6 +92,12 @@ function createFakeDb(config: FakeDbConfig) {
             const runSelect = () => {
                 if (table === "agent_member_calendar_settings") {
                     return { data: config.memberCalendars ?? [], error: null };
+                }
+                if (table === "team_memberships") {
+                    return { data: config.memberships ?? [], error: null };
+                }
+                if (table === "players") {
+                    return { data: config.memberships ?? [], error: null };
                 }
                 if (table === "tasks") {
                     let rows = config.tasks ?? [];
@@ -170,6 +194,28 @@ vi.mock("@/infrastructure/supabase/server", () => ({
     getServerCurrentTeamRole: () => mockGetRole(),
 }));
 
+// 테스트 수가 늘면 실제 레이트리밋(분당 10회)에 걸리므로 항상 허용한다.
+vi.mock("@/shared/server/rateLimit", () => ({
+    consumeSharedRateLimit: async () => ({ allowed: true, retryAfterSeconds: 0 }),
+    rateLimitResponse: () => new Response(null, { status: 429 }),
+    requestRateLimitKey: () => "test-key",
+}));
+
+vi.mock("@/features/admin/server/adminRepository", () => ({
+    AdminApiError: FakeAdminApiError,
+    requireAdminSession: (...args: unknown[]) => mockRequireAdmin(...args),
+}));
+
+vi.mock("@/features/admin/server/http", async () => {
+    const { NextResponse } = await vi.importActual<typeof import("next/server")>(
+        "next/server",
+    );
+    return {
+        adminErrorResponse: (error: FakeAdminApiError) =>
+            NextResponse.json({ message: error.message }, { status: error.status }),
+    };
+});
+
 vi.mock("@/infrastructure/google-calendar", () => ({
     deleteTeamCalendarTaskEvent: (...args: unknown[]) => mockDelete(...args),
     getTeamCalendarAccessToken: (...args: unknown[]) => mockGetToken(...args),
@@ -189,6 +235,7 @@ const CONNECTION = {
     expires_at: null,
 };
 const MEMBER_CALENDARS = [{ member: "포지", calendar_id: "cal-posey" }];
+const MEMBERSHIPS = [{ name: "포지", sort_order: 0 }];
 
 function taskRow(id: number, overrides: Partial<TaskRow> = {}): TaskRow {
     return {
@@ -224,6 +271,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             role: "admin",
             teamId: "team-1",
         });
+        mockRequireAdmin.mockReset().mockResolvedValue({});
         mockGetToken.mockReset().mockResolvedValue("access-token");
         mockDelete.mockReset().mockResolvedValue(undefined);
         mockSync.mockReset().mockImplementation(
@@ -237,17 +285,25 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks: [],
         });
     });
 
-    it("관리자가 아니면 403, 팀 컨텍스트가 없으면 401", async () => {
+    it("연동 관리 권한이 없으면 403, 팀 컨텍스트가 없으면 401", async () => {
         mockGetRole.mockResolvedValueOnce({
             user: { email: "member@example.com" },
             role: "member",
             teamId: "team-1",
         });
+        mockRequireAdmin.mockRejectedValueOnce(
+            new FakeAdminApiError("관리자 권한이 없습니다.", 403),
+        );
         expect((await resync()).status).toBe(403);
+        expect(mockRequireAdmin).toHaveBeenCalledWith(
+            "team-1",
+            "integrations.manage",
+        );
 
         mockGetRole.mockResolvedValueOnce({ user: null, role: null, teamId: null });
         expect((await resync()).status).toBe(401);
@@ -264,6 +320,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks,
         });
 
@@ -280,6 +337,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks: [taskRow(1), taskRow(2, { show_on_team_calendar: false })],
         });
 
@@ -293,6 +351,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks: [
                 taskRow(1),
                 taskRow(2, { member: "캘린더없는사람" }),
@@ -352,6 +411,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks: [taskRow(1)],
         });
         mockSync.mockRejectedValueOnce(
@@ -370,11 +430,70 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
         });
     });
 
+    it("캘린더 이동 중 부분 실패하면 새 캘린더 ID 를 함께 저장하고 이전 일정을 정리한다", async () => {
+        fakeDb = createFakeDb({
+            setting: SETTING,
+            connection: CONNECTION,
+            memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
+            tasks: [
+                taskRow(1, {
+                    team_calendar_id: "cal-old",
+                    team_calendar_event_id: "e1",
+                }),
+            ],
+        });
+        mockSync.mockRejectedValueOnce(
+            new FakeTeamCalendarPartialSyncError(new Error("boom"), {
+                baseEventId: "v000001",
+                itemEventIds: [],
+            }),
+        );
+
+        const body = await (await resync()).json();
+        expect(body.failed).toBe(1);
+        expect(fakeDb.updates[0].payload).toMatchObject({
+            team_calendar_event_id: "v000001",
+            team_calendar_id: "cal-posey",
+        });
+        expect(mockDelete).toHaveBeenCalledWith(
+            expect.objectContaining({ calendarId: "cal-old", eventId: "e1" }),
+        );
+    });
+
+    it("캘린더 이동 중 아무것도 못 만들고 실패하면 이전 ID 를 지우지 않는다", async () => {
+        fakeDb = createFakeDb({
+            setting: SETTING,
+            connection: CONNECTION,
+            memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
+            tasks: [
+                taskRow(1, {
+                    team_calendar_id: "cal-old",
+                    team_calendar_event_id: "e1",
+                }),
+            ],
+        });
+        mockSync.mockRejectedValueOnce(
+            new FakeTeamCalendarPartialSyncError(new Error("boom"), {
+                baseEventId: null,
+                itemEventIds: [],
+            }),
+        );
+
+        await resync();
+        expect(fakeDb.updates[0].payload).not.toHaveProperty(
+            "team_calendar_event_id",
+        );
+        expect(mockDelete).not.toHaveBeenCalled();
+    });
+
     it("캘린더가 바뀐 업무는 DB 갱신 뒤에 이전 캘린더 일정을 지운다", async () => {
         fakeDb = createFakeDb({
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks: [
                 taskRow(1, {
                     team_calendar_id: "cal-old",
@@ -415,6 +534,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks: Array.from({ length: 10 }, (_, index) => taskRow(index + 1)),
         });
         let active = 0;
@@ -437,6 +557,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks: [taskRow(1), taskRow(2), taskRow(3)],
         });
 
@@ -450,6 +571,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks: [taskRow(1)],
         });
 
@@ -462,6 +584,7 @@ describe("POST /api/agents/team-calendar/tasks/resync", () => {
             setting: SETTING,
             connection: CONNECTION,
             memberCalendars: MEMBER_CALENDARS,
+            memberships: MEMBERSHIPS,
             tasks: [taskRow(5)],
         });
 

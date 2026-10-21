@@ -28,37 +28,17 @@ export type Notification = {
  * - Supabase realtime으로 새 알림 실시간 감지
  *
  * notification_reads RLS는 player_id = (players.email = jwt email) 기준이므로,
- * 본인의 player id를 이메일로 조회해 둔다.
+ * 현재 팀 멤버십의 player id(본인 이메일의 players 행)를 사용한다.
  */
 export function useNotifications() {
-    const { user } = useAuth();
-    const email = user?.email ?? null;
+    // 현재 팀 멤버십에 연결된 player id (team-context 가 내려줌).
+    // players 를 email+team 으로 다시 찾으면 멤버십과 어긋날 수 있다.
+    const { playerId } = useAuth();
 
-    const [playerId, setPlayerId] = useState<number | null>(null);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [readIds, setReadIds] = useState<Set<number>>(new Set());
 
-    // 1. 이메일 → player id
-    useEffect(() => {
-        let cancelled = false;
-        if (!email) {
-            setPlayerId(null);
-            return;
-        }
-        void (async () => {
-            const { data } = await supabase
-                .from("players")
-                .select("id")
-                .eq("email", email)
-                .maybeSingle();
-            if (!cancelled) setPlayerId(data?.id ?? null);
-        })();
-        return () => {
-            cancelled = true;
-        };
-    }, [email]);
-
-    // 2. 알림 목록 + 읽음 상태 로드
+    // 1. 알림 목록 + 읽음 상태 로드
     const load = useCallback(async () => {
         const { data: notifs } = await supabase
             .from("notifications")
@@ -80,10 +60,13 @@ export function useNotifications() {
     }, [playerId]);
 
     useEffect(() => {
-        void load();
+        // load 의 setState 는 모두 await 이후에 일어난다.
+        void (async () => {
+            await load();
+        })();
     }, [load, playerId]);
 
-    // 3. realtime 구독: 새 알림 + 본인 읽음 변경
+    // 2. realtime 구독: 새 알림 + 본인 읽음 변경
     useEffect(() => {
         const channel = supabase
             .channel(`notifications-realtime-${++channelSeq}`)

@@ -132,7 +132,15 @@ export function RolesPage() {
   }
 
   async function saveRole() {
-    if (!selectedTeamId || saving || selected?.isSystem || !canManage || !data?.schemaReady) return;
+    if (saving || selected?.isSystem) return;
+    // 조직 전체 범위에서는 저장 대상 팀이 없어 조용히 실패하지 않도록 안내한다
+    if (!selectedTeamId) {
+      setActionError({
+        message: "조직 전체 범위에서는 역할을 저장할 수 없습니다. 왼쪽 상단에서 대상 팀을 선택해 주세요.",
+      });
+      return;
+    }
+    if (!canManage || !data?.schemaReady) return;
     setSaving(true);
     setActionError(null);
     setSuccessMessage(null);
@@ -472,6 +480,12 @@ export function RolesPage() {
               </div>
             </div>
           ) : !selected?.isSystem ? (
+            <>
+            {!selectedTeamId && (
+              <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                역할을 저장하려면 왼쪽 상단에서 대상 팀을 먼저 선택해 주세요.
+              </p>
+            )}
             <div className="flex flex-wrap justify-between gap-2 border-t border-stone-200 pt-4">
               {selected ? (
                 <AdminButton
@@ -492,6 +506,7 @@ export function RolesPage() {
                   variant="primary"
                   onClick={() => void saveRole()}
                   disabled={
+                    !selectedTeamId ||
                     !canManage ||
                     !data?.schemaReady ||
                     saving ||
@@ -510,6 +525,7 @@ export function RolesPage() {
                 </AdminButton>
               </div>
             </div>
+            </>
           ) : null}
         </div>
       </AdminDrawer>

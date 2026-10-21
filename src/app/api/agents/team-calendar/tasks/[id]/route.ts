@@ -119,6 +119,13 @@ export async function POST(_req: NextRequest, context: RouteContext) {
 
     const supabase = createServiceSupabaseClient();
     let authorizedTeamId: string | null = null;
+    // 부분 실패 시 진행분을 어느 캘린더 것으로 저장할지 판단하는 데 쓴다.
+    let syncTarget: {
+        calendarId: string;
+        accessToken: string;
+        previousCalendarId: string | null;
+        previousEventIds: string[];
+    } | null = null;
 
     try {
         const task = await loadTask(supabase, taskId);
@@ -147,12 +154,23 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             return NextResponse.json({ message: "Forbidden" }, { status: 403 });
         }
 
-        const { calendarId, sharedCalendarId, accessToken } = await loadTeamCalendarContext(
-            supabase,
-            task.team_id,
-            task.member,
-            task.team_calendar_id,
-        );
+        const [{ calendarId, sharedCalendarId, accessToken }, memberSortOrder] =
+            await Promise.all([
+                loadTeamCalendarContext(
+                    supabase,
+                    task.team_id,
+                    task.member,
+                    task.team_calendar_id,
+                ),
+                supabase
+                    .from("players")
+                    .select("sort_order")
+                    .eq("team_id", task.team_id)
+                    .eq("name", task.member)
+                    .maybeSingle()
+                    .then(({ data }) => data?.sort_order as number | null ?? null),
+            ]);
+        const taskWithOrder = { ...task, member_sort_order: memberSortOrder };
         // 항목 일정만 있는 업무는 base ID가 null 이므로, 항목 ID까지 함께 봐야
         // 캘린더가 바뀔 때 이전 캘린더의 일정이 남지 않는다.
         const previousEventIds = [
@@ -164,17 +182,23 @@ export async function POST(_req: NextRequest, context: RouteContext) {
             (!task.team_calendar_id || task.team_calendar_id !== calendarId)
                 ? task.team_calendar_id || sharedCalendarId
                 : null;
+        syncTarget = {
+            calendarId,
+            accessToken,
+            previousCalendarId,
+            previousEventIds,
+        };
         const synced = await syncTeamCalendarTaskEvents({
             accessToken,
             calendarId,
             // 캘린더가 바뀌었으면 이전 이벤트 ID는 새 캘린더에서 쓸 수 없다.
             task: previousCalendarId
                 ? {
-                      ...task,
+                      ...taskWithOrder,
                       team_calendar_event_id: null,
                       team_calendar_item_event_ids: null,
                   }
-                : task,
+                : taskWithOrder,
         });
 
         const { error } = await supabase
@@ -220,16 +244,42 @@ export async function POST(_req: NextRequest, context: RouteContext) {
         if (authorizedTeamId) {
             // 중간까지 만들어진 이벤트 ID 를 저장해야 다음 시도에서 재사용하고,
             // 저장하지 않으면 그 일정이 캘린더에 고아로 남는다.
-            const progress =
-                error instanceof TeamCalendarPartialSyncError
-                    ? {
-                          team_calendar_event_id: error.progress.baseEventId,
-                          team_calendar_item_event_ids: error.progress
-                              .itemEventIds.length
-                              ? error.progress.itemEventIds
-                              : null,
-                      }
-                    : {};
+            let progress: Record<string, unknown> = {};
+            if (error instanceof TeamCalendarPartialSyncError && syncTarget) {
+                const created = [
+                    error.progress.baseEventId,
+                    ...error.progress.itemEventIds,
+                ].filter(Boolean);
+                const isMove = Boolean(syncTarget.previousCalendarId);
+                // 캘린더 이동 중 새 캘린더에 아무것도 못 만들었으면 이전 ID·캘린더를 그대로 둔다.
+                if (!isMove || created.length > 0) {
+                    // 진행분 ID 는 새 캘린더 것이므로 team_calendar_id 도 함께 바꿔야
+                    // 다음 시도에서 이전 캘린더 것으로 잘못 취급하지 않는다.
+                    progress = {
+                        team_calendar_event_id: error.progress.baseEventId,
+                        team_calendar_item_event_ids: error.progress
+                            .itemEventIds.length
+                            ? error.progress.itemEventIds
+                            : null,
+                        team_calendar_id: syncTarget.calendarId,
+                    };
+                    // 이전 캘린더 일정은 참조를 잃게 되므로 지금 정리한다(실패는 기록만).
+                    if (isMove && syncTarget.previousCalendarId) {
+                        for (const staleId of syncTarget.previousEventIds) {
+                            await deleteTeamCalendarTaskEvent({
+                                accessToken: syncTarget.accessToken,
+                                calendarId: syncTarget.previousCalendarId,
+                                eventId: staleId,
+                            }).catch((deleteErr) =>
+                                console.error(
+                                    `[team-calendar-task-stale-delete:${taskId}]`,
+                                    deleteErr,
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
             await supabase
                 .from("tasks")
                 .update({ ...progress, team_calendar_sync_error: message })

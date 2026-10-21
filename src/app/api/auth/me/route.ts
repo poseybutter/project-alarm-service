@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerUser } from "@/infrastructure/supabase/server";
-import {
-    isIdentitySchemaUnavailable,
-    loadNormalizedIdentity,
-} from "@/features/identity/server/identityRepository";
+import { loadNormalizedIdentity } from "@/features/identity/server/identityRepository";
 
 /**
  * 현재 로그인된 사용자 상태 조회.
@@ -18,35 +15,19 @@ export async function GET() {
         );
     }
 
-    try {
-        const normalized = await loadNormalizedIdentity(supabase, user.email);
-        if (normalized?.profile) {
-            return NextResponse.json({
-                email: normalized.profile.email,
-                name: normalized.profile.displayName,
-                status: normalized.profile.accountStatus,
-            });
-        }
-    } catch (err) {
-        if (!isIdentitySchemaUnavailable(err)) throw err;
+    const normalized = await loadNormalizedIdentity(supabase, user.email);
+    if (normalized?.profile) {
+        return NextResponse.json({
+            email: normalized.profile.email,
+            name: normalized.profile.displayName,
+            status: normalized.profile.accountStatus,
+        });
     }
 
-    // 스키마 미적용 폴백: players 직접 조회
-    const { data, error } = await supabase
-        .from("players")
-        .select("name, status")
-        .eq("email", user.email)
-        .maybeSingle();
-    if (error) {
-        return NextResponse.json(
-            { message: "사용자 정보를 확인할 수 없습니다." },
-            { status: 500 },
-        );
-    }
-
+    // 프로필이 없는 사용자 (가입 직후 트리거 지연 등)
     return NextResponse.json({
         email: user.email,
-        name: data?.name ?? user.email.split("@")[0],
-        status: data?.status ?? "pending",
+        name: user.email.split("@")[0],
+        status: "pending",
     });
 }

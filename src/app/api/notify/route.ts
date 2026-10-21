@@ -6,7 +6,11 @@ import {
     rateLimitResponse,
     requestRateLimitKey,
 } from "@/shared/server/rateLimit";
-import { DeliveryUnknownError, sendGoogleChatMessage } from "@/infrastructure/google-chat";
+import {
+    DeliveryUnknownError,
+    resolveTeamRoomWebhook,
+    sendGoogleChatMessage,
+} from "@/infrastructure/google-chat";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
@@ -60,6 +64,16 @@ export async function POST(request: NextRequest) {
         );
     }
 
+    // 팀별 대화방 웹훅 저장소가 없어 전역 웹훅은 레거시 팀에만 쓴다.
+    // 다른 팀의 레벨업 알림이 레거시 팀 대화방으로 새지 않도록 발송을 건너뛴다.
+    const teamRoomWebhook = resolveTeamRoomWebhook(teamId);
+    if (!teamRoomWebhook) {
+        return NextResponse.json({
+            success: false,
+            skipped: "team_room_webhook_unavailable",
+        });
+    }
+
     const service = createServiceSupabaseClient();
     try {
         const { data: player, error: playerError } = await service
@@ -106,6 +120,8 @@ export async function POST(request: NextRequest) {
             await sendGoogleChatMessage({
                 text: `레벨업! *${safeChatText(player.name)}*님이 새 레벨을 달성했습니다.\n*${safeChatText(expectedLevel.name)}*`,
                 channel: "team_room",
+                teamId,
+                webhookUrl: teamRoomWebhook,
             });
         } catch (error) {
             const isUnknown = error instanceof DeliveryUnknownError;

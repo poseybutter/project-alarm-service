@@ -84,21 +84,26 @@ export default function SeasonBanner({ teamId, currentMember }: SeasonBannerProp
         }
     }
 
-    useEffect(() => {
-        // 팀 전환 시 이전 배너 초기화
+    // 팀 전환 시 렌더 중에 이전 배너 초기화 (effect 의 동기 setState 금지)
+    const [prevTeamId, setPrevTeamId] = useState(teamId);
+    if (prevTeamId !== teamId) {
+        setPrevTeamId(teamId);
         setSeason(null);
         setTopPlayer(null);
         setMyRank(null);
         setExpGap(null);
+    }
 
+    useEffect(() => {
         if (!teamId) return;
         let cancelled = false;
-        void load(() => cancelled);
+        void (async () => {
+            await load(() => cancelled);
+        })();
         return () => {
             cancelled = true;
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [teamId]);
+    }, [teamId, currentMember]); // eslint-disable-line react-hooks/exhaustive-deps -- load는 teamId·currentMember에 의존
 
     if (!season) return null;
 

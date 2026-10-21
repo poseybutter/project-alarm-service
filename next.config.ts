@@ -43,8 +43,26 @@ const securityHeaders = [
     },
 ];
 
+/**
+ * 아바타는 Supabase Storage(public/avatars)에서 서빙된다.
+ * next/image 최적화를 허용할 원격 호스트 — env 미설정(로컬 스크립트 등) 시 빈 목록.
+ */
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const remotePatterns = supabaseUrl
+    ? [
+          {
+              protocol: "https" as const,
+              hostname: new URL(supabaseUrl).hostname,
+              pathname: "/storage/v1/object/public/**",
+          },
+      ]
+    : [];
+
 const nextConfig: NextConfig = {
     allowedDevOrigins: ["localhost:3000", "127.0.0.1:3000"],
+    images: {
+        remotePatterns,
+    },
     turbopack: {
         root: projectRoot,
     },

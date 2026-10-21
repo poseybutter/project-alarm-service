@@ -5,7 +5,11 @@ import {
   listTeamsWithCounts,
   updateAdminTeam,
 } from "@/features/admin/server/adminRepository";
-import { adminErrorResponse } from "@/features/admin/server/http";
+import {
+  adminErrorResponse,
+  readJsonObject,
+  readTeamId,
+} from "@/features/admin/server/http";
 import { ALL_TEAM_MODULES, type TeamModuleKey } from "@/features/admin/types";
 
 function parseModules(raw: unknown): TeamModuleKey[] | undefined {
@@ -16,9 +20,11 @@ function parseModules(raw: unknown): TeamModuleKey[] | undefined {
   return valid;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    return NextResponse.json({ teams: await listTeamsWithCounts() });
+    return NextResponse.json({
+      teams: await listTeamsWithCounts(readTeamId(request.url)),
+    });
   } catch (error) {
     return adminErrorResponse(error);
   }
@@ -26,7 +32,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as {
+    const body = (await readJsonObject(request)) as {
       id?: unknown;
       name?: unknown;
       description?: unknown;
@@ -57,7 +63,7 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const body = (await request.json()) as {
+    const body = (await readJsonObject(request)) as {
       id?: unknown;
       name?: unknown;
       description?: unknown;
@@ -91,7 +97,7 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const body = (await request.json()) as { id?: unknown };
+    const body = (await readJsonObject(request)) as { id?: unknown };
     if (typeof body.id !== "string" || !body.id.trim()) {
       return NextResponse.json(
         { message: "삭제할 팀 ID를 입력해 주세요." },

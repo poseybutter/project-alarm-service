@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/infrastructure/supabase/client";
 import type { Task, Project, ContentItem } from "@/shared/types";
@@ -16,12 +16,14 @@ import {
     projectSearchSelectStyles,
     modalFormSelectStyles,
 } from "@/shared/styles/reactSelectStyles";
+import { TASK_STATUS_OPTIONS, TASK_TYPE_OPTIONS, TASK_PRIORITY_OPTIONS } from "@/shared/constants";
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import TaskContentInputs from "@/components/TaskContentInputs";
 import {
     syncTaskToTeamCalendar,
     deleteTaskFromTeamCalendar,
 } from "@/features/tasks/api/teamCalendarSync";
+import { rpcSetTaskStatus } from "@/features/gamification/maple";
 
 function periodButtonLabel(range: DateRange | undefined): {
     text: string;
@@ -64,55 +66,75 @@ export default function TaskEditModal({
     onSaved,
     onDelete,
 }: TaskEditModalProps) {
-    const { teamId } = useAuth();
+    const { teamId, canWrite } = useAuth();
     const [projects, setProjects] = useState<Project[]>([]);
+    // 프로젝트 목록 조회 실패 — "프로젝트를 다시 선택" 같은 오해 문구 대신 재시도를 안내한다
+    const [projectsError, setProjectsError] = useState(false);
+    const [projectsReloadKey, setProjectsReloadKey] = useState(0);
+    const [saving, setSaving] = useState(false);
     const [editForm, setEditForm] = useState(EMPTY_EDIT);
     const [editDateRange, setEditDateRange] = useState<DateRange | undefined>();
     const [showEditDatePicker, setShowEditDatePicker] = useState(false);
     const [editProjTab, setEditProjTab] = useState<"mine" | "all">("mine");
     const [toast, setToast] = useState("");
 
+    const toastTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
     function showToast(message: string) {
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
         setToast(message);
-        window.setTimeout(() => setToast(""), 2600);
+        toastTimerRef.current = setTimeout(() => setToast(""), 2600);
     }
 
-    useEffect(() => {
-        if (!task || !teamId) return;
-        setEditProjTab("mine");
-        setEditForm({
-            type: task.type || "",
-            proj: task.proj || "",
-            contentItems: getContentItems(task),
-            priority: task.priority || "",
-            issue: task.issue || "",
-            status: task.status || "대기",
-            is_plan: task.is_plan ?? false,
-            is_starred: task.is_starred ?? false,
-            show_on_team_calendar: task.show_on_team_calendar ?? false,
-        });
-        if (task.start_date || task.end_date) {
-            setEditDateRange({
-                from: parseYmdToLocalDate(task.start_date),
-                to: parseYmdToLocalDate(task.end_date),
+    // task/팀이 바뀌면 렌더 중에 편집 폼을 재초기화한다 (effect 의 동기 setState 금지).
+    // teamId 가 늦게 도착하는 경우도 비교 대상에 포함해 함께 처리한다.
+    const [prevInit, setPrevInit] = useState<{
+        task: Task | null;
+        teamId: string | null;
+    }>({ task: null, teamId: null });
+    if (prevInit.task !== task || prevInit.teamId !== teamId) {
+        setPrevInit({ task, teamId });
+        if (task && teamId) {
+            setEditProjTab("mine");
+            setEditForm({
+                type: task.type || "",
+                proj: task.proj || "",
+                contentItems: getContentItems(task),
+                priority: task.priority || "",
+                issue: task.issue || "",
+                status: task.status || "대기",
+                is_plan: task.is_plan ?? false,
+                is_starred: task.is_starred ?? false,
+                show_on_team_calendar: task.show_on_team_calendar ?? false,
             });
-        } else {
-            setEditDateRange(undefined);
+            if (task.start_date || task.end_date) {
+                setEditDateRange({
+                    from: parseYmdToLocalDate(task.start_date),
+                    to: parseYmdToLocalDate(task.end_date),
+                });
+            } else {
+                setEditDateRange(undefined);
+            }
+            setShowEditDatePicker(false);
         }
-        setShowEditDatePicker(false);
-        // teamId 가 늦게 도착하면 위에서 early return 되므로 deps 에 함께 둔다.
-    }, [task, teamId]);
+    }
+
+    const taskId = task?.id ?? null;
 
     useEffect(() => {
-        if (!task) return;
+        if (taskId === null) return;
         let cancelled = false;
         (async () => {
-            const { data } = await supabase
+            const { data, error } = await supabase
                 .from("projects")
                 .select("*")
                 .eq("team_id", teamId)
                 .order("name");
             if (cancelled) return;
+            if (error) {
+                setProjectsError(true);
+                return;
+            }
+            setProjectsError(false);
             setProjects(
                 (data || []).map((row) =>
                     normalizeProject(row as Record<string, unknown>),
@@ -122,7 +144,7 @@ export default function TaskEditModal({
         return () => {
             cancelled = true;
         };
-    }, [task?.id, teamId]);
+    }, [taskId, teamId, projectsReloadKey]);
 
     const editMember = task?.member ?? "";
 
@@ -182,7 +204,11 @@ export default function TaskEditModal({
     }
 
     async function saveEdit() {
-        if (!task) return;
+        if (!task || !canWrite || saving) return;
+        if (projectsError) {
+            showToast("프로젝트 목록을 불러오지 못했어요. 다시 시도해주세요");
+            return;
+        }
         const selectedProjectId = findProjectId(projects, editForm.proj);
         if (selectedProjectId === null) {
             showToast("현재 팀의 프로젝트를 다시 선택해주세요");
@@ -196,30 +222,52 @@ export default function TaskEditModal({
             return;
         }
         const ciPayload = contentItemsPayload(editForm.contentItems);
-        const { error } = await supabase
-            .from("tasks")
-            .update({
-                type: editForm.type,
-                proj: editForm.proj,
-                project_id: selectedProjectId,
-                ...ciPayload,
-                priority: editForm.priority || null,
-                start_date: editDateRange?.from
-                    ? toLocalYmd(editDateRange.from)
-                    : null,
-                end_date: editDateRange?.to
-                    ? toLocalYmd(editDateRange.to)
-                    : null,
-                issue: editForm.issue || null,
-                status: editForm.status,
-                is_plan: editForm.is_plan ?? false,
-                is_starred: editForm.is_starred ?? false,
-                show_on_team_calendar: editForm.show_on_team_calendar ?? false,
-            })
-            .eq("id", task.id);
-        if (error) {
+        setSaving(true);
+        let updatedRows: { id: number }[] | null = null;
+        let updateError: unknown = null;
+        try {
+            const result = await supabase
+                .from("tasks")
+                .update({
+                    type: editForm.type,
+                    proj: editForm.proj,
+                    project_id: selectedProjectId,
+                    ...ciPayload,
+                    priority: editForm.priority || null,
+                    start_date: editDateRange?.from
+                        ? toLocalYmd(editDateRange.from)
+                        : null,
+                    // 하루만 선택하면 to 가 비므로 시작일을 마감일로 쓴다 (홈 수정 모달과 동일)
+                    end_date: editDateRange?.to
+                        ? toLocalYmd(editDateRange.to)
+                        : editDateRange?.from
+                          ? toLocalYmd(editDateRange.from)
+                          : null,
+                    issue: editForm.issue || null,
+                    is_plan: editForm.is_plan ?? false,
+                    is_starred: editForm.is_starred ?? false,
+                    show_on_team_calendar: editForm.show_on_team_calendar ?? false,
+                })
+                .eq("id", task.id)
+                .eq("team_id", teamId)
+                .select("id");
+            updatedRows = result.data;
+            updateError = result.error;
+        } finally {
+            setSaving(false);
+        }
+        // RLS 로 막히면 error 없이 0행이 갱신되므로 갱신된 행 수까지 확인한다
+        if (updateError || !updatedRows?.length) {
             alert("업무 수정에 실패했어요");
             return;
+        }
+        // 상태는 점수 반영을 위해 RPC 로만 바꾼다 (DB 가 직접 변경을 막는다)
+        if (editForm.status && editForm.status !== task.status) {
+            try {
+                await rpcSetTaskStatus(task.id, editForm.status, task.member);
+            } catch {
+                alert("업무 상태 변경에 실패했어요");
+            }
         }
         // 캘린더 반영 실패는 모달이 닫힌 뒤에도 보이도록 alert 로 알린다 (토스트는 모달과 함께 사라짐)
         if (!editForm.show_on_team_calendar && task.show_on_team_calendar) {
@@ -239,7 +287,8 @@ export default function TaskEditModal({
         handleClose();
     }
 
-    if (!task) return null;
+    // 읽기 전용 사용자(viewer·게스트)에게는 수정 모달을 열지 않는다
+    if (!task || !canWrite) return null;
 
     return (
         <div
@@ -267,13 +316,7 @@ export default function TaskEditModal({
                             상태
                         </label>
                         <Select
-                            options={[
-                                "대기",
-                                "시작 전",
-                                "진행중",
-                                "지연/보류",
-                                "완료",
-                            ].map((s) => ({ value: s, label: s }))}
+                            options={TASK_STATUS_OPTIONS.map((s) => ({ value: s, label: s }))}
                             value={
                                 editForm.status
                                     ? {
@@ -304,13 +347,7 @@ export default function TaskEditModal({
                                 구분
                             </label>
                             <Select
-                                options={[
-                                    "프로젝트",
-                                    "유지보수",
-                                    "고도화",
-                                    "접근성",
-                                    "업무지원",
-                                ].map((ty) => ({ value: ty, label: ty }))}
+                                options={TASK_TYPE_OPTIONS.map((ty) => ({ value: ty, label: ty }))}
                                 value={
                                     editForm.type
                                         ? {
@@ -341,7 +378,7 @@ export default function TaskEditModal({
                                 우선순위
                             </label>
                             <Select
-                                options={["긴급", "높음", "보통", "낮음"].map(
+                                options={TASK_PRIORITY_OPTIONS.map(
                                     (p) => ({ value: p, label: p }),
                                 )}
                                 value={
@@ -496,6 +533,20 @@ export default function TaskEditModal({
                             }
                             noOptionsMessage={() => "검색 결과가 없어요"}
                         />
+                        {projectsError && (
+                            <p className="mt-1.5 flex items-center gap-2 text-xs text-red-600">
+                                프로젝트 목록을 불러오지 못했어요.
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setProjectsReloadKey((k) => k + 1)
+                                    }
+                                    className="font-bold underline"
+                                >
+                                    다시 시도
+                                </button>
+                            </p>
+                        )}
                     </div>
                     <TaskContentInputs
                         items={editForm.contentItems}
@@ -597,9 +648,10 @@ export default function TaskEditModal({
                         <button
                             type="button"
                             onClick={() => void saveEdit()}
-                            className="bg-stone-800 text-white font-bold py-3.5 rounded-xl text-sm hover:bg-stone-900 transition-colors"
+                            disabled={saving}
+                            className="bg-stone-800 text-white font-bold py-3.5 rounded-xl text-sm hover:bg-stone-900 transition-colors disabled:opacity-50"
                         >
-                            저장하기
+                            {saving ? "저장 중..." : "저장하기"}
                         </button>
                     </div>
                 </div>

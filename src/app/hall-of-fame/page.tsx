@@ -142,6 +142,9 @@ export default function HallOfFamePage() {
     const [seasonDataMap, setSeasonDataMap] = useState<Record<number, SeasonData>>({});
     const [activeTab, setActiveTab] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
+    // 조회 실패를 "기록 없음"으로 오인하지 않도록 오류 상태를 분리한다
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [seasonErrors, setSeasonErrors] = useState<Record<number, string>>({});
 
     // seasonDataMap을 ref로도 관리해 useCallback deps 무한루프 방지
     const seasonDataRef = useRef<Record<number, SeasonData>>({});
@@ -164,7 +167,7 @@ export default function HallOfFamePage() {
 
         try {
             if (isLive) {
-                const [players, { data: awards }] = await Promise.all([
+                const [players, { data: awards, error: awardsError }] = await Promise.all([
                     getTeamRoster(supabase, teamId!),
                     supabase
                         .from("season_awards")
@@ -172,6 +175,7 @@ export default function HallOfFamePage() {
                         .eq("season_id", seasonId),
                 ]);
                 if (generation !== teamGenerationRef.current) return;
+                if (awardsError) throw awardsError;
 
                 const records: DisplayRecord[] = players.map((p, i) => ({
                     key: `live-${p.name}`,
@@ -185,7 +189,7 @@ export default function HallOfFamePage() {
                 seasonDataRef.current = { ...seasonDataRef.current, [seasonId]: entry };
                 setSeasonDataMap((prev) => ({ ...prev, [seasonId]: entry }));
             } else {
-                const [{ data: records }, { data: awards }] = await Promise.all([
+                const [{ data: records, error: recordsError }, { data: awards, error: awardsError }] = await Promise.all([
                     supabase
                         .from("season_records")
                         .select("*")
@@ -197,6 +201,8 @@ export default function HallOfFamePage() {
                         .eq("season_id", seasonId),
                 ]);
                 if (generation !== teamGenerationRef.current) return;
+                if (recordsError) throw recordsError;
+                if (awardsError) throw awardsError;
 
                 const displayRecords: DisplayRecord[] = ((records ?? []) as SeasonRecord[]).map((r) => ({
                     key: `rec-${r.id}`,
@@ -215,28 +221,53 @@ export default function HallOfFamePage() {
                 seasonDataRef.current = { ...seasonDataRef.current, [seasonId]: entry };
                 setSeasonDataMap((prev) => ({ ...prev, [seasonId]: entry }));
             }
+            setSeasonErrors((prev) => {
+                if (!(seasonId in prev)) return prev;
+                const next = { ...prev };
+                delete next[seasonId];
+                return next;
+            });
         } catch (err) {
-            // 조회 실패 — 캐시 미기록, 다음 탭 진입 시 재시도
+            // 조회 실패 — 캐시 미기록, 다음 탭 진입·다시 시도 시 재조회
             console.error("[hall-of-fame] 시즌 데이터 로딩 실패", err);
+            if (generation !== teamGenerationRef.current) return;
+            const message = err instanceof Error ? err.message : (err as { message?: string })?.message;
+            setSeasonErrors((prev) => ({
+                ...prev,
+                [seasonId]: message ? `시즌 기록을 불러오지 못했어요: ${message}` : "시즌 기록을 불러오지 못했어요.",
+            }));
         }
     }, [teamId]);
 
-    const loadSeasons = useCallback(async () => {
-        const generation = ++teamGenerationRef.current;
-        // 팀 전환 시 이전 팀 데이터 초기화
+    // 팀 전환 시 렌더 중에 이전 팀 상태 초기화 (ref 는 렌더 중 쓰지 않고 loadSeasons 에서 정리)
+    const [prevTeamId, setPrevTeamId] = useState(teamId);
+    if (prevTeamId !== teamId) {
+        setPrevTeamId(teamId);
         setSeasons([]);
         setSeasonDataMap({});
         setActiveTab(null);
+        setLoading(true);
+        setLoadError(null);
+        setSeasonErrors({});
+    }
+
+    const loadSeasons = useCallback(async () => {
+        const generation = ++teamGenerationRef.current;
         seasonDataRef.current = {};
         seasonsRef.current = [];
-        setLoading(true);
         try {
-            const { data } = await supabase
+            const { data, error } = await supabase
                 .from("seasons")
                 .select("*")
                 .eq("team_id", teamId!)
                 .order("range_start", { ascending: false });
             if (generation !== teamGenerationRef.current) return;
+            if (error) {
+                console.error("[hall-of-fame] 시즌 목록 로딩 실패", error);
+                setLoadError(`명예의 전당을 불러오지 못했어요: ${error.message}`);
+                return;
+            }
+            setLoadError(null);
 
             const list = (data ?? []) as Season[];
             seasonsRef.current = list;
@@ -277,7 +308,7 @@ export default function HallOfFamePage() {
 
                 {/* 헤더 */}
                 <div className="bg-white border-b border-stone-200 px-4 py-3 sticky top-0 z-10">
-                    <div className="max-w-2xl mx-auto flex items-center gap-3">
+                    <div className="max-w-2xl mx-auto lg:max-w-none flex items-center gap-3">
                         <button
                             onClick={() => router.back()}
                             className="w-7 h-7 rounded-full bg-[#f7f6f3] text-stone-500 flex items-center justify-center text-base hover:bg-stone-200 transition-colors shrink-0"
@@ -293,12 +324,27 @@ export default function HallOfFamePage() {
 
                 {loading ? (
                     <PageSpinner />
+                ) : loadError ? (
+                    <div className="mx-4 mt-8 rounded-lg border border-red-200 bg-red-50 p-4 text-center">
+                        <p className="text-sm text-red-700">{loadError}</p>
+                        <button
+                            type="button"
+                            className="mt-3 rounded-lg bg-red-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-red-700"
+                            onClick={() => {
+                                setLoading(true);
+                                setLoadError(null);
+                                void loadSeasons();
+                            }}
+                        >
+                            다시 시도
+                        </button>
+                    </div>
                 ) : seasons.length === 0 ? (
                     <div className="text-center py-20 text-stone-400 text-sm">
                         아직 시즌 기록이 없어요
                     </div>
                 ) : (
-                    <div className="flex-1 flex flex-col w-full max-w-2xl mx-auto pb-[67px]">
+                    <div className="flex-1 flex flex-col w-full max-w-2xl mx-auto" style={{ paddingBottom: "var(--nav-height, 0px)" }}>
                         {/* 시즌 탭 */}
                         <div className="flex gap-6 overflow-x-auto px-4 pt-3 pb-0 border-b border-stone-200 bg-white">
                             {seasons.map((s) => (
@@ -337,6 +383,18 @@ export default function HallOfFamePage() {
                                 transition={{ duration: 0.2 }}
                                 className="flex-1 px-4 pt-4 flex flex-col gap-5 bg-white"
                             >
+                                {activeTab != null && seasonErrors[activeTab] && (
+                                    <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-center">
+                                        <p className="text-sm text-red-700">{seasonErrors[activeTab]}</p>
+                                        <button
+                                            type="button"
+                                            className="mt-3 rounded-lg bg-red-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-red-700"
+                                            onClick={() => void loadSeasonData(activeTab)}
+                                        >
+                                            다시 시도
+                                        </button>
+                                    </div>
+                                )}
                                 {/* 진행 중 배지 */}
                                 {isLive && (
                                     <motion.div
@@ -455,7 +513,7 @@ export default function HallOfFamePage() {
                                             })}
                                         </div>
                                     </div>
-                                ) : (
+                                ) : activeTab != null && seasonErrors[activeTab] ? null : (
                                     <div className="bg-white rounded-2xl border border-stone-200 py-12 text-center text-stone-400 text-sm">
                                         아직 기록이 없어요
                                     </div>

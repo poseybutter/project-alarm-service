@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { supabase } from "@/infrastructure/supabase/client";
 import {
     calcLevel,
@@ -35,6 +36,7 @@ import {
     BAR_COLORS,
     getMemberColors,
     normalizeStatus,
+    REPORT_WEEK_START_DOW,
 } from "@/shared/constants";
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 import Select from "react-select";
@@ -50,14 +52,14 @@ import {
 function getThisWeekRange() {
     const now = new Date();
     const day = now.getDay();
-    const wed = new Date(now);
-    wed.setDate(now.getDate() - ((day + 4) % 7));
-    wed.setHours(0, 0, 0, 0);
-    const nextWed = new Date(wed);
-    nextWed.setDate(wed.getDate() + 7);
+    const start = new Date(now);
+    start.setDate(now.getDate() - ((day - REPORT_WEEK_START_DOW + 7) % 7));
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 7);
     return {
-        from: toLocalYmd(wed),
-        to: toLocalYmd(nextWed),
+        from: toLocalYmd(start),
+        to: toLocalYmd(end),
     };
 }
 
@@ -113,6 +115,7 @@ export default function ProfilePage() {
     const {
         member,
         members,
+        memberOptions,
         refreshAvatar,
         role,
         teamId,
@@ -120,6 +123,9 @@ export default function ProfilePage() {
         avatarUrl,
     } = useAuth();
     const isGuest = member === "GUEST" || role === "guest";
+    // 뷰어·게스트는 읽기 전용 — 수정·삭제·출석·아바타 변경 등 쓰기 컨트롤을 숨긴다
+    const canWrite =
+        (role === "admin" || role === "member") && member !== "GUEST";
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -150,7 +156,7 @@ export default function ProfilePage() {
     >([]);
 
     const canEditHistoryTask = (taskMember: string) =>
-        !isGuest && (role === "admin" || taskMember === member);
+        canWrite && (role === "admin" || taskMember === member);
 
     const loadAll = useCallback(async () => {
         if (!teamId) return;
@@ -167,7 +173,9 @@ export default function ProfilePage() {
                 .eq("team_id", teamId)
                 .eq("member", member)
                 .order("created_at", { ascending: false }),
-            supabase.from("tasks").select("*").eq("team_id", teamId).in("member", members),
+            members.length > 0
+                ? supabase.from("tasks").select("*").eq("team_id", teamId).in("member", members)
+                : Promise.resolve({ data: [] as Task[] }),
             isGuest
                 ? Promise.resolve({ data: [] as Quest[] })
                 : supabase
@@ -182,23 +190,60 @@ export default function ProfilePage() {
         setTasks(taskData || []);
         setCompletedQuests((completedQuestData as Quest[]) || []);
 
+        // 이번 주와 기간이 겹치는 업무를 모두 집계 (리포트 페이지와 동일한 겹침 규칙, wr.to 는 미포함)
         const wr = getThisWeekRange();
         const weekly = (teamTaskData || []).filter((t) => {
             const s = t.start_date || t.end_date;
-            if (!s) return false;
-            return s >= wr.from && s < wr.to;
+            const e = t.end_date || t.start_date;
+            if (!s || !e) return false;
+            return s < wr.to && e >= wr.from;
         });
         setWeekTasks(weekly);
     }, [isGuest, member, members, teamId]);
 
     useEffect(() => {
-        if (member && teamId) void loadAll();
+        // loadAll 의 setState 는 모두 await 이후에 일어난다.
+        if (member && teamId) {
+            void (async () => {
+                await loadAll();
+            })();
+        }
     }, [loadAll, member, teamId]); // member와 현재 팀이 준비된 뒤 실행
 
     const router = useRouter();
 
+    // 이번 달 EXP 랭킹 — 현재 팀의 활성 구성원(team-context memberOptions)만 포함
+    const rankingPlayers = useMemo(() => {
+        const activeIds = new Set(
+            memberOptions
+                .map((m) => m.id)
+                .filter((id): id is number => id != null),
+        );
+        const nameOnlyMembers = new Set(
+            memberOptions.filter((m) => m.id == null).map((m) => m.name),
+        );
+        // memberOptions 가 비어 있으면(구버전 응답 등) 활성 구성원 이름 목록으로 대체
+        const activeNames = new Set(members);
+        const useNames = activeIds.size === 0 && nameOnlyMembers.size === 0;
+        return players
+            .filter((p) =>
+                useNames
+                    ? activeNames.has(p.name)
+                    : activeIds.has(p.id) || nameOnlyMembers.has(p.name),
+            )
+            .sort((a, b) => b.month_exp - a.month_exp);
+    }, [players, memberOptions, members]);
+
+    // 팀/멤버 전환 시 렌더 중에 이전 시즌 이력 초기화
+    const seasonHistoryKey = `${teamId ?? ""}|${member ?? ""}`;
+    const [prevSeasonHistoryKey, setPrevSeasonHistoryKey] =
+        useState(seasonHistoryKey);
+    if (prevSeasonHistoryKey !== seasonHistoryKey) {
+        setPrevSeasonHistoryKey(seasonHistoryKey);
+        setSeasonHistory([]);
+    }
+
     useEffect(() => {
-        setSeasonHistory([]); // 팀/멤버 전환 시 이전 데이터 초기화
         if (!teamId || !member) return;
         let cancelled = false;
         void (async () => {
@@ -252,7 +297,7 @@ export default function ProfilePage() {
                 return;
             }
         }
-        const { error } = await supabase.from("tasks").delete().eq("id", id);
+        const { error } = await supabase.from("tasks").delete().eq("id", id).eq("team_id", teamId);
         if (error) {
             showToastMsg("삭제 실패: " + error.message);
             return;
@@ -261,9 +306,11 @@ export default function ProfilePage() {
         await loadAll();
     }
 
+    const toastTimer = useRef<ReturnType<typeof setTimeout>>(null);
     function showToastMsg(msg: string) {
+        if (toastTimer.current) clearTimeout(toastTimer.current);
         setToast(msg);
-        setTimeout(() => setToast(""), 3000);
+        toastTimer.current = setTimeout(() => setToast(""), 3000);
     }
 
     async function undoCompletedQuest(id: number) {
@@ -308,12 +355,14 @@ export default function ProfilePage() {
             .getPublicUrl(fileName);
         const url = `${data.publicUrl}?t=${file.lastModified}`;
 
-        const { error: avatarUpdateError } = await supabase
+        const { data: updatedRows, error: avatarUpdateError } = await supabase
             .from("players")
             .update({ avatar_url: url })
-            .eq("team_id", teamId)
-            .eq("id", playerId);
-        if (avatarUpdateError) {
+            .eq("id", playerId)
+            .select("id");
+        // 0행 갱신은 오류가 아니므로 행 수도 확인한다. 실패한 채로 이전 파일을
+        // 지우면 DB 가 가리키는 아바타가 사라진다.
+        if (avatarUpdateError || !updatedRows?.length) {
             // 방금 올린 파일은 아무도 참조하지 않으므로 되돌린다.
             await supabase.storage.from("avatars").remove([fileName]);
             showToastMsg("프로필 이미지 저장에 실패했어요");
@@ -352,7 +401,7 @@ export default function ProfilePage() {
     }
 
     async function handleAttend() {
-        if (!member || isAttending) return;
+        if (!member || isAttending || !canWrite) return;
         setIsAttending(true);
         try {
             if (!teamId) { showToastMsg("팀 정보를 불러오지 못했습니다."); setIsAttending(false); return; }
@@ -372,7 +421,9 @@ export default function ProfilePage() {
         }
     }
 
-    const player = players.find((p) => p.name === member);
+    const player =
+        (playerId != null ? players.find((p) => p.id === playerId) : undefined) ??
+        players.find((p) => p.name === member);
     const myPlayer = player;
     const myAchievementTitles = ACHIEVEMENT_TITLES.filter(
         (t) => myPlayer && t.condition?.(myPlayer),
@@ -448,13 +499,12 @@ export default function ProfilePage() {
             <div className="min-h-screen bg-[#f7f6f3]">
                 {/* 헤더 */}
                 <div className="bg-white border-b border-stone-200 px-4 py-3 sticky top-0 z-10">
-                    <div className="max-w-2xl mx-auto flex justify-between items-center">
+                    <div className="max-w-2xl mx-auto lg:max-w-none flex justify-between items-center">
                         <h1 className="text-base font-bold text-stone-900">
                             내 프로필
                         </h1>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 lg:hidden">
                             <TeamSwitcher />
-
                             <NotificationButton />
                             <UserMenu />
                         </div>
@@ -473,13 +523,16 @@ export default function ProfilePage() {
                             ) : (
                                 <>
                                     <button
-                                        onClick={() => setShowAvatarMenu(true)}
-                                        className="w-16 h-16 rounded-full overflow-hidden border-2 border-amber-200 relative"
+                                        onClick={() => canWrite && setShowAvatarMenu(true)}
+                                        disabled={!canWrite}
+                                        className="w-16 h-16 rounded-full overflow-hidden border-2 border-amber-200 relative disabled:cursor-default"
                                     >
                                         {player?.avatar_url ? (
-                                            <img
+                                            <Image
                                                 src={player.avatar_url}
                                                 alt={member ?? ""}
+                                                width={64}
+                                                height={64}
                                                 className="w-full h-full object-cover"
                                             />
                                         ) : (
@@ -529,7 +582,7 @@ export default function ProfilePage() {
                         </div>
 
                         {/* 아바타 액션 시트 */}
-                        {!isGuest && showAvatarMenu && (
+                        {canWrite && showAvatarMenu && (
                             <div
                                 className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center"
                                 onClick={() => setShowAvatarMenu(false)}
@@ -599,6 +652,7 @@ export default function ProfilePage() {
                                         })}
                                     </div>
                                 )}
+                                {canWrite && (
                                 <button
                                     onClick={() => void handleAttend()}
                                     disabled={attended || isAttending}
@@ -611,6 +665,7 @@ export default function ProfilePage() {
                                           ? "⏳ 처리 중..."
                                           : "☀️ 출석 체크"}
                                 </button>
+                                )}
                             </>
                         )}
 
@@ -634,7 +689,7 @@ export default function ProfilePage() {
                                 </div>
                                 <p className="text-xs text-stone-400 text-right mt-1">
                                     {next
-                                        ? `수련 중인 검사까지 ${(next.exp - (player?.exp || 0)).toLocaleString()} EXP`
+                                        ? `${next.name}까지 ${(next.exp - (player?.exp || 0)).toLocaleString()} EXP`
                                         : "🌟 최고 레벨!"}
                                 </p>
                             </div>
@@ -717,10 +772,7 @@ export default function ProfilePage() {
                                     </span>
                                 </div>
                                 <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                                    {[...players]
-                                        .sort(
-                                            (a, b) => b.month_exp - a.month_exp,
-                                        )
+                                    {rankingPlayers
                                         .map((p, i) => {
                                             const medals = [
                                                 "🥇",
@@ -729,39 +781,28 @@ export default function ProfilePage() {
                                                 "🏅",
                                             ];
                                             const plv = calcLevel(p.exp);
-                                            const isLeader = p.role === "admin";
                                             return (
                                                 <div
                                                     key={p.name}
                                                     className={`flex items-center gap-3 px-4 py-3
-                      ${i < players.length - 1 ? "border-b border-stone-100" : ""}
+                      ${i < rankingPlayers.length - 1 ? "border-b border-stone-100" : ""}
                       ${p.name === member ? "bg-amber-50" : ""}`}
                                                 >
                                                     <span className="text-base">
                                                         {medals[i] || "🏅"}
                                                     </span>
-                                                    {/* 아바타 + 완장 */}
+                                                    {/* 아바타 — players.role 은 팀별 멤버십 역할과 다를 수 있어 리더 표시는 하지 않는다 */}
                                                     <div className="relative shrink-0">
                                                         <Avatar
                                                             name={p.name}
                                                             size={32}
                                                         />
-                                                        {isLeader && (
-                                                            <div className="absolute -top-2 left-1/2 -translate-x-1/2 text-xs">
-                                                                👑
-                                                            </div>
-                                                        )}
                                                     </div>
                                                     <div className="flex-1">
                                                         <div className="flex items-center gap-1.5">
                                                             <p className="text-sm font-medium text-stone-800">
                                                                 {p.name}
                                                             </p>
-                                                            {isLeader && (
-                                                                <span className="text-xs px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded font-medium border border-yellow-200">
-                                                                    리더
-                                                                </span>
-                                                            )}
                                                         </div>
                                                         <p className="text-xs text-stone-400">
                                                             {plv.name}
@@ -1275,6 +1316,7 @@ export default function ProfilePage() {
                                                     if (items) {
                                                         // content_items: 개별 일정 있는 항목은 개별로
                                                         let fallbackWl = 0;
+                                                        let hasUndatedItem = false;
                                                         for (const ci of items) {
                                                             const cs = ci.start_date || ci.end_date;
                                                             const ce = ci.end_date || ci.start_date;
@@ -1282,10 +1324,12 @@ export default function ProfilePage() {
                                                                 addRange(cs, ce, ci.workload || 0);
                                                             } else {
                                                                 // 개별 일정 없는 항목 공수는 Task 일정으로 폴백
+                                                                hasUndatedItem = true;
                                                                 fallbackWl += ci.workload || 0;
                                                             }
                                                         }
-                                                        if (fallbackWl > 0) {
+                                                        // 공수가 0이어도 업무 기간에 표시해야 날짜를 눌러 목록을 열 수 있다
+                                                        if (hasUndatedItem) {
                                                             const s = t.start_date || t.end_date;
                                                             const e = t.end_date || t.start_date;
                                                             if (s && e) addRange(s, e, fallbackWl);
@@ -1762,6 +1806,7 @@ export default function ProfilePage() {
                                                         )}
                                                     </div>
                                                 </div>
+                                                {canWrite && (
                                                 <button
                                                     type="button"
                                                     onClick={() =>
@@ -1773,6 +1818,7 @@ export default function ProfilePage() {
                                                 >
                                                     ↩ 되돌리기
                                                 </button>
+                                                )}
                                             </div>
                                         );
                                     })}

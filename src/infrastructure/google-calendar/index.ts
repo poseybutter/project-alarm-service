@@ -17,10 +17,18 @@ const GOOGLE_CALENDAR_BASE_URL = "https://www.googleapis.com/calendar/v3";
 
 const FETCH_TIMEOUT_MS = 15_000;
 
+/** 토큰 폐기·만료(invalid_grant, 반복 401) 시 사용자에게 보여 줄 재연결 안내. */
+const CALENDAR_RECONNECT_MESSAGE =
+    "Google 캘린더 연결이 만료되었거나 취소되었습니다. 캘린더를 다시 연결해 주세요.";
+
 /** 요청률 초과(429)와 일시적 서버 오류에 재시도할 횟수. */
 const RATE_LIMIT_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 500;
 const MAX_RETRY_DELAY_MS = 8_000;
+/** Retry-After 헤더로 서버가 직접 지정한 대기 시간의 상한. 자체 백오프보다 길게 잡는다. */
+const MAX_SERVER_RETRY_DELAY_MS = 60_000;
+/** Retry-After 파싱 실패 시 기본 대기(초). HTTP-date 가 올 수도 있으므로 보수적으로. */
+const DEFAULT_RETRY_SECONDS = 5;
 
 /**
  * 멤버 캘린더 조회 동시 처리 한도. 연결 계정 하나로 호출하므로
@@ -38,12 +46,14 @@ function retryDelayMs(res: Response, attempt: number) {
     if (header) {
         const seconds = Number(header);
         if (Number.isFinite(seconds) && seconds >= 0) {
-            return Math.min(seconds * 1000, MAX_RETRY_DELAY_MS);
+            return Math.min(seconds * 1000, MAX_SERVER_RETRY_DELAY_MS);
         }
         const at = Date.parse(header);
         if (!Number.isNaN(at)) {
-            return Math.min(Math.max(at - Date.now(), 0), MAX_RETRY_DELAY_MS);
+            return Math.min(Math.max(at - Date.now(), 0), MAX_SERVER_RETRY_DELAY_MS);
         }
+        // Number()=NaN 이고 Date.parse()=NaN 인 알 수 없는 형식 — 보수적 기본값 사용
+        return DEFAULT_RETRY_SECONDS * 1000;
     }
     return Math.min(RETRY_BASE_DELAY_MS * 2 ** attempt, MAX_RETRY_DELAY_MS);
 }
@@ -113,6 +123,7 @@ export type SyncedGoogleCalendarEvent = {
     all_day: boolean;
     location: string | null;
     html_link: string | null;
+    google_event_id?: string | null;
 };
 
 type TeamCalendarPlayer = {
@@ -145,6 +156,7 @@ export type TeamCalendarTaskInput = {
     team_calendar_event_id?: string | null;
     team_calendar_item_event_ids?: string[] | null;
     team_calendar_id?: string | null;
+    member_sort_order?: number | null;
 };
 
 type MemberCalendarSetting = {
@@ -152,9 +164,17 @@ type MemberCalendarSetting = {
     calendar_id: string;
 };
 
-const MEMBER_EVENT_COLOR_IDS = ["2", "5", "6", "9", "10", "11"] as const;
+// 멤버 순서(sort_order)에 따라 순환하는 Google Calendar 색상.
+// Sage(녹색), Blueberry(파랑), Tangerine(호박), Banana(노랑),
+// Grape(보라), Tomato(빨강), Peacock(청록), Lavender(남보라),
+// Flamingo(핑크), Basil(진녹), Graphite(회색)
+const MEMBER_EVENT_COLOR_IDS = ["2", "9", "6", "5", "3", "11", "7", "1", "4", "10", "8"] as const;
 
-function memberEventColorId(member: string) {
+function memberEventColorId(sortOrder: number | null | undefined, member: string) {
+    if (sortOrder != null && sortOrder >= 0) {
+        return MEMBER_EVENT_COLOR_IDS[sortOrder % MEMBER_EVENT_COLOR_IDS.length];
+    }
+    // sort_order 가 없는 레거시 업무는 이름 해시로 폴백
     let hash = 0;
     for (const char of member.normalize("NFKC")) {
         hash = (hash * 31 + (char.codePointAt(0) ?? 0)) >>> 0;
@@ -177,16 +197,48 @@ export function getGoogleCalendarConfig() {
     return { clientId, clientSecret, redirectUri };
 }
 
+/** 일정 읽기(개인·팀 브리핑)에 필요한 권한 */
+export const GOOGLE_CALENDAR_READ_SCOPE =
+    "https://www.googleapis.com/auth/calendar.readonly";
+/** 팀 캘린더에 업무 일정을 쓰는 데 필요한 권한 */
+export const GOOGLE_CALENDAR_WRITE_SCOPE =
+    "https://www.googleapis.com/auth/calendar.events.owned";
+
+/** 토큰 응답/저장된 scope 문자열(공백 구분)에 해당 권한이 포함됐는지 */
+export function hasGoogleCalendarScope(
+    scope: string | null | undefined,
+    required: string,
+) {
+    return (scope ?? "").split(/\s+/).includes(required);
+}
+
+/**
+ * 연결된 Google 계정 이메일. 요청 scope 에 email/openid 가 없으므로
+ * primary 캘린더 ID(= 계정 이메일)를 calendar.readonly 권한으로 읽는다.
+ */
+export async function fetchGoogleCalendarAccountEmail(accessToken: string) {
+    const res = await fetchWithTimeout(
+        `${GOOGLE_CALENDAR_BASE_URL}/calendars/primary`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || typeof json.id !== "string" || !json.id.includes("@")) {
+        throw new Error(
+            json.error?.message || "Failed to resolve Google account email",
+        );
+    }
+    return (json.id as string).toLowerCase();
+}
+
 export function buildGoogleCalendarAuthUrl(state: string) {
     const { clientId, redirectUri } = getGoogleCalendarConfig();
     const params = new URLSearchParams({
         client_id: clientId,
         redirect_uri: redirectUri,
         response_type: "code",
-        scope: [
-            "https://www.googleapis.com/auth/calendar.readonly",
-            "https://www.googleapis.com/auth/calendar.events.owned",
-        ].join(" "),
+        scope: [GOOGLE_CALENDAR_READ_SCOPE, GOOGLE_CALENDAR_WRITE_SCOPE].join(
+            " ",
+        ),
         access_type: "offline",
         prompt: "consent",
         state,
@@ -213,6 +265,7 @@ async function getValidCalendarAccessToken(
     },
     teamId: string,
     connection: GoogleCalendarConnection,
+    options: { forceRefresh?: boolean } = {},
 ) {
     let accessToken = decryptIntegrationToken(connection.access_token);
     const refreshToken = decryptIntegrationToken(connection.refresh_token);
@@ -238,14 +291,16 @@ async function getValidCalendarAccessToken(
         ? new Date(connection.expires_at).getTime()
         : 0;
 
-    if (accessToken && expiresAt >= Date.now() + 60_000) {
+    if (
+        !options.forceRefresh &&
+        accessToken &&
+        expiresAt >= Date.now() + 60_000
+    ) {
         return accessToken;
     }
 
     if (!refreshToken) {
-        throw new TeamCalendarSyncError(
-            "팀 캘린더 연결이 만료되었습니다. 관리 > 연동에서 캘린더를 다시 연결해 주세요.",
-        );
+        throw new TeamCalendarSyncError(CALENDAR_RECONNECT_MESSAGE);
     }
 
     const refreshed = await refreshGoogleCalendarToken(refreshToken);
@@ -302,8 +357,13 @@ export async function refreshGoogleCalendarToken(refreshToken: string) {
         }),
     });
 
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
     if (!res.ok) {
+        // invalid_grant = 리프레시 토큰이 취소·만료됨. 재시도해도 소용없으므로
+        // 사용자가 조치할 수 있는 재연결 안내로 바꿔 올린다.
+        if (json.error === "invalid_grant") {
+            throw new TeamCalendarSyncError(CALENDAR_RECONNECT_MESSAGE);
+        }
         throw new Error(
             json.error_description || json.error || "Token refresh failed",
         );
@@ -311,6 +371,51 @@ export async function refreshGoogleCalendarToken(refreshToken: string) {
     return json as GoogleTokenResponse;
 }
 
+/** 액세스 토큰이 거부(401)됐을 때 발생합니다. 호출부는 토큰을 강제 갱신해 한 번 재시도합니다. */
+export class GoogleCalendarUnauthorizedError extends Error {
+    constructor(message = "Google Calendar access token was rejected") {
+        super(message);
+        this.name = "GoogleCalendarUnauthorizedError";
+    }
+}
+
+/**
+ * 유효한 토큰으로 작업을 실행하고, 401 이면 토큰을 강제로 갱신해 한 번만 재시도한다.
+ * (만료 시각 전이라도 Google 이 토큰을 폐기하면 401 이 온다.)
+ */
+async function withCalendarAccessToken<T>(
+    supabase: Parameters<typeof getValidCalendarAccessToken>[0],
+    teamId: string,
+    connection: GoogleCalendarConnection,
+    run: (accessToken: string) => Promise<T>,
+): Promise<T> {
+    const accessToken = await getValidCalendarAccessToken(
+        supabase,
+        teamId,
+        connection,
+    );
+    try {
+        return await run(accessToken);
+    } catch (error) {
+        if (!(error instanceof GoogleCalendarUnauthorizedError)) throw error;
+        const refreshed = await getValidCalendarAccessToken(
+            supabase,
+            teamId,
+            connection,
+            { forceRefresh: true },
+        );
+        try {
+            return await run(refreshed);
+        } catch (retryError) {
+            if (retryError instanceof GoogleCalendarUnauthorizedError) {
+                throw new TeamCalendarSyncError(CALENDAR_RECONNECT_MESSAGE);
+            }
+            throw retryError;
+        }
+    }
+}
+
+/** KST(UTC+9) 기준 오늘 00:00~24:00 을 UTC ISO 문자열로 반환한다. */
 export function todayKstWindow(now = new Date()) {
     const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
     const y = kstNow.getUTCFullYear();
@@ -339,6 +444,7 @@ export async function fetchTodayGoogleCalendarEvents(accessToken: string) {
             headers: { Authorization: `Bearer ${accessToken}` },
         },
     );
+    if (res.status === 401) throw new GoogleCalendarUnauthorizedError();
     const json = await res.json();
     if (!res.ok) {
         throw new Error(
@@ -366,6 +472,7 @@ export async function fetchTodayGoogleCalendarEventsByCalendarId(
             headers: { Authorization: `Bearer ${accessToken}` },
         },
     );
+    if (res.status === 401) throw new GoogleCalendarUnauthorizedError();
     const json = await res.json();
     if (!res.ok) {
         throw new Error(
@@ -375,11 +482,14 @@ export async function fetchTodayGoogleCalendarEventsByCalendarId(
     return (json.items ?? []) as GoogleCalendarEvent[];
 }
 
+/** Google Calendar API의 start/end 객체를 파싱한다. all-day 이벤트는 KST 기준으로 변환. */
 function eventDateTime(
     value: { date?: string; dateTime?: string } | undefined,
 ) {
     if (!value) return { at: null, allDay: false };
+    // dateTime 필드는 Google이 타임존 오프셋을 포함한 ISO 문자열로 반환한다
     if (value.dateTime) return { at: value.dateTime, allDay: false };
+    // all-day 이벤트는 date만 제공 (YYYY-MM-DD) — 이 앱은 KST 전용이므로 +09:00 고정
     if (value.date) return { at: `${value.date}T00:00:00+09:00`, allDay: true };
     return { at: null, allDay: false };
 }
@@ -443,13 +553,12 @@ export async function syncTodayGoogleCalendarEvents(
     },
 ) {
     const { teamId, connection } = params;
-    const accessToken = await getValidCalendarAccessToken(
+    const events = await withCalendarAccessToken(
         supabase,
         teamId,
         connection,
+        fetchTodayGoogleCalendarEvents,
     );
-
-    const events = await fetchTodayGoogleCalendarEvents(accessToken);
     const rows = events.map((event) => {
         const start = eventDateTime(event.start);
         const end = eventDateTime(event.end);
@@ -488,7 +597,7 @@ export async function syncTodayGoogleCalendarEvents(
             onConflict: "team_id,email,calendar_id,google_event_id",
         })
         .select(
-            "id, member, email, title, starts_at, ends_at, all_day, location, html_link",
+            "id, member, email, title, starts_at, ends_at, all_day, location, html_link, google_event_id",
         );
     if (error) throw new Error(error.message);
 
@@ -620,14 +729,36 @@ export async function syncTodayTeamCalendarEvents(
         .map((m) => ({ name: m.name, email: m.email }));
     if (teamPlayers.length === 0) return [];
 
-    const accessToken = await getValidCalendarAccessToken(
+    const memberCalendarRows = (
+        (memberCalendarSettings ?? []) as MemberCalendarSetting[]
+    ).filter((row) => row.member && row.calendar_id);
+
+    // 공유 캘린더와 멤버 캘린더 조회를 한 묶음으로 실행해 401 시 함께 재시도한다.
+    const { sharedEvents, memberEvents } = await withCalendarAccessToken(
         supabase,
         teamId,
         connection as GoogleCalendarConnection,
-    );
-    const sharedEvents = await fetchTodayGoogleCalendarEventsByCalendarId(
-        accessToken,
-        setting.calendar_id,
+        async (accessToken) => ({
+            sharedEvents: await fetchTodayGoogleCalendarEventsByCalendarId(
+                accessToken,
+                setting.calendar_id,
+            ),
+            memberEvents: await mapWithConcurrency(
+                memberCalendarRows,
+                MEMBER_CALENDAR_FETCH_CONCURRENCY,
+                async (calendar) => ({
+                    calendar,
+                    events: teamPlayers.some(
+                        (item) => item.name === calendar.member,
+                    )
+                        ? await fetchTodayGoogleCalendarEventsByCalendarId(
+                              accessToken,
+                              calendar.calendar_id,
+                          )
+                        : [],
+                }),
+            ),
+        }),
     );
     const sharedRows = sharedEvents.flatMap((event) => {
         const targets = targetPlayersForTeamEvent(event, teamPlayers);
@@ -650,21 +781,11 @@ export async function syncTodayTeamCalendarEvents(
         }));
     });
 
-    const memberCalendarRows = (
-        (memberCalendarSettings ?? []) as MemberCalendarSetting[]
-    ).filter((row) => row.member && row.calendar_id);
-    const memberRowsNested = await mapWithConcurrency(
-        memberCalendarRows,
-        MEMBER_CALENDAR_FETCH_CONCURRENCY,
-        async (calendar) => {
+    const memberRowsNested = memberEvents.map(({ calendar, events }) => {
             const player = teamPlayers.find(
                 (item) => item.name === calendar.member,
             );
             if (!player) return [];
-            const events = await fetchTodayGoogleCalendarEventsByCalendarId(
-                accessToken,
-                calendar.calendar_id,
-            );
             return events
                 .filter((event) => !isAppTaskCalendarEvent(event))
                 .map((event) => {
@@ -685,8 +806,7 @@ export async function syncTodayTeamCalendarEvents(
                         synced_at: new Date().toISOString(),
                     };
                 });
-        },
-    );
+    });
     const rows = [...sharedRows, ...memberRowsNested.flat()];
     const calendarIds = [
         setting.calendar_id,
@@ -713,7 +833,7 @@ export async function syncTodayTeamCalendarEvents(
             onConflict: "team_id,email,calendar_id,google_event_id",
         })
         .select(
-            "id, member, email, title, starts_at, ends_at, all_day, location, html_link",
+            "id, member, email, title, starts_at, ends_at, all_day, location, html_link, google_event_id",
         );
     if (error) throw new Error(error.message);
 
@@ -787,7 +907,7 @@ function buildTeamCalendarEvent(
                 taskId: String(task.id),
             },
         },
-        colorId: memberEventColorId(task.member),
+        colorId: memberEventColorId(task.member_sort_order, task.member),
     };
 }
 
@@ -1147,8 +1267,14 @@ export async function createTeamCalendarEvent(params: {
             `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodedCalendarId}/events/${encodeURIComponent(idempotencyKey)}`,
             { headers: { Authorization: `Bearer ${accessToken}` } },
         );
-        const existingJson = await existing.json();
-        if (existing.ok) return existingJson as GoogleCalendarEvent;
+        const existingJson = await existing.json().catch(() => ({}));
+        // 삭제된 일정도 같은 ID 로 조회되므로(status=cancelled) 살아 있는 것만 돌려준다.
+        if (existing.ok && existingJson.status !== "cancelled") {
+            return existingJson as GoogleCalendarEvent;
+        }
+        throw new TeamCalendarSyncError(
+            "같은 요청으로 만든 일정이 이미 삭제되었습니다. 새로 등록해 주세요.",
+        );
     }
 
     const json = await res.json();

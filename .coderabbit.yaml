@@ -21,7 +21,13 @@ reviews:
     - "!**/node_modules/**"
     - "!**/coverage/**"
     - "!**/*.lock"
+    - "!**/package-lock.json"
   path_instructions:
+    - path: "**/*"
+      instructions: |
+        CONTRIBUTING.md의 작업 규칙과 docs/adr/의 설계 결정을 기준으로 검토한다.
+        명확한 버그, 보안 문제, 계약 위반과 유지보수 위험에 집중하고,
+        취향 차이이거나 포매터가 처리하는 형식만으로는 리뷰를 남기지 않는다.
     - path: "src/app/api/**/*.ts"
       instructions: |
         인증과 권한 검사를 우선 확인한다. service role key, webhook, cron secret이
@@ -30,9 +36,12 @@ reviews:
       instructions: |
         RLS 활성화 여부, 정책의 USING/WITH CHECK 조건, SECURITY DEFINER 함수의
         search_path 고정 여부와 기존 데이터에 미치는 영향을 검토한다.
+        점수(EXP·레벨·출석) 쓰기 규칙이 RPC 밖으로 새지 않는지 확인한다.
     - path: "src/**/*.{ts,tsx}"
       instructions: |
         Asia/Seoul 기준 날짜 경계, 업무 기간 필터, 역할별 접근 권한의 회귀를 집중적으로 확인한다.
+        effect 안의 동기 setState, 세대 가드 없는 연속 조회, 팀 필터 없는 realtime 구독,
+        server/ 모듈의 클라이언트 import 를 지적한다.
 
 chat:
   auto_reply: true

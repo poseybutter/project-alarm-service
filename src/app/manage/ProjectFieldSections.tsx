@@ -533,27 +533,88 @@ type AccessReadProps = {
     defs: FieldDef[];
     values: Map<number, { value: string | null; has_secret: boolean }>;
     onReveal: (defId: number) => Promise<string>;
+    onRevealAll?: (defIds: number[]) => Promise<Record<number, string>>;
+    /** reveal 실패 시 호출 — 상위에서 TOTP 재인증 등을 처리한다 */
+    onRevealError?: (err: unknown) => void;
 };
 
-export function AccessReadCard({ defs, values, onReveal }: AccessReadProps) {
-    const [env, setEnv] = useState<"prod" | "local">("prod");
+export function AccessReadCard({ defs, values, onReveal, onRevealAll, onRevealError }: AccessReadProps) {
+    // 양쪽 env 모두 데이터 유무를 먼저 확인해 초기 탭을 결정한다.
+    const hasEnvData = (e: "prod" | "local") => {
+        const p = `access_${e}_`;
+        return defs.some((d) => d.name.startsWith(p) && (values.get(d.id)?.value || values.get(d.id)?.has_secret));
+    };
+    const hasProd = hasEnvData("prod");
+    const hasLocal = hasEnvData("local");
+
+    const [env, setEnv] = useState<"prod" | "local">(hasProd ? "prod" : "local");
     const [revealed, setRevealed] = useState<Record<number, string>>({});
     const [revealing, setRevealing] = useState<number | null>(null);
+    const [revealingAll, setRevealingAll] = useState(false);
+    const [revealError, setRevealError] = useState("");
 
     const prefix = `access_${env}_`;
-    // 현재 선택된 env(운영/로컬) 탭의 prefix 에 맞는 필드만 확인하여
-    // "접속 정보" 카드 표시 여부를 결정한다. 양쪽 env 를 모두 체크하면
-    // 한쪽에만 값이 있을 때 빈 카드가 보인다.
-    const hasAny = defs.some((d) => d.name.startsWith(prefix) && values.get(d.id)?.value);
 
-    if (!hasAny && !defs.some((d) => d.name.startsWith(prefix) && values.get(d.id)?.has_secret)) {
+    // 현재 env의 secret 필드 중 아직 노출되지 않은 defId 목록
+    const unrevealedSecretIds = defs
+        .filter((d) => d.name.startsWith(prefix) && d.field_type === "secret" && values.get(d.id)?.has_secret && !revealed[d.id])
+        .map((d) => d.id);
+
+    const handleRevealAll = async () => {
+        if (!onRevealAll || unrevealedSecretIds.length === 0) return;
+        setRevealingAll(true);
+        setRevealError("");
+        try {
+            const map = await onRevealAll(unrevealedSecretIds);
+            setRevealed((p) => ({ ...p, ...map }));
+        } catch (err) {
+            handleRevealFailure(err);
+        } finally {
+            setRevealingAll(false);
+        }
+    };
+
+    const handleRevealOne = async (defId: number) => {
+        setRevealing(defId);
+        setRevealError("");
+        try {
+            const v = await onReveal(defId);
+            setRevealed((p) => ({ ...p, [defId]: v }));
+        } catch (err) {
+            handleRevealFailure(err);
+        } finally {
+            setRevealing(null);
+        }
+    };
+
+    function handleRevealFailure(err: unknown) {
+        setRevealError(
+            err instanceof Error && err.message
+                ? `값을 불러오지 못했습니다: ${err.message}`
+                : "값을 불러오지 못했습니다.",
+        );
+        onRevealError?.(err);
+    }
+
+    // 양쪽 env 모두 데이터가 없으면 카드 자체를 숨긴다.
+    if (!hasProd && !hasLocal) {
         return null;
     }
 
     return (
         <div className="rounded-xl border border-stone-200 bg-white p-4">
             <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-bold text-stone-700">접속 정보</span>
+                <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-stone-700">접속 정보</span>
+                    {onRevealAll && unrevealedSecretIds.length > 0 && (
+                        <button
+                            type="button"
+                            disabled={revealingAll}
+                            onClick={handleRevealAll}
+                            className="text-xs text-amber-500 font-medium disabled:opacity-50"
+                        >{revealingAll ? "불러오는 중..." : "전체 보기"}</button>
+                    )}
+                </div>
                 <div className="flex rounded-lg bg-stone-100 p-0.5">
                     {(["prod", "local"] as const).map((e) => (
                         <button
@@ -571,6 +632,9 @@ export function AccessReadCard({ defs, values, onReveal }: AccessReadProps) {
                     ))}
                 </div>
             </div>
+            {revealError && (
+                <p className="mb-2 text-xs text-red-500" role="alert">{revealError}</p>
+            )}
             <div className="space-y-2">
                 {ACCESS_FIELD_KEYS.map((key) => {
                     const def = defs.find((d) => d.name === `${prefix}${key}`);
@@ -595,7 +659,7 @@ export function AccessReadCard({ defs, values, onReveal }: AccessReadProps) {
                                             <button
                                                 type="button"
                                                 disabled={revealing === def.id}
-                                                onClick={async () => { setRevealing(def.id); try { const v = await onReveal(def.id); setRevealed((p) => ({ ...p, [def.id]: v })); } catch {} setRevealing(null); }}
+                                                onClick={() => void handleRevealOne(def.id)}
                                                 className="text-xs text-amber-500 font-medium disabled:opacity-50 shrink-0"
                                             >{revealing === def.id ? "..." : "보기"}</button>
                                         </>
@@ -633,7 +697,7 @@ export function AccessReadCard({ defs, values, onReveal }: AccessReadProps) {
                                         ) : (
                                             <>
                                                 <span className="text-sm text-stone-400 tracking-widest">●●●●●●</span>
-                                                <button type="button" disabled={revealing === def.id} onClick={async () => { setRevealing(def.id); try { const v = await onReveal(def.id); setRevealed((p) => ({ ...p, [def.id]: v })); } catch {} setRevealing(null); }} className="text-xs text-amber-500 font-medium disabled:opacity-50 shrink-0">{revealing === def.id ? "..." : "보기"}</button>
+                                                <button type="button" disabled={revealing === def.id} onClick={() => void handleRevealOne(def.id)} className="text-xs text-amber-500 font-medium disabled:opacity-50 shrink-0">{revealing === def.id ? "..." : "보기"}</button>
                                             </>
                                         )}
                                     </div>

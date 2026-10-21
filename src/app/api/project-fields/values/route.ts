@@ -5,6 +5,7 @@ import {
 } from "@/infrastructure/supabase/server";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { encryptField } from "@/shared/server/fieldEncryption";
+import { enforceTeamTotp } from "@/shared/server/totpGate";
 
 type FieldEntry = {
     field_def_id: number;
@@ -36,9 +37,10 @@ export async function GET(req: NextRequest) {
     try {
         const svc = createServiceSupabaseClient();
 
-        // NOTE: PIN 검증은 secrets/reveal 엔드포인트에서 수행.
-        // values GET은 secret 값을 마스킹(has_secret:true, value:null)해서 반환하므로
-        // PIN 없이 호출해도 민감 정보가 노출되지 않음.
+        // secret 원문은 secrets/reveal 에서만 복호화한다. 다만 TOTP 필수 팀은
+        // 일반 필드 값도 TOTP 잠금 대상이므로 x-totp-token 헤더를 서버에서 검증한다.
+        const totpDenied = await enforceTeamTotp(svc, req, teamId, user.email);
+        if (totpDenied) return totpDenied;
 
         let query = svc
             .from("project_field_values")
@@ -191,13 +193,17 @@ export async function PUT(req: NextRequest) {
             }
 
             if (prev) {
-                await svc
+                const { error: updateErr } = await svc
                     .from("project_field_values")
                     .update(row)
                     .eq("id", prev.id);
+                if (updateErr) throw updateErr;
             } else if (newVal) {
                 row.created_at = now;
-                await svc.from("project_field_values").insert(row);
+                const { error: insertErr } = await svc
+                    .from("project_field_values")
+                    .insert(row);
+                if (insertErr) throw insertErr;
             }
 
             // history 기록

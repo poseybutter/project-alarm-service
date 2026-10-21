@@ -5,6 +5,7 @@ import {
 } from "@/infrastructure/supabase/server";
 import { internalErrorResponse } from "@/shared/server/apiResponse";
 import { resolveTeamMember, listActiveTeamMembers } from "@/features/identity/server/identityRepository";
+import { hasAdminPermission } from "@/features/admin/server/adminRepository";
 
 type SnoozeBody = {
     teamId?: string;
@@ -28,7 +29,6 @@ function isValidKeyForTarget(keys: string[], targetId: number) {
 async function getAuthorizedTarget(
     serviceSupabase: ReturnType<typeof createServiceSupabaseClient>,
     userEmail: string,
-    role: string | null,
     teamId: string,
     accessibilityId: number,
 ) {
@@ -49,8 +49,10 @@ async function getAuthorizedTarget(
     }
 
     const actor = await resolveTeamMember(serviceSupabase, userEmail, teamId);
-    const isOwner = actor?.name === target.member;
-    const isAdmin = role === "admin" || actor?.role === "admin";
+    const isOwner = Boolean(actor) && actor?.name === target.member;
+    // 다른 구성원의 알림 설정은 구성원 관리 권한(members.manage) 보유자만 변경
+    const isAdmin =
+        !isOwner && (await hasAdminPermission(teamId, "members.manage"));
     if (!isOwner && !isAdmin) {
         return {
             error: NextResponse.json({ message: "Forbidden" }, { status: 403 }),
@@ -124,7 +126,6 @@ export async function POST(req: NextRequest) {
         const authorized = await getAuthorizedTarget(
             serviceSupabase,
             user.email,
-            role,
             teamId,
             accessibilityId,
         );
@@ -197,7 +198,6 @@ export async function DELETE(req: NextRequest) {
         const authorized = await getAuthorizedTarget(
             serviceSupabase,
             user.email,
-            role,
             teamId,
             accessibilityId,
         );

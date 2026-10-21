@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAdminSession } from "@/features/admin/server/adminRepository";
 import {
     createServiceSupabaseClient,
     getServerCurrentTeamRole,
@@ -6,6 +7,7 @@ import {
 import {
     syncTodayGoogleCalendarEvents,
     syncTodayTeamCalendarEvents,
+    TeamCalendarSyncError,
     type GoogleCalendarConnection,
 } from "@/infrastructure/google-calendar";
 import {
@@ -60,7 +62,16 @@ export async function POST(request: Request) {
             teamId,
             connection,
         });
-        const teamRows = role === "admin"
+        // 팀 캘린더 동기화는 연동 관리 권한(커스텀 역할 포함)이 있을 때만 실행한다.
+        // 권한이 없으면 개인 캘린더만 동기화한다.
+        const canSyncTeamCalendar = await requireAdminSession(
+            teamId,
+            "integrations.manage",
+        ).then(
+            () => true,
+            () => false,
+        );
+        const teamRows = canSyncTeamCalendar
             ? await syncTodayTeamCalendarEvents(serviceSupabase, { teamId })
             : [];
 
@@ -103,6 +114,7 @@ export async function POST(request: Request) {
                 all_day: row.all_day,
                 location: row.location,
                 html_link: row.html_link,
+                google_event_id: row.google_event_id ?? null,
             })),
             quests: (quests ?? []) as QuestBriefingInput[],
             createdBy: user.email,
@@ -121,6 +133,10 @@ export async function POST(request: Request) {
             suggestionCount: createdSuggestions.length,
         });
     } catch (error) {
+        // 토큰 폐기(invalid_grant) 등 재연결이 필요한 사유는 그대로 알려준다.
+        if (error instanceof TeamCalendarSyncError) {
+            return NextResponse.json({ message: error.message }, { status: 409 });
+        }
         return internalErrorResponse(
             "google-calendar-sync",
             error,

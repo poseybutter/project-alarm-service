@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { TEAM_ID } from "@/shared/constants";
 import {
     createServiceSupabaseClient,
     getServerUser,
@@ -92,7 +91,6 @@ async function loadTeamContext(requestedTeamId?: string, strictTeamSelection = f
     const selectedTeam =
         teams.find((team) => team.id === storedTeamId) ??
         teams.find((team) => team.isDefault) ??
-        teams.find((team) => team.id === TEAM_ID) ??
         teams[0];
     const membership = membershipByTeam.get(selectedTeam.id);
 
@@ -111,23 +109,31 @@ async function loadTeamContext(requestedTeamId?: string, strictTeamSelection = f
         (m) => m.email.toLowerCase() === user.email?.toLowerCase(),
     );
 
-    // team_modules 미적용 환경(테이블 없음)에서는 전체 모듈 활성화로 폴백
+    // team_modules 미적용 환경(테이블 없음)·모듈 행이 없는 팀은 전체 모듈 활성화로 폴백.
+    // 그 외 조회 오류는 fail-closed — 비활성화된 모듈이 열리지 않도록 선택 모듈을
+    // 모두 끈다. (컨텍스트 자체를 실패시키면 팀·역할까지 비워져 앱 전체가 막힌다)
     const moduleRows = modulesResult.data ?? [];
-    const modules: ModuleKey[] =
-        modulesResult.error || moduleRows.length === 0
+    const moduleSchemaMissing =
+        modulesResult.error?.code === "42P01" ||
+        modulesResult.error?.code === "PGRST205";
+    if (modulesResult.error && !moduleSchemaMissing) {
+        console.error("[team-context] team_modules 조회 실패", modulesResult.error);
+    }
+    const modules: ModuleKey[] = modulesResult.error
+        ? moduleSchemaMissing
             ? ALL_MODULES
-            : moduleRows
-                  .filter((row) => row.enabled)
-                  .map((row) => row.module as ModuleKey);
+            : []
+        : moduleRows.length === 0
+          ? ALL_MODULES
+          : moduleRows
+                .filter((row) => row.enabled)
+                .map((row) => row.module as ModuleKey);
 
     const memberNames: string[] = teamMembers.map((m) => m.name);
-    // legacyPlayerId가 null인 멤버는 downstream에서 numeric id를 전제하므로 제외
-    const memberOptions: TeamMemberOption[] = teamMembers
-        .filter((m) => m.legacyPlayerId !== null)
-        .map((m) => ({
-            id: m.legacyPlayerId,
-            name: m.name,
-        }));
+    const memberOptions: TeamMemberOption[] = teamMembers.map((m) => ({
+        id: m.legacyPlayerId,
+        name: m.name,
+    }));
 
     // avatar: players.avatar_url이 쓰기 대상이므로 직접 조회하여 우선 적용
     let avatarUrl = identity.profile.avatarUrl;

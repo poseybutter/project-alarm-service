@@ -21,7 +21,8 @@ export function DatePickerCaption({
     const year = displayMonth.getFullYear();
     const month = displayMonth.getMonth();
 
-    const years = Array.from({ length: 11 }, (_, i) => 2020 + i);
+    const currentYear = new Date().getFullYear();
+    const years = Array.from({ length: 11 }, (_, i) => currentYear - 3 + i);
     const months = [
         "1월",
         "2월",

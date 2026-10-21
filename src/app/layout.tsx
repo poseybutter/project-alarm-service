@@ -1,20 +1,17 @@
 import type { Metadata, Viewport } from "next";
-import { JetBrains_Mono } from "next/font/google";
 import "@sun-typeface/suit/fonts/variable/woff2/SUIT-Variable.css";
 // CDN 렌더 블로킹·장애 전파를 피하려고 self-host 한다 (기존 jsdelivr remixicon@4.0.0 과 동일 버전)
 import "remixicon/fonts/remixicon.css";
+// next/font/google 은 빌드 시 Google Fonts 를 내려받아 네트워크 장애가 빌드 실패로 번진다 → self-host
+import "@fontsource/jetbrains-mono/latin-400.css";
+import "@fontsource/jetbrains-mono/latin-500.css";
+import "@fontsource/jetbrains-mono/latin-700.css";
 import "./globals.css";
 import Nav from "@/components/Nav";
 import PageTransition from "@/components/PageTransition";
 import { AuthProvider } from "@/components/AuthProvider";
+import QueryProvider from "@/components/QueryProvider";
 import AccessibilityMissionPopup from "@/components/AccessibilityMissionPopup";
-
-const jetbrainsMono = JetBrains_Mono({
-    subsets: ["latin"],
-    weight: ["400", "500", "700"],
-    variable: "--font-jetbrains-mono",
-    display: "swap",
-});
 
 /** 배포 후 아이콘이 폰에 안 바뀌면 숫자만 올려서 캐시 무효화 */
 const ICON_CACHE = "v=2";
@@ -68,7 +65,7 @@ export default function RootLayout({
     children: React.ReactNode;
 }) {
     return (
-        <html lang="ko" className={jetbrainsMono.variable}>
+        <html lang="ko">
             <head>
                 {/* metadata.icons 외에 sizes·캐시 무효화용 (모바일 PWA 아이콘 갱신) */}
                 <link
@@ -84,11 +81,13 @@ export default function RootLayout({
                 <meta name="apple-mobile-web-app-title" content="UD2" />
             </head>
             <body className="bg-[#f7f6f3] overflow-x-hidden">
-                <AuthProvider>
-                    <PageTransition>{children}</PageTransition>
-                    <AccessibilityMissionPopup />
-                    <Nav />
-                </AuthProvider>
+                <QueryProvider>
+                    <AuthProvider>
+                        <PageTransition>{children}</PageTransition>
+                        <AccessibilityMissionPopup />
+                        <Nav />
+                    </AuthProvider>
+                </QueryProvider>
             </body>
         </html>
     );

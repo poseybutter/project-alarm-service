@@ -105,7 +105,7 @@ async function buildFreshSuggestion(
 }
 
 export async function POST(request: Request) {
-    const { supabase, user, role, teamId } = await getServerCurrentTeamRole();
+    const { user, role, teamId } = await getServerCurrentTeamRole();
     if (!user?.email || !role || !teamId) {
         return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
@@ -137,47 +137,6 @@ export async function POST(request: Request) {
                 { message: "개인 Google Chat webhook이 등록되어 있지 않습니다" },
                 { status: 400 },
             );
-        }
-
-        const { data: existingSuggestions, error: suggestionError } =
-            await serviceSupabase
-                .from("agent_suggestions")
-                .select("*")
-                .eq("team_id", teamId)
-                .eq("agent_type", "notification")
-                .eq("status", "pending")
-                .eq("payload->>recipientMember", member.name)
-                .order("created_at", { ascending: false })
-                .limit(1);
-        if (suggestionError) throw suggestionError;
-
-        let suggestion = (existingSuggestions?.[0] ??
-            null) as AgentSuggestion | null;
-        if (!suggestion) {
-            const fresh = await buildFreshSuggestion(serviceSupabase, {
-                member: member.name,
-                email: user.email,
-                teamId,
-                canSyncTeamCalendar: role === "admin",
-            });
-            if (!fresh) {
-                return NextResponse.json(
-                    { message: "보낼 브리핑 내용이 없습니다" },
-                    { status: 404 },
-                );
-            }
-            const { data: created, error: createError } = await serviceSupabase
-                .from("agent_suggestions")
-                .upsert(
-                    {
-                        ...fresh,
-                        status: "pending",
-                    },
-                    { onConflict: "team_id,dedupe_key" },
-                )
-                .select("*")
-                .maybeSingle();
-            if (createError) throw createError;
         }
 
         const fresh = await buildFreshSuggestion(serviceSupabase, {
@@ -214,7 +173,7 @@ export async function POST(request: Request) {
             );
         }
 
-        suggestion = refreshed as AgentSuggestion;
+        const suggestion = refreshed as AgentSuggestion;
 
         const { error: staleCleanupError } = await serviceSupabase
             .from("agent_suggestions")

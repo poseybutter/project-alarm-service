@@ -23,18 +23,12 @@ import { ko } from "date-fns/locale";
 import "react-day-picker/dist/style.css";
 import { DatePickerCaption } from "@/components/DatePickerCaption";
 import type { ContentItem } from "@/shared/types";
-import { WORKLOAD_PRESETS } from "@/shared/constants";
+import { WORKLOAD_PRESETS, TASK_STATUS_OPTIONS, CONTENT_ITEM_STATUS_COLORS } from "@/shared/constants";
 import { formatWorkload } from "@/shared/utils/utils";
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
 
-const STATUS_OPTIONS = ["대기", "시작 전", "진행중", "지연/보류", "완료"];
-const STATUS_COLORS: Record<string, string> = {
-    "대기": "bg-stone-100 text-stone-500",
-    "시작 전": "bg-stone-100 text-stone-500",
-    "진행중": "bg-blue-100 text-blue-700",
-    "지연/보류": "bg-red-100 text-red-700",
-    "완료": "bg-green-100 text-green-700",
-};
+const STATUS_OPTIONS = TASK_STATUS_OPTIONS as readonly string[];
+const STATUS_COLORS = CONTENT_ITEM_STATUS_COLORS;
 
 type TaskContentInputsProps = {
     items: ContentItem[];
