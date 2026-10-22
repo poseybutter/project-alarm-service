@@ -269,6 +269,8 @@ function ProjectDetailTabs({
     const [defs, setDefs] = useState<FieldDef[]>([]);
     const [values, setValues] = useState<import("./useProjectFields").FieldValue[]>([]);
     const [loaded, setLoaded] = useState(false);
+    // 필드 값까지 받았는지 — TOTP 인증 직후 값 조회가 끝나기 전 빈 값이 보이지 않도록 loaded 와 분리
+    const [valuesReady, setValuesReady] = useState(false);
     const [fieldsError, setFieldsError] = useState<string | null>(null);
     const [reloadKey, setReloadKey] = useState(0);
 
@@ -311,7 +313,7 @@ function ProjectDetailTabs({
                     pf.loadDefs(p.id),
                     needsAuth ? Promise.resolve([]) : pf.loadValues(p.id, totpToken || undefined),
                 ]);
-                if (!cancelled) { setDefs(d); setValues(v); setFieldsError(null); setLoaded(true); }
+                if (!cancelled) { setDefs(d); setValues(v); setValuesReady(!needsAuth); setFieldsError(null); setLoaded(true); }
             } catch (err) {
                 // 서버 토큰이 화면보다 먼저 만료된 경우 — 인증 상태를 풀면 needsAuth 로 다시 불러온다
                 if (requiresTotp && err instanceof ProjectFieldsApiError && err.status === 403) {
@@ -434,7 +436,7 @@ function ProjectDetailTabs({
             )}
 
             {/* 세팅 정보 탭 */}
-            {tab === "setting" && loaded && !fieldsError && (
+            {tab === "setting" && loaded && valuesReady && !fieldsError && (
                 <div className="space-y-3">
                     <AccessReadCard
                         defs={defs}
@@ -446,7 +448,7 @@ function ProjectDetailTabs({
                     <DevReadCard defs={defs} values={valueMap} />
                 </div>
             )}
-            {tab === "setting" && !loaded && (
+            {tab === "setting" && (!loaded || !valuesReady) && !fieldsError && (
                 <p className="text-sm text-stone-400 text-center py-4">불러오는 중...</p>
             )}
 
@@ -939,6 +941,10 @@ export default function ManagePage() {
             vals = await pf.loadValues(editProj.id, token);
         } catch (err) {
             if (generation !== projEditGenRef.current) return;
+            // 서버 토큰이 먼저 만료됐으면 잠금 상태로 되돌린다 (세팅 탭은 잠금 시 자동으로 닫힘)
+            if (teamRequiresTotp && err instanceof ProjectFieldsApiError && err.status === 403) {
+                invalidateTotp();
+            }
             showToastMsg(
                 "세팅 정보를 불러오지 못했습니다: " +
                     (err instanceof Error ? err.message : "알 수 없는 오류"),
@@ -2026,6 +2032,8 @@ export default function ManagePage() {
                                             setTotpInput("");
                                             setTotpError("");
                                         } else {
+                                            // 앞선 값 조회가 실패했으면 다시 시도한다
+                                            if (!modalValuesLoaded && totpToken) void loadModalFieldValues(totpToken);
                                             setModalTab("setting");
                                         }
                                     }} className={`flex-1 py-2 text-xs font-medium rounded-md transition-all ${modalTab === "setting" ? "bg-white text-stone-800 shadow-sm" : "text-stone-400 hover:text-stone-600"}`}>

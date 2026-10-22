@@ -26,6 +26,9 @@ export function describeDbError(context: string, error: unknown, fallback: strin
         case "PGRST202":
             reason = "서버 함수를 찾지 못했어요";
             break;
+        default:
+            // 분류하지 않은 오류(23502 NOT NULL, 23514 CHECK 등)는 DB 메시지로 원인을 보여준다
+            reason = message ? message.slice(0, 200) : null;
     }
     if (!code) return fallback;
     return reason ? `${fallback}: ${reason} (${code})` : `${fallback} (${code})`;
