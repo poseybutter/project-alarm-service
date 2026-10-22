@@ -52,8 +52,6 @@ next-env.d.ts
 
 # Claude, Codex
 /claude/
-CLAUDE.md
-claude.md
 .claude/
 .agents
 
@@ -64,7 +62,6 @@ db/*.bak
 db/*.local.sql
 db/*secret*.sql
 db/*private*.sql
-AGENTS.md
 
 # JetBrains IDE
 .idea/
