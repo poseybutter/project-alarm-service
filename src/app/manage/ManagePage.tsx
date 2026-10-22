@@ -306,9 +306,10 @@ function ProjectDetailTabs({
         let cancelled = false;
         void (async () => {
             try {
+                // TOTP 필수 팀은 인증 전 값 조회가 403 이므로 정의만 불러온다 (인증·만료 시 needsAuth 변화로 다시 실행)
                 const [d, v] = await Promise.all([
                     pf.loadDefs(p.id),
-                    pf.loadValues(p.id, totpToken || undefined),
+                    needsAuth ? Promise.resolve([]) : pf.loadValues(p.id, totpToken || undefined),
                 ]);
                 if (!cancelled) { setDefs(d); setValues(v); setFieldsError(null); setLoaded(true); }
             } catch (err) {
@@ -323,7 +324,7 @@ function ProjectDetailTabs({
             }
         })();
         return () => { cancelled = true; };
-    }, [p.id, pf, totpToken, reloadKey]);
+    }, [p.id, pf, totpToken, needsAuth, reloadKey]);
 
     const valueMap = new Map(values.map((v) => [v.field_def_id, { value: v.value, has_secret: v.has_secret }]));
 
@@ -541,6 +542,8 @@ export default function ManagePage() {
     const [projSaving, setProjSaving] = useState(false);
     const [modalTab, setModalTab] = useState<"basic" | "setting">("basic");
     const [savedSecrets, setSavedSecrets] = useState<Set<string>>(new Set());
+    // 수정 모달의 필드 값이 서버에서 로드됐는지 — TOTP 미인증 상태로 열면 false
+    const [modalValuesLoaded, setModalValuesLoaded] = useState(true);
     // TOTP 관련 state (팀 레벨)
     const totp = useTotp(teamId);
     const [teamRequiresTotp, setTeamRequiresTotp] = useState(false);
@@ -818,6 +821,8 @@ export default function ManagePage() {
         setModalDefs([]);
         setModalValues({});
         setSavedSecrets(new Set());
+        // 새 프로젝트는 불러올 기존 값이 없다
+        setModalValuesLoaded(true);
         setExtraFields(FIXED_FIELDS.map((f) => ({ key: f.key, label: f.label, fieldType: f.fieldType, isFixed: true })));
         setModalTab("basic");
         setShowProjModal(true);
@@ -845,12 +850,14 @@ export default function ManagePage() {
             note: p.note ?? "",
         });
         // 기본 필드 ensure + 로드
+        // TOTP 필수 팀은 인증 전 값 조회가 403 이므로 정의만 불러오고, 값은 인증 직후 loadModalFieldValues 가 채운다
+        const valuesLocked = teamRequiresTotp && !totpVerified;
         let defs: FieldDef[];
         let vals: Awaited<ReturnType<typeof pf.loadValues>>;
         try {
             [defs, vals] = await Promise.all([
                 pf.ensureDefaultFields(p.id),
-                pf.loadValues(p.id, totpToken || undefined),
+                valuesLocked ? Promise.resolve([]) : pf.loadValues(p.id, totpToken || undefined),
             ]);
         } catch (err) {
             if (generation !== projEditGenRef.current) return;
@@ -884,6 +891,7 @@ export default function ManagePage() {
         }
         setModalValues(mv);
         setSavedSecrets(secrets);
+        setModalValuesLoaded(!valuesLocked);
 
         // 기타 섹션: 고정 필드 + 비시스템 커스텀 필드
         const fixedItems = FIXED_FIELDS.map((f) => ({
@@ -905,6 +913,41 @@ export default function ManagePage() {
         setExtraFields(ordered);
         setModalTab("basic");
         setShowProjModal(true);
+    }
+
+    /** TOTP 인증 직후 수정 모달의 필드 값을 채운다 — 잠금 중 사용자가 입력한 값은 덮어쓰지 않는다 */
+    async function loadModalFieldValues(token: string) {
+        if (!editProj || modalValuesLoaded) return;
+        const generation = projEditGenRef.current;
+        let vals: Awaited<ReturnType<typeof pf.loadValues>>;
+        try {
+            vals = await pf.loadValues(editProj.id, token);
+        } catch (err) {
+            if (generation !== projEditGenRef.current) return;
+            showToastMsg(
+                "세팅 정보를 불러오지 못했습니다: " +
+                    (err instanceof Error ? err.message : "알 수 없는 오류"),
+            );
+            return;
+        }
+        if (generation !== projEditGenRef.current) return;
+        const valMap = new Map(vals.map((v) => [v.field_def_id, v]));
+        setModalValues((prev) => {
+            const next = { ...prev };
+            for (const def of modalDefs) {
+                if (def.field_type === "secret" || next[def.name]) continue;
+                next[def.name] = valMap.get(def.id)?.value ?? "";
+            }
+            return next;
+        });
+        setSavedSecrets(
+            new Set(
+                modalDefs
+                    .filter((def) => def.field_type === "secret" && valMap.get(def.id)?.has_secret)
+                    .map((def) => def.name),
+            ),
+        );
+        setModalValuesLoaded(true);
     }
 
     function toggleProjMember(name: string) {
@@ -1015,6 +1058,8 @@ export default function ManagePage() {
                     .filter((f) => {
                         const def = modalDefs.find((d) => d.id === f.field_def_id);
                         if (def?.field_type === "secret" && !f.value) return false;
+                        // 값을 불러오지 못한 상태(TOTP 미인증)에서 빈 칸을 보내면 저장된 값이 지워진다
+                        if (!modalValuesLoaded && !f.value) return false;
                         return true;
                     });
                 if (fields.length > 0) {
@@ -1957,7 +2002,12 @@ export default function ManagePage() {
                                     <button type="button" onClick={() => setModalTab("basic")} className={`flex-1 py-2 text-xs font-medium rounded-md transition-all ${modalTab === "basic" ? "bg-white text-stone-800 shadow-sm" : "text-stone-400 hover:text-stone-600"}`}>기본 정보</button>
                                     <button type="button" onClick={() => {
                                         if (teamRequiresTotp && !totpVerified) {
-                                            setTotpModal({ callback: () => setModalTab("setting") });
+                                            setTotpModal({
+                                                callback: (token) => {
+                                                    if (token) void loadModalFieldValues(token);
+                                                    setModalTab("setting");
+                                                },
+                                            });
                                             setTotpInput("");
                                             setTotpError("");
                                         } else {
