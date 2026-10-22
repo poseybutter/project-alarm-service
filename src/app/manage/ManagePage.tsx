@@ -313,6 +313,11 @@ function ProjectDetailTabs({
                 ]);
                 if (!cancelled) { setDefs(d); setValues(v); setFieldsError(null); setLoaded(true); }
             } catch (err) {
+                // 서버 토큰이 화면보다 먼저 만료된 경우 — 인증 상태를 풀면 needsAuth 로 다시 불러온다
+                if (requiresTotp && err instanceof ProjectFieldsApiError && err.status === 403) {
+                    if (!cancelled) onTotpInvalid();
+                    return;
+                }
                 if (!cancelled) {
                     setFieldsError(
                         err instanceof Error && err.message
@@ -324,7 +329,7 @@ function ProjectDetailTabs({
             }
         })();
         return () => { cancelled = true; };
-    }, [p.id, pf, totpToken, needsAuth, reloadKey]);
+    }, [p.id, pf, totpToken, needsAuth, requiresTotp, onTotpInvalid, reloadKey]);
 
     const valueMap = new Map(values.map((v) => [v.field_def_id, { value: v.value, has_secret: v.has_secret }]));
 
@@ -851,13 +856,23 @@ export default function ManagePage() {
         });
         // 기본 필드 ensure + 로드
         // TOTP 필수 팀은 인증 전 값 조회가 403 이므로 정의만 불러오고, 값은 인증 직후 loadModalFieldValues 가 채운다
-        const valuesLocked = teamRequiresTotp && !totpVerified;
+        let valuesLocked = teamRequiresTotp && !totpVerified;
         let defs: FieldDef[];
         let vals: Awaited<ReturnType<typeof pf.loadValues>>;
         try {
             [defs, vals] = await Promise.all([
                 pf.ensureDefaultFields(p.id),
-                valuesLocked ? Promise.resolve([]) : pf.loadValues(p.id, totpToken || undefined),
+                valuesLocked
+                    ? Promise.resolve([])
+                    : pf.loadValues(p.id, totpToken || undefined).catch((err) => {
+                          // 화면상 인증 시간이 남아도 서버 토큰이 먼저 만료될 수 있다 — 잠금 상태로 연다
+                          if (teamRequiresTotp && err instanceof ProjectFieldsApiError && err.status === 403) {
+                              valuesLocked = true;
+                              invalidateTotp();
+                              return [];
+                          }
+                          throw err;
+                      }),
             ]);
         } catch (err) {
             if (generation !== projEditGenRef.current) return;
