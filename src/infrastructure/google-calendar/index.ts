@@ -858,6 +858,14 @@ export class TeamCalendarSyncError extends Error {
     }
 }
 
+/** 팀 캘린더 연동 자체가 설정되지 않은 팀 — 동기화 실패가 아니라 건너뛸 대상이다. */
+export class TeamCalendarNotConfiguredError extends TeamCalendarSyncError {
+    constructor(message: string) {
+        super(message);
+        this.name = "TeamCalendarNotConfiguredError";
+    }
+}
+
 /** 자체 일정이 있는 항목 / 없는 항목으로 업무 내용을 가른다. */
 function splitContentItemsBySchedule(task: TeamCalendarTaskInput) {
     const items = (task.content_items ?? []).filter((ci) => ci.text?.trim());

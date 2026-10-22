@@ -1,4 +1,5 @@
 import { supabase } from "@/infrastructure/supabase/client";
+import { describeDbError } from "@/shared/utils/dbError";
 import { sendLevelUpMessage } from "./googleChat";
 import { LEVELS } from "./levels";
 
@@ -140,7 +141,7 @@ export async function rpcAttendanceCheck(
     if (error) {
         return {
             success: false,
-            message: "출석 처리 중 오류가 발생했어요.",
+            message: describeDbError("attendance-check", error, "출석 처리 중 오류가 발생했어요"),
             streak: 0,
             exp: 0,
             levelUp: false,

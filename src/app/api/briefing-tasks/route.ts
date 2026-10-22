@@ -117,14 +117,21 @@ export async function POST(req: NextRequest) {
     }
 
     // 이번 주 briefings 행 id 확보 (없으면 생성). week_start 유니크 기준 upsert.
-    const { data: brief, error: bErr } = await supabase
+    // ignoreDuplicates 는 ON CONFLICT DO NOTHING 이라 이미 있는 행을 돌려주지 않으므로 id 는 따로 조회한다.
+    const { error: upsertErr } = await supabase
         .from("briefings")
         .upsert(
             { week_start: week, team_id: teamId },
             { onConflict: "team_id,week_start", ignoreDuplicates: true },
-        )
-        .select("id")
-        .maybeSingle();
+        );
+    const { data: brief, error: bErr } = upsertErr
+        ? { data: null, error: upsertErr }
+        : await supabase
+              .from("briefings")
+              .select("id")
+              .eq("team_id", teamId)
+              .eq("week_start", week)
+              .maybeSingle();
 
     if (bErr || !brief?.id) {
         return internalErrorResponse(

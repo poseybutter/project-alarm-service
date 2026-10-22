@@ -8,6 +8,7 @@ import {
     getTeamCalendarAccessToken,
     type GoogleCalendarConnection,
     type TeamCalendarTaskInput,
+    TeamCalendarNotConfiguredError,
     TeamCalendarPartialSyncError,
     TeamCalendarSyncError,
     syncTeamCalendarTaskEvents,
@@ -47,7 +48,7 @@ async function loadTeamCalendarContext(
         .maybeSingle();
     if (settingError) throw settingError;
     if (!setting?.calendar_id || !setting.connection_email) {
-        throw new TeamCalendarSyncError("팀 캘린더 ID가 설정되어 있지 않습니다");
+        throw new TeamCalendarNotConfiguredError("팀 캘린더 ID가 설정되어 있지 않습니다");
     }
 
     let calendarId = existingCalendarId || null;
@@ -63,7 +64,7 @@ async function loadTeamCalendarContext(
         calendarId = memberCalendar?.calendar_id ?? null;
     }
     if (!calendarId) {
-        throw new TeamCalendarSyncError(
+        throw new TeamCalendarNotConfiguredError(
             "담당자별 캘린더 ID가 설정되어 있지 않습니다",
         );
     }
@@ -285,6 +286,15 @@ export async function POST(_req: NextRequest, context: RouteContext) {
                 .update({ ...progress, team_calendar_sync_error: message })
                 .eq("team_id", authorizedTeamId)
                 .eq("id", taskId);
+        }
+        // 연동을 설정하지 않은 팀·담당자는 업무 저장이 정상이므로 실패로 응답하지 않는다.
+        // 사유는 위에서 team_calendar_sync_error 에 남긴다.
+        if (error instanceof TeamCalendarNotConfiguredError) {
+            return NextResponse.json({
+                synced: false,
+                reason: "not_configured",
+                message,
+            });
         }
         if (actionable) {
             return NextResponse.json({ message }, { status: 409 });
