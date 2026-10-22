@@ -18,6 +18,7 @@ import {
 } from "@/shared/styles/reactSelectStyles";
 import { TASK_STATUS_OPTIONS, TASK_TYPE_OPTIONS, TASK_PRIORITY_OPTIONS } from "@/shared/constants";
 import { toLocalYmd } from "@/shared/utils/toLocalYmd";
+import { describeDbError } from "@/shared/utils/dbError";
 import TaskContentInputs from "@/components/TaskContentInputs";
 import {
     syncTaskToTeamCalendar,
@@ -257,8 +258,12 @@ export default function TaskEditModal({
             setSaving(false);
         }
         // RLS 로 막히면 error 없이 0행이 갱신되므로 갱신된 행 수까지 확인한다
-        if (updateError || !updatedRows?.length) {
-            alert("업무 수정에 실패했어요");
+        if (updateError) {
+            alert(describeDbError("task-update", updateError, "업무 수정에 실패했어요"));
+            return;
+        }
+        if (!updatedRows?.length) {
+            alert("업무 수정에 실패했어요: 권한이 없거나 업무를 찾지 못했어요");
             return;
         }
         // 상태는 점수 반영을 위해 RPC 로만 바꾼다 (DB 가 직접 변경을 막는다)

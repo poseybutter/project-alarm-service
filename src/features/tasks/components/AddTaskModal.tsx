@@ -22,6 +22,7 @@ import {
     modalFormSelectStyles,
 } from "@/shared/styles/reactSelectStyles";
 import { syncTaskToTeamCalendar } from "@/features/tasks/api/teamCalendarSync";
+import { describeDbError } from "@/shared/utils/dbError";
 
 const EMPTY_FORM = {
     member: "",
@@ -205,7 +206,7 @@ export default function AddTaskModal({
                 .select("id")
                 .single();
             if (error) {
-                onToast("업무 등록에 실패했어요");
+                onToast(describeDbError("task-insert", error, "업무 등록에 실패했어요"));
                 return;
             }
             if (data?.id) {
