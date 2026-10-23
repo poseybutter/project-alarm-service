@@ -1252,6 +1252,13 @@ export async function addTeamMembership(input: {
 
   if (rpcError) {
     if (rpcError.code === "23505") {
+      // 팀 안 이름 중복(V34 players_team_name_uidx)은 소속 중복과 구분해 알린다
+      if (rpcError.message?.includes("players_team_name_uidx")) {
+        throw new AdminApiError(
+          `해당 팀에 같은 이름(${displayName})의 구성원이 이미 있습니다. 표시 이름을 바꾼 뒤 다시 추가해 주세요.`,
+          409,
+        );
+      }
       throw new AdminApiError("이미 해당 팀 소속입니다.", 409);
     }
     if (rpcError.code === "22023") {
