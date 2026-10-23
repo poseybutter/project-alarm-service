@@ -70,11 +70,11 @@ npm run dev
 
 ## 문서
 
-개발 규칙과 설계 결정의 원본은 저장소 안 md 파일입니다 (PR 리뷰와 함께 버전 관리).
+저장소 문서와 읽는 순서는 [docs/README.md](docs/README.md) 한 곳에 정리돼 있습니다.
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) — 작업 규칙 (Git·코드·테스트·문서)
+- [CONTRIBUTING.md](CONTRIBUTING.md) — 작업 규칙 (Git·코드·DB·검증)
+- [AGENTS.md](AGENTS.md) — AI 작업 규칙 (`CLAUDE.md`는 이 파일을 불러옴)
 - [docs/adr/](docs/adr/) — 설계 결정 기록
-- [docs/ai/](docs/ai/) — AI 협업 지침
 
 아키텍처 상세, ERD, 인증 흐름 등 기존 문서는 [Wiki](../../wiki)에 있으며 순차적으로 `docs/`로 이전합니다.
 
