@@ -26,14 +26,12 @@ AI 작업자는 [`AGENTS.md`](AGENTS.md)의 권한 경계를 함께 적용합니
 ### 제목과 브랜치
 
 - 커밋·PR 제목: `type: 작업 요약` — 간결한 한국어 명사형 (`추가`, `수정`. `추가했습니다` 지양)
-- 흐름 (1인 운영 기준): `develop`에 직접 push → push 마다 CI 검증 → 배포 시점에 `develop` → `main` 승격 PR.
-  승격 PR에서 리뷰(CodeRabbit)·CodeQL·의존성 검사·제목 검증이 수행되고, 머지가 곧 운영 배포입니다.
-- `main` 직접 push 는 금지합니다. 승격 PR은 squash 하지 않습니다 (두 브랜치의 공통 조상 유지).
-- Dependabot 버전 업데이트는 `develop`을 대상으로 열립니다. 보안 업데이트는 GitHub 정책상 항상 `main`으로 열리므로,
-  머지 후 `main` → `develop` 역머지로 두 브랜치를 맞춥니다.
-- 범위가 크거나 되돌릴 가능성이 있는 작업은 지금처럼 `<type>/<작업요약>` 브랜치(영문 kebab-case)로 분리해 `develop` PR을 거칠 수 있습니다.
+- 흐름 (1인 운영 기준): `<type>/<작업요약>` 브랜치(영문 kebab-case) → `main` PR → 머지가 곧 운영 배포입니다.
+  PR에서 CI·리뷰(CodeRabbit)·CodeQL·의존성 검사·제목 검증이 수행됩니다. 통합 브랜치(`develop`)는 두지 않습니다.
+- `main` 직접 push 는 금지합니다.
+- Dependabot 업데이트(버전·보안)는 `main`을 대상으로 열립니다.
 - 버전·릴리스: `main` push 시 자동화(`notify.yml`)가 `package.json` 버전 기준으로 태그·GitHub Release·알림을 만듭니다.
-  버전은 릴리스 목적의 승격 PR에서만 올리고, 이미 태그로 존재하는 버전은 다시 쓰지 않습니다.
+  버전은 릴리스 목적의 PR에서만 올리고, 이미 태그로 존재하는 버전은 다시 쓰지 않습니다.
 
 ### PR
 
@@ -50,7 +48,7 @@ AI 작업자는 [`AGENTS.md`](AGENTS.md)의 권한 경계를 함께 적용합니
 | --- | --- |
 | 1 | 앞 PR 브랜치에서 새 브랜치를 만들고, PR base 를 **앞 PR 브랜치**로 엽니다 |
 | 2 | PR 본문 참고 사항에 `선행 PR: #번호`를 적습니다 |
-| 3 | 앞 PR이 머지되면 base 를 `develop`으로 바꾸고 (`gh pr edit <번호> --base develop`) diff 를 다시 확인합니다 |
+| 3 | 앞 PR이 머지되면 base 를 `main`으로 바꾸고 (`gh pr edit <번호> --base main`) diff 를 다시 확인합니다 |
 | 4 | 앞 PR에 수정이 생기면 뒤 브랜치에 merge 해 맞춥니다 (rebase·force push 하지 않음) |
 
 - 각 PR은 혼자 읽혀야 합니다. 앞 PR 내용을 뒤 PR diff 에 섞지 않습니다.
