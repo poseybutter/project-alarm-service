@@ -465,7 +465,7 @@ export function MembersPage() {
                 {isTeamScope ? `${selectedScope.label} 소속` : "소속 팀"}
               </h3>
               <p className="mb-2 text-xs text-stone-500">
-                역할과 소속 상태는 팀마다 따로 관리됩니다.{" "}
+                역할·소속 상태·레벨은 팀마다 따로 관리됩니다.{" "}
                 <span className="font-bold">기본</span> 소속은 홈 화면·퀘스트 등에 사용되는 주 팀입니다.
               </p>
               <div className="divide-y divide-stone-100 rounded-md border border-stone-200">
@@ -487,6 +487,10 @@ export function MembersPage() {
                         )}
                         <RoleChip label={membership.roleName} />
                         <StatusBadge status={membership.status} />
+                        {/* 레벨은 팀별 players 행 기준이라 소속마다 다르다 */}
+                        <span className="w-10 shrink-0 text-right font-mono text-[11px] text-stone-500">
+                          {membership.level != null ? `Lv.${membership.level}` : "-"}
+                        </span>
                         {editable && !editing && (
                           <button
                             type="button"
