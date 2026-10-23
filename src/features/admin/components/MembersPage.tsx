@@ -33,18 +33,25 @@ import type {
 
 type MembersResponse = { members: AdminMember[] };
 type MemberFilter = "all" | "active" | "suspended" | "pending";
+// 사람 단위 묶음 — 팀 범위에서는 소속이 항상 1개
+type MemberPerson = { email: string; name: string; memberships: AdminMember[] };
+
+const membershipKey = (m: AdminMember) => m.membershipId ?? `legacy-${m.id}`;
+const isRequestStage = (m: AdminMember) =>
+  m.status === "pending" || m.status === "rejected" || !m.teamId;
 
 export function MembersPage() {
-  const { identity, scopes, selectedTeamId } = useAdmin();
+  const { identity, scopes, selectedTeamId, selectedScope } = useAdmin();
+  const isTeamScope = Boolean(selectedTeamId);
   const { data, error, loading, reload } =
     useAdminResource<MembersResponse>("/api/admin/members");
   const { data: roleCatalog } =
     useAdminResource<AdminRoleCatalog>("/api/admin/roles");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<MemberFilter>("all");
-  const [selected, setSelected] = useState<AdminMember | null>(null);
-  // 역할·상태를 편집할 소속 팀 (멤버십 단위 편집)
-  const [editTeamId, setEditTeamId] = useState<string | null>(null);
+  const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
+  // 편집 중인 소속 — 한 번에 하나만
+  const [editingKey, setEditingKey] = useState<string | null>(null);
   const [draftRoleId, setDraftRoleId] = useState("legacy:member");
   const [draftStatus, setDraftStatus] = useState<"active" | "suspended">(
     "active",
@@ -60,13 +67,17 @@ export function MembersPage() {
       scopes.filter(
         (scope) =>
           scope.kind === "team" &&
-          scope.permissions.includes("members.manage"),
+          scope.permissions.includes("members.manage") &&
+          (!selectedTeamId || scope.teamId === selectedTeamId),
       ),
-    [scopes],
+    [scopes, selectedTeamId],
   );
+  const canManageTeam = (teamId: string | null) =>
+    Boolean(teamId && teamOptions.some((s) => s.teamId === teamId));
+
   const [addOpen, setAddOpen] = useState(false);
   const [addEmail, setAddEmail] = useState("");
-  const [addTeamId, setAddTeamId] = useState(teamOptions[0]?.teamId ?? "");
+  const [addTeamId, setAddTeamId] = useState("");
   const [addRole, setAddRole] = useState<"admin" | "member" | "viewer">(
     "member",
   );
@@ -78,90 +89,51 @@ export function MembersPage() {
   const [removeError, setRemoveError] = useState<ApiFailure | null>(null);
   const [removingMembership, setRemovingMembership] = useState<AdminMember | null>(null);
 
-  const teamNamesByEmail = useMemo(() => {
-    const map = new Map<string, string[]>();
+  const people = useMemo(() => {
+    const map = new Map<string, MemberPerson>();
     for (const m of data?.members ?? []) {
-      const list = map.get(m.email) ?? [];
-      map.set(m.email, [...list, m.teamName]);
+      const person = map.get(m.email);
+      if (person) person.memberships.push(m);
+      else map.set(m.email, { email: m.email, name: m.name, memberships: [m] });
     }
-    return map;
+    return Array.from(map.values());
   }, [data]);
 
-  const members = useMemo(() => {
+  const visiblePeople = useMemo(() => {
     const query = search.trim().toLowerCase();
-    // 사람 기준으로 중복 제거 — 현재 선택된 팀의 소속을 우선, 그다음 기본 소속(isDefault=true), 없으면 첫 번째 행
-    const rank = (m: AdminMember) =>
-      selectedTeamId && m.teamId === selectedTeamId ? 2 : m.isDefault ? 1 : 0;
-    const seen = new Map<string, AdminMember>();
-    for (const member of data?.members ?? []) {
-      const existing = seen.get(member.email);
-      if (!existing || rank(member) > rank(existing)) {
-        seen.set(member.email, member);
+    return people.filter((person) => {
+      // 조직 범위: 해당 상태의 소속이 하나라도 있으면 포함
+      if (filter !== "all" && !person.memberships.some((m) => m.status === filter)) {
+        return false;
       }
-    }
-    return Array.from(seen.values()).filter((member) => {
-      if (filter !== "all" && member.status !== filter) return false;
       if (!query) return true;
-      if (member.name.toLowerCase().includes(query)) return true;
-      if (member.email.toLowerCase().includes(query)) return true;
-      // 모든 소속 팀 이름 검색 대상 포함
-      return (teamNamesByEmail.get(member.email) ?? [member.teamName]).some((t) =>
-        t.toLowerCase().includes(query),
+      return (
+        person.name.toLowerCase().includes(query) ||
+        person.email.toLowerCase().includes(query) ||
+        person.memberships.some((m) => m.teamName.toLowerCase().includes(query))
       );
     });
-  }, [data, filter, search, teamNamesByEmail, selectedTeamId]);
+  }, [people, filter, search]);
 
-  const allMembershipsForSelected = useMemo(
-    () => (selected ? (data?.members ?? []).filter((m) => m.email === selected.email) : []),
-    [data, selected],
+  const selected = useMemo(
+    () => people.find((person) => person.email === selectedEmail) ?? null,
+    [people, selectedEmail],
   );
-  // 관리 권한이 있는 팀의 소속만 편집 가능
-  const editableMemberships = useMemo(
-    () =>
-      allMembershipsForSelected.filter(
-        (m) => m.teamId && teamOptions.some((s) => s.teamId === m.teamId),
-      ),
-    [allMembershipsForSelected, teamOptions],
+  const isSelf = selected?.email === identity.email;
+  const editTarget = useMemo(
+    () => selected?.memberships.find((m) => membershipKey(m) === editingKey) ?? null,
+    [selected, editingKey],
   );
-  // 편집 대상 멤버십 — 드로어에서 고른 팀 → 현재 스코프 팀 → 편집 가능한 기본 소속 → 편집 가능한 첫 소속 → 기본 소속 순
-  const editTarget = useMemo(() => {
-    if (!selected) return null;
-    const byTeam = (teamId: string | null) =>
-      teamId ? allMembershipsForSelected.find((m) => m.teamId === teamId) : undefined;
-    return (
-      byTeam(editTeamId) ??
-      byTeam(selectedTeamId) ??
-      editableMemberships.find((m) => m.isDefault) ??
-      editableMemberships[0] ??
-      allMembershipsForSelected.find((m) => m.isDefault) ??
-      selected
-    );
-  }, [selected, editTeamId, selectedTeamId, allMembershipsForSelected, editableMemberships]);
 
-  // 선택된 구성원이 아직 속하지 않은 팀만 — "다른 팀에 추가" 대상
+  // 아직 소속되지 않은 팀 — 조직 범위에서만 계산 가능 (팀 범위는 다른 팀 소속을 불러오지 않음)
   const eligibleTeamsForSelected = useMemo(() => {
-    if (!selected) return teamOptions;
-    const currentTeamIds = new Set(
-      allMembershipsForSelected.map((m) => m.teamId).filter(Boolean),
-    );
-    return teamOptions.filter((scope) => !currentTeamIds.has(scope.teamId ?? ""));
-  }, [selected, allMembershipsForSelected, teamOptions]);
+    if (!selected || isTeamScope) return [];
+    const currentTeamIds = new Set(selected.memberships.map((m) => m.teamId));
+    return teamOptions.filter((scope) => !currentTeamIds.has(scope.teamId));
+  }, [selected, isTeamScope, teamOptions]);
 
-  // 모달을 구성원 드로어에서 열면 이미 소속된 팀 제외, 일반 초대에서 열면 전체 표시
-  const addModalTeamOptions = useMemo(
-    () => (selected && addEmail === selected.email ? eligibleTeamsForSelected : teamOptions),
-    [selected, addEmail, eligibleTeamsForSelected, teamOptions],
-  );
-
-  // 편집 대상 소속 팀에 members.manage 권한이 있을 때 역할·상태 편집 허용 (기본 소속 여부와 무관)
-  const canEditTarget = useMemo(
-    () =>
-      Boolean(
-        editTarget?.teamId &&
-          teamOptions.some((s) => s.teamId === editTarget.teamId),
-      ),
-    [editTarget, teamOptions],
-  );
+  const addModalTeamOptions =
+    selected && addEmail === selected.email ? eligibleTeamsForSelected : teamOptions;
 
   const dirty = Boolean(
     editTarget &&
@@ -169,20 +141,30 @@ export function MembersPage() {
       editTarget.status !== draftStatus),
   );
 
-  function resetDrafts(target: AdminMember) {
+  function startEdit(target: AdminMember) {
+    setEditingKey(membershipKey(target));
     setDraftRoleId(target.roleId ?? `legacy:${target.role}`);
     setDraftStatus(target.status === "suspended" ? "suspended" : "active");
+    setSaveError(null);
   }
 
-  function openMember(member: AdminMember) {
-    setSelected(member);
-    // 목록 행(현재 스코프 팀 우선)의 소속을 편집 대상으로 초기화
-    setEditTeamId(member.teamId);
-    resetDrafts(member);
+  function openPerson(person: MemberPerson) {
+    setSelectedEmail(person.email);
+    setEditingKey(null);
     setSaveError(null);
     setDiscardPrompt(false);
     setRemoveConfirm(false);
     setRemoveError(null);
+    // 소속이 하나면 바로 편집 상태로 연다
+    const [only] = person.memberships;
+    if (
+      person.memberships.length === 1 &&
+      person.email !== identity.email &&
+      canManageTeam(only.teamId) &&
+      !isRequestStage(only)
+    ) {
+      startEdit(only);
+    }
   }
 
   function closeDrawer() {
@@ -191,7 +173,15 @@ export function MembersPage() {
       setDiscardPrompt(true);
       return;
     }
-    setSelected(null);
+    setSelectedEmail(null);
+  }
+
+  function openAddModal(email: string, teamIds: (string | null)[]) {
+    setAddEmail(email);
+    setAddTeamId(teamIds[0] ?? "");
+    setAddRole("member");
+    setAddError(null);
+    setAddOpen(true);
   }
 
   async function submitAddMembership() {
@@ -210,14 +200,15 @@ export function MembersPage() {
       });
       const body = (await response.json()) as ApiFailure;
       if (!response.ok) throw body;
-      setSuccessMessage(`${addEmail.trim()}님을 팀에 추가했습니다.`);
+      const teamLabel = teamOptions.find((s) => s.teamId === addTeamId)?.label ?? "팀";
+      setSuccessMessage(`${addEmail.trim()}님을 ${teamLabel}에 추가했습니다.`);
       setAddOpen(false);
       setAddEmail("");
       await reload();
     } catch (reason) {
       const failure = reason as ApiFailure;
       setAddError({
-        message: failure.message || "멤버십을 추가하지 못했습니다.",
+        message: failure.message || "팀에 추가하지 못했습니다.",
         requestId: failure.requestId,
       });
     } finally {
@@ -243,7 +234,10 @@ export function MembersPage() {
       }
       setSuccessMessage(`${removingMembership.name}님의 ${removingMembership.teamName} 소속을 제거했습니다.`);
       setRemoveConfirm(false);
+      if (membershipKey(removingMembership) === editingKey) setEditingKey(null);
       setRemovingMembership(null);
+      // 팀 범위에서는 유일한 소속이 사라지므로 드로어를 닫는다
+      if (isTeamScope) setSelectedEmail(null);
       await reload();
     } catch (reason) {
       const failure = reason as ApiFailure;
@@ -280,13 +274,14 @@ export function MembersPage() {
       });
       const body = (await response.json()) as ApiFailure;
       if (!response.ok) throw body;
-      setSuccessMessage(`${editTarget.name}님의 ${editTarget.teamName} 권한과 상태를 저장했습니다.`);
-      setSelected(null);
+      setSuccessMessage(`${editTarget.name}님의 ${editTarget.teamName} 소속 역할과 상태를 저장했습니다.`);
+      setEditingKey(null);
+      if (isTeamScope) setSelectedEmail(null);
       await reload();
     } catch (reason) {
       const failure = reason as ApiFailure;
       setSaveError({
-        message: failure.message || "구성원 정보를 저장하지 못했습니다.",
+        message: failure.message || "소속 정보를 저장하지 못했습니다.",
         requestId: failure.requestId,
       });
     } finally {
@@ -294,10 +289,33 @@ export function MembersPage() {
     }
   }
 
+  const filterLabels: Record<MemberFilter, string> = isTeamScope
+    ? { all: "모든 상태", active: "활성", suspended: "정지", pending: "승인 대기" }
+    : {
+        all: "모든 상태",
+        active: "활성 소속 있음",
+        suspended: "정지된 소속 있음",
+        pending: "승인 대기",
+      };
+
+  const inviteButton =
+    teamOptions.length > 0 ? (
+      <AdminButton
+        variant="primary"
+        onClick={() => openAddModal("", teamOptions.map((s) => s.teamId))}
+      >
+        <UserPlus size={14} /> 팀에 추가
+      </AdminButton>
+    ) : null;
+
   return (
     <AdminPage
-      title="구성원 관리"
-      description="전체 구성원 목록입니다. 이름을 클릭하면 소속 팀, 역할, 계정 상태를 변경할 수 있습니다. 역할·상태는 소속 팀별로 관리되며, 편집하려는 소속 팀에 대한 구성원 관리 권한이 필요합니다. 구성원을 완전히 삭제하는 대신 '정지' 상태로 비활성화하는 것을 권장합니다."
+      title={isTeamScope ? `구성원 관리 · ${selectedScope.label}` : "구성원 관리 · 조직 전체"}
+      description={
+        isTeamScope
+          ? `${selectedScope.label} 소속 구성원입니다. 역할과 소속 상태는 이 팀에만 적용됩니다. 소속을 제거하는 대신 '정지'로 비활성화하는 것을 권장합니다.`
+          : "조직 전체 구성원입니다. 이름을 클릭하면 팀별 소속·역할·상태를 확인하고 변경할 수 있습니다. 변경하려는 팀에 대한 구성원 관리 권한이 필요합니다."
+      }
     >
       {successMessage && <SuccessMessage>{successMessage}</SuccessMessage>}
       <div className="mb-3 flex flex-col gap-2 sm:flex-row">
@@ -311,37 +329,24 @@ export function MembersPage() {
             className="admin-input admin-search-input w-full"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="이름, 이메일, 팀 검색"
+            placeholder={isTeamScope ? "이름, 이메일 검색" : "이름, 이메일, 팀 검색"}
           />
         </label>
         <label>
           <span className="sr-only">상태 필터</span>
           <select
-            className="admin-select w-full sm:w-36"
+            className="admin-select w-full sm:w-40"
             value={filter}
             onChange={(event) => setFilter(event.target.value as MemberFilter)}
           >
-            <option value="all">모든 상태</option>
-            <option value="active">활성</option>
-            <option value="suspended">정지</option>
-            <option value="pending">승인 대기</option>
+            {(Object.keys(filterLabels) as MemberFilter[]).map((key) => (
+              <option key={key} value={key}>
+                {filterLabels[key]}
+              </option>
+            ))}
           </select>
         </label>
-        {teamOptions.length > 0 && (
-          <AdminButton
-            variant="primary"
-            className="sm:ml-auto"
-            onClick={() => {
-              setAddEmail("");
-              setAddTeamId(teamOptions[0]?.teamId ?? "");
-              setAddRole("member");
-              setAddError(null);
-              setAddOpen(true);
-            }}
-          >
-            <UserPlus size={14} /> 구성원 초대
-          </AdminButton>
-        )}
+        {inviteButton && <div className="sm:ml-auto">{inviteButton}</div>}
       </div>
 
       {loading && <LoadingRows count={7} />}
@@ -352,91 +357,73 @@ export function MembersPage() {
           onRetry={reload}
         />
       )}
-      {!loading && !error && members.length === 0 && (data?.members ?? []).length === 0 && (
+      {!loading && !error && people.length === 0 && (
         <div className="mt-6 text-center">
           <EmptyState
             title="등록된 구성원이 없습니다"
-            description="팀에 구성원을 초대하여 시작하세요."
+            description="가입한 사용자를 팀에 추가하여 시작하세요."
           />
-          {teamOptions.length > 0 && (
-            <AdminButton
-              variant="primary"
-              className="mt-4"
-              onClick={() => {
-                setAddEmail("");
-                setAddTeamId(teamOptions[0]?.teamId ?? "");
-                setAddRole("member");
-                setAddError(null);
-                setAddOpen(true);
-              }}
-            >
-              <UserPlus size={14} /> 구성원 초대
-            </AdminButton>
-          )}
+          {inviteButton && <div className="mt-4">{inviteButton}</div>}
         </div>
       )}
-      {!loading && !error && members.length === 0 && (data?.members ?? []).length > 0 && (
+      {!loading && !error && people.length > 0 && visiblePeople.length === 0 && (
         <EmptyState
           title="조건에 맞는 구성원이 없습니다"
           description="검색어 또는 상태 필터를 변경해 주세요."
         />
       )}
-      {!loading && !error && members.length > 0 && (
+      {!loading && !error && visiblePeople.length > 0 && (
         <div className="overflow-x-auto rounded-md border border-stone-200 bg-white">
-          <table className="w-full min-w-[820px] border-collapse text-left text-xs">
+          <table className="w-full min-w-[720px] border-collapse text-left text-xs">
             <thead className="bg-stone-50 text-stone-500">
-              <tr>
-                <th className="px-3 py-2.5 font-bold">구성원</th>
-                <th className="px-3 py-2.5 font-bold">팀</th>
-                <th className="px-3 py-2.5 font-bold">역할</th>
-                <th className="px-3 py-2.5 font-bold">상태</th>
-                <th className="px-3 py-2.5 text-right font-bold">레벨</th>
-              </tr>
+              {isTeamScope ? (
+                <tr>
+                  <th className="px-3 py-2.5 font-bold">구성원</th>
+                  <th className="px-3 py-2.5 font-bold">역할</th>
+                  <th className="px-3 py-2.5 font-bold">소속 상태</th>
+                  <th className="px-3 py-2.5 text-right font-bold">레벨</th>
+                </tr>
+              ) : (
+                <tr>
+                  <th className="px-3 py-2.5 font-bold">구성원</th>
+                  <th className="px-3 py-2.5 font-bold">소속 팀 · 역할</th>
+                </tr>
+              )}
             </thead>
             <tbody>
-              {members.map((member) => (
+              {visiblePeople.map((person) => (
                 <tr
-                  key={member.membershipId ?? `legacy-${member.id}`}
+                  key={person.email}
                   className="border-t border-stone-100 cursor-pointer hover:bg-stone-50"
-                  onClick={() => openMember(member)}
+                  onClick={() => openPerson(person)}
                   tabIndex={0}
                   role="button"
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") openMember(member); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") openPerson(person); }}
                 >
                   <td className="px-3 py-3">
-                    <div className="flex items-center gap-2">
-                      <span className="grid size-8 shrink-0 place-items-center rounded bg-stone-100 font-bold text-stone-700">
-                        {member.name.slice(0, 1)}
-                      </span>
-                      <span className="min-w-0">
-                        <strong className="block text-[13px] text-stone-900">
-                          {member.name}
-                          {member.email === identity.email && (
-                            <span className="ml-1 text-[10px] text-amber-700">
-                              나
-                            </span>
-                          )}
-                        </strong>
-                        <span className="block font-mono text-[10px] text-stone-500">
-                          {member.email}
-                        </span>
-                      </span>
-                    </div>
+                    <PersonCell person={person} isSelf={person.email === identity.email} />
                   </td>
-                  <td className="px-3 py-3 text-stone-600">
-                    {(teamNamesByEmail.get(member.email) ?? [member.teamName]).join(", ")}
-                  </td>
-                  <td className="px-3 py-3">
-                    <span className="inline-flex min-h-5 items-center rounded border border-stone-200 bg-stone-50 px-1.5 text-[10px] font-extrabold text-stone-700">
-                      {member.roleName}
-                    </span>
-                  </td>
-                  <td className="px-3 py-3">
-                    <StatusBadge status={member.status} />
-                  </td>
-                  <td className="px-3 py-3 text-right font-mono">
-                    {member.level ?? "-"}
-                  </td>
+                  {isTeamScope ? (
+                    <>
+                      <td className="px-3 py-3">
+                        <RoleChip label={person.memberships[0].roleName} />
+                      </td>
+                      <td className="px-3 py-3">
+                        <StatusBadge status={person.memberships[0].status} />
+                      </td>
+                      <td className="px-3 py-3 text-right font-mono">
+                        {person.memberships[0].level ?? "-"}
+                      </td>
+                    </>
+                  ) : (
+                    <td className="px-3 py-3">
+                      <div className="flex flex-wrap gap-1.5">
+                        {person.memberships.map((m) => (
+                          <MembershipChip key={membershipKey(m)} membership={m} />
+                        ))}
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -451,44 +438,46 @@ export function MembersPage() {
       >
         {selected && (
           <div className="space-y-5">
-            {/* Header */}
             <div className="flex items-start gap-3 rounded-md border border-stone-200 bg-stone-50 p-4">
               <span className="grid size-12 shrink-0 place-items-center rounded bg-amber-100 text-base font-black text-amber-800">
                 {selected.name.slice(0, 1)}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-extrabold">{selected.name}</p>
-                  <StatusBadge status={editTarget?.status ?? selected.status} />
-                </div>
+                <p className="font-extrabold">
+                  {selected.name}
+                  {isSelf && <span className="ml-1 text-[10px] text-amber-700">나</span>}
+                </p>
                 <p className="mt-1 break-all font-mono text-xs text-stone-500">
                   {selected.email}
                 </p>
               </div>
             </div>
 
-            {/* Pending/Rejected state */}
-            {(editTarget?.status === "pending" ||
-              editTarget?.status === "rejected" ||
-              !editTarget?.teamId) ? (
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
-                이 사용자는 접근 요청 단계에 있습니다. 접근 요청 화면에서 팀과 역할을 지정해 주세요.
+            {isSelf && (
+              <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                <ShieldAlert className="mt-0.5 shrink-0" size={16} />
+                본인 소속의 역할과 상태는 직접 변경할 수 없습니다. 다른 관리자에게 요청해 주세요.
               </div>
-            ) : (
-              <>
-                {/* 소속 팀 section */}
-                <div>
-                  <h3 className="mb-1 text-sm font-extrabold">소속 팀</h3>
-                  <p className="mb-2 text-xs text-stone-500">
-                    <span className="font-bold">기본</span> 소속은 홈 화면·퀘스트 등에 사용되는 주 팀입니다.
-                  </p>
-                  <div className="divide-y divide-stone-100 rounded-md border border-stone-200">
-                    {allMembershipsForSelected.map((membership) => (
-                      <div
-                        key={membership.membershipId ?? `legacy-${membership.id}`}
-                        className="flex items-center gap-2 px-3 py-2.5"
-                      >
-                        <span className="min-w-0 flex-1 text-sm font-medium text-stone-700 truncate">
+            )}
+
+            <div>
+              <h3 className="mb-1 text-sm font-extrabold">
+                {isTeamScope ? `${selectedScope.label} 소속` : "소속 팀"}
+              </h3>
+              <p className="mb-2 text-xs text-stone-500">
+                역할·소속 상태·레벨은 팀마다 따로 관리됩니다.{" "}
+                <span className="font-bold">기본</span> 소속은 홈 화면·퀘스트 등에 사용되는 주 팀입니다.
+              </p>
+              <div className="divide-y divide-stone-100 rounded-md border border-stone-200">
+                {selected.memberships.map((membership) => {
+                  const key = membershipKey(membership);
+                  const editable =
+                    !isSelf && canManageTeam(membership.teamId) && !isRequestStage(membership);
+                  const editing = key === editingKey;
+                  return (
+                    <div key={key} className="px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-stone-700">
                           {membership.teamName}
                         </span>
                         {membership.isDefault && (
@@ -496,10 +485,23 @@ export function MembersPage() {
                             기본
                           </span>
                         )}
-                        <span className="shrink-0 inline-flex min-h-5 items-center rounded border border-stone-200 bg-stone-50 px-1.5 text-[10px] font-extrabold text-stone-700">
-                          {membership.roleName}
+                        <RoleChip label={membership.roleName} />
+                        <StatusBadge status={membership.status} />
+                        {/* 레벨은 팀별 players 행 기준이라 소속마다 다르다 */}
+                        <span className="w-10 shrink-0 text-right font-mono text-[11px] text-stone-500">
+                          {membership.level != null ? `Lv.${membership.level}` : "-"}
                         </span>
-                        {!membership.isDefault && membership.email !== identity.email && teamOptions.some((s) => s.teamId === membership.teamId) ? (
+                        {editable && !editing && (
+                          <button
+                            type="button"
+                            className="shrink-0 rounded px-1.5 py-1 text-[11px] font-bold text-stone-500 hover:bg-stone-100 hover:text-stone-800 disabled:opacity-40"
+                            onClick={() => startEdit(membership)}
+                            disabled={dirty || saving}
+                          >
+                            변경
+                          </button>
+                        )}
+                        {editable && !membership.isDefault ? (
                           <button
                             type="button"
                             className="admin-icon-button shrink-0 text-red-500 hover:bg-red-50 hover:text-red-700"
@@ -508,7 +510,7 @@ export function MembersPage() {
                               setRemoveError(null);
                               setRemoveConfirm(true);
                             }}
-                            disabled={removeSaving}
+                            disabled={removeSaving || saving}
                             aria-label={`${membership.teamName} 소속 제거`}
                           >
                             <UserMinus size={14} />
@@ -517,170 +519,62 @@ export function MembersPage() {
                           <span className="w-[30px] shrink-0" />
                         )}
                       </div>
-                    ))}
-                  </div>
-                  {eligibleTeamsForSelected.length > 0 && (
-                    <button
-                      type="button"
-                      className="mt-2 flex w-full items-center gap-1.5 rounded-md border border-dashed border-stone-300 px-3 py-2 text-xs font-semibold text-stone-500 hover:border-stone-400 hover:text-stone-700 transition-colors"
-                      onClick={() => {
-                        setAddEmail(selected.email);
-                        setAddTeamId(eligibleTeamsForSelected[0]?.teamId ?? "");
-                        setAddRole("member");
-                        setAddError(null);
-                        setAddOpen(true);
-                      }}
-                    >
-                      <UserPlus size={13} /> 다른 팀에 추가
-                    </button>
-                  )}
-                  {removeError && (
-                    <div
-                      role="alert"
-                      className="mt-2 rounded-md border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800"
-                    >
-                      {removeError.message}
-                      {removeError.requestId && (
-                        <span className="mt-1 block font-mono text-[10px]">
-                          요청 ID: {removeError.requestId}
-                        </span>
+                      {isRequestStage(membership) && (
+                        <p className="mt-1.5 text-[11px] leading-4 text-amber-800">
+                          접근 요청 단계입니다. 접근 요청 화면에서 팀과 역할을 지정해 주세요.
+                        </p>
                       )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Role & Status editing — 소속(멤버십) 단위 */}
-                {!canEditTarget && (
-                  <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
-                    이 구성원의 소속 팀에 대한 구성원 관리 권한이 없습니다. 해당 팀 관리자에게 문의해 주세요.
-                  </div>
-                )}
-                {canEditTarget && editTarget && (
-                  <fieldset className="space-y-4">
-                    <legend className="text-sm font-extrabold">권한 및 상태</legend>
-                    {editableMemberships.length > 1 ? (
-                      <label className="block">
-                        <span className="mb-1.5 block text-xs font-bold text-stone-600">
-                          편집할 소속 팀
-                        </span>
-                        <select
-                          className="admin-select w-full"
-                          value={editTarget.teamId ?? ""}
-                          onChange={(event) => {
-                            const next = editableMemberships.find(
-                              (m) => m.teamId === event.target.value,
-                            );
-                            if (!next) return;
-                            setEditTeamId(next.teamId);
-                            resetDrafts(next);
+                      {!isSelf && !isRequestStage(membership) && !canManageTeam(membership.teamId) && (
+                        <p className="mt-1.5 text-[11px] leading-4 text-stone-500">
+                          이 팀의 구성원 관리 권한이 없습니다.
+                        </p>
+                      )}
+                      {editing && (
+                        <MembershipEditor
+                          membership={membership}
+                          roleCatalog={roleCatalog}
+                          draftRoleId={draftRoleId}
+                          draftStatus={draftStatus}
+                          onRoleChange={setDraftRoleId}
+                          onStatusChange={setDraftStatus}
+                          saving={saving}
+                          dirty={dirty}
+                          onCancel={() => {
+                            setEditingKey(null);
                             setSaveError(null);
                           }}
-                          disabled={saving}
-                        >
-                          {editableMemberships.map((m) => (
-                            <option key={m.membershipId ?? `legacy-${m.id}`} value={m.teamId ?? ""}>
-                              {m.teamName}
-                              {m.isDefault ? " · 기본" : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    ) : (
-                      <p className="text-xs text-stone-500">
-                        <span className="font-bold">{editTarget.teamName}</span> 소속의 역할과 상태를 변경합니다.
-                      </p>
-                    )}
-                    <label className="block">
-                      <span className="mb-1.5 block text-xs font-bold text-stone-600">
-                        팀 역할
-                      </span>
-                      <select
-                        className="admin-select w-full"
-                        value={draftRoleId}
-                        onChange={(event) => setDraftRoleId(event.target.value)}
-                        disabled={selected.email === identity.email}
-                      >
-                        {roleCatalog?.schemaReady ? (
-                          roleCatalog.roles
-                            .filter(
-                              (role) =>
-                                role.status === "active" &&
-                                (role.teamId === null ||
-                                  role.teamId === editTarget.teamId),
-                            )
-                            .map((role) => (
-                              <option key={role.id} value={role.id}>
-                                {role.name}
-                                {role.teamId ? " · 팀 전용" : ""}
-                              </option>
-                            ))
-                        ) : (
-                          <>
-                            <option value="legacy:member">구성원</option>
-                            <option value="legacy:admin">팀 관리자</option>
-                          </>
-                        )}
-                      </select>
-                      {roleCatalog?.schemaReady && (
-                        <span className="mt-1.5 block text-[11px] leading-4 text-stone-500">
-                          역할별 세부 권한은 역할 및 권한 화면에서 관리합니다.
-                        </span>
+                          onSave={() => {
+                            if (draftStatus === "suspended" && membership.status !== "suspended") {
+                              setSuspendConfirm(true);
+                            } else {
+                              void saveMember();
+                            }
+                          }}
+                        />
                       )}
-                    </label>
-                    <label className="block">
-                      <span className="mb-1.5 block text-xs font-bold text-stone-600">
-                        계정 상태
-                      </span>
-                      <select
-                        className="admin-select w-full"
-                        value={draftStatus}
-                        onChange={(event) =>
-                          setDraftStatus(event.target.value as "active" | "suspended")
-                        }
-                        disabled={selected.email === identity.email}
-                      >
-                        <option value="active">활성</option>
-                        <option value="suspended">정지</option>
-                      </select>
-                    </label>
-                    {selected.email === identity.email && (
-                      <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                        <ShieldAlert className="mt-0.5 shrink-0" size={16} />
-                        자신의 관리자 권한과 계정 상태는 직접 변경할 수 없습니다.
-                      </div>
-                    )}
-                    {draftStatus === "suspended" && editTarget.status !== "suspended" && (
-                      <div className="flex gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800">
-                        <Pause className="mt-0.5 shrink-0" size={16} />
-                        정지하면 이 사용자는 로그인 후 업무 데이터에 접근할 수 없습니다. 기존 데이터는 삭제되지 않습니다.
-                      </div>
-                    )}
-                    {draftStatus === "active" && editTarget.status === "suspended" && (
-                      <div className="flex gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-800">
-                        <Play className="mt-0.5 shrink-0" size={16} />
-                        저장 즉시 계정 접근이 복구됩니다.
-                      </div>
-                    )}
-                  </fieldset>
-                )}
-              </>
-            )}
-
-            {saveError && (
-              <div
-                role="alert"
-                className="rounded-md border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800"
-              >
-                {saveError.message}
-                {saveError.requestId && (
-                  <span className="mt-1 block font-mono text-[10px]">
-                    요청 ID: {saveError.requestId}
-                  </span>
-                )}
+                    </div>
+                  );
+                })}
               </div>
-            )}
+              {eligibleTeamsForSelected.length > 0 && (
+                <button
+                  type="button"
+                  className="mt-2 flex w-full items-center gap-1.5 rounded-md border border-dashed border-stone-300 px-3 py-2 text-xs font-semibold text-stone-500 hover:border-stone-400 hover:text-stone-700 transition-colors"
+                  onClick={() =>
+                    openAddModal(selected.email, eligibleTeamsForSelected.map((s) => s.teamId))
+                  }
+                >
+                  <UserPlus size={13} /> 다른 팀에 추가
+                </button>
+              )}
+              {removeError && (
+                <ErrorBox failure={removeError} className="mt-2" />
+              )}
+            </div>
 
-            {discardPrompt ? (
+            {saveError && <ErrorBox failure={saveError} />}
+
+            {discardPrompt && (
               <div className="rounded-md border border-amber-300 bg-amber-50 p-4">
                 <p className="text-sm font-extrabold text-amber-950">
                   저장하지 않은 변경사항이 있습니다
@@ -692,44 +586,23 @@ export function MembersPage() {
                   <AdminButton onClick={() => setDiscardPrompt(false)}>
                     계속 편집
                   </AdminButton>
-                  <AdminButton variant="primary" onClick={() => setSelected(null)}>
+                  <AdminButton
+                    variant="primary"
+                    onClick={() => {
+                      setDiscardPrompt(false);
+                      setSelectedEmail(null);
+                    }}
+                  >
                     변경 버리기
                   </AdminButton>
                 </div>
               </div>
-            ) : canEditTarget &&
-              editTarget?.status !== "pending" &&
-              editTarget?.status !== "rejected" ? (
-              <div className="flex justify-end gap-2 border-t border-stone-200 pt-4">
-                <AdminButton onClick={closeDrawer} disabled={saving}>
-                  취소
-                </AdminButton>
-                <AdminButton
-                  variant="primary"
-                  onClick={() => {
-                    if (draftStatus === "suspended" && editTarget?.status !== "suspended") {
-                      setSuspendConfirm(true);
-                    } else {
-                      void saveMember();
-                    }
-                  }}
-                  disabled={!dirty || saving || selected.email === identity.email}
-                >
-                  {saving ? (
-                    <SavingLabel />
-                  ) : (
-                    <>
-                      <Save size={14} /> 변경 저장
-                    </>
-                  )}
-                </AdminButton>
-              </div>
-            ) : null}
+            )}
           </div>
         )}
       </AdminDrawer>
 
-      {selected && (
+      {editTarget && (
         <AdminModal
           open={suspendConfirm}
           role="alertdialog"
@@ -753,12 +626,11 @@ export function MembersPage() {
               </span>
               <div>
                 <h2 id="suspend-member-title" className="text-base font-extrabold">
-                  {selected.name} 계정 정지
+                  {editTarget.name}님의 {editTarget.teamName} 소속 정지
                 </h2>
                 <p className="mt-1 text-xs leading-5 text-stone-600">
-                  정지하면 이 사용자는 즉시 로그인 후 업무 데이터에 접근할 수
-                  없습니다. 기존 데이터는 삭제되지 않으며, 언제든 활성 상태로
-                  복구할 수 있습니다.
+                  {SUSPEND_NOTICE} 기존 데이터는 삭제되지 않으며, 언제든 활성
+                  상태로 복구할 수 있습니다.
                 </p>
               </div>
             </div>
@@ -781,7 +653,7 @@ export function MembersPage() {
                   <SavingLabel label="정지 중" />
                 ) : (
                   <>
-                    <Pause size={14} /> 계정 정지
+                    <Pause size={14} /> 소속 정지
                   </>
                 )}
               </AdminButton>
@@ -885,10 +757,10 @@ export function MembersPage() {
             </span>
             <div>
               <h2 id="add-membership-title" className="text-base font-extrabold">
-                구성원 초대
+                팀에 구성원 추가
               </h2>
               <p className="mt-1 text-xs leading-5 text-stone-600">
-                이미 가입한 구성원을 다른 팀에 추가합니다. 기존 소속은 그대로 유지되고, 선택한 팀에 소속이 생깁니다.
+                한 번 이상 로그인한 사용자를 선택한 팀에 추가합니다. 다른 팀 소속은 그대로 유지됩니다.
               </p>
             </div>
           </div>
@@ -914,7 +786,7 @@ export function MembersPage() {
                 className="admin-select w-full"
                 value={addTeamId}
                 onChange={(event) => setAddTeamId(event.target.value)}
-                disabled={addSaving}
+                disabled={addSaving || addModalTeamOptions.length <= 1}
               >
                 {addModalTeamOptions.map((scope) => (
                   <option key={scope.teamId} value={scope.teamId ?? ""}>
@@ -941,19 +813,7 @@ export function MembersPage() {
               </select>
             </label>
           </div>
-          {addError && (
-            <div
-              role="alert"
-              className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800"
-            >
-              {addError.message}
-              {addError.requestId && (
-                <span className="mt-1 block font-mono text-[10px]">
-                  요청 ID: {addError.requestId}
-                </span>
-              )}
-            </div>
-          )}
+          {addError && <ErrorBox failure={addError} className="mt-3" />}
           <div className="mt-5 flex justify-end gap-2 border-t border-stone-200 pt-4">
             <AdminButton onClick={() => setAddOpen(false)} disabled={addSaving}>
               취소
@@ -975,5 +835,179 @@ export function MembersPage() {
         </div>
       </AdminModal>
     </AdminPage>
+  );
+}
+
+// 소속이 하나뿐이면 동기화 트리거가 계정 상태까지 정지로 바꾼다 (V63 sync_legacy_player_identity)
+const SUSPEND_NOTICE =
+  "이 팀의 업무 데이터에 접근할 수 없게 됩니다. 다른 팀 소속에는 영향이 없지만, 활성 소속이 이 팀뿐이면 계정도 정지 상태가 됩니다.";
+
+function PersonCell({ person, isSelf }: { person: MemberPerson; isSelf: boolean }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="grid size-8 shrink-0 place-items-center rounded bg-stone-100 font-bold text-stone-700">
+        {person.name.slice(0, 1)}
+      </span>
+      <span className="min-w-0">
+        <strong className="block text-[13px] text-stone-900">
+          {person.name}
+          {isSelf && <span className="ml-1 text-[10px] text-amber-700">나</span>}
+        </strong>
+        <span className="block font-mono text-[10px] text-stone-500">
+          {person.email}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function RoleChip({ label }: { label: string }) {
+  return (
+    <span className="inline-flex min-h-5 shrink-0 items-center rounded border border-stone-200 bg-stone-50 px-1.5 text-[10px] font-extrabold text-stone-700">
+      {label}
+    </span>
+  );
+}
+
+function MembershipChip({ membership }: { membership: AdminMember }) {
+  const inactive = membership.status !== "active";
+  return (
+    <span
+      className={`inline-flex min-h-6 items-center gap-1 rounded border px-1.5 text-[11px] ${
+        inactive
+          ? "border-red-200 bg-red-50 text-red-800"
+          : "border-stone-200 bg-white text-stone-700"
+      }`}
+    >
+      <span className="font-semibold">{membership.teamName}</span>
+      {membership.isDefault && <span className="text-[9px] font-extrabold text-stone-400">기본</span>}
+      <span className="text-stone-400">·</span>
+      <span>{membership.roleName}</span>
+      {inactive && <StatusBadge status={membership.status} />}
+    </span>
+  );
+}
+
+function MembershipEditor({
+  membership,
+  roleCatalog,
+  draftRoleId,
+  draftStatus,
+  onRoleChange,
+  onStatusChange,
+  saving,
+  dirty,
+  onCancel,
+  onSave,
+}: {
+  membership: AdminMember;
+  roleCatalog: AdminRoleCatalog | null;
+  draftRoleId: string;
+  draftStatus: "active" | "suspended";
+  onRoleChange: (roleId: string) => void;
+  onStatusChange: (status: "active" | "suspended") => void;
+  saving: boolean;
+  dirty: boolean;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <fieldset className="mt-3 space-y-3 rounded-md border border-stone-200 bg-stone-50 p-3">
+      <legend className="sr-only">{membership.teamName} 소속 역할과 상태</legend>
+      <label className="block">
+        <span className="mb-1.5 block text-xs font-bold text-stone-600">
+          {membership.teamName} 역할
+        </span>
+        <select
+          className="admin-select w-full"
+          value={draftRoleId}
+          onChange={(event) => onRoleChange(event.target.value)}
+          disabled={saving}
+        >
+          {roleCatalog?.schemaReady ? (
+            roleCatalog.roles
+              .filter(
+                (role) =>
+                  role.status === "active" &&
+                  (role.teamId === null || role.teamId === membership.teamId),
+              )
+              .map((role) => (
+                <option key={role.id} value={role.id}>
+                  {role.name}
+                  {role.teamId ? " · 팀 전용" : ""}
+                </option>
+              ))
+          ) : (
+            <>
+              <option value="legacy:member">구성원</option>
+              <option value="legacy:admin">팀 관리자</option>
+            </>
+          )}
+        </select>
+        {roleCatalog?.schemaReady && (
+          <span className="mt-1.5 block text-[11px] leading-4 text-stone-500">
+            역할별 세부 권한은 역할 및 권한 화면에서 관리합니다.
+          </span>
+        )}
+      </label>
+      <label className="block">
+        <span className="mb-1.5 block text-xs font-bold text-stone-600">
+          {membership.teamName} 소속 상태
+        </span>
+        <select
+          className="admin-select w-full"
+          value={draftStatus}
+          onChange={(event) =>
+            onStatusChange(event.target.value as "active" | "suspended")
+          }
+          disabled={saving}
+        >
+          <option value="active">활성</option>
+          <option value="suspended">정지</option>
+        </select>
+      </label>
+      {draftStatus === "suspended" && membership.status !== "suspended" && (
+        <div className="flex gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800">
+          <Pause className="mt-0.5 shrink-0" size={16} />
+          {SUSPEND_NOTICE}
+        </div>
+      )}
+      {draftStatus === "active" && membership.status === "suspended" && (
+        <div className="flex gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-800">
+          <Play className="mt-0.5 shrink-0" size={16} />
+          저장 즉시 이 팀 접근이 복구됩니다.
+        </div>
+      )}
+      <div className="flex justify-end gap-2">
+        <AdminButton onClick={onCancel} disabled={saving}>
+          취소
+        </AdminButton>
+        <AdminButton variant="primary" onClick={onSave} disabled={!dirty || saving}>
+          {saving ? (
+            <SavingLabel />
+          ) : (
+            <>
+              <Save size={14} /> 변경 저장
+            </>
+          )}
+        </AdminButton>
+      </div>
+    </fieldset>
+  );
+}
+
+function ErrorBox({ failure, className = "" }: { failure: ApiFailure; className?: string }) {
+  return (
+    <div
+      role="alert"
+      className={`rounded-md border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800 ${className}`}
+    >
+      {failure.message}
+      {failure.requestId && (
+        <span className="mt-1 block font-mono text-[10px]">
+          요청 ID: {failure.requestId}
+        </span>
+      )}
+    </div>
   );
 }
