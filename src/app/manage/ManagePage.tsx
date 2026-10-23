@@ -551,6 +551,8 @@ export default function ManagePage() {
     const [savedSecrets, setSavedSecrets] = useState<Set<string>>(new Set());
     // 수정 모달의 필드 값이 서버에서 로드됐는지 — TOTP 미인증 상태로 열면 false
     const [modalValuesLoaded, setModalValuesLoaded] = useState(true);
+    // 인증 직후 값 조회가 실패했는지 — 세팅 탭에 재시도 버튼을 보인다
+    const [modalValuesFailed, setModalValuesFailed] = useState(false);
     // TOTP 관련 state (팀 레벨)
     const totp = useTotp(teamId);
     const [teamRequiresTotp, setTeamRequiresTotp] = useState(false);
@@ -830,6 +832,7 @@ export default function ManagePage() {
         setSavedSecrets(new Set());
         // 새 프로젝트는 불러올 기존 값이 없다
         setModalValuesLoaded(true);
+        setModalValuesFailed(false);
         setExtraFields(FIXED_FIELDS.map((f) => ({ key: f.key, label: f.label, fieldType: f.fieldType, isFixed: true })));
         setModalTab("basic");
         setShowProjModal(true);
@@ -909,6 +912,7 @@ export default function ManagePage() {
         setModalValues(mv);
         setSavedSecrets(secrets);
         setModalValuesLoaded(!valuesLocked);
+        setModalValuesFailed(false);
 
         // 기타 섹션: 고정 필드 + 비시스템 커스텀 필드
         const fixedItems = FIXED_FIELDS.map((f) => ({
@@ -936,11 +940,13 @@ export default function ManagePage() {
     async function loadModalFieldValues(token: string) {
         if (!editProj || modalValuesLoaded) return;
         const generation = projEditGenRef.current;
+        setModalValuesFailed(false);
         let vals: Awaited<ReturnType<typeof pf.loadValues>>;
         try {
             vals = await pf.loadValues(editProj.id, token);
         } catch (err) {
             if (generation !== projEditGenRef.current) return;
+            setModalValuesFailed(true);
             // 서버 토큰이 먼저 만료됐으면 잠금 상태로 되돌린다 (세팅 탭은 잠금 시 자동으로 닫힘)
             if (teamRequiresTotp && err instanceof ProjectFieldsApiError && err.status === 403) {
                 invalidateTotp();
@@ -2108,7 +2114,20 @@ export default function ManagePage() {
                                 )}
 
                                 {/* 세팅 정보 탭 */}
-                                {modalTab === "setting" && (
+                                {/* 값을 불러오기 전에는 빈 입력란이 저장된 값을 덮어쓰지 않도록 입력을 막는다 */}
+                                {modalTab === "setting" && !modalValuesLoaded && (
+                                    <div className="py-6 text-center text-sm text-stone-400">
+                                        {modalValuesFailed ? (
+                                            <>
+                                                <p>세팅 정보를 불러오지 못했습니다.</p>
+                                                <button type="button" onClick={() => { if (totpToken) void loadModalFieldValues(totpToken); }} className="mt-2 rounded-lg border border-stone-200 px-3 py-1.5 text-xs text-stone-600 hover:bg-stone-50">다시 시도</button>
+                                            </>
+                                        ) : (
+                                            <p>불러오는 중...</p>
+                                        )}
+                                    </div>
+                                )}
+                                {modalTab === "setting" && modalValuesLoaded && (
                                     <div className="space-y-4">
                                         <AccessSection
                                             defs={modalDefs}
