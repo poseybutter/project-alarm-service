@@ -1,8 +1,8 @@
 -- V68: 팀 안의 사용자 판정을 활성 멤버십 기준으로 통일 (docs/adr/팀-사용자-판정-기준.md)
 --
 -- 문제
---   M1. players 에 추적되지 않은 전역 유니크 players_name_key(name)·players_email_unique(email)
---       가 남아, 이미 한 팀에 속한 사람은 다른 팀 players 행을 만들 수 없다
+--   M1. players 에 추적되지 않은 전역 유니크 players_name_key(name)·players_email_unique(email)·
+--       uniq_players_email(email) 이 남아, 이미 한 팀에 속한 사람은 다른 팀 players 행을 만들 수 없다
 --       (admin_add_team_membership 이 항상 23505 → "이미 해당 팀 소속입니다").
 --       팀 안 중복은 V34 players_team_name_uidx(team_id, name)가 이미 막는다.
 --   M2. 과거 코드가 players 행 없이 만든 활성 멤버십(legacy_player_id null)이 남아 있다.
@@ -17,8 +17,34 @@
 
 -- ═══ 1. 전역 유니크 제거 → 팀별 유니크 (M1) ═════════════════════════
 
-alter table public.players drop constraint if exists players_name_key;
-alter table public.players drop constraint if exists players_email_unique;
+-- 운영 DB 에는 이름이 다른 전역 유니크(uniq_players_email 등)도 있어, 이름 대신
+-- "name·email 단일 키 유니크"를 찾아 모두 제거한다. 제약이면 제약으로, 아니면 인덱스로.
+do $$
+declare
+    r record;
+begin
+    for r in
+        select i.indexrelid::regclass as index_name, c.conname
+        from pg_index i
+        left join pg_constraint c on c.conindid = i.indexrelid and c.contype = 'u'
+        where i.indrelid = 'public.players'::regclass
+          and i.indisunique
+          and not i.indisprimary
+          and i.indnkeyatts = 1
+          and i.indpred is null
+          and pg_get_indexdef(i.indexrelid, 1, true)
+              in ('name', 'email', 'lower(name)', 'lower(email)', 'lower(email::text)', 'lower(name::text)')
+    loop
+        if r.conname is not null then
+            raise notice 'V68: drop constraint %', r.conname;
+            execute format('alter table public.players drop constraint %I', r.conname);
+        else
+            raise notice 'V68: drop index %', r.index_name;
+            execute format('drop index %s', r.index_name);
+        end if;
+    end loop;
+end;
+$$;
 
 -- 팀 안 이름 중복 방지(V34)는 유지, 팀 안 이메일 중복 방지를 새로 둔다
 create unique index if not exists players_team_name_uidx
@@ -405,9 +431,9 @@ $$;
 revoke all on function public.clear_default_membership_from_legacy_player() from public;
 
 -- ═══ 확인 쿼리 (적용 후 실행) ══════════════════════════════════════
--- 1) 전역 유니크가 없어야 함:
---    select conname from pg_constraint
---    where conrelid = 'public.players'::regclass and conname in ('players_name_key', 'players_email_unique');
+-- 1) name·email 단일 키 유니크가 없어야 함 (팀별 *_uidx 두 개만 남음):
+--    select indexrelid::regclass, pg_get_indexdef(indexrelid)
+--    from pg_index where indrelid = 'public.players'::regclass and indisunique and not indisprimary;
 -- 2) 고아 멤버십 0행:
 --    select tm.id from team_memberships tm join profiles pr on pr.id = tm.profile_id
 --    left join players p on p.id = tm.legacy_player_id
