@@ -1,11 +1,10 @@
 name: CodeQL Security Scan
 
-# develop push 제외 — PR 분석과 중복 (develop 유입은 전부 PR 경유)
 on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, develop]
+    branches: [main]
   schedule:
     # 매주 월요일 오전 9시 (UTC 기준 0시) 정기 스캔
     - cron: '0 0 * * 1'

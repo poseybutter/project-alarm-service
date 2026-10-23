@@ -2,11 +2,6 @@ version: 2
 updates:
   - package-ecosystem: npm
     directory: /
-    # main 으로 바로 머지되면 develop 과 어긋나 역머지가 필요해진다.
-    # develop 으로 받아 승격 PR 로 함께 main 에 반영한다.
-    # 예외: 보안 업데이트 PR 은 target-branch 와 무관하게 기본 브랜치(main)로 열린다.
-    # 머지 후 main → develop 역머지로 맞춘다 (CONTRIBUTING.md 제목과 브랜치 참고).
-    target-branch: develop
     schedule:
       interval: weekly
       day: monday
@@ -27,7 +22,6 @@ updates:
 
   - package-ecosystem: github-actions
     directory: /
-    target-branch: develop
     schedule:
       interval: weekly
       day: monday
