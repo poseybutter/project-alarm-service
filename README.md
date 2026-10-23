@@ -70,7 +70,7 @@ npm run dev
 
 ## 문서
 
-전체 문서와 읽는 순서는 [docs/README.md](docs/README.md) 한 곳에 정리돼 있습니다.
+저장소 문서와 읽는 순서는 [docs/README.md](docs/README.md) 한 곳에 정리돼 있습니다.
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) — 작업 규칙 (Git·코드·DB·검증)
 - [AGENTS.md](AGENTS.md) — AI 작업 규칙 (`CLAUDE.md`는 이 파일을 불러옴)

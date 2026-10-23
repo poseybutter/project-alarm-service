@@ -810,6 +810,8 @@ export default function ManagePage() {
     const toastTimer = useRef<ReturnType<typeof setTimeout>>(null);
     // 수정 모달 열기 요청 세대 — 연속 클릭 시 마지막 요청만 반영한다
     const projEditGenRef = useRef(0);
+    // 값 조회 요청 세대 — 같은 모달에서 조회가 겹치면 최신 요청 결과만 반영한다
+    const valuesReqGenRef = useRef(0);
     function showToastMsg(msg: string) {
         if (toastTimer.current) clearTimeout(toastTimer.current);
         setToast(msg);
@@ -940,12 +942,13 @@ export default function ManagePage() {
     async function loadModalFieldValues(token: string) {
         if (!editProj || modalValuesLoaded) return;
         const generation = projEditGenRef.current;
+        const requestGen = ++valuesReqGenRef.current;
         setModalValuesFailed(false);
         let vals: Awaited<ReturnType<typeof pf.loadValues>>;
         try {
             vals = await pf.loadValues(editProj.id, token);
         } catch (err) {
-            if (generation !== projEditGenRef.current) return;
+            if (generation !== projEditGenRef.current || requestGen !== valuesReqGenRef.current) return;
             setModalValuesFailed(true);
             // 서버 토큰이 먼저 만료됐으면 잠금 상태로 되돌린다 (세팅 탭은 잠금 시 자동으로 닫힘)
             if (teamRequiresTotp && err instanceof ProjectFieldsApiError && err.status === 403) {
@@ -957,7 +960,7 @@ export default function ManagePage() {
             );
             return;
         }
-        if (generation !== projEditGenRef.current) return;
+        if (generation !== projEditGenRef.current || requestGen !== valuesReqGenRef.current) return;
         const valMap = new Map(vals.map((v) => [v.field_def_id, v]));
         setModalValues((prev) => {
             const next = { ...prev };
